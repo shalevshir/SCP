@@ -1,0 +1,59 @@
+[tool.poetry]
+name = "scp"
+version = "0.1.0"
+description = "Shir Capital Partners Trading Bot — Phase 1 Infrastructure"
+authors = ["Shalev <dev@example.com>"]
+packages = [{ include = "scp", from = "src" }]
+
+[tool.poetry.dependencies]
+python = ">=3.11,<3.13"
+pyyaml = "^6.0.2"
+pydantic = "^2.9.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.3.0"
+pytest-xdist = "^3.6.1"
+mypy = "^1.11.0"
+ruff = "^0.6.9"
+black = "^24.8.0"
+isort = "^5.13.2"
+types-PyYAML = "^6.0.12"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.black]
+line-length = 88
+target-version = ["py311"]
+
+[tool.isort]
+profile = "black"
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+lint.select = ["E","F","I","N","UP","B"]
+src = ["src"]
+exclude = [".venv",".git","build","dist"]
+
+[tool.mypy]
+python_version = "3.11"
+warn_unused_configs = true
+disallow_any_generics = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_return_any = true
+no_implicit_reexport = true
+strict_equality = true
+exclude = ["tests/"]
+

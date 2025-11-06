@@ -1,0 +1,102 @@
+---
+alwaysApply: true
+---
+
+## Development Guidelines: Strict Test-Driven Development (TDD)
+
+- **Principle**: Red-Green-Refactor. Write a failing test first, make it pass, then refactor safely.
+- **Start with tests**: For every task where tests are relevant, begin by writing a failing test that captures the user-visible requirement or bug reproduction.
+- **Definition of Done**: A task is not complete until the previously failing test passes reliably and the test suite is green.
+- **Small increments**: Keep change sets minimal; one behavior per test. Avoid mixing unrelated edits.
+- **Executable specs**: Tests must describe intent clearly (names and assertions). Prefer high-signal tests over brittle implementation checks.
+- **Coverage of contracts**: Prioritize public APIs, invariants, error paths, and boundary conditions.
+- **Refactor with safety**: Only refactor after green. Keep behavior-preserving refactors separate from feature commits.
+- **Regression prevention**: Every fixed bug gets a test that fails without the fix and passes with it.
+- **CI gate**: No merges when tests fail. Lint and type checks run with tests; failures block merges.
+- **Performance tests (when relevant)**: Add guardrails for latency/memory in critical paths.
+- **Mocks vs. fakes**: Prefer realistic fakes over deep mocks; only mock external boundaries (I/O, network, time).
+- **Determinism**: Tests must be hermetic and order-independent. Time, randomness, and environment should be controlled.
+
+### Workflow
+1. Write or update a test that fails for the new behavior/bug.
+2. Implement the minimal code to make the test pass (green).
+3. Refactor for clarity and maintainability; keep tests green.
+4. Commit with clear messages referencing the behavior covered by tests.
+
+### Expectations for PRs
+- Include tests demonstrating the new behavior or the fixed bug.
+- Explain why the test is sufficient (which scenario, edge cases, or invariants it covers).
+- Show passing results locally or via CI.
+
+### Exceptions
+- If a task is genuinely non-code or not testable (e.g., documentation-only), state explicitly why TDD does not apply. Otherwise, assume TDD applies by default.
+
+---
+
+## Engineering Best Practices (Enforced)
+
+- **Code clarity over cleverness**: Prefer readable, explicit code. Avoid deep nesting; use guard clauses.
+- **Naming**: Use descriptive names (no abbreviations). Functions are verbs; variables are nouns. Avoid 1–2 letter names.
+- **Types**: Prefer static typing and explicit function signatures where available. Avoid `any`/unsafe casts.
+- **Errors**: Don’t swallow exceptions. Either handle meaningfully or let them surface. Avoid broad `except/try` without action.
+- **Comments**: Only for non-obvious rationale, invariants, or caveats. Don’t narrate the code.
+- **Formatting**: Match project style. Keep lines short, avoid one-liners if they hurt readability.
+- **Immutability**: Favor pure functions where feasible; minimize shared state and side effects.
+
+### Git & Review Process
+- **Small PRs**: One behavior per PR; keep diffs focused. Link the failing test proving the change.
+- **Commit messages**: Imperative mood, concise subject, body explains why, references test/issue.
+- **Branching**: `main` is always green. Feature branches must pass tests + lint before merge.
+- **Code review**: Review for correctness, clarity, and test sufficiency. Block merges if tests are missing/weak.
+
+### Lint, Type-Check, and CI
+- **Pre-commit**: Run formatters, linters, and type-checkers locally before pushing.
+- **CI**: Executes tests, linters, and type checks on every PR. Red builds block merges.
+- **Coverage**: Maintain meaningful coverage on public APIs and critical paths. Don’t chase 100%.
+
+### Security & Secrets
+- **Secrets**: Never commit secrets. Use environment variables or secret managers. Rotate on exposure.
+- **Input validation**: Validate and sanitize all external inputs (APIs, files, user input).
+- **Dependencies**: Pin versions where stability matters. Update regularly and audit for CVEs.
+
+### Logging & Observability
+- **Logs**: Log at boundaries and failures with actionable context. Avoid noisy debug logs in hot paths.
+- **Metrics**: Add metrics for latency, error rate, and throughput on critical services.
+- **Tracing**: Trace across key workflows where multi-service debugging is needed.
+
+### Configuration & Environment
+- **12-Factor**: Config via environment, not code. No environment-specific logic sprinkled through code.
+- **Determinism**: Fix seeds for randomness in tests. Control time and external I/O via fakes.
+
+### Performance & Resource Use
+- **Budget tests**: Add performance guards to critical loops and data pipelines when relevant.
+- **Data handling**: Prefer vectorized operations (Pandas/Polars) and streaming over loading entire datasets where possible.
+
+### Documentation
+- **Executable docs**: Keep READMEs and examples runnable. Update docs in the same PR as behavior changes.
+- **Decision records**: Capture non-obvious architectural decisions briefly with tradeoffs.
+
+### Data/ML Specific (if applicable)
+- **Reproducibility**: Version datasets/models (DVC/MLflow). Record seeds, data snapshots, and parameters.
+- **Evaluation**: Separate train/validation/test. Prevent leakage. Track metrics consistently.
+- **Serving**: Validate model inputs/outputs; add canary checks and rollbacks for model updates.
+
+---
+
+## Python Standards (Project is Python-first)
+
+- **Version**: Target Python 3.11+.
+- **Testing**: Use `pytest` (with `pytest-xdist` for parallel), property tests with `hypothesis` when valuable.
+- **Layout**: Use `src/` layout. Mirror production packages under `tests/` with clear `unit/`, `integration/`, `e2e/` folders.
+- **Fixtures**: Centralize reusable fixtures in `tests/conftest.py`. Prefer fakes over heavy mocks.
+- **Typing**: Use type hints everywhere (PEP 484). Enable `mypy --strict` (or pyright strict) in CI.
+- **Style/Lint**: `ruff` (rules: E,F,I,N,UP,B), `black` (line length 88), `isort` (profile black).
+- **Imports**: Absolute imports within `src/`. No relative dot-dot imports.
+- **Logging**: Use `logging` module with structured context; never `print` in library code.
+- **Errors**: No bare `except`. Catch specific exceptions. Re-raise with context; define custom exceptions for domain errors.
+- **Packaging**: Manage with `pyproject.toml` (Poetry or uv/pip-tools). Pin direct deps; lock files committed.
+- **Env/Config**: Use environment variables loaded via a config module. Consider `pydantic` settings for validation.
+- **DataFrames**: Prefer vectorized ops (Pandas/Polars). Avoid Python loops in hot paths.
+- **Concurrency**: Prefer `asyncio` for IO-bound tasks; avoid blocking calls in async code.
+- **Docstrings**: Use Google or NumPy style docstrings; document args, returns, raises, and examples.
+- **Notebooks**: Keep experiments in notebooks but export reusable code into `src/`; ensure determinism (fixed seeds).
