@@ -14,6 +14,9 @@ class SystemConfig(BaseModel):
 
     data_path: str = Field(default="./data/", description="Base folder for market data")
     log_path: str = Field(default="./logs/", description="Location for runtime logs")
+    log_level: str = Field(
+        default="INFO", description="Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)"
+    )
     db_path: str = Field(
         default="sqlite:///db/core.db", description="Database connection string"
     )
@@ -21,6 +24,17 @@ class SystemConfig(BaseModel):
     timeframes: list[str] = Field(
         default=["1m", "5m", "15m"], description="Active time resolutions"
     )
+
+    @field_validator("log_level")
+    @classmethod
+    def validate_log_level(cls, v: str) -> str:
+        """Ensure log_level is a valid logging level."""
+        valid_levels = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
+        if v.upper() not in valid_levels:
+            raise ValueError(
+                f"log_level must be one of {valid_levels}, got {v}"
+            )
+        return v.upper()
 
 
 class AssetsConfig(BaseModel):

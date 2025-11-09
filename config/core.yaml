@@ -2,6 +2,7 @@
 system:
   data_path: "./data/"
   log_path: "./logs/"
+  log_level: "INFO"
   db_path: "sqlite:///db/core.db"
   timezone: "UTC"
   timeframes: ["1m", "5m", "15m"]
