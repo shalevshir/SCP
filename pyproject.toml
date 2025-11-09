@@ -3,7 +3,14 @@ name = "scp"
 version = "0.1.0"
 description = "Shir Capital Partners Trading Bot — Phase 1 Infrastructure"
 authors = ["Shalev <dev@example.com>"]
-packages = [{ include = "scp", from = "src" }]
+packages = [
+    { include = "scp", from = "src" },
+    { include = "common" },
+    { include = "data_layer" },
+    { include = "rule_engine" },
+    { include = "feature_engine" },
+    { include = "backtester" },
+]
 
 [tool.poetry.dependencies]
 python = ">=3.11,<3.13"
