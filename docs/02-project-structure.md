@@ -34,14 +34,18 @@ SCP/
 
 **Status:** Stub only (Phase 1)
 
+**Current Implementation:**
+- `clients.py` - Data client stubs (CMEGCClient for Gold Futures)
+
 **Future Responsibilities:**
-- API clients for GC (Gold) and DXY (Dollar Index) data
+- Real API clients for GC (Gold) and DXY (Dollar Index) data
 - CSV file loaders for historical data
 - Data normalization and schema validation
 - Time-series alignment
 
 **Files:**
-- `__init__.py` - Package marker
+- `__init__.py` - Package exports
+- `clients.py` - Data client stubs (CMEGCClient)
 
 ### `/feature-engine/`
 
