@@ -32,7 +32,7 @@ test-parallel:
 	pytest -n auto
 
 test-coverage:
-	pytest --cov=common --cov=src --cov-report=html --cov-report=term
+	pytest --cov=common --cov=data_layer --cov=src --cov-report=html --cov-report=term
 
 test-fast:
 	pytest -n auto -q
