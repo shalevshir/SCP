@@ -1,7 +1,7 @@
 """Data Layer package (placeholders only in Phase 1)."""
 
-from data_layer.clients import CMEGCClient
+from data_layer.clients import CMEGCClient, DXYIndexClient
 
-__all__ = ["CMEGCClient"]
+__all__ = ["CMEGCClient", "DXYIndexClient"]
 
 
