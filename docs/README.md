@@ -29,9 +29,12 @@ This directory contains documentation for the Shir Capital Partners Trading Bot 
 - ✅ Test framework (pytest with coverage, Makefile automation)
 - ✅ Unified Candle data model with validation
 - ✅ Data client stubs (CMEGCClient, DXYIndexClient)
+- ✅ TimeAligner stub for data stream synchronization
+- ✅ CI/CD pipeline with GitHub Actions (tests, linting, formatting)
+- ✅ PR automation: coverage reports and test results posted as comments
 
 ### In Progress
-- Additional data layer components (LocalCSVClient, DataNormalizer, TimeAligner)
+- Additional data layer components (LocalCSVClient, DataNormalizer)
 - Feature engine stubs
 - Rule engine stubs
 

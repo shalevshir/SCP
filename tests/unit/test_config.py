@@ -15,7 +15,7 @@ def test_load_config_from_yaml():
     """Test loading configuration from YAML file."""
     config_path = Path(__file__).parent.parent.parent / "config" / "core.yaml"
     config = load_config(config_path)
-    
+
     assert isinstance(config, Config)
     assert config.system.data_path == "./data/"
     assert config.system.timezone == "UTC"
@@ -27,11 +27,11 @@ def test_load_config_from_yaml():
 def test_config_env_override():
     """Test environment variable overrides configuration."""
     config_path = Path(__file__).parent.parent.parent / "config" / "core.yaml"
-    
+
     # Set environment variable
     os.environ["SCP_SYSTEM__DATA_PATH"] = "/custom/data/path"
     os.environ["SCP_SYSTEM__TIMEZONE"] = "America/New_York"
-    
+
     try:
         config = load_config(config_path)
         assert config.system.data_path == "/custom/data/path"
@@ -85,7 +85,7 @@ def test_load_config_from_json():
         }"""
         f.write(json_content)
         json_path = Path(f.name)
-    
+
     try:
         config = load_config(json_path)
         assert config.system.data_path == "./test_data/"
@@ -126,7 +126,7 @@ backtest:
 """
         f.write(yaml_content)
         yaml_path = Path(f.name)
-    
+
     try:
         # Should raise ValidationError with ConfigError wrapped inside
         with pytest.raises((ValidationError, ConfigError)):
@@ -139,12 +139,14 @@ def test_config_type_safety():
     """Test that config provides type-safe access."""
     config_path = Path(__file__).parent.parent.parent / "config" / "core.yaml"
     config = load_config(config_path)
-    
+
     # Type-safe access
     assert isinstance(config.system.data_path, str)
     assert isinstance(config.system.timeframes, list)
     assert isinstance(config.risk.rr_target, float)
-    assert isinstance(config.backtest.initial_balance, (int, float))  # Can be int or float
+    assert isinstance(
+        config.backtest.initial_balance, (int, float)
+    )  # Can be int or float
 
 
 def test_config_error_on_invalid_format():
@@ -152,7 +154,7 @@ def test_config_error_on_invalid_format():
     with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
         f.write("some text")
         txt_path = Path(f.name)
-    
+
     try:
         with pytest.raises(ConfigError) as exc_info:
             load_config(txt_path)
@@ -172,7 +174,7 @@ invalid_yaml: [unclosed bracket
 """
         f.write(yaml_content)
         yaml_path = Path(f.name)
-    
+
     try:
         with pytest.raises(ConfigError) as exc_info:
             load_config(yaml_path)
@@ -195,7 +197,7 @@ def test_config_error_on_invalid_json():
 """
         f.write(json_content)
         json_path = Path(f.name)
-    
+
     try:
         with pytest.raises(ConfigError) as exc_info:
             load_config(json_path)
@@ -203,4 +205,3 @@ def test_config_error_on_invalid_json():
         assert exc_info.value.cause is not None
     finally:
         json_path.unlink()
-

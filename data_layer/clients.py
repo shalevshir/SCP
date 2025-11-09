@@ -12,16 +12,16 @@ from common.types import Candle
 
 class CMEGCClient:
     """CME Gold Futures (GC) data client stub.
-    
+
     This is a placeholder implementation that defines the interface for
     retrieving CME Gold Futures market data. In Phase 1, it returns an
     empty list to enable testing without external dependencies.
-    
+
     Future implementations will connect to:
     - CME Group API
     - Third-party data providers (Bloomberg, Reuters, etc.)
     - Historical data archives
-    
+
     Example:
         >>> from datetime import datetime, timezone
         >>> client = CMEGCClient()
@@ -30,11 +30,11 @@ class CMEGCClient:
         >>> candles = client.fetch(start, end, "1m")
         >>> # Currently returns empty list
     """
-    
+
     def __init__(self) -> None:
         """Initialize the CME GC client stub."""
         pass
-    
+
     def fetch(
         self,
         start: datetime,
@@ -42,28 +42,28 @@ class CMEGCClient:
         timeframe: str,
     ) -> list[Candle]:
         """Fetch CME Gold Futures (GC) candle data.
-        
+
         Args:
             start: Start datetime (must be timezone-aware UTC)
             end: End datetime (must be timezone-aware UTC, must be after start)
             timeframe: Candle timeframe (e.g., "1m", "5m", "15m")
-            
+
         Returns:
             List of Candle objects representing OHLCV data.
             Currently returns empty list in stub implementation.
-            
+
         Raises:
             DataSourceError: If validation fails (invalid dates, empty timeframe, etc.)
-            
+
         Note:
             **This is a stub implementation for Phase 1.**
-            
+
             Current behavior: Returns empty list to enable testing without
             external dependencies.
-            
+
             Future behavior: Will fetch real-time and historical data from
             CME Group APIs or data providers.
-            
+
         Example:
             >>> client = CMEGCClient()
             >>> from datetime import datetime, timezone
@@ -79,7 +79,7 @@ class CMEGCClient:
                 start=str(start),
                 symbol="GC",
             )
-        
+
         # Validate end datetime is timezone-aware
         if end.tzinfo is None:
             raise DataSourceError(
@@ -87,7 +87,7 @@ class CMEGCClient:
                 end=str(end),
                 symbol="GC",
             )
-        
+
         # Validate start is before end
         if start >= end:
             raise DataSourceError(
@@ -96,7 +96,7 @@ class CMEGCClient:
                 end=str(end),
                 symbol="GC",
             )
-        
+
         # Validate timeframe is not empty
         if not timeframe or not timeframe.strip():
             raise DataSourceError(
@@ -104,7 +104,7 @@ class CMEGCClient:
                 timeframe=timeframe,
                 symbol="GC",
             )
-        
+
         # Stub implementation: return empty list
         # Future: This will connect to CME API and return real data
         return []
@@ -112,16 +112,16 @@ class CMEGCClient:
 
 class DXYIndexClient:
     """U.S. Dollar Index (DXY) data client stub.
-    
+
     This is a placeholder implementation that defines the interface for
     retrieving DXY Index market data. In Phase 1, it returns an empty
     list to enable testing without external dependencies.
-    
+
     Future implementations will connect to:
     - ICE (Intercontinental Exchange) data feeds
     - Third-party data providers (Bloomberg, Reuters, etc.)
     - Historical data archives
-    
+
     Example:
         >>> from datetime import datetime, timezone
         >>> client = DXYIndexClient()
@@ -130,11 +130,11 @@ class DXYIndexClient:
         >>> candles = client.fetch(start, end, "1m")
         >>> # Currently returns empty list
     """
-    
+
     def __init__(self) -> None:
         """Initialize the DXY Index client stub."""
         pass
-    
+
     def fetch(
         self,
         start: datetime,
@@ -142,28 +142,28 @@ class DXYIndexClient:
         timeframe: str,
     ) -> list[Candle]:
         """Fetch U.S. Dollar Index (DXY) candle data.
-        
+
         Args:
             start: Start datetime (must be timezone-aware UTC)
             end: End datetime (must be timezone-aware UTC, must be after start)
             timeframe: Candle timeframe (e.g., "1m", "5m", "15m")
-            
+
         Returns:
             List of Candle objects representing OHLCV data.
             Currently returns empty list in stub implementation.
-            
+
         Raises:
             DataSourceError: If validation fails (invalid dates, empty timeframe, etc.)
-            
+
         Note:
             **This is a stub implementation for Phase 1.**
-            
+
             Current behavior: Returns empty list to enable testing without
             external dependencies.
-            
+
             Future behavior: Will fetch real-time and historical data from
             ICE data feeds or third-party data providers.
-            
+
         Example:
             >>> client = DXYIndexClient()
             >>> from datetime import datetime, timezone
@@ -179,7 +179,7 @@ class DXYIndexClient:
                 start=str(start),
                 symbol="DXY",
             )
-        
+
         # Validate end datetime is timezone-aware
         if end.tzinfo is None:
             raise DataSourceError(
@@ -187,7 +187,7 @@ class DXYIndexClient:
                 end=str(end),
                 symbol="DXY",
             )
-        
+
         # Validate start is before end
         if start >= end:
             raise DataSourceError(
@@ -196,7 +196,7 @@ class DXYIndexClient:
                 end=str(end),
                 symbol="DXY",
             )
-        
+
         # Validate timeframe is not empty
         if not timeframe or not timeframe.strip():
             raise DataSourceError(
@@ -204,8 +204,7 @@ class DXYIndexClient:
                 timeframe=timeframe,
                 symbol="DXY",
             )
-        
+
         # Stub implementation: return empty list
         # Future: This will connect to ICE data feeds and return real data
         return []
-

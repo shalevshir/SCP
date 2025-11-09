@@ -113,6 +113,15 @@ pytest
    git push origin feature/new-module
    ```
 
+5. Review CI results on PR:
+   - ✅ All tests pass
+   - ✅ Linters pass (ruff, mypy)
+   - ✅ Code is properly formatted (black, isort)
+   - 📊 Check coverage report comment
+   - 🔍 Review any failed test details
+
+**Note:** CI automatically posts coverage reports and test results as comments on your PR. See [Running Tests](./07-running-tests.md) for details.
+
 ## Commit Messages
 
 Follow conventional commits format:

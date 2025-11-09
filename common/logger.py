@@ -86,4 +86,3 @@ def get_logger(name: str) -> logging.Logger:
         before using get_logger().
     """
     return logging.getLogger(name)
-

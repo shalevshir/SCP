@@ -4,4 +4,3 @@ def test_version_exposed():
 
     assert isinstance(scp.__version__, str)
     assert scp.__version__.count(".") == 2
-
