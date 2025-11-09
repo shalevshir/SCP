@@ -302,6 +302,140 @@ candles = client.fetch(start, end, "1m")
 assert candles == []
 ```
 
+### TimeAligner
+
+**Purpose:** Align two candle data streams by timestamp for comparative analysis
+
+**Location:** `data_layer/aligner.py`
+
+**Use Case:** Synchronize Gold (GC) and Dollar Index (DXY) data on the same timeline
+
+#### Interface
+
+```python
+class TimeAligner:
+    def __init__(self) -> None:
+        """Initialize the TimeAligner stub."""
+        
+    def align(
+        self,
+        gc_candles: list[Candle],
+        dxy_candles: list[Candle],
+        timeframe: str,
+    ) -> list[tuple[Candle | None, Candle | None]]:
+        """Align two candle streams by timestamp.
+        
+        Args:
+            gc_candles: List of Gold (GC) candles to align
+            dxy_candles: List of DXY index candles to align
+            timeframe: Target timeframe for alignment (e.g., "5m")
+            
+        Returns:
+            List of tuples (gc_candle, dxy_candle) aligned by timestamp.
+            Missing data is represented as None.
+            Currently returns empty list (stub).
+            
+        Raises:
+            DataSourceError: If validation fails
+        """
+```
+
+#### Validation
+
+The `align` method validates:
+1. Timeframe is not empty or whitespace-only
+
+Validation failures raise `DataSourceError`.
+
+#### Return Format
+
+Returns `list[tuple[Candle | None, Candle | None]]` where:
+- Each tuple contains (gc_candle, dxy_candle)
+- `None` represents missing data for that timestamp
+- Tuples are ordered by timestamp
+
+For example:
+```python
+[
+    (gc_candle_1, dxy_candle_1),  # Both have data at timestamp 1
+    (gc_candle_2, None),           # Only GC has data at timestamp 2
+    (None, dxy_candle_3)           # Only DXY has data at timestamp 3
+]
+```
+
+#### Usage
+
+```python
+from datetime import datetime, timezone
+from data_layer.aligner import TimeAligner
+from data_layer.clients import CMEGCClient, DXYIndexClient
+
+# Fetch data from both sources
+gc_client = CMEGCClient()
+dxy_client = DXYIndexClient()
+
+start = datetime(2025, 1, 1, 9, 0, tzinfo=timezone.utc)
+end = datetime(2025, 1, 1, 17, 0, tzinfo=timezone.utc)
+
+gc_candles = gc_client.fetch(start, end, "5m")
+dxy_candles = dxy_client.fetch(start, end, "5m")
+
+# Align the data streams
+aligner = TimeAligner()
+aligned = aligner.align(gc_candles, dxy_candles, "5m")
+
+# Phase 1: Returns empty list
+assert aligned == []
+
+# Future: Process aligned pairs
+for gc, dxy in aligned:
+    if gc and dxy:
+        # Both have data - analyze correlation
+        print(f"GC: ${gc.close}, DXY: {dxy.close}")
+    elif gc:
+        # Only GC data available
+        print(f"GC: ${gc.close}, DXY: missing")
+    elif dxy:
+        # Only DXY data available
+        print(f"GC: missing, DXY: {dxy.close}")
+```
+
+#### Future Implementation
+
+Phase 2+ will include:
+
+**Full Timestamp Alignment:**
+- Merge timestamps from both streams
+- Create union of all unique timestamps
+- Pair candles with matching timestamps
+- Fill gaps with `None` for missing data
+
+**Gap Filling Strategies:**
+- Forward-fill: Use last known value
+- Interpolation: Estimate missing values
+- Configurable strategy per use case
+
+**Resampling:**
+- Convert data to different timeframes
+- Aggregate higher-frequency to lower-frequency
+- Interpolate lower-frequency to higher-frequency
+
+**Multi-Stream Alignment:**
+- Support more than 2 data sources
+- Return tuples of N candles
+- Handle complex alignment scenarios
+
+**Example Future Usage:**
+```python
+# Future: Full alignment with gap filling
+aligner = TimeAligner(fill_method="forward")
+aligned = aligner.align(gc_candles, dxy_candles, "5m")
+
+for gc, dxy in aligned:
+    # All timestamps present, gaps filled
+    assert gc is not None or dxy is not None
+```
+
 ---
 
 ## Usage Examples
@@ -564,10 +698,11 @@ The stub clients will be replaced with real implementations:
    - Handle different data source formats
    - Apply data quality checks
 
-3. **TimeAligner** - Align data from multiple sources
+3. **TimeAligner** - Align data from multiple sources (IMPLEMENTED IN PHASE 1 AS STUB)
    - Path: `data_layer/aligner.py`
    - Synchronize GC and DXY data by timestamp
    - Handle missing data and gaps
+   - Currently returns empty list (stub)
 
 ### Extensibility
 

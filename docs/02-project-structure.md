@@ -46,6 +46,7 @@ SCP/
 **Files:**
 - `__init__.py` - Package exports
 - `clients.py` - Data client stubs (CMEGCClient, DXYIndexClient)
+- `aligner.py` - TimeAligner stub for timestamp alignment
 
 ### `/feature_engine/`
 
