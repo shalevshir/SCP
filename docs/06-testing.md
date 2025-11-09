@@ -323,13 +323,18 @@ def generate_candles():
     return _generate
 ```
 
-## Continuous Integration (Future)
+## Continuous Integration
 
-Planned CI pipeline will:
-1. Run tests on every PR
-2. Check linting and type checking
-3. Generate coverage reports
-4. Block merges if tests fail
+The CI pipeline is active and runs on every PR and push to `main`:
+
+1. ✅ Runs full test suite with coverage
+2. ✅ Checks linting (ruff) and type checking (mypy)
+3. ✅ Validates code formatting (black, isort)
+4. ✅ Generates coverage reports
+5. ✅ Blocks merges if tests fail
+6. ✅ Posts coverage and test results as PR comments
+
+See [Running Tests - Continuous Integration](./07-running-tests.md#continuous-integration) for complete CI documentation.
 
 ## Test Checklist
 

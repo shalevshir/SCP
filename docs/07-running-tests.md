@@ -297,9 +297,14 @@ The CI pipeline runs three parallel jobs:
 #### 1. Tests Job
 - Runs full test suite with coverage
 - Uses Python 3.11 on ubuntu-latest
-- Generates coverage reports (XML and terminal)
+- Generates coverage reports (XML and terminal) and JUnit test results
+- **Automatically comments on PRs with:**
+  - Coverage percentage and changes vs base branch
+  - List of all failed tests with details
+  - Color-coded coverage status (🟢 ≥80%, 🟠 ≥60%, 🔴 <60%)
 - Uploads artifacts:
   - Coverage report (`coverage.xml`) - 30 days retention
+  - Test results (`pytest-results.xml`) - 30 days retention
   - Test logs (`logs/`) - 7 days retention
 
 #### 2. Lint Job
@@ -319,6 +324,31 @@ The CI pipeline runs three parallel jobs:
 2. Scroll to the "Checks" section at the bottom
 3. Click on a job name to see detailed logs
 4. Download artifacts from the job summary page
+5. **Check automated comments** - CI bot will post:
+   - Coverage report with % change vs base branch
+   - Test results summary with failed test details
+
+**Coverage Comment Example:**
+```
+## Coverage Report
+Coverage: 85.5% (+2.3%)
+
+Files changed: 5
+- common/types.py: 92% (+5%)
+- data_layer/clients.py: 78% (-2%)
+```
+
+**Test Report Comment Example:**
+```
+## Test Results
+✅ 45 passed
+❌ 2 failed
+⏭️ 1 skipped
+
+Failed Tests:
+- test_candle.py::test_invalid_timestamp
+- test_clients.py::test_fetch_invalid_data
+```
 
 **On GitHub Actions Tab:**
 1. Go to the "Actions" tab in the repository
@@ -336,7 +366,8 @@ Artifacts are available for download after each CI run:
 4. Extract and review (coverage reports, logs, etc.)
 
 **Available Artifacts:**
-- **coverage-report** - XML coverage report for analysis
+- **coverage-report** - XML coverage report for analysis (coverage.xml)
+- **pytest-results** - JUnit XML test results for detailed test analysis
 - **test-logs** - All log files generated during test execution
 
 ### Local CI Simulation
@@ -353,6 +384,26 @@ make lint           # Same as CI lint job (ruff + mypy)
 make format         # Format code (CI uses --check mode)
 ```
 
+### Pull Request Comments
+
+The CI automatically posts two types of comments on every pull request:
+
+#### Coverage Comment
+- Shows overall coverage percentage
+- Displays coverage change compared to base branch (+/- %)
+- Lists file-by-file coverage changes
+- Color codes: 🟢 ≥80% (green), 🟠 ≥60% (orange), 🔴 <60% (red)
+- Updates on every new commit to the PR
+
+#### Test Results Comment
+- Shows count of passed, failed, and skipped tests
+- Lists all failed tests with their names
+- Includes test error messages and tracebacks
+- Links to full test report in Checks tab
+- Only posts if there are test failures (otherwise just shows summary)
+
+**Note:** Comments require `pull-requests: write` permission, which is configured in the workflow.
+
 ### CI Requirements
 
 For a PR to pass CI, all three jobs must succeed:
@@ -360,6 +411,7 @@ For a PR to pass CI, all three jobs must succeed:
 - ✅ Ruff linter must find no issues
 - ✅ Code must be properly formatted (black + isort)
 - ⚠️ Mypy type errors do not block (for now)
+- 📊 Coverage changes are informational only (no minimum threshold enforced yet)
 
 ### Troubleshooting CI Failures
 

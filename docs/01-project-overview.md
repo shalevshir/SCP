@@ -36,6 +36,7 @@ Phase 1 establishes the technical backbone without any live indicators or trade 
 - ✅ Data client stubs (CMEGCClient for Gold Futures, DXYIndexClient for Dollar Index)
 - ✅ TimeAligner stub for synchronizing GC and DXY data streams
 - ✅ CI/CD pipeline with GitHub Actions (automated tests, linting, formatting checks)
+- ✅ PR automation: coverage reports and test results posted as comments on pull requests
 
 **What's NOT included in Phase 1:**
 - No external API calls
