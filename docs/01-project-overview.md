@@ -29,8 +29,11 @@ Phase 1 establishes the technical backbone without any live indicators or trade 
 - ✅ Module skeleton created (data_layer, feature_engine, rule_engine, backtester, common)
 - ✅ Configuration system in place (YAML/JSON with env overrides)
 - ✅ Logging wrapper with rotating file handlers
-- ✅ Test framework configured
+- ✅ Exception hierarchy with domain-specific errors
+- ✅ Test framework configured (pytest, pytest-xdist, pytest-cov, Makefile)
 - ✅ Development tooling set up (linting, type checking, formatting)
+- ✅ Unified Candle data model with comprehensive validation
+- ✅ Data client stubs (CMEGCClient for Gold Futures, DXYIndexClient for Dollar Index)
 
 **What's NOT included in Phase 1:**
 - No external API calls
