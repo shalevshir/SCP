@@ -4,5 +4,3 @@ from data_layer.aligner import TimeAligner
 from data_layer.clients import CMEGCClient, DXYIndexClient
 
 __all__ = ["CMEGCClient", "DXYIndexClient", "TimeAligner"]
-
-

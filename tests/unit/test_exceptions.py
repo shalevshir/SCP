@@ -21,7 +21,7 @@ def test_app_error_with_message():
     """Test that AppError stores and displays message correctly."""
     message = "Something went wrong"
     error = AppError(message)
-    
+
     assert error.message == message
     assert str(error) == message
 
@@ -30,21 +30,17 @@ def test_app_error_with_cause():
     """Test that AppError properly chains exceptions."""
     original_error = ValueError("Original error")
     message = "Wrapped error"
-    
+
     error = AppError(message, cause=original_error)
-    
+
     assert error.message == message
     assert error.cause is original_error
 
 
 def test_app_error_with_context_attributes():
     """Test that AppError accepts and stores custom context attributes."""
-    error = AppError(
-        "Configuration failed",
-        path="/path/to/file",
-        line_number=42
-    )
-    
+    error = AppError("Configuration failed", path="/path/to/file", line_number=42)
+
     assert error.message == "Configuration failed"
     assert error.path == "/path/to/file"
     assert error.line_number == 42
@@ -53,7 +49,7 @@ def test_app_error_with_context_attributes():
 def test_config_error_inherits_from_app_error():
     """Test that ConfigError inherits from AppError."""
     error = ConfigError("Config error")
-    
+
     assert isinstance(error, AppError)
     assert isinstance(error, ConfigError)
     assert isinstance(error, Exception)
@@ -62,7 +58,7 @@ def test_config_error_inherits_from_app_error():
 def test_data_source_error_inherits_from_app_error():
     """Test that DataSourceError inherits from AppError."""
     error = DataSourceError("Data source error")
-    
+
     assert isinstance(error, AppError)
     assert isinstance(error, DataSourceError)
     assert isinstance(error, Exception)
@@ -71,7 +67,7 @@ def test_data_source_error_inherits_from_app_error():
 def test_normalization_error_inherits_from_app_error():
     """Test that NormalizationError inherits from AppError."""
     error = NormalizationError("Normalization error")
-    
+
     assert isinstance(error, AppError)
     assert isinstance(error, NormalizationError)
     assert isinstance(error, Exception)
@@ -81,10 +77,10 @@ def test_exception_str_representation():
     """Test that exceptions have clear string representations."""
     error1 = AppError("Base error")
     assert str(error1) == "Base error"
-    
+
     error2 = ConfigError("Invalid YAML")
     assert str(error2) == "Invalid YAML"
-    
+
     error3 = DataSourceError("Connection failed")
     assert str(error3) == "Connection failed"
 
@@ -109,7 +105,7 @@ def test_exception_repr():
     """Test that exceptions have useful repr."""
     error = ConfigError("Test error")
     repr_str = repr(error)
-    
+
     assert "ConfigError" in repr_str
     assert "Test error" in repr_str
 
@@ -121,9 +117,9 @@ def test_multiple_context_attributes():
         source="CSV",
         file_path="/data/market.csv",
         row_count=1000,
-        error_row=500
+        error_row=500,
     )
-    
+
     assert error.source == "CSV"
     assert error.file_path == "/data/market.csv"
     assert error.row_count == 1000
@@ -138,10 +134,10 @@ def test_exception_hierarchy():
         DataSourceError("data"),
         NormalizationError("norm"),
     ]
-    
+
     for exc in exceptions:
         assert isinstance(exc, AppError)
-    
+
     # But they should be distinct types
     assert not isinstance(ConfigError("test"), DataSourceError)
     assert not isinstance(DataSourceError("test"), NormalizationError)

@@ -15,7 +15,8 @@ class SystemConfig(BaseModel):
     data_path: str = Field(default="./data/", description="Base folder for market data")
     log_path: str = Field(default="./logs/", description="Location for runtime logs")
     log_level: str = Field(
-        default="INFO", description="Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)"
+        default="INFO",
+        description="Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)",
     )
     db_path: str = Field(
         default="sqlite:///db/core.db", description="Database connection string"
@@ -30,21 +31,17 @@ class SystemConfig(BaseModel):
     def validate_log_level(cls, v: str) -> str:
         """Ensure log_level is a valid logging level."""
         from common.exceptions import ConfigError
-        
+
         valid_levels = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
         if v.upper() not in valid_levels:
-            raise ConfigError(
-                f"log_level must be one of {valid_levels}, got {v}"
-            )
+            raise ConfigError(f"log_level must be one of {valid_levels}, got {v}")
         return v.upper()
 
 
 class AssetsConfig(BaseModel):
     """Assets and market data configuration."""
 
-    symbols: list[str] = Field(
-        default=["GC", "DXY"], description="Tracked instruments"
-    )
+    symbols: list[str] = Field(default=["GC", "DXY"], description="Tracked instruments")
     broker: str = Field(default="SIMULATION", description="Broker/API source")
     start_date: str = Field(default="2022-01-01", description="Back-test start date")
     end_date: str = Field(default="2025-12-31", description="Back-test end date")
@@ -81,9 +78,7 @@ class RiskConfig(BaseModel):
     daily_drawdown_limit: float = Field(
         default=600.0, ge=0, description="Daily drawdown limit (USD)"
     )
-    rr_target: float = Field(
-        default=3.0, ge=0, description="Target Risk:Reward ratio"
-    )
+    rr_target: float = Field(default=3.0, ge=0, description="Target Risk:Reward ratio")
 
 
 class BacktestConfig(BaseModel):
@@ -98,9 +93,7 @@ class BacktestConfig(BaseModel):
     slippage_points: float = Field(
         default=0.5, ge=0, description="Slippage in price points"
     )
-    mock_strategy: bool = Field(
-        default=True, description="Use mock strategy (Phase 1)"
-    )
+    mock_strategy: bool = Field(default=True, description="Use mock strategy (Phase 1)")
 
 
 class Config(BaseModel):
@@ -117,7 +110,7 @@ class Config(BaseModel):
     def validate_symbols_not_empty(cls, v: AssetsConfig) -> AssetsConfig:
         """Ensure at least one symbol is configured."""
         from common.exceptions import ConfigError
-        
+
         if not v.symbols:
             raise ConfigError("At least one symbol must be configured")
         return v
@@ -127,7 +120,7 @@ class Config(BaseModel):
     def validate_tiers_not_empty(cls, v: GovernanceConfig) -> GovernanceConfig:
         """Ensure at least one governance tier is configured."""
         from common.exceptions import ConfigError
-        
+
         if not v.tiers:
             raise ConfigError("At least one governance tier must be configured")
         return v
@@ -136,7 +129,7 @@ class Config(BaseModel):
 def _load_file(path: Path) -> dict[str, Any]:
     """Load configuration from YAML or JSON file."""
     from common.exceptions import ConfigError
-    
+
     if not path.exists():
         raise FileNotFoundError(f"Configuration file not found: {path}")
 
@@ -153,15 +146,11 @@ def _load_file(path: Path) -> dict[str, Any]:
                 )
     except yaml.YAMLError as e:
         raise ConfigError(
-            f"Failed to parse YAML file: {path}",
-            cause=e,
-            path=str(path)
+            f"Failed to parse YAML file: {path}", cause=e, path=str(path)
         ) from e
     except json.JSONDecodeError as e:
         raise ConfigError(
-            f"Failed to parse JSON file: {path}",
-            cause=e,
-            path=str(path)
+            f"Failed to parse JSON file: {path}", cause=e, path=str(path)
         ) from e
 
 
@@ -254,4 +243,3 @@ def load_config(config_path: Path | str) -> Config:
 
     # Validate and return
     return Config.model_validate(config_dict)
-

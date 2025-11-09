@@ -20,4 +20,3 @@ def test_packages_import():
     _import_package_from(root / "rule_engine", "rule_engine")
     _import_package_from(root / "backtester", "backtester")
     _import_package_from(root / "common", "common")
-

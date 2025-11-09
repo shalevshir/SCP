@@ -10,13 +10,13 @@ import pytest
 @pytest.fixture
 def temp_dir(tmp_path: Path) -> Path:
     """Provide a temporary directory for tests.
-    
+
     Args:
         tmp_path: pytest's built-in temporary directory fixture
-        
+
     Returns:
         Path to temporary directory (cleaned up automatically)
-        
+
     Example:
         >>> def test_file_creation(temp_dir):
         ...     test_file = temp_dir / "test.txt"
@@ -29,10 +29,10 @@ def temp_dir(tmp_path: Path) -> Path:
 @pytest.fixture
 def sample_config_dict() -> dict[str, Any]:
     """Provide a sample configuration dictionary.
-    
+
     Returns:
         Dictionary with valid configuration structure
-        
+
     Example:
         >>> def test_config_loading(sample_config_dict):
         ...     config = Config.model_validate(sample_config_dict)
@@ -82,38 +82,38 @@ def sample_config_dict() -> dict[str, Any]:
 @pytest.fixture
 def sample_config_path(tmp_path: Path, sample_config_dict: dict[str, Any]) -> Path:
     """Provide a path to a temporary config file with sample data.
-    
+
     Args:
         tmp_path: pytest's built-in temporary directory fixture
         sample_config_dict: Sample configuration dictionary
-        
+
     Returns:
         Path to temporary YAML config file
-        
+
     Example:
         >>> def test_load_from_file(sample_config_path):
         ...     config = load_config(sample_config_path)
         ...     assert config.system.data_path == "./data/"
     """
     import yaml
-    
+
     config_file = tmp_path / "config.yaml"
     with config_file.open("w") as f:
         yaml.dump(sample_config_dict, f)
-    
+
     return config_file
 
 
 @pytest.fixture
 def mock_logger(monkeypatch: pytest.MonkeyPatch):
     """Provide a mock logger that captures log calls.
-    
+
     Args:
         monkeypatch: pytest's monkeypatch fixture
-        
+
     Returns:
         Mock logger object with call tracking
-        
+
     Example:
         >>> def test_logging(mock_logger):
         ...     logger = get_logger(__name__)
@@ -121,7 +121,7 @@ def mock_logger(monkeypatch: pytest.MonkeyPatch):
         ...     # Verify log was called (implementation depends on mock setup)
     """
     from unittest.mock import Mock
-    
+
     mock = Mock()
     # This is a basic mock - can be enhanced as needed
     return mock
@@ -130,11 +130,10 @@ def mock_logger(monkeypatch: pytest.MonkeyPatch):
 # Configure pytest markers
 def pytest_configure(config: pytest.Config) -> None:
     """Configure custom pytest markers.
-    
+
     Args:
         config: pytest configuration object
     """
     config.addinivalue_line("markers", "unit: Unit tests")
-    config.addinivalue_line("markers", "integration: Integration tests") 
+    config.addinivalue_line("markers", "integration: Integration tests")
     config.addinivalue_line("markers", "slow: Slow running tests")
-
