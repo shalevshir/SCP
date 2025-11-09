@@ -8,6 +8,7 @@ import pytest
 from pydantic import ValidationError
 
 from common.config import Config, load_config
+from common.exceptions import ConfigError
 
 
 def test_load_config_from_yaml():
@@ -127,7 +128,8 @@ backtest:
         yaml_path = Path(f.name)
     
     try:
-        with pytest.raises(ValidationError):  # Should raise validation error
+        # Should raise ValidationError with ConfigError wrapped inside
+        with pytest.raises((ValidationError, ConfigError)):
             load_config(yaml_path)
     finally:
         yaml_path.unlink()
@@ -143,4 +145,62 @@ def test_config_type_safety():
     assert isinstance(config.system.timeframes, list)
     assert isinstance(config.risk.rr_target, float)
     assert isinstance(config.backtest.initial_balance, (int, float))  # Can be int or float
+
+
+def test_config_error_on_invalid_format():
+    """Test that ConfigError is raised for unsupported file formats."""
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
+        f.write("some text")
+        txt_path = Path(f.name)
+    
+    try:
+        with pytest.raises(ConfigError) as exc_info:
+            load_config(txt_path)
+        assert "Unsupported configuration file format" in str(exc_info.value)
+    finally:
+        txt_path.unlink()
+
+
+def test_config_error_on_invalid_yaml():
+    """Test that ConfigError is raised for invalid YAML syntax."""
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+        # Invalid YAML with bad indentation
+        yaml_content = """
+system:
+  data_path: "./data/"
+invalid_yaml: [unclosed bracket
+"""
+        f.write(yaml_content)
+        yaml_path = Path(f.name)
+    
+    try:
+        with pytest.raises(ConfigError) as exc_info:
+            load_config(yaml_path)
+        assert "Failed to parse YAML" in str(exc_info.value)
+        assert exc_info.value.cause is not None
+    finally:
+        yaml_path.unlink()
+
+
+def test_config_error_on_invalid_json():
+    """Test that ConfigError is raised for invalid JSON syntax."""
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+        # Invalid JSON with trailing comma
+        json_content = """
+{
+    "system": {
+        "data_path": "./data/",
+    }
+}
+"""
+        f.write(json_content)
+        json_path = Path(f.name)
+    
+    try:
+        with pytest.raises(ConfigError) as exc_info:
+            load_config(json_path)
+        assert "Failed to parse JSON" in str(exc_info.value)
+        assert exc_info.value.cause is not None
+    finally:
+        json_path.unlink()
 

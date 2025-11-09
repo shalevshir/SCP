@@ -29,9 +29,11 @@ class SystemConfig(BaseModel):
     @classmethod
     def validate_log_level(cls, v: str) -> str:
         """Ensure log_level is a valid logging level."""
+        from common.exceptions import ConfigError
+        
         valid_levels = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
         if v.upper() not in valid_levels:
-            raise ValueError(
+            raise ConfigError(
                 f"log_level must be one of {valid_levels}, got {v}"
             )
         return v.upper()
@@ -114,34 +116,53 @@ class Config(BaseModel):
     @classmethod
     def validate_symbols_not_empty(cls, v: AssetsConfig) -> AssetsConfig:
         """Ensure at least one symbol is configured."""
+        from common.exceptions import ConfigError
+        
         if not v.symbols:
-            raise ValueError("At least one symbol must be configured")
+            raise ConfigError("At least one symbol must be configured")
         return v
 
     @field_validator("governance")
     @classmethod
     def validate_tiers_not_empty(cls, v: GovernanceConfig) -> GovernanceConfig:
         """Ensure at least one governance tier is configured."""
+        from common.exceptions import ConfigError
+        
         if not v.tiers:
-            raise ValueError("At least one governance tier must be configured")
+            raise ConfigError("At least one governance tier must be configured")
         return v
 
 
 def _load_file(path: Path) -> dict[str, Any]:
     """Load configuration from YAML or JSON file."""
+    from common.exceptions import ConfigError
+    
     if not path.exists():
         raise FileNotFoundError(f"Configuration file not found: {path}")
 
-    with path.open() as f:
-        if path.suffix in (".yaml", ".yml"):
-            return yaml.safe_load(f) or {}
-        elif path.suffix == ".json":
-            return json.load(f)
-        else:
-            raise ValueError(
-                f"Unsupported configuration file format: {path.suffix}. "
-                "Use .yaml, .yml, or .json"
-            )
+    try:
+        with path.open() as f:
+            if path.suffix in (".yaml", ".yml"):
+                return yaml.safe_load(f) or {}
+            elif path.suffix == ".json":
+                return json.load(f)
+            else:
+                raise ConfigError(
+                    f"Unsupported configuration file format: {path.suffix}. "
+                    "Use .yaml, .yml, or .json"
+                )
+    except yaml.YAMLError as e:
+        raise ConfigError(
+            f"Failed to parse YAML file: {path}",
+            cause=e,
+            path=str(path)
+        ) from e
+    except json.JSONDecodeError as e:
+        raise ConfigError(
+            f"Failed to parse JSON file: {path}",
+            cause=e,
+            path=str(path)
+        ) from e
 
 
 def _apply_env_overrides(config_dict: dict[str, Any]) -> dict[str, Any]:
@@ -220,7 +241,7 @@ def load_config(config_path: Path | str) -> Config:
 
     Raises:
         FileNotFoundError: If configuration file doesn't exist
-        ValueError: If configuration is invalid
+        ConfigError: If configuration format is invalid or parsing fails
         pydantic.ValidationError: If configuration doesn't match schema
     """
     path = Path(config_path)

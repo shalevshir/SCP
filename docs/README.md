@@ -12,6 +12,7 @@ This directory contains documentation for the Shir Capital Partners Trading Bot 
 - [Testing](./06-testing.md) - Test framework and conventions
 - [Running Tests](./07-running-tests.md) - Test execution and CI/CD
 - [Logging Guide](./08-logging.md) - Logging system setup and best practices
+- [Error Handling Guide](./09-error-handling.md) - Exception hierarchy and error handling patterns
 
 ## Phase 1 Status
 
@@ -23,6 +24,7 @@ This directory contains documentation for the Shir Capital Partners Trading Bot 
 - ✅ Repository structure and tooling
 - ✅ Configuration system (YAML/JSON with env overrides)
 - ✅ Logging wrapper with rotating file handlers
+- ✅ Exception hierarchy with domain-specific errors
 - ✅ Test framework
 
 ### In Progress

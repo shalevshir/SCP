@@ -165,10 +165,23 @@ When reviewing PRs, check:
 - **Don't swallow exceptions:** Handle meaningfully or let them surface
 - **Specific exceptions:** Catch specific types, not bare `except`
 - **Context on re-raise:** Add context when re-raising exceptions
+- **Use domain exceptions:** Use `ConfigError`, `DataSourceError`, `NormalizationError` instead of built-in exceptions
+- **Chain exceptions:** Preserve original errors with `from e`
+
+### Exception Hierarchy
+
+All custom exceptions inherit from `AppError`:
+- `ConfigError` - Configuration issues
+- `DataSourceError` - Data loading/connection errors
+- `NormalizationError` - Data validation/quality issues
 
 ### Example
 
 ```python
+from common import get_logger, ConfigError
+
+logger = get_logger(__name__)
+
 # Good
 try:
     data = load_config(path)
@@ -177,7 +190,11 @@ except FileNotFoundError:
     raise
 except yaml.YAMLError as e:
     logger.error(f"Invalid YAML in {path}: {e}")
-    raise ConfigError(f"Failed to parse config: {e}") from e
+    raise ConfigError(
+        f"Failed to parse config: {path}",
+        cause=e,
+        path=str(path)
+    ) from e
 
 # Bad
 try:
@@ -185,6 +202,8 @@ try:
 except:  # Too broad
     pass  # Swallowing exception
 ```
+
+See [Error Handling Guide](./09-error-handling.md) for comprehensive documentation.
 
 ## Logging
 

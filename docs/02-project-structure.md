@@ -99,17 +99,18 @@ SCP/
 **Current Implementation:**
 - `config.py` - Configuration loading system with YAML/JSON support
 - `logger.py` - Centralized logging wrapper with rotating file handlers
+- `exceptions.py` - Exception hierarchy with domain-specific error types
 
 **Future Responsibilities:**
 - Type definitions (Candle, Trade, etc.)
 - Constants (symbols, timeframes)
 - Utility functions
-- Error classes
 
 **Files:**
 - `__init__.py` - Package exports
 - `config.py` - Configuration system
 - `logger.py` - Logging wrapper
+- `exceptions.py` - Exception hierarchy (AppError, ConfigError, DataSourceError, NormalizationError)
 
 ### `/config/`
 
