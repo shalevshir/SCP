@@ -406,12 +406,35 @@ The CI automatically posts two types of comments on every pull request:
 
 ### CI Requirements
 
-For a PR to pass CI, all three jobs must succeed:
-- ✅ All tests must pass with no failures
-- ✅ Ruff linter must find no issues
-- ✅ Code must be properly formatted (black + isort)
+The CI runs three jobs on every PR:
+
+**✅ Required (Blocks Merge):**
+- `Run Tests` - All tests must pass with no failures
+
+**📊 Recommended (Non-Blocking):**
+- `Run Linters` - Ruff linter should find no issues
+- `Check Formatting` - Code should be properly formatted (black + isort)
+
+**ℹ️ Informational:**
 - ⚠️ Mypy type errors do not block (for now)
 - 📊 Coverage changes are informational only (no minimum threshold enforced yet)
+
+**Branch Protection Setup:**
+
+To require tests before merging PRs:
+
+1. Go to **GitHub Repository Settings** → **Branches**
+2. Click **"Add rule"** or **"Add branch protection rule"**
+3. Enter branch name pattern: `main`
+4. Enable these settings:
+   - ☑️ **Require a pull request before merging**
+   - ☑️ **Require status checks to pass before merging**
+     - ☑️ Require branches to be up to date before merging
+     - Search and add: `Run Tests`
+   - ☑️ **Include administrators** (recommended)
+5. Click **"Create"** or **"Save changes"**
+
+**Note:** Linting and formatting checks will still run and show results, but won't block merging. It's strongly recommended to fix any issues they report.
 
 ### Troubleshooting CI Failures
 
