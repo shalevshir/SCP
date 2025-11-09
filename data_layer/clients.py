@@ -319,10 +319,10 @@ class LocalCSVClient:
                 file_path=self.file_path,
             )
 
-        # Validate start is before end (allow equal for edge case)
-        if start > end:
+        # Validate start is before end
+        if start >= end:
             raise DataSourceError(
-                "Start time must be before or equal to end time",
+                "Start time must be before end time",
                 start=str(start),
                 end=str(end),
                 file_path=self.file_path,

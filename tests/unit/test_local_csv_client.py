@@ -152,14 +152,17 @@ def test_fetch_with_end_before_start_raises_error():
 
 
 def test_fetch_with_equal_start_and_end():
-    """Test that fetch handles equal start and end datetimes."""
+    """Test that fetch fails when start and end are equal."""
     client = LocalCSVClient("test.csv")
     start = datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
     end = datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
 
-    # Should not raise error, but return empty list (stub behavior)
-    result = client.fetch(start, end, "1m")
-    assert isinstance(result, list)
+    with pytest.raises(DataSourceError) as exc_info:
+        client.fetch(start, end, "1m")
+
+    assert (
+        "start" in str(exc_info.value).lower() or "end" in str(exc_info.value).lower()
+    )
 
 
 def test_fetch_with_different_timeframes():
