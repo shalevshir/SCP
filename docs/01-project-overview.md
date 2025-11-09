@@ -27,7 +27,8 @@ Phase 1 establishes the technical backbone without any live indicators or trade 
 
 - ✅ Repository structure initialized
 - ✅ Module skeleton created (data-layer, feature-engine, rule-engine, backtester, common)
-- ✅ Configuration system in place
+- ✅ Configuration system in place (YAML/JSON with env overrides)
+- ✅ Logging wrapper with rotating file handlers
 - ✅ Test framework configured
 - ✅ Development tooling set up (linting, type checking, formatting)
 

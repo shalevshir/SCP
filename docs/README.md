@@ -10,12 +10,24 @@ This directory contains documentation for the Shir Capital Partners Trading Bot 
 - [Configuration](./04-configuration.md) - Configuration files and parameters
 - [Development Workflow](./05-development-workflow.md) - TDD practices and coding standards
 - [Testing](./06-testing.md) - Test framework and conventions
+- [Running Tests](./07-running-tests.md) - Test execution and CI/CD
+- [Logging Guide](./08-logging.md) - Logging system setup and best practices
 
 ## Phase 1 Status
 
 **Current Phase:** Infrastructure (Phase 1)  
-**Status:** Skeleton Complete  
-**Last Updated:** 2025-01-06
+**Status:** In Progress  
+**Last Updated:** 2025-11-09
+
+### Completed
+- ✅ Repository structure and tooling
+- ✅ Configuration system (YAML/JSON with env overrides)
+- ✅ Logging wrapper with rotating file handlers
+- ✅ Test framework
+
+### In Progress
+- Data layer implementation
+- Feature engine development
 
 Phase 1 focuses on establishing the foundational structure without any trading logic or external I/O. All components are placeholders/stubs that will be implemented in subsequent phases.
 

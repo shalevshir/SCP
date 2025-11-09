@@ -94,17 +94,22 @@ SCP/
 
 **Purpose:** Shared utilities, types, and constants.
 
-**Status:** Stub only (Phase 1)
+**Status:** Partially implemented (Phase 1)
+
+**Current Implementation:**
+- `config.py` - Configuration loading system with YAML/JSON support
+- `logger.py` - Centralized logging wrapper with rotating file handlers
 
 **Future Responsibilities:**
 - Type definitions (Candle, Trade, etc.)
 - Constants (symbols, timeframes)
 - Utility functions
 - Error classes
-- Logging configuration
 
 **Files:**
-- `__init__.py` - Package marker
+- `__init__.py` - Package exports
+- `config.py` - Configuration system
+- `logger.py` - Logging wrapper
 
 ### `/config/`
 

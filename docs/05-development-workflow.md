@@ -194,12 +194,31 @@ except:  # Too broad
 - Log at boundaries and failures with actionable context
 - Avoid noisy debug logs in hot paths
 
-### Example
+### Setup
+
+Initialize logging at application startup:
 
 ```python
-import logging
+from common import load_config, get_logger
+from pathlib import Path
 
-logger = logging.getLogger(__name__)
+# Load configuration
+config = load_config(Path("config/core.yaml"))
+
+# Initialize logging system
+from common.logger import setup_logging
+setup_logging(config.system)
+
+# Get logger for your module
+logger = get_logger(__name__)
+```
+
+### Usage Example
+
+```python
+from common import get_logger
+
+logger = get_logger(__name__)
 
 def process_trade(trade: Trade) -> None:
     logger.info(f"Processing trade {trade.id} for {trade.symbol}")
@@ -210,6 +229,18 @@ def process_trade(trade: Trade) -> None:
         logger.error(f"Trade {trade.id} failed: {e}", exc_info=True)
         raise
 ```
+
+### Configuration
+
+Log level can be set via:
+- Configuration file: `system.log_level` in `config/core.yaml`
+- Environment variable: `SCP_LOG_LEVEL=DEBUG`
+
+Logs are written to:
+- File: `{log_path}/dev/app.log` (rotating, 10MB max, 5 backups)
+- Console: stdout with same format
+
+See [Logging Guide](./08-logging.md) for detailed documentation.
 
 ## Type Hints
 

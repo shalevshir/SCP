@@ -25,6 +25,7 @@ All system parameters are defined in `config/core.yaml`. This centralized config
 system:
   data_path: "./data/"           # Base folder for market data
   log_path: "./logs/"            # Location for runtime & audit logs
+  log_level: "INFO"              # Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
   db_path: "sqlite:///db/core.db" # Database connection string
   timezone: "UTC"                # Default timezone for alignment
   timeframes: ["1m", "5m", "15m"] # Active resolutions
@@ -34,6 +35,7 @@ system:
 
 **Notes:**
 - `data_path` and `log_path` are relative to project root
+- `log_level` controls logging verbosity (can be overridden with `SCP_LOG_LEVEL` env var)
 - `db_path` uses SQLAlchemy-style connection strings
 - `timeframes` list defines which resolutions to process
 
