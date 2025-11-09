@@ -146,9 +146,9 @@ def test_fetch_with_end_before_start_raises_error():
     with pytest.raises(DataSourceError) as exc_info:
         client.fetch(start, end, "1m")
 
-    assert "start" in str(exc_info.value).lower() or "end" in str(
-        exc_info.value
-    ).lower()
+    assert (
+        "start" in str(exc_info.value).lower() or "end" in str(exc_info.value).lower()
+    )
 
 
 def test_fetch_with_equal_start_and_end():
@@ -240,4 +240,3 @@ def test_fetch_return_type_annotation():
     # The return type should be list
     return_type = hints["return"]
     assert hasattr(return_type, "__origin__")
-
