@@ -1,0 +1,57 @@
+{
+  "system": {
+    "data_path": "./data/",
+    "log_path": "./logs/",
+    "db_path": "sqlite:///db/dev.local.db",
+    "timezone": "UTC",
+    "timeframes": ["1m", "5m", "15m"]
+  },
+  "assets": {
+    "symbols": ["GC", "DXY"],
+    "broker": "SIMULATION",
+    "start_date": "2022-01-01",
+    "end_date": "2025-12-31"
+  },
+  "risk": {
+    "phases": ["Startup", "Growth", "Scaling", "Institutional"],
+    "startup_risk_per_trade": 350,
+    "growth_risk_per_trade": 600,
+    "daily_drawdown_limit": 600,
+    "rr_target": 3.0
+  },
+  "governance": {
+    "tiers": [
+      {
+        "name": "Conservative",
+        "max_contracts": 1,
+        "max_trades_per_day": 2,
+        "mode": "Baseline"
+      },
+      {
+        "name": "Early Mild",
+        "max_contracts": 1,
+        "max_trades_per_day": 2,
+        "mode": "CEO Directive"
+      },
+      {
+        "name": "Mild",
+        "max_contracts": 2,
+        "max_trades_per_day": 3,
+        "mode": "Standard"
+      },
+      {
+        "name": "Offensive",
+        "max_contracts": 3,
+        "max_trades_per_day": 4,
+        "mode": "Advanced"
+      }
+    ]
+  },
+  "backtest": {
+    "initial_balance": 100000,
+    "commission_per_trade": 5,
+    "slippage_points": 0.5,
+    "mock_strategy": true
+  }
+}
+
