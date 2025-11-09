@@ -35,6 +35,17 @@ pytest -q
 - `/common/`: Shared utilities, types, constants
 - `/config/`: Static configuration files (e.g., `core.yaml`)
 
+## Documentation
+
+Comprehensive documentation is available in the [`docs/`](./docs/) directory:
+
+- [Project Overview](./docs/01-project-overview.md) - Vision, architecture, and current status
+- [Project Structure](./docs/02-project-structure.md) - Directory layout and module organization
+- [Setup Guide](./docs/03-setup-guide.md) - Installation and development environment
+- [Configuration](./docs/04-configuration.md) - Configuration files and parameters
+- [Development Workflow](./docs/05-development-workflow.md) - TDD practices and coding standards
+- [Testing](./docs/06-testing.md) - Test framework and conventions
+
 ## Notes
 
 - Python 3.11+
