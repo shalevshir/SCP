@@ -73,6 +73,7 @@ exclude = ["tests/"]
 [tool.coverage.run]
 source = ["common", "data_layer", "src"]
 omit = ["tests/*", "*/test_*.py", "*/__pycache__/*"]
+relative_files = true
 
 [tool.coverage.report]
 exclude_lines = [
