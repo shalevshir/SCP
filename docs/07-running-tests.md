@@ -1,5 +1,25 @@
 # Running Tests
 
+## Quick Start with Makefile
+
+The easiest way to run tests is using the Makefile:
+
+```bash
+# Run all tests
+make test
+
+# Run tests with coverage report
+make test-coverage
+
+# Run tests in parallel (faster)
+make test-parallel
+
+# Run all checks (lint + test)
+make check
+```
+
+For more Makefile commands, run `make help`.
+
 ## Prerequisites
 
 Before running tests, you need to install dependencies. Choose one of the following methods:
@@ -68,7 +88,29 @@ Before running tests, you need to install dependencies. Choose one of the follow
 
 ## Running Tests
 
-### Run All Tests
+### Using Makefile (Recommended)
+
+```bash
+# Run all tests
+make test
+
+# Run unit tests only
+make test-unit
+
+# Run tests with verbose output
+make test-verbose
+
+# Run tests in parallel (faster)
+make test-parallel
+
+# Run tests with coverage report
+make test-coverage
+
+# Run tests quickly (parallel + quiet)
+make test-fast
+```
+
+### Using pytest Directly
 
 ```bash
 # With Poetry

@@ -4,12 +4,13 @@
 
 **Framework:** pytest  
 **Parallel Execution:** pytest-xdist  
-**Coverage:** (Future) pytest-cov
+**Coverage:** pytest-cov
 
 ## Test Structure
 
 ```
 tests/
+├── conftest.py        # Shared fixtures and configuration
 ├── unit/              # Unit tests for individual components
 │   └── test_version.py
 ├── integration/       # Integration tests (future)
@@ -45,6 +46,33 @@ def test_calculate_vwap():
     expected = (100*10 + 101*20 + 102*30) / (10 + 20 + 30)
     assert result == pytest.approx(expected, rel=1e-6)
 ```
+
+### Shared Fixtures
+
+The project provides shared fixtures in `tests/conftest.py`:
+
+```python
+def test_with_temp_directory(temp_dir):
+    """Use temporary directory fixture."""
+    test_file = temp_dir / "data.txt"
+    test_file.write_text("content")
+    assert test_file.exists()
+
+def test_with_sample_config(sample_config_dict):
+    """Use sample configuration dictionary."""
+    assert sample_config_dict["system"]["log_level"] == "INFO"
+
+def test_with_config_file(sample_config_path):
+    """Use temporary config file."""
+    config = load_config(sample_config_path)
+    assert config.system.data_path == "./data/"
+```
+
+**Available fixtures:**
+- `temp_dir` - Temporary directory for tests
+- `sample_config_dict` - Sample configuration dictionary
+- `sample_config_path` - Path to temporary config file
+- `mock_logger` - Mock logger for testing
 
 ### Test with Fixtures
 

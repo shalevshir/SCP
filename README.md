@@ -10,13 +10,22 @@ Structure before signal. This repository initializes the Python skeleton for Pha
 ## Quickstart
 
 ```bash
-# (Optional) using uv or poetry; choose your preferred toolchain
-# poetry install --no-root
-# or with uv
-# uv sync
+# Install dependencies (choose one)
+poetry install --no-root  # Using Poetry
+# or
+uv sync                   # Using uv
 
-# run tests
-pytest -q
+# Run tests
+make test
+
+# Run tests with coverage
+make test-coverage
+
+# Run all checks (lint + test)
+make check
+
+# See all available commands
+make help
 ```
 
 ## Layout
