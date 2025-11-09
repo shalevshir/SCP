@@ -8,6 +8,7 @@ from common.exceptions import (
     NormalizationError,
 )
 from common.logger import get_logger
+from common.types import Candle
 
 __all__ = [
     "Config",
@@ -17,5 +18,6 @@ __all__ = [
     "ConfigError",
     "DataSourceError",
     "NormalizationError",
+    "Candle",
 ]
 

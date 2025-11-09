@@ -100,9 +100,10 @@ SCP/
 - `config.py` - Configuration loading system with YAML/JSON support
 - `logger.py` - Centralized logging wrapper with rotating file handlers
 - `exceptions.py` - Exception hierarchy with domain-specific error types
+- `types.py` - Core data models (Candle schema)
 
 **Future Responsibilities:**
-- Type definitions (Candle, Trade, etc.)
+- Additional type definitions (Trade, Signal, etc.)
 - Constants (symbols, timeframes)
 - Utility functions
 
@@ -111,6 +112,7 @@ SCP/
 - `config.py` - Configuration system
 - `logger.py` - Logging wrapper
 - `exceptions.py` - Exception hierarchy (AppError, ConfigError, DataSourceError, NormalizationError)
+- `types.py` - Data models (Candle)
 
 ### `/config/`
 
