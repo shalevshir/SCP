@@ -34,6 +34,8 @@ Phase 1 establishes the technical backbone without any live indicators or trade 
 - ✅ Development tooling set up (linting, type checking, formatting)
 - ✅ Unified Candle data model with comprehensive validation
 - ✅ Data client stubs (CMEGCClient for Gold Futures, DXYIndexClient for Dollar Index)
+- ✅ TimeAligner stub for synchronizing GC and DXY data streams
+- ✅ CI/CD pipeline with GitHub Actions (automated tests, linting, formatting checks)
 
 **What's NOT included in Phase 1:**
 - No external API calls

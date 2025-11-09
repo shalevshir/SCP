@@ -284,6 +284,131 @@ poetry install --no-root && poetry run pytest
 uv sync && uv run pytest
 ```
 
+## Continuous Integration
+
+### GitHub Actions Workflow
+
+The project includes a GitHub Actions CI workflow that automatically runs on every pull request and push to `main`.
+
+**Workflow File:** `.github/workflows/ci.yml`
+
+The CI pipeline runs three parallel jobs:
+
+#### 1. Tests Job
+- Runs full test suite with coverage
+- Uses Python 3.11 on ubuntu-latest
+- Generates coverage reports (XML and terminal)
+- Uploads artifacts:
+  - Coverage report (`coverage.xml`) - 30 days retention
+  - Test logs (`logs/`) - 7 days retention
+
+#### 2. Lint Job
+- Runs `ruff` linter for code quality checks
+- Runs `mypy` type checker for type safety
+- Type check runs with `continue-on-error` to not block PRs
+
+#### 3. Format Job
+- Checks `black` formatting (--check mode)
+- Checks `isort` import ordering (--check-only mode)
+- Fails if code is not properly formatted
+
+### Viewing CI Results
+
+**On Pull Requests:**
+1. Navigate to your PR on GitHub
+2. Scroll to the "Checks" section at the bottom
+3. Click on a job name to see detailed logs
+4. Download artifacts from the job summary page
+
+**On GitHub Actions Tab:**
+1. Go to the "Actions" tab in the repository
+2. Select the "CI" workflow
+3. Click on a specific run to see results
+4. Download artifacts from the run summary
+
+### Downloading Artifacts
+
+Artifacts are available for download after each CI run:
+
+1. Go to the workflow run summary page
+2. Scroll to the "Artifacts" section at the bottom
+3. Click on an artifact to download it
+4. Extract and review (coverage reports, logs, etc.)
+
+**Available Artifacts:**
+- **coverage-report** - XML coverage report for analysis
+- **test-logs** - All log files generated during test execution
+
+### Local CI Simulation
+
+Run the same checks locally before pushing:
+
+```bash
+# Run all checks (tests + linting)
+make check
+
+# Run individual check steps
+make test-coverage  # Same as CI test job
+make lint           # Same as CI lint job (ruff + mypy)
+make format         # Format code (CI uses --check mode)
+```
+
+### CI Requirements
+
+For a PR to pass CI, all three jobs must succeed:
+- ✅ All tests must pass with no failures
+- ✅ Ruff linter must find no issues
+- ✅ Code must be properly formatted (black + isort)
+- ⚠️ Mypy type errors do not block (for now)
+
+### Troubleshooting CI Failures
+
+**Test Failures:**
+```bash
+# Reproduce locally
+make test-verbose
+
+# Check specific test
+pytest tests/unit/test_specific.py -v
+```
+
+**Lint Failures:**
+```bash
+# Check issues
+make lint
+
+# Auto-fix most issues
+ruff check --fix .
+```
+
+**Format Failures:**
+```bash
+# Check formatting
+black --check .
+isort --check-only .
+
+# Auto-format
+make format
+```
+
+### CI Performance
+
+- **Average CI time:** ~2-3 minutes
+- **Jobs run in parallel:** All three jobs
+- **Caching:** Python dependencies cached by GitHub Actions
+- **Matrix testing:** Currently single Python version (3.11)
+
+### Future CI Enhancements
+
+Planned improvements for Phase 2+:
+- Matrix testing (Python 3.11, 3.12)
+- Coverage threshold enforcement
+- Performance benchmarking
+- Docker container builds
+- Deployment automation
+
+---
+
 ## Next Steps
 
 - See [Testing Guide](./06-testing.md) for test conventions and best practices
