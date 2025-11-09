@@ -165,8 +165,8 @@ open htmlcov/index.html
 def test_packages_import():
     # Validates skeleton packages import without side effects
     root = pathlib.Path(__file__).resolve().parents[1]
-    _import_package_from(root / "data-layer", "data_layer")
-    _import_package_from(root / "feature-engine", "feature_engine")
+    _import_package_from(root / "data_layer", "data_layer")
+    _import_package_from(root / "feature_engine", "feature_engine")
     # ... etc
 ```
 

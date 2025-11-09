@@ -37,9 +37,9 @@ make help
 
 ## Module map (skeleton)
 
-- `/data-layer/`: Data connectors/loaders (stubs only in Phase 1)
-- `/feature-engine/`: Indicator and feature computations (stubs)
-- `/rule-engine/`: SOP rule evaluation and scoring (stubs)
+- `/data_layer/`: Data connectors/loaders (stubs only in Phase 1)
+- `/feature_engine/`: Indicator and feature computations (stubs)
+- `/rule_engine/`: SOP rule evaluation and scoring (stubs)
 - `/backtester/`: Backtesting shell and integration (stubs)
 - `/common/`: Shared utilities, types, constants
 - `/config/`: Static configuration files (e.g., `core.yaml`)

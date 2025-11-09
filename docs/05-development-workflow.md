@@ -135,12 +135,12 @@ Follow conventional commits format:
 
 **Examples:**
 ```
-feat(data-layer): add CSV data loader
+feat(data_layer): add CSV data loader
 
 Implements LocalCSVClient for loading historical market data.
 Test: tests/unit/test_data_layer.py validates file loading.
 
-fix(rule-engine): correct scoring calculation
+fix(rule_engine): correct scoring calculation
 
 Fixes off-by-one error in setup scoring logic.
 Test: tests/unit/test_rule_engine.py catches regression.

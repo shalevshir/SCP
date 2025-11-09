@@ -15,9 +15,9 @@ def _import_package_from(path: pathlib.Path, alias: str) -> types.ModuleType:
 
 def test_packages_import():
     root = pathlib.Path(__file__).resolve().parents[1]
-    _import_package_from(root / "data-layer", "data_layer")
-    _import_package_from(root / "feature-engine", "feature_engine")
-    _import_package_from(root / "rule-engine", "rule_engine")
+    _import_package_from(root / "data_layer", "data_layer")
+    _import_package_from(root / "feature_engine", "feature_engine")
+    _import_package_from(root / "rule_engine", "rule_engine")
     _import_package_from(root / "backtester", "backtester")
     _import_package_from(root / "common", "common")
 

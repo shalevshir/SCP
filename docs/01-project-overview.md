@@ -26,7 +26,7 @@ Build a disciplined, rule-based trading system that enforces Shir Capital's Stan
 Phase 1 establishes the technical backbone without any live indicators or trade logic:
 
 - ✅ Repository structure initialized
-- ✅ Module skeleton created (data-layer, feature-engine, rule-engine, backtester, common)
+- ✅ Module skeleton created (data_layer, feature_engine, rule_engine, backtester, common)
 - ✅ Configuration system in place (YAML/JSON with env overrides)
 - ✅ Logging wrapper with rotating file handlers
 - ✅ Test framework configured

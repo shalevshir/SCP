@@ -4,9 +4,9 @@
 
 ```
 SCP/
-├── data-layer/          # Data connectors and loaders (stubs)
-├── feature-engine/      # Indicator and feature computations (stubs)
-├── rule-engine/         # SOP rule evaluation and scoring (stubs)
+├── data_layer/          # Data connectors and loaders (stubs)
+├── feature_engine/      # Indicator and feature computations (stubs)
+├── rule_engine/         # SOP rule evaluation and scoring (stubs)
 ├── backtester/          # Backtesting shell and integration (stubs)
 ├── common/              # Shared utilities, types, constants
 ├── config/              # Configuration files
@@ -28,7 +28,7 @@ SCP/
 
 ## Module Descriptions
 
-### `/data-layer/`
+### `/data_layer/`
 
 **Purpose:** Data connectors and loaders for market data ingestion.
 
@@ -47,7 +47,7 @@ SCP/
 - `__init__.py` - Package exports
 - `clients.py` - Data client stubs (CMEGCClient)
 
-### `/feature-engine/`
+### `/feature_engine/`
 
 **Purpose:** Technical indicator and feature computation.
 
@@ -63,7 +63,7 @@ SCP/
 **Files:**
 - `__init__.py` - Package marker
 
-### `/rule-engine/`
+### `/rule_engine/`
 
 **Purpose:** SOP rule evaluation and trade scoring.
 
