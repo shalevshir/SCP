@@ -71,7 +71,7 @@ strict_equality = true
 exclude = ["tests/"]
 
 [tool.coverage.run]
-source = ["common", "src"]
+source = ["common", "data_layer", "src"]
 omit = ["tests/*", "*/test_*.py", "*/__pycache__/*"]
 
 [tool.coverage.report]
