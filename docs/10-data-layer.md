@@ -302,6 +302,101 @@ candles = client.fetch(start, end, "1m")
 assert candles == []
 ```
 
+### LocalCSVClient
+
+**Purpose:** Client for reading market data from local CSV files
+
+**Location:** `data_layer/clients.py`
+
+**Data Source:** Local file system (CSV files)
+
+#### Interface
+
+```python
+class LocalCSVClient:
+    def __init__(self, file_path: str | os.PathLike[str]) -> None:
+        """Initialize the Local CSV client stub.
+        
+        Args:
+            file_path: Path to CSV file (string or Path object)
+            
+        Raises:
+            DataSourceError: If file_path is invalid or empty
+        """
+        
+    def fetch(
+        self,
+        start: datetime,
+        end: datetime,
+        timeframe: str,
+    ) -> list[Candle]:
+        """Fetch candle data from local CSV file.
+        
+        Args:
+            start: Start datetime (must be timezone-aware UTC)
+            end: End datetime (must be timezone-aware UTC)
+            timeframe: Candle timeframe (e.g., "1m", "5m", "15m")
+            
+        Returns:
+            List of Candle objects. Currently returns empty list (stub).
+            
+        Raises:
+            DataSourceError: If validation fails
+        """
+```
+
+#### Validation
+
+The `__init__` method validates:
+1. `file_path` is a string or Path object
+2. `file_path` is not empty or whitespace-only
+
+The `fetch` method validates:
+1. Start datetime is timezone-aware
+2. End datetime is timezone-aware
+3. Start is before or equal to end
+4. Timeframe is not empty or whitespace-only
+
+All validation failures raise `DataSourceError` with `file_path` context.
+
+#### Usage
+
+```python
+from datetime import datetime, timezone
+from pathlib import Path
+from data_layer.clients import LocalCSVClient
+
+# Create client with string path
+client = LocalCSVClient("data/gold_futures_2025.csv")
+
+# Or with Path object
+client = LocalCSVClient(Path("data/gold_futures_2025.csv"))
+
+# Fetch data
+start = datetime(2025, 1, 1, 9, 0, tzinfo=timezone.utc)
+end = datetime(2025, 1, 1, 17, 0, tzinfo=timezone.utc)
+candles = client.fetch(start, end, "5m")
+
+# Phase 1: Returns empty list
+assert candles == []
+```
+
+#### Future Implementation
+
+In future phases, LocalCSVClient will:
+- Read and parse CSV files with OHLCV data
+- Support various CSV formats (standard, custom, vendor-specific)
+- Filter data by date range
+- Handle missing data and validate data quality
+- Support chunked reading for large files
+
+**Expected CSV Format (Future):**
+```csv
+timestamp,open,high,low,close,volume,symbol
+2025-01-01T09:00:00Z,2050.0,2055.0,2048.0,2052.0,1000,GC
+2025-01-01T09:05:00Z,2052.0,2057.0,2050.0,2055.0,1200,GC
+```
+
 ### TimeAligner
 
 **Purpose:** Align two candle data streams by timestamp for comparative analysis
@@ -444,20 +539,24 @@ for gc, dxy in aligned:
 
 ```python
 from datetime import datetime, timezone, timedelta
-from data_layer.clients import CMEGCClient, DXYIndexClient
+from data_layer.clients import CMEGCClient, DXYIndexClient, LocalCSVClient
 from common.types import Candle
 
 # Setup time range
 end = datetime.now(timezone.utc)
 start = end - timedelta(hours=1)
 
-# Fetch gold data
+# Fetch gold data from CME API
 gc_client = CMEGCClient()
 gc_candles = gc_client.fetch(start, end, "5m")
 
-# Fetch dollar index data
+# Fetch dollar index data from ICE
 dxy_client = DXYIndexClient()
 dxy_candles = dxy_client.fetch(start, end, "5m")
+
+# Or fetch from local CSV file
+csv_client = LocalCSVClient("data/historical_gold_2025.csv")
+csv_candles = csv_client.fetch(start, end, "5m")
 
 # Process candles (when clients return real data)
 for candle in gc_candles:

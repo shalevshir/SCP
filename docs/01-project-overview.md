@@ -33,7 +33,7 @@ Phase 1 establishes the technical backbone without any live indicators or trade 
 - ✅ Test framework configured (pytest, pytest-xdist, pytest-cov, Makefile)
 - ✅ Development tooling set up (linting, type checking, formatting)
 - ✅ Unified Candle data model with comprehensive validation
-- ✅ Data client stubs (CMEGCClient for Gold Futures, DXYIndexClient for Dollar Index)
+- ✅ Data client stubs (CMEGCClient for Gold Futures, DXYIndexClient for Dollar Index, LocalCSVClient for CSV files)
 - ✅ TimeAligner stub for synchronizing GC and DXY data streams
 - ✅ CI/CD pipeline with GitHub Actions (automated tests, linting, formatting checks)
 - ✅ PR automation: coverage reports and test results posted as comments on pull requests
