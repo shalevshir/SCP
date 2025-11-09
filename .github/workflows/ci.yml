@@ -31,7 +31,7 @@ jobs:
       - name: Install project dependencies
         run: |
           uv pip install --system -e .
-          uv pip install --system pytest pytest-xdist pytest-cov pyyaml
+          uv pip install --system pytest pytest-xdist pytest-cov pyyaml pydantic
       
       - name: Run tests with coverage
         run: |
@@ -94,8 +94,9 @@ jobs:
       - name: Install uv
         run: pip install uv
       
-      - name: Install linting dependencies
+      - name: Install project and linting dependencies
         run: |
+          uv pip install --system -e .
           uv pip install --system ruff mypy types-PyYAML
       
       - name: Run ruff linter
@@ -122,8 +123,9 @@ jobs:
       - name: Install uv
         run: pip install uv
       
-      - name: Install formatting tools
+      - name: Install project and formatting tools
         run: |
+          uv pip install --system -e .
           uv pip install --system black isort
       
       - name: Check black formatting
