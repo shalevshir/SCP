@@ -87,18 +87,20 @@ def test_normalize_already_sorted_candles(normalizer, valid_candle_1, valid_cand
     """Test that normalizing already-sorted candles preserves order."""
     candles = [valid_candle_1, valid_candle_2]
     result = normalizer.normalize(candles)
-    
+
     assert len(result) == 2
     assert result[0] == valid_candle_1
     assert result[1] == valid_candle_2
 
 
-def test_normalize_unsorted_candles(normalizer, valid_candle_1, valid_candle_2, valid_candle_3):
+def test_normalize_unsorted_candles(
+    normalizer, valid_candle_1, valid_candle_2, valid_candle_3
+):
     """Test that normalizing unsorted candles returns them in timestamp order."""
     # Input order: 12:00, 12:05, 11:55
     candles = [valid_candle_1, valid_candle_2, valid_candle_3]
     result = normalizer.normalize(candles)
-    
+
     # Expected order: 11:55, 12:00, 12:05
     assert len(result) == 3
     assert result[0] == valid_candle_3  # 11:55
@@ -106,12 +108,14 @@ def test_normalize_unsorted_candles(normalizer, valid_candle_1, valid_candle_2, 
     assert result[2] == valid_candle_2  # 12:05
 
 
-def test_normalize_reverse_sorted_candles(normalizer, valid_candle_1, valid_candle_2, valid_candle_3):
+def test_normalize_reverse_sorted_candles(
+    normalizer, valid_candle_1, valid_candle_2, valid_candle_3
+):
     """Test that normalizing reverse-sorted candles returns them in ascending order."""
     # Input order: 12:05, 12:00, 11:55
     candles = [valid_candle_2, valid_candle_1, valid_candle_3]
     result = normalizer.normalize(candles)
-    
+
     # Expected order: 11:55, 12:00, 12:05
     assert len(result) == 3
     assert result[0] == valid_candle_3  # 11:55
@@ -119,25 +123,29 @@ def test_normalize_reverse_sorted_candles(normalizer, valid_candle_1, valid_cand
     assert result[2] == valid_candle_2  # 12:05
 
 
-def test_normalize_logs_warning_for_unsorted_input(normalizer, valid_candle_1, valid_candle_2):
+def test_normalize_logs_warning_for_unsorted_input(
+    normalizer, valid_candle_1, valid_candle_2
+):
     """Test that normalizer logs a warning when input is unsorted."""
     with patch("data_layer.normalizer.logger") as mock_logger:
         # Input out of order: later candle first
         candles = [valid_candle_2, valid_candle_1]
         normalizer.normalize(candles)
-        
+
         # Verify warning was logged
         mock_logger.warning.assert_called_once()
         assert "out of order" in mock_logger.warning.call_args[0][0].lower()
 
 
-def test_normalize_does_not_log_for_sorted_input(normalizer, valid_candle_1, valid_candle_2):
+def test_normalize_does_not_log_for_sorted_input(
+    normalizer, valid_candle_1, valid_candle_2
+):
     """Test that normalizer does not log warning when input is already sorted."""
     with patch("data_layer.normalizer.logger") as mock_logger:
         # Input in correct order
         candles = [valid_candle_1, valid_candle_2]
         normalizer.normalize(candles)
-        
+
         # Verify no warnings were logged
         mock_logger.warning.assert_not_called()
 
@@ -166,14 +174,14 @@ def test_normalize_detects_duplicate_timestamps(normalizer):
         timeframe="5m",
         source="CME",
     )
-    
+
     with patch("data_layer.normalizer.logger") as mock_logger:
         candles = [duplicate_candle_1, duplicate_candle_2]
         result = normalizer.normalize(candles)
-        
+
         # Both candles should still be returned
         assert len(result) == 2
-        
+
         # Verify warning was logged about duplicates
         mock_logger.warning.assert_called_once()
         assert "duplicate" in mock_logger.warning.call_args[0][0].lower()
@@ -203,14 +211,14 @@ def test_normalize_allows_same_timestamp_different_symbols(normalizer):
         timeframe="5m",
         source="ICE",
     )
-    
+
     with patch("data_layer.normalizer.logger") as mock_logger:
         candles = [gc_candle, dxy_candle]
         result = normalizer.normalize(candles)
-        
+
         # Both candles should be returned
         assert len(result) == 2
-        
+
         # No duplicate warning should be logged (different symbols)
         mock_logger.warning.assert_not_called()
 
@@ -219,21 +227,23 @@ def test_normalize_preserves_candle_immutability(normalizer, valid_candle_1):
     """Test that normalize does not modify the input candles."""
     original_timestamp = valid_candle_1.timestamp
     original_open = valid_candle_1.open
-    
+
     result = normalizer.normalize([valid_candle_1])
-    
+
     # Original candle should be unchanged
     assert valid_candle_1.timestamp == original_timestamp
     assert valid_candle_1.open == original_open
 
 
-def test_normalize_does_not_modify_input_list(normalizer, valid_candle_1, valid_candle_2):
+def test_normalize_does_not_modify_input_list(
+    normalizer, valid_candle_1, valid_candle_2
+):
     """Test that normalize does not modify the input list."""
     original_candles = [valid_candle_2, valid_candle_1]
     original_order = list(original_candles)
-    
+
     result = normalizer.normalize(original_candles)
-    
+
     # Input list should be unchanged
     assert original_candles == original_order
     # Result should be sorted
@@ -287,14 +297,14 @@ def test_normalize_handles_multiple_duplicates(normalizer):
         timeframe="5m",
         source="CME",
     )
-    
+
     with patch("data_layer.normalizer.logger") as mock_logger:
         candles = [candle_1a, candle_1b, candle_2a, candle_2b]
         result = normalizer.normalize(candles)
-        
+
         # All candles should be returned
         assert len(result) == 4
-        
+
         # Should log warnings about duplicates
         assert mock_logger.warning.call_count >= 1
 
@@ -334,16 +344,16 @@ def test_normalize_with_mixed_symbols_sorted(normalizer):
         timeframe="5m",
         source="CME",
     )
-    
+
     # Input out of order
     candles = [gc_late, gc_early, dxy_middle]
     result = normalizer.normalize(candles)
-    
+
     # Should be sorted by timestamp regardless of symbol
     assert len(result) == 3
-    assert result[0] == gc_early    # 12:00
+    assert result[0] == gc_early  # 12:00
     assert result[1] == dxy_middle  # 12:05
-    assert result[2] == gc_late     # 12:10
+    assert result[2] == gc_late  # 12:10
 
 
 def test_normalize_does_not_modify_candle_fields(normalizer):
@@ -359,9 +369,9 @@ def test_normalize_does_not_modify_candle_fields(normalizer):
         timeframe="5m",
         source="CME",
     )
-    
+
     result = normalizer.normalize([original])
-    
+
     # All fields should be exactly the same
     assert result[0].timestamp == original.timestamp
     assert result[0].open == original.open
@@ -372,4 +382,3 @@ def test_normalize_does_not_modify_candle_fields(normalizer):
     assert result[0].symbol == original.symbol
     assert result[0].timeframe == original.timeframe
     assert result[0].source == original.source
-

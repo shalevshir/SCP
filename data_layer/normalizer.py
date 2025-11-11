@@ -101,4 +101,3 @@ class DataNormalizer:
                     f"Found {count} duplicate candles for symbol '{symbol}' "
                     f"at timestamp {timestamp}"
                 )
-
