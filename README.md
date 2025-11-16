@@ -85,7 +85,9 @@ Comprehensive documentation is available in the [`docs/`](./docs/) directory:
 - [Development Workflow](./docs/05-development-workflow.md) - TDD practices and coding standards
 - [Testing](./docs/06-testing.md) - Test framework and conventions
 - [Data Layer Guide](./docs/10-data-layer.md) - OHLCV data structures and clients
-- [**Feature Engine Guide**](./docs/11-feature-engine.md) - **VWAP and technical indicators** ⭐
+- [**Feature Engine**](./docs/feature-engine/README.md) - **Technical indicators** ⭐
+  - [VWAP](./docs/feature-engine/vwap.md) - Volume-Weighted Average Price
+  - [RSI](./docs/feature-engine/rsi.md) - Relative Strength Index
 
 ## Development Principles
 

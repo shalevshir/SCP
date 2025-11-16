@@ -14,7 +14,9 @@ This directory contains documentation for the Shir Capital Partners Trading Bot 
 - [Logging Guide](./08-logging.md) - Logging system setup and best practices
 - [Error Handling Guide](./09-error-handling.md) - Exception hierarchy and error handling patterns
 - [Data Layer Guide](./10-data-layer.md) - Candle data model and client stubs
-- [Feature Engine Guide](./11-feature-engine.md) - Technical indicators (VWAP, RSI, EMA)
+- [**Feature Engine**](./feature-engine/README.md) - Technical indicators and features
+  - [VWAP](./feature-engine/vwap.md) - Volume-Weighted Average Price
+  - [RSI](./feature-engine/rsi.md) - Relative Strength Index
 
 ## Phase 1 Status
 
