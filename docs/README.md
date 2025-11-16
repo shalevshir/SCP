@@ -18,6 +18,7 @@ This directory contains documentation for the Shir Capital Partners Trading Bot 
   - [VWAP](./feature-engine/vwap.md) - Volume-Weighted Average Price
   - [RSI](./feature-engine/rsi.md) - Relative Strength Index
   - [EMA](./feature-engine/ema.md) - Exponential Moving Average
+  - [DXY Correlation](./feature-engine/dxy-correlation.md) - Gold-Dollar correlation
 
 ## Phase 1 Status
 

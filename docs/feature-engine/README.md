@@ -72,11 +72,30 @@ emas = calculate_ema_multiple(df, periods=[9, 20, 50])
 
 ---
 
+### ✅ [DXY Correlation](./dxy-correlation.md)
+**Purpose:** Measure relationship between Gold and Dollar Index for market environment analysis
+
+**Key Features:**
+- Rolling Pearson correlation (default window 50)
+- Inner join alignment (handles mismatches safely)
+- Negative correlation validation (< -0.6 on inverse segments)
+- Tested on 1m and 15m timeframes
+- Fully vectorized implementation
+
+**Usage:**
+```python
+from feature_engine import calculate_dxy_correlation
+correlation = calculate_dxy_correlation(gc_df, dxy_df, window=50)
+```
+
+[📖 Full DXY Correlation Documentation](./dxy-correlation.md)
+
+---
+
 ## Planned Indicators (Phase 2)
 
 The following indicators are under development:
 
-- **DXY Correlation** - Dollar index relationship analysis
 - **ATR (Average True Range)** - Volatility measurement for position sizing
 
 Each new indicator will follow the same patterns established by VWAP and RSI:

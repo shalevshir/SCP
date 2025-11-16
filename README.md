@@ -58,7 +58,7 @@ make help
 ## Quick Example: Feature Engine
 
 ```python
-from feature_engine import calculate_vwap, calculate_rsi, calculate_ema
+from feature_engine import calculate_vwap, calculate_rsi, calculate_ema, calculate_dxy_correlation
 import pandas as pd
 
 # Load OHLCV data
@@ -68,12 +68,14 @@ df = pd.read_csv('data/gc_dx_ohlcv/GC_ohlcv-1m.csv', parse_dates=['ts_event'])
 df['vwap'] = calculate_vwap(df, session_reset=True)   # Structure
 df['rsi'] = calculate_rsi(df, period=14)              # Momentum
 df['ema_20'] = calculate_ema(df, period=20)           # Trend
+df['dxy_correlation'] = calculate_dxy_correlation(gc_df, dxy_df, window=50)  # Environment
 
-# SOP-aligned signal: Structure + Trend + Momentum
+# SOP-aligned signal: Structure + Trend + Momentum + Environment
 df['long_setup'] = (
     (df['close'] > df['vwap']) &      # Above VWAP (structure)
     (df['close'] > df['ema_20']) &    # Above EMA (trend)
-    (df['rsi'] > 30) & (df['rsi'] < 70)  # RSI healthy (momentum)
+    (df['rsi'] > 30) & (df['rsi'] < 70) &  # RSI healthy (momentum)
+    (df['dxy_correlation'] < -0.6)    # Strong negative correlation (environment)
 )
 ```
 
@@ -94,6 +96,7 @@ Comprehensive documentation is available in the [`docs/`](./docs/) directory:
   - [VWAP](./docs/feature-engine/vwap.md) - Volume-Weighted Average Price
   - [RSI](./docs/feature-engine/rsi.md) - Relative Strength Index
   - [EMA](./docs/feature-engine/ema.md) - Exponential Moving Average
+  - [DXY Correlation](./docs/feature-engine/dxy-correlation.md) - Gold-Dollar correlation
 
 ## Development Principles
 
