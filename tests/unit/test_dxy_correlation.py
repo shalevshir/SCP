@@ -227,17 +227,117 @@ class TestDXYCorrelation:
         # All values should be NaN (need at least window rows)
         assert result.isna().all()
 
-    def test_dxy_correlation_missing_columns(self) -> None:
-        """Test DXY correlation with missing required columns."""
+    def test_dxy_correlation_invalid_window(self) -> None:
+        """Test DXY correlation with invalid window size."""
+        gc_df = pd.DataFrame(
+            {"ts_event": pd.to_datetime(["2025-01-01 09:00"]), "close": [2000.0]}
+        )
+        dxy_df = pd.DataFrame(
+            {"ts_event": pd.to_datetime(["2025-01-01 09:00"]), "close": [100.0]}
+        )
+
+        # Window < 2 should raise ValueError
+        with pytest.raises(ValueError, match="window must be >= 2"):
+            calculate_dxy_correlation(gc_df, dxy_df, window=1)
+
+        with pytest.raises(ValueError, match="window must be >= 2"):
+            calculate_dxy_correlation(gc_df, dxy_df, window=0)
+
+        with pytest.raises(ValueError, match="window must be >= 2"):
+            calculate_dxy_correlation(gc_df, dxy_df, window=-5)
+
+    def test_dxy_correlation_missing_gc_timestamp_column(self) -> None:
+        """Test DXY correlation with missing timestamp column in GC DataFrame."""
+        gc_df = pd.DataFrame({"open": [2000.0], "close": [2001.0]})
+        dxy_df = pd.DataFrame(
+            {"ts_event": pd.to_datetime(["2025-01-01 09:00"]), "close": [100.0]}
+        )
+
+        # Missing ts_event column in GC DataFrame
+        with pytest.raises(
+            ValueError, match="Column 'ts_event' not found in GC DataFrame"
+        ):
+            calculate_dxy_correlation(gc_df, dxy_df, window=5)
+
+    def test_dxy_correlation_missing_dxy_timestamp_column(self) -> None:
+        """Test DXY correlation with missing timestamp column in DXY DataFrame."""
+        gc_df = pd.DataFrame(
+            {"ts_event": pd.to_datetime(["2025-01-01 09:00"]), "close": [2000.0]}
+        )
+        dxy_df = pd.DataFrame({"open": [100.0], "close": [99.9]})
+
+        # Missing ts_event column in DXY DataFrame
+        with pytest.raises(
+            ValueError, match="Column 'ts_event' not found in DXY DataFrame"
+        ):
+            calculate_dxy_correlation(gc_df, dxy_df, window=5)
+
+    def test_dxy_correlation_missing_gc_price_column(self) -> None:
+        """Test DXY correlation with missing price column in GC DataFrame."""
         gc_df = pd.DataFrame(
             {"ts_event": pd.to_datetime(["2025-01-01 09:00"]), "open": [2000.0]}
+        )
+        dxy_df = pd.DataFrame(
+            {"ts_event": pd.to_datetime(["2025-01-01 09:00"]), "close": [100.0]}
+        )
+
+        # Missing close column in GC DataFrame
+        with pytest.raises(
+            ValueError, match="Column 'close' not found in GC DataFrame"
+        ):
+            calculate_dxy_correlation(gc_df, dxy_df, window=5)
+
+    def test_dxy_correlation_missing_dxy_price_column(self) -> None:
+        """Test DXY correlation with missing price column in DXY DataFrame."""
+        gc_df = pd.DataFrame(
+            {"ts_event": pd.to_datetime(["2025-01-01 09:00"]), "close": [2000.0]}
         )
         dxy_df = pd.DataFrame(
             {"ts_event": pd.to_datetime(["2025-01-01 09:00"]), "open": [100.0]}
         )
 
-        # Missing close column
-        with pytest.raises(ValueError, match="Column 'close' not found"):
+        # Missing close column in DXY DataFrame
+        with pytest.raises(
+            ValueError, match="Column 'close' not found in DXY DataFrame"
+        ):
+            calculate_dxy_correlation(gc_df, dxy_df, window=5)
+
+    def test_dxy_correlation_invalid_gc_timestamp_format(self) -> None:
+        """Test DXY correlation with invalid timestamp format in GC DataFrame."""
+        gc_df = pd.DataFrame(
+            {
+                "ts_event": ["not-a-valid-timestamp", "also-invalid"],
+                "close": [2000.0, 2001.0],
+            }
+        )
+        dxy_df = pd.DataFrame(
+            {"ts_event": pd.to_datetime(["2025-01-01 09:00"]), "close": [100.0]}
+        )
+
+        # Invalid timestamp format in GC DataFrame should raise ValueError
+        with pytest.raises(
+            ValueError,
+            match="Could not parse 'ts_event' as datetime in GC DataFrame",
+        ):
+            calculate_dxy_correlation(gc_df, dxy_df, window=5)
+
+    def test_dxy_correlation_invalid_dxy_timestamp_format(self) -> None:
+        """Test DXY correlation with invalid timestamp format in DXY DataFrame."""
+        gc_df = pd.DataFrame(
+            {"ts_event": pd.to_datetime(["2025-01-01 09:00"]), "close": [2000.0]}
+        )
+        dxy_df = pd.DataFrame(
+            {
+                "ts_event": ["not-a-valid-timestamp", "also-invalid"],
+                "close": [100.0, 99.9],
+            }
+        )
+
+        # Invalid timestamp format in DXY DataFrame should raise ValueError
+        with pytest.raises(
+            ValueError,
+            match="Could not parse 'ts_event' as datetime in DXY DataFrame",
+        ):
             calculate_dxy_correlation(gc_df, dxy_df, window=5)
 
     def test_dxy_correlation_empty_dataframes(self) -> None:
