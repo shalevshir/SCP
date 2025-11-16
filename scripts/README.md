@@ -88,6 +88,45 @@ Supported frequencies: `5min`, `15min`, `30min`, `1H`, `4H`, `1D` - any pandas f
 
 ---
 
+## Data Management
+
+### Committed Data
+
+To keep the repository size manageable, **only 1-minute OHLCV files are committed**:
+- `data/gc_dx_ohlcv/GC_ohlcv-1m.csv` (~2.0 MB)
+- `data/gc_dx_ohlcv/DX_ohlcv-1m.csv` (~428 KB)
+
+These files are sufficient for running tests and serve as the base for generating other timeframes.
+
+### Excluded Data (Regenerate as Needed)
+
+The following files are **excluded from git** (see `.gitignore`) to avoid repo bloat:
+- `*-1s.csv` files (1-second data, ~18 MB total)
+- `*-15m.csv` files (15-minute data)
+- `*-1h.csv` files (1-hour data)
+
+### Regenerating Excluded Timeframes
+
+If you need other timeframes, regenerate them locally:
+
+**Option 1: Fetch from Databento (requires API key)**
+```bash
+export DATABENTO_API_KEY="your-key"
+python scripts/fetch_gc_dx_ohlcv_to_csv.py
+```
+
+**Option 2: Resample from 1-minute data (no API key needed)**
+```bash
+# Generate 15-minute bars from committed 1m data
+python scripts/resample_ohlcv_to_15m.py
+
+# For other timeframes, modify the RESAMPLE_FREQUENCY in the script
+```
+
+This approach keeps the repo lean while maintaining test data availability.
+
+---
+
 ## Environment Variables
 
 **For `fetch_gc_dx_ohlcv_to_csv.py`:**
