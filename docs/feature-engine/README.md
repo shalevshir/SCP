@@ -72,11 +72,61 @@ emas = calculate_ema_multiple(df, periods=[9, 20, 50])
 
 ---
 
+### ✅ [DXY Correlation](./dxy-correlation.md)
+**Purpose:** Measure relationship between Gold and Dollar Index for market environment analysis
+
+**Key Features:**
+- Rolling Pearson correlation (default window 50)
+- Inner join alignment (handles mismatches safely)
+- Negative correlation validation (< -0.6 on inverse segments)
+- Tested on 1m and 15m timeframes
+- Fully vectorized implementation
+
+**Usage:**
+```python
+from feature_engine import calculate_dxy_correlation
+correlation = calculate_dxy_correlation(gc_df, dxy_df, window=50)
+```
+
+[📖 Full DXY Correlation Documentation](./dxy-correlation.md)
+
+---
+
+### ✅ [Feature Engine Aggregator](./aggregator.md)
+**Purpose:** Combine all indicators into a unified DataFrame with modular configuration
+
+**Key Features:**
+- Unified interface for all indicators
+- Modular configuration (enable/disable indicators, custom parameters)
+- Automatic GC/DXY alignment
+- Timeframe validation (["1s", "1m", "15m", "1h"])
+- Index preservation and type safety
+
+**Usage:**
+```python
+from feature_engine import aggregate_features
+
+# All indicators with defaults
+features = aggregate_features(gc_df, dxy_df, "1m")
+
+# Custom configuration
+indicators = {
+    "vwap": True,
+    "rsi": {"period": 21},
+    "ema": {"periods": [10, 30]},
+    "dxy_correlation": False
+}
+features = aggregate_features(gc_df, dxy_df, "1m", indicators=indicators)
+```
+
+[📖 Full Aggregator Documentation](./aggregator.md)
+
+---
+
 ## Planned Indicators (Phase 2)
 
 The following indicators are under development:
 
-- **DXY Correlation** - Dollar index relationship analysis
 - **ATR (Average True Range)** - Volatility measurement for position sizing
 
 Each new indicator will follow the same patterns established by VWAP and RSI:
