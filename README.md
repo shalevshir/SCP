@@ -18,23 +18,73 @@ A systematic trading bot built with Python, following strict TDD practices and i
 
 ## Quickstart
 
-```bash
-# Install dependencies (choose one)
-poetry install --no-root  # Using Poetry
-# or
-uv sync                   # Using uv
+### Setup
 
+```bash
+# Clone the repository
+git clone <repository-url>
+cd SCP
+
+# Install Poetry (if not already installed)
+curl -sSL https://install.python-poetry.org | python3 -
+# or
+pip install poetry
+
+# Install all dependencies (including dev dependencies)
+poetry install
+
+# Verify installation
+poetry run pytest --version
+
+# Note: poetry.lock is committed to ensure reproducible builds
+# This file should be kept in version control
+```
+
+### Development Workflow
+
+```bash
 # Run tests
+poetry run pytest
+# or
 make test
 
 # Run tests with coverage
+poetry run pytest --cov=feature_engine --cov=common
+# or
 make test-coverage
+
+# Run linting
+poetry run ruff check .
+poetry run mypy .
 
 # Run all checks (lint + test)
 make check
 
+# Format code
+poetry run black .
+poetry run isort .
+
 # See all available commands
 make help
+```
+
+### Using Poetry Commands
+
+```bash
+# Add a new dependency
+poetry add package-name
+
+# Add a dev dependency
+poetry add --group dev package-name
+
+# Update dependencies
+poetry update
+
+# Show installed packages
+poetry show
+
+# Run any command in Poetry's environment
+poetry run <command>
 ```
 
 ## Layout

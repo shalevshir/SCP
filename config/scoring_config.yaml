@@ -1,0 +1,120 @@
+# RuleEngine Scoring Configuration
+# Defines scoring weights and thresholds for different setup types
+# following Shir Capital SOP requirements
+
+# Setup type configurations
+# Each setup has:
+#   - min_score: Minimum score required for A+ confidence
+#   - weights: Dict of factor names to point values (max 10 total)
+
+setup_types:
+  # VWAP Reclaim: Continuation setup when price reclaims VWAP
+  VWAP_RECLAIM:
+    min_score: 8
+    weights:
+      structure_alignment: 2  # Price action matches HTF bias
+      vwap_relation: 2        # Consistent with trend
+      rsi_state: 2            # Mid-reset continuation
+      ema_stack: 2            # 9>20>50 or reverse
+      dxy_corr: 2             # Inverse correlation intact (<-0.6)
+      htf_bonus: 1            # HTF bias score ≥8
+
+  # VWAP Fade: Counter-trend setup at extreme deviation
+  VWAP_FADE:
+    min_score: 9              # Higher threshold for fades
+    weights:
+      vwap_deviation: 3       # Significant deviation from VWAP
+      rsi_extreme: 3          # RSI at overbought/oversold
+      rejection_candle: 2     # Strong rejection candle pattern
+      volume_spike: 2         # Volume confirmation
+
+  # DXY Continuation: Gold trade aligned with DXY inverse correlation
+  DXY_CONTINUATION:
+    min_score: 8
+    weights:
+      structure_alignment: 2  # Price action matches HTF bias
+      dxy_corr: 3             # Strong inverse correlation (primary factor)
+      rsi_mid_reset: 2        # RSI in continuation zone
+      vwap_relation: 2        # VWAP support/resistance
+      ema_stack: 1            # EMA alignment bonus
+
+# Confidence thresholds (global)
+confidence:
+  a_plus: 8.0      # Score >= 8.0 -> A+ (tradeable)
+  watch: 6.0       # Score 6.0-7.9 -> Watch (monitor only)
+  reject: 0.0      # Score < 6.0 -> Reject (invalid)
+
+# SOP validation requirements
+validation:
+  # DXY correlation threshold for Gold trades
+  dxy_corr_threshold: -0.6  # Must be < -0.6 for valid inverse correlation
+  
+  # Valid trading sessions (hours in UTC)
+  sessions:
+    - name: "London Open"
+      start: "07:00"
+      end: "09:00"
+    - name: "New York Open"
+      start: "13:30"
+      end: "16:00"
+  
+  # Enforcer tiers and their allowed setup types
+  tiers:
+    Conservative:
+      allowed_setups: ["VWAP_RECLAIM", "DXY_CONTINUATION"]
+      max_trades_per_day: 2
+    Early Mild:
+      allowed_setups: ["VWAP_RECLAIM", "DXY_CONTINUATION"]
+      max_trades_per_day: 2
+    Mild:
+      allowed_setups: ["VWAP_RECLAIM", "VWAP_FADE", "DXY_CONTINUATION"]
+      max_trades_per_day: 3
+    Offensive:
+      allowed_setups: ["VWAP_RECLAIM", "VWAP_FADE", "DXY_CONTINUATION"]
+      max_trades_per_day: 4
+
+# Factor scoring logic definitions
+# These guide how individual factors are evaluated
+factors:
+  structure_alignment:
+    description: "Price action matches HTF bias"
+    max_points: 2
+    criteria:
+      - "Direction matches HTF bias (bullish/bearish)"
+      - "Recent swing structure intact (HH/HL or LH/LL)"
+  
+  vwap_relation:
+    description: "VWAP position consistent with trend"
+    max_points: 2
+    criteria:
+      - "Long: Price above VWAP with confirmation"
+      - "Short: Price below VWAP with confirmation"
+  
+  rsi_state:
+    description: "RSI in optimal zone for setup type"
+    max_points: 2
+    criteria:
+      - "Continuation: RSI 40-60 (mid-reset)"
+      - "Fade: RSI <30 or >70 (extreme)"
+  
+  ema_stack:
+    description: "EMA alignment confirms trend"
+    max_points: 2
+    criteria:
+      - "Bullish: EMA9 > EMA20 > EMA50"
+      - "Bearish: EMA9 < EMA20 < EMA50"
+  
+  dxy_corr:
+    description: "DXY inverse correlation for Gold"
+    max_points: 2
+    criteria:
+      - "Correlation coefficient < -0.6"
+      - "DXY trend opposite to Gold direction"
+  
+  htf_bonus:
+    description: "Higher timeframe bias bonus"
+    max_points: 1
+    criteria:
+      - "HTF bias score ≥ 8/10"
+      - "HTF structure strongly aligned"
+
