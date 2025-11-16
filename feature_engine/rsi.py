@@ -73,7 +73,7 @@ def calculate_rsi(
     gains = delta.clip(lower=0)  # Positive changes only
     losses = -delta.clip(upper=0)  # Negative changes (made positive)
 
-     # Initialize result series with NaN
+    # Initialize result series with NaN
     rsi = pd.Series(index=df.index, dtype=np.float64)
 
     # Not enough data to calculate RSI
@@ -111,4 +111,3 @@ def calculate_rsi(
             rsi.iloc[i] = 100.0 - (100.0 / (1.0 + rs))
 
     return rsi
-
