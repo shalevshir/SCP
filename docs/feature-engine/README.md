@@ -92,6 +92,37 @@ correlation = calculate_dxy_correlation(gc_df, dxy_df, window=50)
 
 ---
 
+### ✅ [Feature Engine Aggregator](./aggregator.md)
+**Purpose:** Combine all indicators into a unified DataFrame with modular configuration
+
+**Key Features:**
+- Unified interface for all indicators
+- Modular configuration (enable/disable indicators, custom parameters)
+- Automatic GC/DXY alignment
+- Timeframe validation (["1s", "1m", "15m", "1h"])
+- Index preservation and type safety
+
+**Usage:**
+```python
+from feature_engine import aggregate_features
+
+# All indicators with defaults
+features = aggregate_features(gc_df, dxy_df, "1m")
+
+# Custom configuration
+indicators = {
+    "vwap": True,
+    "rsi": {"period": 21},
+    "ema": {"periods": [10, 30]},
+    "dxy_correlation": False
+}
+features = aggregate_features(gc_df, dxy_df, "1m", indicators=indicators)
+```
+
+[📖 Full Aggregator Documentation](./aggregator.md)
+
+---
+
 ## Planned Indicators (Phase 2)
 
 The following indicators are under development:
