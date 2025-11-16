@@ -55,24 +55,29 @@ make help
 - `/data/`: Market data storage (GC/DXY OHLCV)
 - `/tests/`: Comprehensive test suite (unit, integration, e2e)
 
-## Quick Example: VWAP
+## Quick Example: Feature Engine
 
 ```python
-from feature_engine import calculate_vwap
+from feature_engine import calculate_vwap, calculate_rsi, calculate_ema
 import pandas as pd
 
 # Load OHLCV data
 df = pd.read_csv('data/gc_dx_ohlcv/GC_ohlcv-1m.csv', parse_dates=['ts_event'])
 
-# Calculate VWAP with daily session resets
-df['vwap'] = calculate_vwap(df, session_reset=True)
+# Calculate SOP indicators
+df['vwap'] = calculate_vwap(df, session_reset=True)   # Structure
+df['rsi'] = calculate_rsi(df, period=14)              # Momentum
+df['ema_20'] = calculate_ema(df, period=20)           # Trend
 
-# Analyze price vs VWAP
-df['above_vwap'] = df['close'] > df['vwap']
-df['deviation'] = ((df['close'] - df['vwap']) / df['vwap']) * 100
+# SOP-aligned signal: Structure + Trend + Momentum
+df['long_setup'] = (
+    (df['close'] > df['vwap']) &      # Above VWAP (structure)
+    (df['close'] > df['ema_20']) &    # Above EMA (trend)
+    (df['rsi'] > 30) & (df['rsi'] < 70)  # RSI healthy (momentum)
+)
 ```
 
-See [Feature Engine Guide](./docs/11-feature-engine.md) for complete API documentation and examples.
+See [Feature Engine Guide](./docs/feature-engine/README.md) for complete API documentation and examples.
 
 ## Documentation
 
@@ -88,6 +93,7 @@ Comprehensive documentation is available in the [`docs/`](./docs/) directory:
 - [**Feature Engine**](./docs/feature-engine/README.md) - **Technical indicators** ⭐
   - [VWAP](./docs/feature-engine/vwap.md) - Volume-Weighted Average Price
   - [RSI](./docs/feature-engine/rsi.md) - Relative Strength Index
+  - [EMA](./docs/feature-engine/ema.md) - Exponential Moving Average
 
 ## Development Principles
 

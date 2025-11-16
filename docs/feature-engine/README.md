@@ -51,11 +51,31 @@ df['rsi'] = calculate_rsi(df, period=14)
 
 ---
 
+### ✅ [EMA (Exponential Moving Average)](./ema.md)
+**Purpose:** Identify trends and generate trading signals
+
+**Key Features:**
+- Gives more weight to recent prices
+- SOP periods: 9 (fast), 20 (medium), 50 (slow)
+- ±0.01 precision vs TA-Lib
+- Fully vectorized (pandas .ewm())
+- Multiple EMA helper function
+
+**Usage:**
+```python
+from feature_engine import calculate_ema, calculate_ema_multiple
+df['ema_20'] = calculate_ema(df, period=20)
+emas = calculate_ema_multiple(df, periods=[9, 20, 50])
+```
+
+[📖 Full EMA Documentation](./ema.md)
+
+---
+
 ## Planned Indicators (Phase 2)
 
 The following indicators are under development:
 
-- **EMA (Exponential Moving Average)** - Trend identification (9, 20, 50 periods)
 - **DXY Correlation** - Dollar index relationship analysis
 - **ATR (Average True Range)** - Volatility measurement for position sizing
 
