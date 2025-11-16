@@ -1,19 +1,6 @@
-# Feature Engine Guide
+# VWAP (Volume-Weighted Average Price)
 
-The Feature Engine module provides technical indicators and feature calculations for market analysis. All indicators are designed to work with OHLCV DataFrame structures and follow consistent API patterns.
-
-## Overview
-
-The Feature Engine calculates technical indicators required by the Rule Engine for trade signal generation. Each indicator:
-- Accepts pandas DataFrames with standardized OHLCV columns
-- Returns pandas Series with the same index as input
-- Handles edge cases (NaN, zero volume, missing data)
-- Supports session-based calculations where applicable
-- Is thoroughly tested with ≥99% correlation to industry benchmarks
-
-## Available Indicators
-
-### VWAP (Volume-Weighted Average Price)
+[← Back to Feature Engine](./README.md)
 
 **Purpose:** Calculate the volume-weighted average price, a key indicator for identifying fair value and institutional order flow.
 
@@ -219,62 +206,5 @@ ltf_vwap = calculate_vwap(df_1m, session_reset=True)
    - VWAP feeds into SOP scoring (structure confirmation)
    - Combine with DXY correlation and RSI for complete signal
 
-## Future Indicators
-
-The following indicators are planned for Phase 2:
-
-- **RSI (Relative Strength Index)** - Momentum and overbought/oversold conditions
-- **EMA (Exponential Moving Average)** - Trend identification (9, 20, 50 periods)
-- **DXY Correlation** - Dollar index relationship analysis
-- **ATR (Average True Range)** - Volatility measurement for position sizing
-
-Each indicator will follow the same patterns established by VWAP:
-- Standardized DataFrame input/Series output
-- Comprehensive edge case handling
-- ≥99% correlation validation
-- Full test coverage
-
-## Troubleshooting
-
-**Issue:** `ValueError: Missing required columns`
-```python
-# Solution: Verify DataFrame has all required columns
-required = {'high', 'low', 'close', 'volume'}
-missing = required - set(df.columns)
-print(f"Missing columns: {missing}")
-```
-
-**Issue:** VWAP not resetting at session boundaries
-```python
-# Solution: Check timestamp column is datetime type
-print(df['ts_event'].dtype)  # Should be datetime64[ns]
-df['ts_event'] = pd.to_datetime(df['ts_event'])
-```
-
-**Issue:** NaN values in VWAP output
-```python
-# Solution: Check for all-zero volume or all-NaN prices
-print(f"Zero volume rows: {(df['volume'] == 0).sum()}")
-print(f"NaN prices: {df[['high', 'low', 'close']].isna().sum()}")
-```
-
-## Contributing
-
-When adding new indicators to the Feature Engine:
-
-1. Follow TDD: Write failing tests first
-2. Validate against industry benchmarks (≥99% correlation)
-3. Handle all edge cases (NaN, zero, single row, etc.)
-4. Document API with examples
-5. Add to this documentation
-6. Update `feature_engine/__init__.py` exports
-
-See [Development Workflow](./05-development-workflow.md) for full TDD guidelines.
-
 ---
-
-**Related Documentation:**
-- [Data Layer Guide](./10-data-layer.md) - OHLCV data structure
-- [Testing Guide](./06-testing.md) - Test framework and practices
-- [Development Workflow](./05-development-workflow.md) - TDD methodology
 
