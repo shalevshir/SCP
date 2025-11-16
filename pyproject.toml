@@ -16,7 +16,7 @@ packages = [
 python = ">=3.11,<3.13"
 pyyaml = "^6.0.2"
 pydantic = "^2.9.0"
-pandas = "^2.2.0"
+pandas = "^2.0.3"
 numpy = "^1.26.0"
 
 [tool.poetry.group.dev.dependencies]
@@ -28,6 +28,7 @@ ruff = "^0.6.9"
 black = "^24.8.0"
 isort = "^5.13.2"
 types-PyYAML = "^6.0.12"
+pandas-stubs = "^2.1.4"
 
 [build-system]
 requires = ["poetry-core"]
