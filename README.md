@@ -5,14 +5,14 @@
 A systematic trading bot built with Python, following strict TDD practices and institutional-grade architecture.
 
 **Current Phase:** Phase 2 - Feature Engine & Rule Engine  
-**Status:** VWAP Implementation Complete ✅
+**Status:** Feature Engine Complete ✅ (VWAP, RSI, EMA, DXY Correlation, Aggregator)
 
 ## Key Features
 
-- ✅ **VWAP Calculator** - Production-ready volume-weighted average price with session resets
-- 🏗️ Technical Indicators (RSI, EMA, DXY correlation) - In Progress
+- ✅ **Feature Engine** - Complete SOP indicator suite (VWAP, RSI, EMA, DXY correlation, unified aggregator)
+- 🏗️ Rule Engine - Next phase (SOP scoring and signal generation)
 - 📊 Clean architecture with typed modules
-- ✅ Comprehensive test coverage (145+ tests)
+- ✅ Comprehensive test coverage (220+ tests, all passing)
 - 🔧 Full development tooling: black, isort, ruff, mypy (strict)
 - 📝 Extensive documentation
 
@@ -97,7 +97,7 @@ poetry run <command>
 ## Module Map
 
 - `/data_layer/`: Data connectors and normalization (Candle model, client stubs, TimeAligner)
-- `/feature_engine/`: ✅ **VWAP** implemented | RSI, EMA, DXY correlation (planned)
+- `/feature_engine/`: ✅ **VWAP, RSI, EMA, DXY Correlation, Aggregator** (all complete)
 - `/rule_engine/`: SOP rule evaluation and scoring (stubs)
 - `/backtester/`: Backtesting shell and integration (stubs)
 - `/common/`: Shared utilities, types, logging, config, exceptions
@@ -108,25 +108,45 @@ poetry run <command>
 ## Quick Example: Feature Engine
 
 ```python
-from feature_engine import calculate_vwap, calculate_rsi, calculate_ema, calculate_dxy_correlation
+from feature_engine import aggregate_features
 import pandas as pd
 
 # Load OHLCV data
-df = pd.read_csv('data/gc_dx_ohlcv/GC_ohlcv-1m.csv', parse_dates=['ts_event'])
+gc_df = pd.read_csv('data/gc_dx_ohlcv/GC_ohlcv-1m.csv', parse_dates=['ts_event'])
+dxy_df = pd.read_csv('data/gc_dx_ohlcv/DX_ohlcv-1m.csv', parse_dates=['ts_event'])
 
-# Calculate SOP indicators
-df['vwap'] = calculate_vwap(df, session_reset=True)   # Structure
-df['rsi'] = calculate_rsi(df, period=14)              # Momentum
-df['ema_20'] = calculate_ema(df, period=20)           # Trend
-df['dxy_correlation'] = calculate_dxy_correlation(gc_df, dxy_df, window=50)  # Environment
+# Aggregate all SOP indicators with one call
+features = aggregate_features(gc_df, dxy_df, timeframe="1m")
 
-# SOP-aligned signal: Structure + Trend + Momentum + Environment
-df['long_setup'] = (
-    (df['close'] > df['vwap']) &      # Above VWAP (structure)
-    (df['close'] > df['ema_20']) &    # Above EMA (trend)
-    (df['rsi'] > 30) & (df['rsi'] < 70) &  # RSI healthy (momentum)
-    (df['dxy_correlation'] < -0.6)    # Strong negative correlation (environment)
+# Output includes: vwap, rsi, ema_9, ema_20, ema_50, dxy_corr
+print(features.columns)
+# Index(['ts_event', 'open', 'high', 'low', 'close', 'volume',
+#        'vwap', 'rsi', 'ema_9', 'ema_20', 'ema_50', 'dxy_corr'])
+
+# SOP-aligned long setup (8+/10 score)
+long_setup = (
+    (features['close'] > features['vwap']) &              # Structure ✓
+    (features['close'] > features['ema_20']) &            # Trend ✓
+    (features['ema_9'] > features['ema_20']) &            # Trend ✓
+    (features['rsi'] > 30) & (features['rsi'] < 70) &     # Momentum ✓
+    (features['dxy_corr'] < -0.6)                         # Environment ✓
 )
+
+high_quality_signals = features[long_setup]
+print(f"Found {len(high_quality_signals)} high-quality setups (8+/10)")
+```
+
+**Modular Configuration:**
+
+```python
+# Skip DXY, use custom RSI period
+indicators = {
+    "vwap": True,
+    "rsi": {"period": 21},
+    "ema": True,
+    "dxy_correlation": False
+}
+features = aggregate_features(gc_df, dxy_df, "1m", indicators=indicators)
 ```
 
 See [Feature Engine Guide](./docs/feature-engine/README.md) for complete API documentation and examples.
@@ -143,6 +163,7 @@ Comprehensive documentation is available in the [`docs/`](./docs/) directory:
 - [Testing](./docs/06-testing.md) - Test framework and conventions
 - [Data Layer Guide](./docs/10-data-layer.md) - OHLCV data structures and clients
 - [**Feature Engine**](./docs/feature-engine/README.md) - **Technical indicators** ⭐
+  - [Aggregator](./docs/feature-engine/aggregator.md) - Unified interface for all indicators
   - [VWAP](./docs/feature-engine/vwap.md) - Volume-Weighted Average Price
   - [RSI](./docs/feature-engine/rsi.md) - Relative Strength Index
   - [EMA](./docs/feature-engine/ema.md) - Exponential Moving Average
