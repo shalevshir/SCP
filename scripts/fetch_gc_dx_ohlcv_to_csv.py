@@ -247,7 +247,7 @@ def main(
         api_key = get_api_key()
 
         # Initialize Databento client
-        client = Historical(key="db-X7NTUMpEPTGKuPgEBseieg4QfuY4E")
+        client = Historical(key=api_key)
         logger.info("Databento client initialized successfully")
         
         # Check dataset availability (helpful for debugging)
