@@ -14,12 +14,13 @@ This directory contains documentation for the Shir Capital Partners Trading Bot 
 - [Logging Guide](./08-logging.md) - Logging system setup and best practices
 - [Error Handling Guide](./09-error-handling.md) - Exception hierarchy and error handling patterns
 - [Data Layer Guide](./10-data-layer.md) - Candle data model and client stubs
+- [Feature Engine Guide](./11-feature-engine.md) - Technical indicators (VWAP, RSI, EMA)
 
 ## Phase 1 Status
 
-**Current Phase:** Infrastructure (Phase 1)  
+**Current Phase:** Feature Engine & Rule Engine (Phase 2)  
 **Status:** In Progress  
-**Last Updated:** 2025-11-09
+**Last Updated:** 2025-11-16
 
 ### Completed
 - ✅ Repository structure and tooling
@@ -32,10 +33,11 @@ This directory contains documentation for the Shir Capital Partners Trading Bot 
 - ✅ TimeAligner stub for data stream synchronization
 - ✅ CI/CD pipeline with GitHub Actions (tests, linting, formatting)
 - ✅ PR automation: coverage reports and test results posted as comments
+- ✅ **VWAP Implementation** - First production feature (Phase 2)
 
 ### In Progress
 - Additional data layer components (DataNormalizer)
-- Feature engine stubs
+- Feature engine: RSI, EMA, DXY correlation indicators
 - Rule engine stubs
 
 Phase 1 focuses on establishing the foundational structure without any trading logic or external I/O. All components are placeholders/stubs that will be implemented in subsequent phases.
