@@ -13,17 +13,23 @@
 1. **Install Poetry** (if not already installed):
    ```bash
    curl -sSL https://install.python-poetry.org | python3 -
+   # or
+   pip install poetry
    ```
 
 2. **Install dependencies:**
    ```bash
-   poetry install --no-root
+   poetry install
    ```
+   
+   This will install all dependencies from `pyproject.toml` and use `poetry.lock` to ensure reproducible builds.
 
-3. **Activate virtual environment:**
+3. **Activate virtual environment (optional):**
    ```bash
    poetry shell
    ```
+   
+   Or run commands directly with `poetry run <command>` without activating the shell.
 
 ### Option 2: uv
 
@@ -47,6 +53,10 @@
 Run the test suite to verify everything is set up correctly:
 
 ```bash
+# Using Poetry
+poetry run pytest -q
+
+# Or if you activated the shell (poetry shell)
 pytest -q
 ```
 
@@ -64,43 +74,46 @@ The project includes the following development tools configured in `pyproject.to
 
 ```bash
 # Format code with black
-black .
+poetry run black .
 
 # Sort imports with isort
-isort .
+poetry run isort .
 ```
 
 ### Linting
 
 ```bash
 # Run ruff linter
-ruff check .
+poetry run ruff check .
 
 # Auto-fix issues
-ruff check --fix .
+poetry run ruff check --fix .
 ```
 
 ### Type Checking
 
 ```bash
 # Run mypy (strict mode)
-mypy src/
+poetry run mypy src/
 ```
 
 ### Running Tests
 
 ```bash
 # Run all tests
-pytest
+poetry run pytest
 
 # Run with verbose output
-pytest -v
+poetry run pytest -v
 
 # Run specific test file
-pytest tests/test_imports.py
+poetry run pytest tests/test_imports.py
 
 # Run in parallel (faster)
-pytest -n auto
+poetry run pytest -n auto
+
+# Run with coverage
+poetry run pytest --cov=feature_engine --cov=common
 ```
 
 ## Pre-commit Setup (Optional)
