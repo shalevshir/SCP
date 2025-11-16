@@ -1,10 +1,14 @@
 """Unit tests for VWAP calculation."""
 
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 import pytest
-
 from feature_engine.vwap import calculate_vwap
+
+# Path to project root (two levels up from this test file)
+PROJECT_ROOT = Path(__file__).parent.parent.parent
 
 
 class TestVWAPCalculation:
@@ -27,7 +31,7 @@ class TestVWAPCalculation:
     @pytest.fixture
     def real_gc_data(self) -> pd.DataFrame:
         """Load real GC OHLCV data from CSV."""
-        data_path = "/Users/shalev/Code/SCP/data/gc_dx_ohlcv/GC_ohlcv-1m.csv"
+        data_path = PROJECT_ROOT / "data" / "gc_dx_ohlcv" / "GC_ohlcv-1m.csv"
         df = pd.read_csv(data_path, parse_dates=["ts_event"])
         # Filter to single symbol and take first 100 rows for testing
         df = df[df["symbol"] == "GCZ5"].head(100).copy()
