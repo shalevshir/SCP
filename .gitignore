@@ -18,8 +18,6 @@ logs/*
 
 # Exclude large timeframe data (can be regenerated from scripts)
 data/gc_dx_ohlcv/*-1s.csv
-data/gc_dx_ohlcv/*-15m.csv
-data/gc_dx_ohlcv/*-1h.csv
 
 db/**
 !.gitkeep
