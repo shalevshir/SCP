@@ -10,12 +10,17 @@ The data layer is responsible for:
 - Validating and normalizing incoming data
 - Supporting multiple data sources (CME, ICE, CSV files, etc.)
 
-**Current Status (Phase 1):** Stub implementations with no external I/O. All clients return empty lists to enable testing without dependencies.
+**Current Status:** 
+- **LocalCSVClient:** Fully implemented with real CSV loading using pandas
+- **HistoricalDataLoader:** Fully implemented for backtesting workflows
+- **CMEGCClient, DXYIndexClient:** Stub implementations (return empty lists)
+- **TimeAligner, DataNormalizer:** Stub implementations
 
 ## Table of Contents
 
 - [Candle Data Model](#candle-data-model)
 - [Data Client Stubs](#data-client-stubs)
+- [Historical Data Loader](#historical-data-loader)
 - [Usage Examples](#usage-examples)
 - [Validation and Error Handling](#validation-and-error-handling)
 - [Testing](#testing)
@@ -530,6 +535,191 @@ for gc, dxy in aligned:
     # All timestamps present, gaps filled
     assert gc is not None or dxy is not None
 ```
+
+---
+
+## Historical Data Loader
+
+**Location:** `data_layer/loader.py`
+
+The `HistoricalDataLoader` provides a high-level interface for loading GC (Gold Futures) and DXY (Dollar Index) historical data from CSV files into pandas DataFrames for backtesting and analysis.
+
+### Key Features
+
+- **Symbol-to-filename mapping:** Automatically maps "DXY" to "DX_ohlcv" files
+- **DataFrame output:** Returns data as pandas DataFrames with timestamp index
+- **Data validation:** Ensures sorted, unique timestamps
+- **Multi-symbol loading:** Load GC and DXY data in a single call
+- **Logging:** Tracks loading statistics for audit trail
+
+### API
+
+```python
+class HistoricalDataLoader:
+    def __init__(self, data_dir: str | Path):
+        """Initialize loader with data directory path."""
+        
+    def load(
+        self,
+        symbols: list[str],      # e.g., ["GC", "DXY"]
+        timeframe: str,           # e.g., "1m", "15m", "1h"
+        start: datetime,          # timezone-aware UTC
+        end: datetime,            # timezone-aware UTC
+    ) -> dict[str, pd.DataFrame]:
+        """Load historical data for multiple symbols.
+        
+        Returns dict keyed by symbol with DataFrames as values.
+        Each DataFrame has:
+        - Index: timestamp (DatetimeIndex, UTC, sorted, unique)
+        - Columns: open, high, low, close, volume, symbol
+        """
+```
+
+### DataFrame Schema
+
+Each returned DataFrame has the following structure:
+
+**Index:**
+- `timestamp`: DatetimeIndex (UTC, timezone-aware, sorted, unique)
+
+**Columns:**
+- `open`: float - Opening price
+- `high`: float - Highest price
+- `low`: float - Lowest price
+- `close`: float - Closing price
+- `volume`: float - Trading volume
+- `symbol`: str - Instrument symbol (e.g., "GCZ5", "DX  FMZ0025!")
+
+### Usage Example
+
+```python
+from datetime import datetime, timezone
+from pathlib import Path
+from data_layer import HistoricalDataLoader
+
+# Initialize loader
+loader = HistoricalDataLoader(Path("data/gc_dx_ohlcv"))
+
+# Define date range
+start = datetime(2025, 9, 30, 4, 20, 0, tzinfo=timezone.utc)
+end = datetime(2025, 9, 30, 5, 0, 0, tzinfo=timezone.utc)
+
+# Load GC and DXY data
+data = loader.load(["GC", "DXY"], "1m", start, end)
+
+# Access DataFrames
+gc_df = data["GC"]
+dxy_df = data["DXY"]
+
+# DataFrame operations
+print(f"GC: {len(gc_df)} rows")
+print(f"DXY: {len(dxy_df)} rows")
+print(gc_df.head())
+
+# Compute indicators on DataFrame
+gc_df["sma_20"] = gc_df["close"].rolling(20).mean()
+gc_df["returns"] = gc_df["close"].pct_change()
+```
+
+### Symbol Mapping
+
+The loader automatically maps symbols to CSV filenames:
+
+| Symbol | CSV Filename Pattern |
+|--------|---------------------|
+| GC     | `GC_ohlcv-{timeframe}.csv` |
+| DXY    | `DX_ohlcv-{timeframe}.csv` |
+
+**Note:** DXY maps to "DX" because the CSV files use the "DX" prefix.
+
+### Supported Timeframes
+
+The loader supports the following timeframes (must match available CSV files):
+
+- `1s` - 1 second
+- `1m` - 1 minute
+- `15m` - 15 minutes
+- `1h` - 1 hour
+
+### Error Handling
+
+The loader raises `DataSourceError` in the following cases:
+
+- **Missing file:** CSV file not found for symbol/timeframe
+- **Invalid data:** CSV parsing errors or malformed data
+- **Invalid parameters:** Missing or invalid datetime/timeframe parameters
+
+```python
+from common.exceptions import DataSourceError
+
+try:
+    data = loader.load(["INVALID"], "1m", start, end)
+except DataSourceError as e:
+    print(f"Failed to load data: {e}")
+```
+
+### Integration with Backtesting
+
+The HistoricalDataLoader is designed for seamless integration with backtesting workflows:
+
+```python
+from data_layer import HistoricalDataLoader
+from feature_engine import compute_vwap, compute_rsi
+from data_layer import TimeAligner
+
+# Load data
+loader = HistoricalDataLoader("data/gc_dx_ohlcv")
+data = loader.load(["GC", "DXY"], "1m", start, end)
+
+# Compute features
+gc_df = data["GC"]
+gc_df["vwap"] = compute_vwap(gc_df)
+gc_df["rsi"] = compute_rsi(gc_df["close"])
+
+# Align GC and DXY for correlation analysis
+aligner = TimeAligner()
+aligned_gc, aligned_dxy = aligner.align(
+    data["GC"], 
+    data["DXY"], 
+    "timestamp"
+)
+
+# Run backtest
+# ... (backtesting logic)
+```
+
+### Logging
+
+The loader logs loading statistics for each symbol:
+
+```
+INFO - Loaded 45 rows for GC (1m) from 2025-09-30T04:20:00+00:00 to 2025-09-30T05:00:00+00:00
+INFO - Loaded 42 rows for DXY (1m) from 2025-09-30T04:20:00+00:00 to 2025-09-30T05:00:00+00:00
+```
+
+### Performance Considerations
+
+- **Memory efficient:** Uses pandas for columnar storage
+- **Lazy loading:** Data is loaded only when `load()` is called
+- **Vectorized operations:** DataFrames enable fast vectorized calculations
+- **Caching:** Consider caching DataFrames for repeated access
+
+### Testing
+
+The HistoricalDataLoader has comprehensive test coverage:
+
+```bash
+pytest tests/unit/test_historical_data_loader.py -v
+```
+
+**Test coverage:**
+- Single and multi-symbol loading
+- Date range filtering
+- Empty result handling
+- Missing file error handling
+- DataFrame schema validation
+- Index sorting and uniqueness
+- Symbol-to-filename mapping (DXY → DX)
 
 ---
 
