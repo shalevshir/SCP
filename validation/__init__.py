@@ -7,6 +7,13 @@ and risk management rules before execution.
 
 from validation.engine import TradeDirection, ValidationEngine, ValidationResult
 from validation.schema import BufferPhase, EnforcerTier, HTFBias, ValidationContext
+from validation.session_validator import (
+    SeasonRule,
+    SessionConfig,
+    SessionConstraints,
+    SessionResult,
+    SessionValidator,
+)
 
 __all__ = [
     "BufferPhase",
@@ -16,4 +23,9 @@ __all__ = [
     "TradeDirection",
     "ValidationEngine",
     "ValidationResult",
+    "SeasonRule",
+    "SessionConfig",
+    "SessionConstraints",
+    "SessionResult",
+    "SessionValidator",
 ]
