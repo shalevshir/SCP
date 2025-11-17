@@ -6,6 +6,12 @@ and risk management rules before execution.
 """
 
 from validation.engine import TradeDirection, ValidationEngine, ValidationResult
+from validation.guardrails import (
+    BehaviorGuardrails,
+    BehaviorState,
+    BehaviorStateTracker,
+    GuardrailResult,
+)
 from validation.schema import BufferPhase, EnforcerTier, HTFBias, ValidationContext
 from validation.session_validator import (
     SeasonRule,
@@ -23,6 +29,10 @@ __all__ = [
     "TradeDirection",
     "ValidationEngine",
     "ValidationResult",
+    "BehaviorGuardrails",
+    "BehaviorState",
+    "BehaviorStateTracker",
+    "GuardrailResult",
     "SeasonRule",
     "SessionConfig",
     "SessionConstraints",

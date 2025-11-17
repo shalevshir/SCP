@@ -5,11 +5,17 @@ trade signals satisfy SOP requirements, CEO directives, and risk
 management rules.
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 from enum import Enum
+from typing import TYPE_CHECKING
 
 from common.logger import get_logger
 from validation.schema import HTFBias, ValidationContext
+
+if TYPE_CHECKING:
+    from validation.guardrails import GuardrailResult
 
 logger = get_logger(__name__)
 
@@ -60,13 +66,17 @@ class ValidationEngine:
     """
 
     def validate(
-        self, context: ValidationContext, direction: TradeDirection
+        self,
+        context: ValidationContext,
+        direction: TradeDirection,
+        guardrail_result: GuardrailResult | None = None,
     ) -> ValidationResult:
         """Validate a trade setup against SOP requirements.
 
         Args:
             context: ValidationContext containing market state and constraints
             direction: Intended trade direction (long/short)
+            guardrail_result: Optional behavior guardrail evaluation result
 
         Returns:
             ValidationResult indicating pass/fail with error details
@@ -79,6 +89,14 @@ class ValidationEngine:
             ...     print(f"Rejected: {result.errors}")
         """
         errors: list[str] = []
+
+        # Behavior guardrails check (if provided)
+        if guardrail_result and not guardrail_result.allowed:
+            for reason in guardrail_result.reasons:
+                errors.append(f"Behavior guardrail: {reason}")
+            logger.warning(
+                "Rejected by ValidationEngine: behavior guardrails blocked trade"
+            )
 
         # Session time validation
         if not context.session_ok:
