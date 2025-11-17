@@ -18,6 +18,7 @@ The validation layer is responsible for:
 
 - [Validation Schema](#validation-schema)
 - [Validation Engine](#validation-engine)
+- [Session Validator](#session-validator)
 - [Usage Examples](#usage-examples)
 - [SOP Validation Rules](#sop-validation-rules)
 - [Error Handling](#error-handling)
@@ -212,6 +213,86 @@ else:
     for error in result.errors:
         print(f"  - {error}")
 ```
+
+---
+
+## Session Validator
+
+The `SessionValidator` determines whether the current timestamp is within the SOP-approved trading session and exposes additional guardrails (tiers, setup types, minimum scores, DXY correlation thresholds, and loss halts) for downstream modules.
+
+### Location
+
+- **Module:** `validation/session_validator.py`
+- **Exports:** `SessionValidator`, `SessionConfig`, `SeasonRule`, `SessionConstraints`, `SessionResult`
+
+### API Overview
+
+```python
+from datetime import datetime, time, timezone
+
+from validation import SeasonRule, SessionConfig, SessionValidator
+
+default_rule = SeasonRule(
+    name="Default",
+    months=frozenset({1, 2, 3, 4, 5, 6, 7, 8}),
+    window_start=time(10, 0),
+    window_end=time(13, 0),
+    allowed_tiers=frozenset({"Conservative", "Early Mild", "Mild", "Offensive"}),
+    allowed_setups=frozenset({"continuation"}),
+    min_score=8.0,
+    max_losses=2,
+    dxy_correlation_max=-0.6,
+)
+
+trend_rule = SeasonRule(
+    name="Trend Season",
+    months=frozenset({11, 12}),
+    window_start=time(9, 30),
+    window_end=time(14, 0),
+    allowed_tiers=frozenset({"Conservative", "Early Mild", "Mild", "Offensive"}),
+    allowed_setups=frozenset({"continuation", "fade"}),
+    min_score=8.0,
+    max_losses=2,
+    dxy_correlation_max=-0.55,
+)
+
+config = SessionConfig(
+    timezone="Asia/Jerusalem",
+    default_rule=default_rule,
+    seasons=(trend_rule,),
+    holidays=frozenset(),
+)
+
+validator = SessionValidator(config)
+result = validator.evaluate(datetime.now(tz=timezone.utc))
+
+if result.session_ok:
+    logger.info("Session status: allowed | %s", result.constraints.describe())
+else:
+    logger.warning("Session status: blocked | reason=%s", result.reason)
+```
+
+### SOP Seasonality Summary
+
+| Season | Months | Window (ILT) | Guardrails |
+| --- | --- | --- | --- |
+| **September (Defensive)** | 9 | 11:00–12:30 | Conservative/Early Mild only, continuations only, min score ≥ 8.5, halt after 1 loss, DXY corr < -0.7 |
+| **October (Base)** | 10 | 10:00–13:00 | Conservative/Early Mild/Mild, continuations only, min score ≥ 8.0, halt after 2 losses, DXY corr < -0.6 |
+| **November–December (Trend)** | 11–12 | 09:30–14:00 | All tiers, continuations + fades, min score ≥ 8.0, halt after 2 losses, DXY corr < -0.55 |
+| **Default** | Remaining months | 10:00–13:00 | All tiers, continuations only, min score ≥ 8.0, halt after 2 losses, DXY corr < -0.6 |
+
+### Result Structure
+
+- `session_ok`: Boolean flag (True when trading is allowed)
+- `constraints`: `SessionConstraints` describing the active window and guardrails
+- `reason`: Optional string (`holiday`, `outside_window`, etc.) when blocked
+
+### Logging & Holidays
+
+- Logs always include `"Session status: allowed/blocked"` with season metadata.
+- Holidays (configured via `SessionConfig.holidays`) always block trading.
+- Timezone handling relies on `zoneinfo.ZoneInfo`, ensuring DST transitions work automatically.
+- Windows are inclusive of the start time and exclusive of the end time.
 
 ---
 
