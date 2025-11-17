@@ -107,6 +107,22 @@ Validates trade setups against SOP rules:
 - Built-in support for September defensive mode, October base month, and November–December trend season
 - Logging guarantees `"Session status: allowed/blocked"` with context
 
+### Behavior Guardrails (`guardrails.py`)
+
+Tracks and enforces behavioral state limits:
+
+- **BehaviorState**: Immutable snapshot (losses, fatigue, session_extended)
+- **BehaviorStateTracker**: Mutable tracker recording outcomes and flags
+- **BehaviorGuardrails**: Evaluator checking state against SOP limits
+- **GuardrailResult**: Evaluation result with allowed flag + reasons
+
+**Enforced Rules:**
+1. Loss streak limits (session-specific: September = 1, others = 2)
+2. Fatigue flag (immediate halt when operator flagged)
+3. Session extension (halt when trading beyond window)
+
+Integrates with `ValidationEngine` via optional `guardrail_result` parameter.
+
 ## SOP Rules Enforced
 
 1. ✓ **Session Time** - Trading only during permitted hours

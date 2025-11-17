@@ -19,6 +19,7 @@ The validation layer is responsible for:
 - [Validation Schema](#validation-schema)
 - [Validation Engine](#validation-engine)
 - [Session Validator](#session-validator)
+- [Behavior Guardrails](#behavior-guardrails)
 - [Usage Examples](#usage-examples)
 - [SOP Validation Rules](#sop-validation-rules)
 - [Error Handling](#error-handling)
@@ -293,6 +294,206 @@ else:
 - Holidays (configured via `SessionConfig.holidays`) always block trading.
 - Timezone handling relies on `zoneinfo.ZoneInfo`, ensuring DST transitions work automatically.
 - Windows are inclusive of the start time and exclusive of the end time.
+
+---
+
+## Behavior Guardrails
+
+**Location:** `validation/guardrails.py`
+
+The Behavior Guardrails module tracks and enforces behavioral state limits to prevent emotional trading and ensure operator safety per SOP discipline requirements.
+
+### Core Components
+
+#### BehaviorState
+
+Immutable snapshot of behavioral state for guardrail evaluation:
+
+```python
+from validation import BehaviorState
+
+state = BehaviorState(
+    consecutive_losses=2,
+    fatigue_flag=False,
+    session_extended=False,
+    last_reset=None
+)
+```
+
+**Fields:**
+- `consecutive_losses`: Number of consecutive losing trades (resets on win)
+- `fatigue_flag`: Operator fatigue/emotional state flag (manual override)
+- `session_extended`: Session trading beyond allowed window
+- `last_reset`: Timestamp of last state reset (for audit trail)
+
+#### BehaviorStateTracker
+
+Mutable tracker maintaining behavioral state across trades:
+
+```python
+from validation import BehaviorStateTracker
+
+tracker = BehaviorStateTracker()
+
+# Record trade outcomes
+tracker.record_trade_outcome(won=False)  # Loss increments streak
+tracker.record_trade_outcome(won=True)   # Win resets streak to 0
+
+# Manual flags
+tracker.set_fatigue_flag(True)           # Operator flagged fatigued
+tracker.mark_session_extension(True)     # Trading beyond window
+
+# Reset at session start
+from datetime import datetime
+from zoneinfo import ZoneInfo
+tracker.reset_for_session(now=datetime.now(tz=ZoneInfo("UTC")))
+```
+
+#### BehaviorGuardrails
+
+Evaluator that checks state against SOP guardrail rules:
+
+```python
+from validation import BehaviorGuardrails, SessionConstraints
+
+guardrails = BehaviorGuardrails()
+
+# Evaluate state against session constraints
+result = guardrails.evaluate(state, constraints)
+
+if not result.allowed:
+    print(f"Blocked: {result.reasons}")
+```
+
+#### GuardrailResult
+
+Result of guardrail evaluation:
+
+```python
+from validation import GuardrailResult
+
+result = GuardrailResult(
+    allowed=False,
+    reasons=[
+        "Loss streak limit reached: 2 consecutive losses (max_losses=2)",
+        "Fatigue flag is set - operator requires break"
+    ]
+)
+```
+
+### SOP Guardrail Rules
+
+The guardrails enforce three behavioral limits:
+
+#### 1. Loss Streak Limit (Session-Specific)
+
+Halts trading after reaching the loss limit defined in `SessionConstraints.max_losses`:
+
+- **Default sessions**: 2 consecutive losses
+- **September (Defensive)**: 1 consecutive loss
+- **October (Base)**: 2 consecutive losses
+- **Nov–Dec (Trend)**: 2 consecutive losses
+
+Streak resets to 0 on any winning trade.
+
+**Logging:**
+```
+WARNING - Rejected by BehaviorGuardrails: loss streak 2 >= 2
+```
+
+#### 2. Fatigue Flag (Immediate Halt)
+
+Blocks all trading when operator manually flags fatigue or emotional state:
+
+```python
+tracker.set_fatigue_flag(True)  # Immediate halt
+```
+
+**Use cases:**
+- Operator feels emotional/tilted
+- Physical fatigue impacting decision-making
+- External stressors affecting focus
+
+**Logging:**
+```
+WARNING - Rejected by BehaviorGuardrails: fatigue flag active
+```
+
+#### 3. Session Extension (Halt Beyond Window)
+
+Blocks trading when session extends beyond the allowed trading window:
+
+```python
+tracker.mark_session_extension(True)
+```
+
+**Logging:**
+```
+WARNING - Rejected by BehaviorGuardrails: session extended
+```
+
+### Integration with ValidationEngine
+
+The `ValidationEngine` accepts an optional `guardrail_result` parameter. When guardrails block, the engine includes guardrail reasons in its error list:
+
+```python
+from validation import (
+    ValidationEngine,
+    ValidationContext,
+    BehaviorGuardrails,
+    BehaviorState,
+    TradeDirection,
+    SessionConstraints
+)
+
+# Create engine and guardrails
+engine = ValidationEngine()
+guardrails = BehaviorGuardrails()
+
+# Evaluate guardrails
+state = BehaviorState(consecutive_losses=2)
+constraints = SessionConstraints(...)  # From SessionValidator
+guardrail_result = guardrails.evaluate(state, constraints)
+
+# Pass to ValidationEngine
+context = ValidationContext(...)
+result = engine.validate(
+    context=context,
+    direction=TradeDirection.LONG,
+    guardrail_result=guardrail_result
+)
+
+if not result.valid:
+    # Will include "Behavior guardrail: Loss streak limit reached..."
+    print(result.errors)
+```
+
+### State Lifecycle
+
+Behavioral state follows this lifecycle:
+
+1. **Session Start**: Call `tracker.reset_for_session(now)` to clear all flags and streaks
+2. **During Session**: Record outcomes with `tracker.record_trade_outcome(won=True/False)`
+3. **Manual Flags**: Set `fatigue_flag` or `session_extended` as needed
+4. **Pre-Trade Validation**: Evaluate current `tracker.state` against `SessionConstraints`
+5. **Session End**: Persist state for audit trail, then reset for next session
+
+### Testing
+
+Behavior guardrails have 100% test coverage with 9 test cases:
+
+```bash
+pytest tests/unit/test_behavior_guardrails.py -v
+```
+
+**Test categories:**
+- Loss streak tracking (increment/reset)
+- Fatigue and session extension flags
+- Session reset behavior
+- Guardrail evaluation (all three rules)
+- Session-specific loss limits (September = 1, others = 2)
+- ValidationEngine integration
+- Multi-error accumulation
 
 ---
 
