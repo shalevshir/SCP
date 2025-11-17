@@ -14,6 +14,7 @@ This directory contains documentation for the Shir Capital Partners Trading Bot 
 - [Logging Guide](./08-logging.md) - Logging system setup and best practices
 - [Error Handling Guide](./09-error-handling.md) - Exception hierarchy and error handling patterns
 - [Data Layer Guide](./10-data-layer.md) - Candle data model and client stubs
+- [**Validation Layer Guide**](./11-validation-layer.md) - SOP enforcement and trade validation
 - [**Feature Engine**](./feature-engine/README.md) - Technical indicators and features
   - [VWAP](./feature-engine/vwap.md) - Volume-Weighted Average Price
   - [RSI](./feature-engine/rsi.md) - Relative Strength Index
@@ -37,12 +38,16 @@ This directory contains documentation for the Shir Capital Partners Trading Bot 
 - ✅ TimeAligner stub for data stream synchronization
 - ✅ CI/CD pipeline with GitHub Actions (tests, linting, formatting)
 - ✅ PR automation: coverage reports and test results posted as comments
-- ✅ **VWAP Implementation** - First production feature (Phase 2)
+- ✅ **Feature Engine** - VWAP, RSI, EMA, DXY Correlation (Phase 2)
+- ✅ **Validation Layer** - Schema & Engine (Phase 2)
+  - ValidationContext with SOP enforcement
+  - ValidationEngine with 6 SOP rule checks
+  - 55 tests, 100% coverage
 
 ### In Progress
 - Additional data layer components (DataNormalizer)
-- Feature engine: RSI, EMA, DXY correlation indicators
-- Rule engine stubs
+- Session logic validators (time-based, behavior guardrails)
+- Rule engine integration with validation layer
 
 Phase 1 focuses on establishing the foundational structure without any trading logic or external I/O. All components are placeholders/stubs that will be implemented in subsequent phases.
 
