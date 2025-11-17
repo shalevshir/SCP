@@ -1,10 +1,9 @@
 """Tests for LocalCSVClient stub."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-
 from common.exceptions import DataSourceError
 from common.types import Candle
 from data_layer.clients import LocalCSVClient
@@ -39,10 +38,11 @@ def test_client_has_fetch_method():
 
 
 def test_fetch_returns_list():
-    """Test that fetch returns a list."""
-    client = LocalCSVClient("test.csv")
-    start = datetime(2025, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
-    end = datetime(2025, 1, 1, 23, 59, 59, tzinfo=timezone.utc)
+    """Test that fetch returns a list with real CSV data."""
+    csv_path = Path("data/gc_dx_ohlcv/GC_ohlcv-1m.csv")
+    client = LocalCSVClient(csv_path)
+    start = datetime(2025, 9, 30, 4, 20, 0, tzinfo=UTC)
+    end = datetime(2025, 9, 30, 4, 30, 0, tzinfo=UTC)
 
     result = client.fetch(start, end, "1m")
 
@@ -51,9 +51,10 @@ def test_fetch_returns_list():
 
 def test_fetch_returns_list_of_candles():
     """Test that fetch returns list of Candle objects."""
-    client = LocalCSVClient("test.csv")
-    start = datetime(2025, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
-    end = datetime(2025, 1, 1, 23, 59, 59, tzinfo=timezone.utc)
+    csv_path = Path("data/gc_dx_ohlcv/GC_ohlcv-1m.csv")
+    client = LocalCSVClient(csv_path)
+    start = datetime(2025, 9, 30, 4, 20, 0, tzinfo=UTC)
+    end = datetime(2025, 9, 30, 4, 30, 0, tzinfo=UTC)
 
     result = client.fetch(start, end, "1m")
 
@@ -64,19 +65,14 @@ def test_fetch_returns_list_of_candles():
         assert isinstance(item, Candle)
 
 
-def test_stub_returns_empty_list():
-    """Test that stub implementation returns empty list.
+def test_nonexistent_file_raises_error():
+    """Test that nonexistent file raises DataSourceError."""
+    client = LocalCSVClient("nonexistent_test.csv")
+    start = datetime(2025, 1, 1, 0, 0, 0, tzinfo=UTC)
+    end = datetime(2025, 1, 1, 23, 59, 59, tzinfo=UTC)
 
-    This verifies Phase 1 behavior where the stub returns an empty list
-    instead of actually reading from CSV files.
-    """
-    client = LocalCSVClient("test.csv")
-    start = datetime(2025, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
-    end = datetime(2025, 1, 1, 23, 59, 59, tzinfo=timezone.utc)
-
-    result = client.fetch(start, end, "1m")
-
-    assert result == []
+    with pytest.raises(DataSourceError):
+        client.fetch(start, end, "1m")
 
 
 def test_fetch_with_invalid_file_path_type():
@@ -99,7 +95,7 @@ def test_fetch_with_naive_start_datetime_raises_error():
     """Test that fetch raises error when start datetime is naive (no timezone)."""
     client = LocalCSVClient("test.csv")
     start = datetime(2025, 1, 1, 0, 0, 0)  # No timezone
-    end = datetime(2025, 1, 1, 23, 59, 59, tzinfo=timezone.utc)
+    end = datetime(2025, 1, 1, 23, 59, 59, tzinfo=UTC)
 
     with pytest.raises(DataSourceError) as exc_info:
         client.fetch(start, end, "1m")
@@ -113,7 +109,7 @@ def test_fetch_with_naive_start_datetime_raises_error():
 def test_fetch_with_naive_end_datetime_raises_error():
     """Test that fetch raises error when end datetime is naive (no timezone)."""
     client = LocalCSVClient("test.csv")
-    start = datetime(2025, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+    start = datetime(2025, 1, 1, 0, 0, 0, tzinfo=UTC)
     end = datetime(2025, 1, 1, 23, 59, 59)  # No timezone
 
     with pytest.raises(DataSourceError) as exc_info:
@@ -128,8 +124,8 @@ def test_fetch_with_naive_end_datetime_raises_error():
 def test_fetch_with_empty_timeframe_raises_error():
     """Test that fetch raises error for empty timeframe."""
     client = LocalCSVClient("test.csv")
-    start = datetime(2025, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
-    end = datetime(2025, 1, 1, 23, 59, 59, tzinfo=timezone.utc)
+    start = datetime(2025, 1, 1, 0, 0, 0, tzinfo=UTC)
+    end = datetime(2025, 1, 1, 23, 59, 59, tzinfo=UTC)
 
     with pytest.raises(DataSourceError) as exc_info:
         client.fetch(start, end, "")
@@ -140,8 +136,8 @@ def test_fetch_with_empty_timeframe_raises_error():
 def test_fetch_with_end_before_start_raises_error():
     """Test that fetch raises error when end is before start."""
     client = LocalCSVClient("test.csv")
-    start = datetime(2025, 1, 2, 0, 0, 0, tzinfo=timezone.utc)
-    end = datetime(2025, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+    start = datetime(2025, 1, 2, 0, 0, 0, tzinfo=UTC)
+    end = datetime(2025, 1, 1, 0, 0, 0, tzinfo=UTC)
 
     with pytest.raises(DataSourceError) as exc_info:
         client.fetch(start, end, "1m")
@@ -154,8 +150,8 @@ def test_fetch_with_end_before_start_raises_error():
 def test_fetch_with_equal_start_and_end():
     """Test that fetch fails when start and end are equal."""
     client = LocalCSVClient("test.csv")
-    start = datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
-    end = datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+    start = datetime(2025, 1, 1, 12, 0, 0, tzinfo=UTC)
+    end = datetime(2025, 1, 1, 12, 0, 0, tzinfo=UTC)
 
     with pytest.raises(DataSourceError) as exc_info:
         client.fetch(start, end, "1m")
@@ -167,9 +163,10 @@ def test_fetch_with_equal_start_and_end():
 
 def test_fetch_with_different_timeframes():
     """Test that fetch accepts various timeframe formats."""
-    client = LocalCSVClient("test.csv")
-    start = datetime(2025, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
-    end = datetime(2025, 1, 1, 23, 59, 59, tzinfo=timezone.utc)
+    csv_path = Path("data/gc_dx_ohlcv/GC_ohlcv-1m.csv")
+    client = LocalCSVClient(csv_path)
+    start = datetime(2025, 9, 30, 4, 20, 0, tzinfo=UTC)
+    end = datetime(2025, 9, 30, 4, 30, 0, tzinfo=UTC)
 
     timeframes = ["1m", "5m", "15m", "1h", "1d"]
 
@@ -180,9 +177,10 @@ def test_fetch_with_different_timeframes():
 
 def test_multiple_fetch_calls():
     """Test that multiple fetch calls work correctly."""
-    client = LocalCSVClient("test.csv")
-    start = datetime(2025, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
-    end = datetime(2025, 1, 1, 23, 59, 59, tzinfo=timezone.utc)
+    csv_path = Path("data/gc_dx_ohlcv/GC_ohlcv-1m.csv")
+    client = LocalCSVClient(csv_path)
+    start = datetime(2025, 9, 30, 4, 20, 0, tzinfo=UTC)
+    end = datetime(2025, 9, 30, 4, 30, 0, tzinfo=UTC)
 
     result1 = client.fetch(start, end, "1m")
     result2 = client.fetch(start, end, "5m")
@@ -196,7 +194,7 @@ def test_multiple_fetch_calls():
 def test_fetch_signature_matches_expected():
     """Test that fetch method signature matches expected interface."""
     client = LocalCSVClient("test.csv")
-    fetch_method = getattr(client, "fetch")
+    fetch_method = client.fetch
 
     # Check it accepts the expected parameters
     import inspect
@@ -211,11 +209,12 @@ def test_fetch_signature_matches_expected():
 
 def test_fetch_accepts_timezone_aware_datetimes():
     """Test that fetch properly handles timezone-aware datetimes."""
-    client = LocalCSVClient("test.csv")
+    csv_path = Path("data/gc_dx_ohlcv/GC_ohlcv-1m.csv")
+    client = LocalCSVClient(csv_path)
 
     # Test with UTC
-    start_utc = datetime(2025, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
-    end_utc = datetime(2025, 1, 1, 23, 59, 59, tzinfo=timezone.utc)
+    start_utc = datetime(2025, 9, 30, 4, 20, 0, tzinfo=UTC)
+    end_utc = datetime(2025, 9, 30, 4, 30, 0, tzinfo=UTC)
     result = client.fetch(start_utc, end_utc, "1m")
     assert isinstance(result, list)
 
@@ -231,9 +230,8 @@ def test_client_repr():
 def test_fetch_return_type_annotation():
     """Test that fetch method has proper return type annotation."""
     client = LocalCSVClient("test.csv")
-    fetch_method = getattr(client, "fetch")
+    fetch_method = client.fetch
 
-    import inspect
     from typing import get_type_hints
 
     hints = get_type_hints(fetch_method)
@@ -243,3 +241,116 @@ def test_fetch_return_type_annotation():
     # The return type should be list
     return_type = hints["return"]
     assert hasattr(return_type, "__origin__")
+
+
+# Real CSV loading tests (Phase 1 implementation)
+
+
+def test_fetch_loads_real_csv_data():
+    """Test that fetch loads actual data from CSV file."""
+    csv_path = Path("data/gc_dx_ohlcv/GC_ohlcv-1m.csv")
+    client = LocalCSVClient(csv_path)
+    
+    # Use date range from actual data
+    start = datetime(2025, 9, 30, 4, 20, 0, tzinfo=UTC)
+    end = datetime(2025, 9, 30, 4, 30, 0, tzinfo=UTC)
+    
+    result = client.fetch(start, end, "1m")
+    
+    # Should return non-empty list
+    assert isinstance(result, list)
+    assert len(result) > 0
+    
+    # All items should be Candle objects
+    for candle in result:
+        assert isinstance(candle, Candle)
+        assert candle.symbol.startswith("GC")  # GC symbols
+        assert candle.timeframe == "1m"
+        assert candle.source == "CSV"
+
+
+def test_fetch_filters_by_date_range():
+    """Test that fetch correctly filters data by date range."""
+    csv_path = Path("data/gc_dx_ohlcv/GC_ohlcv-1m.csv")
+    client = LocalCSVClient(csv_path)
+    
+    # Narrow date range
+    start = datetime(2025, 9, 30, 4, 21, 0, tzinfo=UTC)
+    end = datetime(2025, 9, 30, 4, 23, 0, tzinfo=UTC)
+    
+    result = client.fetch(start, end, "1m")
+    
+    # All candles should be within range
+    for candle in result:
+        assert candle.timestamp >= start
+        assert candle.timestamp < end
+
+
+def test_fetch_parses_timezone_aware_timestamps():
+    """Test that fetch parses timestamps as timezone-aware UTC."""
+    csv_path = Path("data/gc_dx_ohlcv/GC_ohlcv-1m.csv")
+    client = LocalCSVClient(csv_path)
+    
+    start = datetime(2025, 9, 30, 4, 20, 0, tzinfo=UTC)
+    end = datetime(2025, 9, 30, 4, 30, 0, tzinfo=UTC)
+    
+    result = client.fetch(start, end, "1m")
+    
+    # All timestamps should be timezone-aware UTC
+    for candle in result:
+        assert candle.timestamp.tzinfo is not None
+        assert candle.timestamp.tzinfo == UTC
+
+
+def test_fetch_converts_to_candle_objects():
+    """Test that fetch converts CSV rows to valid Candle objects."""
+    csv_path = Path("data/gc_dx_ohlcv/GC_ohlcv-1m.csv")
+    client = LocalCSVClient(csv_path)
+    
+    start = datetime(2025, 9, 30, 4, 20, 0, tzinfo=UTC)
+    end = datetime(2025, 9, 30, 4, 30, 0, tzinfo=UTC)
+    
+    result = client.fetch(start, end, "1m")
+    
+    # Verify Candle structure and validation
+    for candle in result:
+        assert candle.open > 0
+        assert candle.high > 0
+        assert candle.low > 0
+        assert candle.close > 0
+        assert candle.volume >= 0
+        # OHLC relationships
+        assert candle.high >= candle.low
+        assert candle.high >= candle.open
+        assert candle.high >= candle.close
+        assert candle.low <= candle.open
+        assert candle.low <= candle.close
+
+
+def test_fetch_raises_error_for_missing_file():
+    """Test that fetch raises DataSourceError for missing file."""
+    client = LocalCSVClient("nonexistent_file.csv")
+    
+    start = datetime(2025, 1, 1, 0, 0, 0, tzinfo=UTC)
+    end = datetime(2025, 1, 2, 0, 0, 0, tzinfo=UTC)
+    
+    with pytest.raises(DataSourceError) as exc_info:
+        client.fetch(start, end, "1m")
+    
+    error_msg = str(exc_info.value).lower()
+    assert "file" in error_msg or "not found" in error_msg
+
+
+def test_fetch_handles_empty_date_range():
+    """Test that fetch returns empty list when no data in date range."""
+    csv_path = Path("data/gc_dx_ohlcv/GC_ohlcv-1m.csv")
+    client = LocalCSVClient(csv_path)
+    
+    # Date range with no data
+    start = datetime(2020, 1, 1, 0, 0, 0, tzinfo=UTC)
+    end = datetime(2020, 1, 2, 0, 0, 0, tzinfo=UTC)
+    
+    result = client.fetch(start, end, "1m")
+    
+    assert isinstance(result, list)
+    assert len(result) == 0
