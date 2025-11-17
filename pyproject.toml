@@ -10,6 +10,7 @@ packages = [
     { include = "rule_engine" },
     { include = "feature_engine" },
     { include = "backtester" },
+    { include = "validation" },
 ]
 
 [tool.poetry.dependencies]
@@ -74,7 +75,7 @@ strict_equality = true
 exclude = ["tests/"]
 
 [tool.coverage.run]
-source = ["common", "data_layer", "src", "feature_engine", "backtester", "rule_engine"]
+source = ["common", "data_layer", "src", "feature_engine", "backtester", "rule_engine", "validation"]
 omit = ["tests/*", "*/test_*.py", "*/__pycache__/*"]
 relative_files = true
 
