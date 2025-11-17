@@ -103,8 +103,8 @@ class TestHistoricalDataLoader:
         start = datetime(2025, 9, 30, 4, 20, 0, tzinfo=UTC)
         end = datetime(2025, 9, 30, 4, 30, 0, tzinfo=UTC)
 
-        # Valid timeframes should work
-        for timeframe in ["1s", "1m", "15m", "1h"]:
+        # Valid timeframes should work (1s excluded as not in repo)
+        for timeframe in ["1m", "15m", "1h"]:
             result = loader.load(["GC"], timeframe, start, end)
             assert isinstance(result, dict)
 
