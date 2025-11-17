@@ -5,13 +5,18 @@ The validation layer enforces SOP (Standard Operating Procedure) requirements be
 ## Quick Start
 
 ```python
+from datetime import datetime, time, timezone
+
 from validation import (
     ValidationEngine,
     ValidationContext,
     TradeDirection,
     BufferPhase,
     EnforcerTier,
-    HTFBias
+    HTFBias,
+    SeasonRule,
+    SessionConfig,
+    SessionValidator,
 )
 
 # Create engine
@@ -40,6 +45,39 @@ else:
     print(f"✗ Rejected:")
     for error in result.errors:
         print(f"  - {error}")
+
+# Time-based session validator
+default_rule = SeasonRule(
+    name="Default",
+    months=frozenset({1, 2, 3, 4, 5, 6, 7, 8}),
+    window_start=time(10, 0),
+    window_end=time(13, 0),
+    allowed_tiers=frozenset({"Conservative", "Early Mild", "Mild", "Offensive"}),
+    allowed_setups=frozenset({"continuation"}),
+    min_score=8.0,
+    max_losses=2,
+    dxy_correlation_max=-0.6,
+)
+trend_rule = SeasonRule(
+    name="Trend Season",
+    months=frozenset({11, 12}),
+    window_start=time(9, 30),
+    window_end=time(14, 0),
+    allowed_tiers=frozenset({"Conservative", "Early Mild", "Mild", "Offensive"}),
+    allowed_setups=frozenset({"continuation", "fade"}),
+    min_score=8.0,
+    max_losses=2,
+    dxy_correlation_max=-0.55,
+)
+session_config = SessionConfig(
+    timezone="Asia/Jerusalem",
+    default_rule=default_rule,
+    seasons=(trend_rule,),
+    holidays=frozenset(),
+)
+session_validator = SessionValidator(session_config)
+session_result = session_validator.evaluate(datetime.now(tz=timezone.utc))
+print("Session OK:", session_result.session_ok, "|", session_result.constraints.describe())
 ```
 
 ## Components
@@ -60,6 +98,14 @@ Validates trade setups against SOP rules:
 - **TradeDirection**: Trade direction enum (long, short)
 - **ValidationResult**: Validation outcome with errors
 - **ValidationEngine**: Main validation engine class
+
+### Session Validator (`session_validator.py`)
+
+- **SeasonRule / SessionConfig**: Typed configuration for seasonality windows
+- **SessionValidator**: Time-based gatekeeper returning `SessionResult`
+- **SessionConstraints**: Active guardrails (tiers, setups, min score, DXY thresholds)
+- Built-in support for September defensive mode, October base month, and November–December trend season
+- Logging guarantees `"Session status: allowed/blocked"` with context
 
 ## SOP Rules Enforced
 
