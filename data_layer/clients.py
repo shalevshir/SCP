@@ -8,8 +8,11 @@ import os
 from datetime import datetime
 
 import pandas as pd
-from common.exceptions import DataSourceError
+from common.exceptions import DataSourceError, NormalizationError
+from common.logger import get_logger
 from common.types import Candle
+
+logger = get_logger(__name__)
 
 
 class CMEGCClient:
@@ -355,7 +358,7 @@ class LocalCSVClient:
 
         # Convert to list of Candle objects
         candles: list[Candle] = []
-        for _, row in df.iterrows():
+        for idx, row in df.iterrows():
             try:
                 candle = Candle(
                     timestamp=row["ts_event"],
@@ -369,8 +372,66 @@ class LocalCSVClient:
                     source="CSV",
                 )
                 candles.append(candle)
-            except Exception:
-                # Skip invalid rows but continue processing
-                continue
+            except NormalizationError as e:
+                # Invalid data detected - fail fast as data errors are not acceptable
+                row_info = {
+                    "timestamp": str(row.get("ts_event", "unknown")),
+                    "symbol": str(row.get("symbol", "unknown")),
+                    "open": row.get("open", "N/A"),
+                    "high": row.get("high", "N/A"),
+                    "low": row.get("low", "N/A"),
+                    "close": row.get("close", "N/A"),
+                    "volume": row.get("volume", "N/A"),
+                    "row_index": idx,
+                }
+                logger.error(
+                    f"Invalid data detected in CSV row: {e.message}",
+                    extra={"file": self.file_path, "row": row_info},
+                )
+                raise DataSourceError(
+                    f"Invalid data in CSV file at row {idx}: {e.message}. "
+                    f"Row data: symbol={row_info['symbol']}, "
+                    f"open={row_info['open']}, high={row_info['high']}, "
+                    f"low={row_info['low']}, close={row_info['close']}, "
+                    f"volume={row_info['volume']}",
+                    file_path=self.file_path,
+                    row_index=idx,
+                    symbol=row_info["symbol"],
+                ) from e
+            except (ValueError, TypeError, KeyError) as e:
+                # Data type conversion or missing column errors
+                row_info = {
+                    "timestamp": str(row.get("ts_event", "unknown")),
+                    "symbol": str(row.get("symbol", "unknown")),
+                    "row_index": idx,
+                }
+                logger.error(
+                    f"Failed to parse CSV row: {str(e)}",
+                    extra={"file": self.file_path, "row": row_info},
+                )
+                raise DataSourceError(
+                    f"Failed to parse CSV row {idx}: {str(e)}. "
+                    f"Row data: {row_info}",
+                    file_path=self.file_path,
+                    row_index=idx,
+                ) from e
+            except Exception as e:
+                # Catch any other unexpected exceptions and fail fast
+                row_info = {
+                    "timestamp": str(row.get("ts_event", "unknown")),
+                    "symbol": str(row.get("symbol", "unknown")),
+                    "row_index": idx,
+                }
+                logger.error(
+                    f"Unexpected error processing CSV row: {type(e).__name__}: {str(e)}",
+                    extra={"file": self.file_path, "row": row_info},
+                    exc_info=True,
+                )
+                raise DataSourceError(
+                    f"Unexpected error processing CSV row {idx}: {type(e).__name__}: {str(e)}. "
+                    f"Row data: {row_info}",
+                    file_path=self.file_path,
+                    row_index=idx,
+                ) from e
 
         return candles

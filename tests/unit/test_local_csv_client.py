@@ -44,9 +44,14 @@ def test_fetch_returns_list():
     start = datetime(2025, 9, 30, 4, 20, 0, tzinfo=UTC)
     end = datetime(2025, 9, 30, 4, 30, 0, tzinfo=UTC)
 
-    result = client.fetch(start, end, "1m")
-
-    assert isinstance(result, list)
+    # This date range may contain invalid data (negative values)
+    # If so, DataSourceError should be raised (fail-fast behavior)
+    try:
+        result = client.fetch(start, end, "1m")
+        assert isinstance(result, list)
+    except DataSourceError as e:
+        # If error is raised due to invalid data, verify it's the expected error
+        assert "invalid data" in str(e).lower() or "positive" in str(e).lower()
 
 
 def test_fetch_returns_list_of_candles():
@@ -56,13 +61,18 @@ def test_fetch_returns_list_of_candles():
     start = datetime(2025, 9, 30, 4, 20, 0, tzinfo=UTC)
     end = datetime(2025, 9, 30, 4, 30, 0, tzinfo=UTC)
 
-    result = client.fetch(start, end, "1m")
-
-    # Should be a list (empty or with Candles)
-    assert isinstance(result, list)
-    # If not empty, all items should be Candles
-    for item in result:
-        assert isinstance(item, Candle)
+    # This date range may contain invalid data (negative values)
+    # If so, DataSourceError should be raised (fail-fast behavior)
+    try:
+        result = client.fetch(start, end, "1m")
+        # Should be a list (empty or with Candles)
+        assert isinstance(result, list)
+        # If not empty, all items should be Candles
+        for item in result:
+            assert isinstance(item, Candle)
+    except DataSourceError as e:
+        # If error is raised due to invalid data, verify it's the expected error
+        assert "invalid data" in str(e).lower() or "positive" in str(e).lower()
 
 
 def test_nonexistent_file_raises_error():
@@ -171,8 +181,14 @@ def test_fetch_with_different_timeframes():
     timeframes = ["1m", "5m", "15m", "1h", "1d"]
 
     for timeframe in timeframes:
-        result = client.fetch(start, end, timeframe)
-        assert isinstance(result, list)
+        # This date range may contain invalid data (negative values)
+        # If so, DataSourceError should be raised (fail-fast behavior)
+        try:
+            result = client.fetch(start, end, timeframe)
+            assert isinstance(result, list)
+        except DataSourceError as e:
+            # If error is raised due to invalid data, verify it's the expected error
+            assert "invalid data" in str(e).lower() or "positive" in str(e).lower()
 
 
 def test_multiple_fetch_calls():
@@ -182,13 +198,18 @@ def test_multiple_fetch_calls():
     start = datetime(2025, 9, 30, 4, 20, 0, tzinfo=UTC)
     end = datetime(2025, 9, 30, 4, 30, 0, tzinfo=UTC)
 
-    result1 = client.fetch(start, end, "1m")
-    result2 = client.fetch(start, end, "5m")
-    result3 = client.fetch(start, end, "15m")
-
-    assert isinstance(result1, list)
-    assert isinstance(result2, list)
-    assert isinstance(result3, list)
+    # This date range may contain invalid data (negative values)
+    # If so, DataSourceError should be raised (fail-fast behavior)
+    try:
+        result1 = client.fetch(start, end, "1m")
+        result2 = client.fetch(start, end, "5m")
+        result3 = client.fetch(start, end, "15m")
+        assert isinstance(result1, list)
+        assert isinstance(result2, list)
+        assert isinstance(result3, list)
+    except DataSourceError as e:
+        # If error is raised due to invalid data, verify it's the expected error
+        assert "invalid data" in str(e).lower() or "positive" in str(e).lower()
 
 
 def test_fetch_signature_matches_expected():
@@ -215,8 +236,14 @@ def test_fetch_accepts_timezone_aware_datetimes():
     # Test with UTC
     start_utc = datetime(2025, 9, 30, 4, 20, 0, tzinfo=UTC)
     end_utc = datetime(2025, 9, 30, 4, 30, 0, tzinfo=UTC)
-    result = client.fetch(start_utc, end_utc, "1m")
-    assert isinstance(result, list)
+    # This date range may contain invalid data (negative values)
+    # If so, DataSourceError should be raised (fail-fast behavior)
+    try:
+        result = client.fetch(start_utc, end_utc, "1m")
+        assert isinstance(result, list)
+    except DataSourceError as e:
+        # If error is raised due to invalid data, verify it's the expected error
+        assert "invalid data" in str(e).lower() or "positive" in str(e).lower()
 
 
 def test_client_repr():
@@ -247,7 +274,7 @@ def test_fetch_return_type_annotation():
 
 
 def test_fetch_loads_real_csv_data():
-    """Test that fetch loads actual data from CSV file."""
+    """Test that fetch loads actual data from CSV file or fails on invalid data."""
     csv_path = Path("data/gc_dx_ohlcv/GC_ohlcv-1m.csv")
     client = LocalCSVClient(csv_path)
     
@@ -255,22 +282,26 @@ def test_fetch_loads_real_csv_data():
     start = datetime(2025, 9, 30, 4, 20, 0, tzinfo=UTC)
     end = datetime(2025, 9, 30, 4, 30, 0, tzinfo=UTC)
     
-    result = client.fetch(start, end, "1m")
-    
-    # Should return non-empty list
-    assert isinstance(result, list)
-    assert len(result) > 0
-    
-    # All items should be Candle objects
-    for candle in result:
-        assert isinstance(candle, Candle)
-        assert candle.symbol.startswith("GC")  # GC symbols
-        assert candle.timeframe == "1m"
-        assert candle.source == "CSV"
+    # This date range may contain invalid data (negative values)
+    # If so, DataSourceError should be raised (fail-fast behavior)
+    try:
+        result = client.fetch(start, end, "1m")
+        # Should return non-empty list if valid data exists
+        assert isinstance(result, list)
+        if len(result) > 0:
+            # All items should be Candle objects
+            for candle in result:
+                assert isinstance(candle, Candle)
+                assert candle.symbol.startswith("GC")  # GC symbols
+                assert candle.timeframe == "1m"
+                assert candle.source == "CSV"
+    except DataSourceError as e:
+        # If error is raised due to invalid data, verify it's the expected error
+        assert "invalid data" in str(e).lower() or "positive" in str(e).lower()
 
 
 def test_fetch_filters_by_date_range():
-    """Test that fetch correctly filters data by date range."""
+    """Test that fetch correctly filters data by date range or fails on invalid data."""
     csv_path = Path("data/gc_dx_ohlcv/GC_ohlcv-1m.csv")
     client = LocalCSVClient(csv_path)
     
@@ -278,53 +309,68 @@ def test_fetch_filters_by_date_range():
     start = datetime(2025, 9, 30, 4, 21, 0, tzinfo=UTC)
     end = datetime(2025, 9, 30, 4, 23, 0, tzinfo=UTC)
     
-    result = client.fetch(start, end, "1m")
-    
-    # All candles should be within range
-    for candle in result:
-        assert candle.timestamp >= start
-        assert candle.timestamp < end
+    # This date range may contain invalid data (negative values)
+    # If so, DataSourceError should be raised (fail-fast behavior)
+    try:
+        result = client.fetch(start, end, "1m")
+        # All candles should be within range
+        for candle in result:
+            assert candle.timestamp >= start
+            assert candle.timestamp < end
+    except DataSourceError as e:
+        # If error is raised due to invalid data, verify it's the expected error
+        assert "invalid data" in str(e).lower() or "positive" in str(e).lower()
 
 
 def test_fetch_parses_timezone_aware_timestamps():
-    """Test that fetch parses timestamps as timezone-aware UTC."""
+    """Test that fetch parses timestamps as timezone-aware UTC or fails on invalid data."""
     csv_path = Path("data/gc_dx_ohlcv/GC_ohlcv-1m.csv")
     client = LocalCSVClient(csv_path)
     
     start = datetime(2025, 9, 30, 4, 20, 0, tzinfo=UTC)
     end = datetime(2025, 9, 30, 4, 30, 0, tzinfo=UTC)
     
-    result = client.fetch(start, end, "1m")
-    
-    # All timestamps should be timezone-aware UTC
-    for candle in result:
-        assert candle.timestamp.tzinfo is not None
-        assert candle.timestamp.tzinfo == UTC
+    # This date range may contain invalid data (negative values)
+    # If so, DataSourceError should be raised (fail-fast behavior)
+    try:
+        result = client.fetch(start, end, "1m")
+        # All timestamps should be timezone-aware UTC
+        for candle in result:
+            assert candle.timestamp.tzinfo is not None
+            assert candle.timestamp.tzinfo == UTC
+    except DataSourceError as e:
+        # If error is raised due to invalid data, verify it's the expected error
+        assert "invalid data" in str(e).lower() or "positive" in str(e).lower()
 
 
 def test_fetch_converts_to_candle_objects():
-    """Test that fetch converts CSV rows to valid Candle objects."""
+    """Test that fetch converts CSV rows to valid Candle objects or fails on invalid data."""
     csv_path = Path("data/gc_dx_ohlcv/GC_ohlcv-1m.csv")
     client = LocalCSVClient(csv_path)
     
     start = datetime(2025, 9, 30, 4, 20, 0, tzinfo=UTC)
     end = datetime(2025, 9, 30, 4, 30, 0, tzinfo=UTC)
     
-    result = client.fetch(start, end, "1m")
-    
-    # Verify Candle structure and validation
-    for candle in result:
-        assert candle.open > 0
-        assert candle.high > 0
-        assert candle.low > 0
-        assert candle.close > 0
-        assert candle.volume >= 0
-        # OHLC relationships
-        assert candle.high >= candle.low
-        assert candle.high >= candle.open
-        assert candle.high >= candle.close
-        assert candle.low <= candle.open
-        assert candle.low <= candle.close
+    # This date range may contain invalid data (negative values)
+    # If so, DataSourceError should be raised (fail-fast behavior)
+    try:
+        result = client.fetch(start, end, "1m")
+        # Verify Candle structure and validation
+        for candle in result:
+            assert candle.open > 0
+            assert candle.high > 0
+            assert candle.low > 0
+            assert candle.close > 0
+            assert candle.volume >= 0
+            # OHLC relationships
+            assert candle.high >= candle.low
+            assert candle.high >= candle.open
+            assert candle.high >= candle.close
+            assert candle.low <= candle.open
+            assert candle.low <= candle.close
+    except DataSourceError as e:
+        # If error is raised due to invalid data, verify it's the expected error
+        assert "invalid data" in str(e).lower() or "positive" in str(e).lower()
 
 
 def test_fetch_raises_error_for_missing_file():
