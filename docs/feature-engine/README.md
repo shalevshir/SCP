@@ -123,6 +123,73 @@ features = aggregate_features(gc_df, dxy_df, "1m", indicators=indicators)
 
 ---
 
+### ✅ [Structure Labels](./structure.md)
+**Purpose:** Identify swing points and label them as HH/HL/LH/LL for structure analysis
+
+**Key Features:**
+- Swing high/low detection using rolling window
+- Structure labels: HH (Higher High), HL (Higher Low), LH (Lower High), LL (Lower Low)
+- Configurable swing window (default 5 periods)
+- Handles edge cases (insufficient data, flat markets)
+
+**Usage:**
+```python
+from feature_engine import calculate_structure_labels
+df['structure_label'] = calculate_structure_labels(df, swing_window=5)
+```
+
+---
+
+### ✅ [VWAP Deviation](./vwap.md#vwap-deviation)
+**Purpose:** Calculate percentage deviation from VWAP for fade setup detection
+
+**Key Features:**
+- Absolute percentage deviation: `abs((close - vwap) / vwap * 100)`
+- Used for identifying fade opportunities (counter-trend setups)
+- Validates VWAP values are positive
+
+**Usage:**
+```python
+from feature_engine import calculate_vwap_deviation
+df['vwap_deviation'] = calculate_vwap_deviation(df)
+```
+
+---
+
+### ✅ [Integration Layer](./integration.md)
+**Purpose:** Complete integration layer connecting HistoricalDataLoader with FeatureEngine
+
+**Key Features:**
+- Processes aligned GC and DXY datasets through full pipeline
+- Computes all indicators (RSI, VWAP, EMA, DXY correlation)
+- Adds structure labels and VWAP deviation
+- Applies validation rules before scoring
+- Handles format conversion (timestamp index ↔ ts_event column)
+- Ensures no NaNs past initialization window
+
+**Usage:**
+```python
+from data_layer import HistoricalDataLoader
+from feature_engine import process_features
+from datetime import datetime, timezone
+
+loader = HistoricalDataLoader("data/gc_dx_ohlcv")
+start = datetime(2025, 9, 30, 4, 20, 0, tzinfo=timezone.utc)
+end = datetime(2025, 9, 30, 5, 0, 0, tzinfo=timezone.utc)
+data = loader.load(["GC", "DXY"], "1m", start, end)
+
+features = process_features(
+    data["GC"],
+    data["DXY"],
+    "1m",
+    context={"session_ok": True, ...}
+)
+```
+
+[📖 Full Integration Layer Documentation](./integration.md)
+
+---
+
 ## Planned Indicators (Phase 2)
 
 The following indicators are under development:
