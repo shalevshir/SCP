@@ -5,7 +5,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import pytest
-from feature_engine.vwap import calculate_vwap
+from feature_engine.vwap import calculate_vwap, calculate_vwap_deviation
 
 # Path to project root (two levels up from this test file)
 PROJECT_ROOT = Path(__file__).parent.parent.parent
@@ -172,3 +172,68 @@ class TestVWAPCalculation:
         assert isinstance(result, pd.Series)
         assert len(result) == len(simple_ohlcv)
         assert result.index.equals(simple_ohlcv.index)
+
+
+class TestVWAPDeviation:
+    """Test VWAP deviation calculation."""
+
+    def test_calculates_deviation_percentage(self) -> None:
+        """Test VWAP deviation calculation."""
+        df = pd.DataFrame(
+            {
+                "close": [2650.0, 2655.0, 2645.0],
+                "vwap": [2645.0, 2645.0, 2645.0],
+            }
+        )
+
+        deviation = calculate_vwap_deviation(df)
+
+        assert len(deviation) == 3
+        assert deviation.iloc[0] == pytest.approx(0.189, abs=0.01)  # (2650-2645)/2645*100
+        assert deviation.iloc[1] == pytest.approx(0.378, abs=0.01)  # (2655-2645)/2645*100
+        assert deviation.iloc[2] == pytest.approx(0.0, abs=0.01)  # (2645-2645)/2645*100
+
+    def test_raises_error_for_missing_columns(self) -> None:
+        """Test that error is raised for missing columns."""
+        df = pd.DataFrame({"close": [2650.0]})
+
+        with pytest.raises(ValueError, match="Missing required columns"):
+            calculate_vwap_deviation(df)
+
+    def test_raises_error_for_zero_vwap(self) -> None:
+        """Test that error is raised for zero VWAP values."""
+        df = pd.DataFrame({"close": [2650.0], "vwap": [0.0]})
+
+        with pytest.raises(ValueError, match="VWAP values must be positive"):
+            calculate_vwap_deviation(df)
+
+    def test_raises_error_for_negative_vwap(self) -> None:
+        """Test that error is raised for negative VWAP values."""
+        df = pd.DataFrame({"close": [2650.0], "vwap": [-100.0]})
+
+        with pytest.raises(ValueError, match="VWAP values must be positive"):
+            calculate_vwap_deviation(df)
+
+    def test_raises_error_for_nan_vwap(self) -> None:
+        """Test that error is raised for NaN VWAP values."""
+        df = pd.DataFrame(
+            {
+                "close": [2650.0, 2655.0, 2645.0],
+                "vwap": [2645.0, np.nan, 2645.0],
+            }
+        )
+
+        with pytest.raises(ValueError, match="VWAP values must be positive.*NaN"):
+            calculate_vwap_deviation(df)
+
+    def test_raises_error_for_all_nan_vwap(self) -> None:
+        """Test that error is raised when all VWAP values are NaN."""
+        df = pd.DataFrame(
+            {
+                "close": [2650.0, 2655.0, 2645.0],
+                "vwap": [np.nan, np.nan, np.nan],
+            }
+        )
+
+        with pytest.raises(ValueError, match="VWAP values must be positive.*NaN"):
+            calculate_vwap_deviation(df)
