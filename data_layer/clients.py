@@ -6,10 +6,13 @@ replaced with real API integrations in future phases.
 
 import os
 from datetime import datetime
-from pathlib import Path
 
-from common.exceptions import DataSourceError
+import pandas as pd
+from common.exceptions import DataSourceError, NormalizationError
+from common.logger import get_logger
 from common.types import Candle
+
+logger = get_logger(__name__)
 
 
 class CMEGCClient:
@@ -244,7 +247,7 @@ class LocalCSVClient:
             DataSourceError: If file_path is invalid or empty
         """
         # Validate file_path type (must be string or Path-like)
-        if not isinstance(file_path, (str, os.PathLike)):
+        if not isinstance(file_path, str | os.PathLike):
             raise DataSourceError(
                 "file_path must be a string or Path object",
                 file_path_type=str(type(file_path)),
@@ -280,20 +283,11 @@ class LocalCSVClient:
             timeframe: Candle timeframe (e.g., "1m", "5m", "15m")
 
         Returns:
-            List of Candle objects representing OHLCV data.
-            Currently returns empty list in stub implementation.
+            List of Candle objects representing OHLCV data filtered by date range.
 
         Raises:
             DataSourceError: If validation fails (invalid dates, empty timeframe, etc.)
-
-        Note:
-            **This is a stub implementation for Phase 1.**
-
-            Current behavior: Returns empty list to enable testing without
-            file I/O dependencies.
-
-            Future behavior: Will read and parse CSV files to return Candle
-            objects within the specified date range and timeframe.
+                            or if file cannot be read.
 
         Example:
             >>> client = LocalCSVClient("data/gc_2025.csv")
@@ -336,6 +330,108 @@ class LocalCSVClient:
                 file_path=self.file_path,
             )
 
-        # Stub implementation: return empty list
-        # Future: This will read CSV file and return real data
-        return []
+        # Read CSV file
+        try:
+            df = pd.read_csv(self.file_path)
+        except FileNotFoundError as e:
+            raise DataSourceError(
+                f"CSV file not found: {self.file_path}",
+                file_path=self.file_path,
+            ) from e
+        except Exception as e:
+            raise DataSourceError(
+                f"Failed to read CSV file: {str(e)}",
+                file_path=self.file_path,
+            ) from e
+
+        # Parse timestamps as timezone-aware UTC
+        try:
+            df["ts_event"] = pd.to_datetime(df["ts_event"], utc=True)
+        except Exception as e:
+            raise DataSourceError(
+                f"Failed to parse timestamps: {str(e)}",
+                file_path=self.file_path,
+            ) from e
+
+        # Filter by date range (start <= ts_event < end)
+        df = df[(df["ts_event"] >= start) & (df["ts_event"] < end)]
+
+        # Convert to list of Candle objects
+        candles: list[Candle] = []
+        for idx, row in df.iterrows():
+            try:
+                candle = Candle(
+                    timestamp=row["ts_event"],
+                    open=float(row["open"]),
+                    high=float(row["high"]),
+                    low=float(row["low"]),
+                    close=float(row["close"]),
+                    volume=float(row["volume"]),
+                    symbol=str(row["symbol"]),
+                    timeframe=timeframe,
+                    source="CSV",
+                )
+                candles.append(candle)
+            except NormalizationError as e:
+                # Invalid data detected - fail fast as data errors are not acceptable
+                row_info = {
+                    "timestamp": str(row.get("ts_event", "unknown")),
+                    "symbol": str(row.get("symbol", "unknown")),
+                    "open": row.get("open", "N/A"),
+                    "high": row.get("high", "N/A"),
+                    "low": row.get("low", "N/A"),
+                    "close": row.get("close", "N/A"),
+                    "volume": row.get("volume", "N/A"),
+                    "row_index": idx,
+                }
+                logger.error(
+                    f"Invalid data detected in CSV row: {e.message}",
+                    extra={"file": self.file_path, "row": row_info},
+                )
+                raise DataSourceError(
+                    f"Invalid data in CSV file at row {idx}: {e.message}. "
+                    f"Row data: symbol={row_info['symbol']}, "
+                    f"open={row_info['open']}, high={row_info['high']}, "
+                    f"low={row_info['low']}, close={row_info['close']}, "
+                    f"volume={row_info['volume']}",
+                    file_path=self.file_path,
+                    row_index=idx,
+                    symbol=row_info["symbol"],
+                ) from e
+            except (ValueError, TypeError, KeyError) as e:
+                # Data type conversion or missing column errors
+                row_info = {
+                    "timestamp": str(row.get("ts_event", "unknown")),
+                    "symbol": str(row.get("symbol", "unknown")),
+                    "row_index": idx,
+                }
+                logger.error(
+                    f"Failed to parse CSV row: {str(e)}",
+                    extra={"file": self.file_path, "row": row_info},
+                )
+                raise DataSourceError(
+                    f"Failed to parse CSV row {idx}: {str(e)}. "
+                    f"Row data: {row_info}",
+                    file_path=self.file_path,
+                    row_index=idx,
+                ) from e
+            except Exception as e:
+                # Catch any other unexpected exceptions and fail fast
+                row_info = {
+                    "timestamp": str(row.get("ts_event", "unknown")),
+                    "symbol": str(row.get("symbol", "unknown")),
+                    "row_index": idx,
+                }
+                logger.error(
+                    f"Unexpected error processing CSV row: {type(e).__name__}: {str(e)}",
+                    extra={"file": self.file_path, "row": row_info},
+                    exc_info=True,
+                )
+                raise DataSourceError(
+                    f"Unexpected error processing CSV row {idx}: {type(e).__name__}: {str(e)}. "
+                    f"Row data: {row_info}",
+                    file_path=self.file_path,
+                    row_index=idx,
+                ) from e
+
+        return candles
