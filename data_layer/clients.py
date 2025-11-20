@@ -358,6 +358,7 @@ class LocalCSVClient:
 
         # Convert to list of Candle objects
         candles: list[Candle] = []
+        skipped_rows: list[dict[str, str | float | int]] = []
         for idx, row in df.iterrows():
             try:
                 candle = Candle(
@@ -373,7 +374,7 @@ class LocalCSVClient:
                 )
                 candles.append(candle)
             except NormalizationError as e:
-                # Invalid data detected - fail fast as data errors are not acceptable
+                # Invalid data detected - log and skip row instead of failing
                 row_info = {
                     "timestamp": str(row.get("ts_event", "unknown")),
                     "symbol": str(row.get("symbol", "unknown")),
@@ -384,20 +385,13 @@ class LocalCSVClient:
                     "volume": row.get("volume", "N/A"),
                     "row_index": idx,
                 }
-                logger.error(
-                    f"Invalid data detected in CSV row: {e.message}",
+                skipped_rows.append(row_info)
+                logger.warning(
+                    "Skipping invalid CSV row due to normalization error: %s",
+                    e.message,
                     extra={"file": self.file_path, "row": row_info},
                 )
-                raise DataSourceError(
-                    f"Invalid data in CSV file at row {idx}: {e.message}. "
-                    f"Row data: symbol={row_info['symbol']}, "
-                    f"open={row_info['open']}, high={row_info['high']}, "
-                    f"low={row_info['low']}, close={row_info['close']}, "
-                    f"volume={row_info['volume']}",
-                    file_path=self.file_path,
-                    row_index=idx,
-                    symbol=row_info["symbol"],
-                ) from e
+                continue
             except (ValueError, TypeError, KeyError) as e:
                 # Data type conversion or missing column errors
                 row_info = {
@@ -433,5 +427,14 @@ class LocalCSVClient:
                     file_path=self.file_path,
                     row_index=idx,
                 ) from e
+
+        if skipped_rows:
+            sample = skipped_rows[:3]
+            logger.warning(
+                "Skipped %d invalid rows while loading %s. Sample: %s",
+                len(skipped_rows),
+                self.file_path,
+                sample,
+            )
 
         return candles
