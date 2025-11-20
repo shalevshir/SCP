@@ -22,3 +22,4 @@ data/gc_dx_ohlcv/*-1s.csv
 db/**
 !.gitkeep
 
+data/feature_integration.csv

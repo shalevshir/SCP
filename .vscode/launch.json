@@ -1,0 +1,25 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "FeatureEngine Integration Script",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/scripts/run_feature_integration.py",
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "args": [
+        "--timeframe",
+        "1m",
+        "--start",
+        "2025-09-30T09:00:00+00:00",
+        "--end",
+        "2025-10-07T13:00:00+00:00",
+        "--output",
+        "data/feature_integration.csv"
+      ]
+    }
+  ]
+}
+
+
