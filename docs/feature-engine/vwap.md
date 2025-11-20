@@ -151,12 +151,30 @@ pytest tests/unit/test_vwap.py -v
 
 ### 1. Fair Value Reference
 ```python
-# Identify when price deviates significantly from VWAP
-df['vwap_deviation_pct'] = ((df['close'] - df['vwap']) / df['vwap']) * 100
+from feature_engine import calculate_vwap_deviation
+
+# Calculate VWAP deviation percentage
+df['vwap_deviation'] = calculate_vwap_deviation(df)
 
 # Filter for significant deviations (>0.5%)
-significant_moves = df[abs(df['vwap_deviation_pct']) > 0.5]
+significant_moves = df[df['vwap_deviation'] > 0.5]
 ```
+
+### VWAP Deviation Function
+
+The `calculate_vwap_deviation()` function computes the absolute percentage deviation of close price from VWAP, which is useful for identifying fade opportunities:
+
+```python
+from feature_engine import calculate_vwap_deviation
+
+df['vwap_deviation'] = calculate_vwap_deviation(df)
+# Formula: abs((close - vwap) / vwap * 100)
+```
+
+**Interpretation:**
+- **Low deviation (< 0.5%)**: Price near VWAP, continuation setups more likely
+- **High deviation (> 1.0%)**: Price far from VWAP, fade setups more likely
+- **Extreme deviation (> 2.0%)**: Strong fade opportunity (counter-trend)
 
 ### 2. Structure Confirmation (SOP Alignment)
 ```python

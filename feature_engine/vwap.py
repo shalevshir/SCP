@@ -107,3 +107,66 @@ def calculate_vwap(
     vwap.index = df.index
 
     return vwap
+
+
+def calculate_vwap_deviation(
+    df: pd.DataFrame, close_column: str = "close", vwap_column: str = "vwap"
+) -> pd.Series:
+    """Calculate VWAP deviation percentage for fade setup detection.
+
+    Computes the absolute percentage deviation of close price from VWAP.
+    Significant deviations indicate potential fade opportunities (counter-trend
+    setups when price is far from fair value).
+
+    NaN values in VWAP are gracefully propagated through the calculation
+    (common during initialization/warm-up period). Zero or negative VWAP
+    values in non-NaN rows will raise an error.
+
+    Args:
+        df: DataFrame containing close and vwap columns.
+        close_column: Name of the close price column. Default is "close".
+        vwap_column: Name of the VWAP column. Default is "vwap".
+
+    Returns:
+        Series containing absolute percentage deviation values, indexed same
+        as input DataFrame. Formula: abs((close - vwap) / vwap * 100).
+        NaN values are propagated where VWAP is NaN.
+
+    Raises:
+        ValueError: If required columns are missing.
+        ValueError: If non-NaN VWAP values are zero or negative (division error).
+
+    Example:
+        >>> df = pd.DataFrame({
+        ...     'close': [2650.0, 2655.0, 2645.0],
+        ...     'vwap': [2645.0, 2645.0, 2645.0]
+        ... })
+        >>> deviation = calculate_vwap_deviation(df)
+        >>> print(deviation)
+    """
+    # Validate required columns
+    required_cols = {close_column, vwap_column}
+    missing_cols = required_cols - set(df.columns)
+    if missing_cols:
+        raise ValueError(
+            f"Missing required columns: {missing_cols}. "
+            f"Available columns: {list(df.columns)}"
+        )
+
+    close = df[close_column]
+    vwap = df[vwap_column]
+
+    # Check for zero or negative VWAP values (only in non-NaN rows)
+    # NaN values are allowed and will be propagated through calculation
+    non_nan_vwap = vwap[~vwap.isna()]
+    if len(non_nan_vwap) > 0 and (non_nan_vwap <= 0).any():
+        raise ValueError(
+            "VWAP values must be positive. Found zero or negative values "
+            "(excluding NaN values which are allowed during initialization)."
+        )
+
+    # Calculate percentage deviation: abs((close - vwap) / vwap * 100)
+    # NaN values in VWAP will naturally propagate to deviation result
+    deviation = abs((close - vwap) / vwap * 100)
+
+    return deviation
