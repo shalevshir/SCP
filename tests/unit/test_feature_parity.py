@@ -13,6 +13,7 @@ import pytest
 from common.types import Candle
 from feature_engine.state import FeatureState
 from feature_engine.integration import process_features
+from feature_engine.backtesting import BacktestProcessor
 from data_layer.loader import HistoricalDataLoader
 
 
@@ -423,6 +424,165 @@ class TestFeatureParity:
                     
                     assert max_diff < tolerance, \
                         f"{col} max diff {max_diff} exceeds tolerance {tolerance}"
+
+    def test_backtest_processor_vs_incremental_vwap(self, sample_candles):
+        """Test BacktestProcessor VWAP matches incremental FeatureState."""
+        gc_candles, dxy_candles = sample_candles
+        
+        # Convert candles to DataFrames
+        gc_df = pd.DataFrame({
+            "open": [c.open for c in gc_candles],
+            "high": [c.high for c in gc_candles],
+            "low": [c.low for c in gc_candles],
+            "close": [c.close for c in gc_candles],
+            "volume": [c.volume for c in gc_candles],
+        }, index=pd.DatetimeIndex([c.timestamp for c in gc_candles], name="timestamp"))
+        
+        dxy_df = pd.DataFrame({
+            "open": [c.open for c in dxy_candles],
+            "high": [c.high for c in dxy_candles],
+            "low": [c.low for c in dxy_candles],
+            "close": [c.close for c in dxy_candles],
+            "volume": [c.volume for c in dxy_candles],
+        }, index=pd.DatetimeIndex([c.timestamp for c in dxy_candles], name="timestamp"))
+        
+        # Backtest processor
+        processor = BacktestProcessor(timeframe="1m")
+        backtest_features = list(processor.iterate_with_context(gc_df, dxy_df))
+        
+        # Incremental state
+        state = FeatureState(timeframe="1m")
+        inc_features = []
+        for gc, dxy in zip(gc_candles, dxy_candles):
+            features = state.update(gc_candle=gc, dxy_candle=dxy)
+            if features is not None and state.is_ready():
+                inc_features.append(features)
+        
+        # Should have same number of features
+        assert len(backtest_features) == len(inc_features)
+        
+        # Compare VWAP values (exact match expected)
+        for i, (bt_feat, inc_feat) in enumerate(zip(backtest_features, inc_features)):
+            assert abs(bt_feat["vwap"] - inc_feat["vwap"]) < 0.01, \
+                f"VWAP mismatch at index {i}: backtest={bt_feat['vwap']}, incremental={inc_feat['vwap']}"
+
+    def test_backtest_processor_vs_incremental_rsi(self, sample_candles):
+        """Test BacktestProcessor RSI matches incremental FeatureState."""
+        gc_candles, dxy_candles = sample_candles
+        
+        # Convert candles to DataFrames
+        gc_df = pd.DataFrame({
+            "open": [c.open for c in gc_candles],
+            "high": [c.high for c in gc_candles],
+            "low": [c.low for c in gc_candles],
+            "close": [c.close for c in gc_candles],
+            "volume": [c.volume for c in gc_candles],
+        }, index=pd.DatetimeIndex([c.timestamp for c in gc_candles], name="timestamp"))
+        
+        dxy_df = pd.DataFrame({
+            "open": [c.open for c in dxy_candles],
+            "high": [c.high for c in dxy_candles],
+            "low": [c.low for c in dxy_candles],
+            "close": [c.close for c in dxy_candles],
+            "volume": [c.volume for c in dxy_candles],
+        }, index=pd.DatetimeIndex([c.timestamp for c in dxy_candles], name="timestamp"))
+        
+        # Backtest processor
+        processor = BacktestProcessor(timeframe="1m")
+        backtest_features = list(processor.iterate_with_context(gc_df, dxy_df))
+        
+        # Incremental state
+        state = FeatureState(timeframe="1m")
+        inc_features = []
+        for gc, dxy in zip(gc_candles, dxy_candles):
+            features = state.update(gc_candle=gc, dxy_candle=dxy)
+            if features is not None and state.is_ready():
+                inc_features.append(features)
+        
+        # Compare RSI values (within tolerance)
+        for i, (bt_feat, inc_feat) in enumerate(zip(backtest_features, inc_features)):
+            if bt_feat["rsi"] is not None and inc_feat["rsi"] is not None:
+                assert abs(bt_feat["rsi"] - inc_feat["rsi"]) < 0.5, \
+                    f"RSI mismatch at index {i}: backtest={bt_feat['rsi']}, incremental={inc_feat['rsi']}"
+
+    def test_backtest_processor_vs_incremental_ema(self, sample_candles):
+        """Test BacktestProcessor EMAs match incremental FeatureState."""
+        gc_candles, dxy_candles = sample_candles
+        
+        # Convert candles to DataFrames
+        gc_df = pd.DataFrame({
+            "open": [c.open for c in gc_candles],
+            "high": [c.high for c in gc_candles],
+            "low": [c.low for c in gc_candles],
+            "close": [c.close for c in gc_candles],
+            "volume": [c.volume for c in gc_candles],
+        }, index=pd.DatetimeIndex([c.timestamp for c in gc_candles], name="timestamp"))
+        
+        dxy_df = pd.DataFrame({
+            "open": [c.open for c in dxy_candles],
+            "high": [c.high for c in dxy_candles],
+            "low": [c.low for c in dxy_candles],
+            "close": [c.close for c in dxy_candles],
+            "volume": [c.volume for c in dxy_candles],
+        }, index=pd.DatetimeIndex([c.timestamp for c in dxy_candles], name="timestamp"))
+        
+        # Backtest processor
+        processor = BacktestProcessor(timeframe="1m")
+        backtest_features = list(processor.iterate_with_context(gc_df, dxy_df))
+        
+        # Incremental state
+        state = FeatureState(timeframe="1m")
+        inc_features = []
+        for gc, dxy in zip(gc_candles, dxy_candles):
+            features = state.update(gc_candle=gc, dxy_candle=dxy)
+            if features is not None and state.is_ready():
+                inc_features.append(features)
+        
+        # Compare EMA values (within tight tolerance)
+        for i, (bt_feat, inc_feat) in enumerate(zip(backtest_features, inc_features)):
+            for period in [9, 20, 50]:
+                ema_key = f"ema_{period}"
+                assert abs(bt_feat[ema_key] - inc_feat[ema_key]) < 0.01, \
+                    f"{ema_key} mismatch at index {i}: backtest={bt_feat[ema_key]}, incremental={inc_feat[ema_key]}"
+
+    def test_backtest_processor_vs_incremental_dxy_corr(self, sample_candles):
+        """Test BacktestProcessor DXY correlation matches incremental FeatureState."""
+        gc_candles, dxy_candles = sample_candles
+        
+        # Convert candles to DataFrames
+        gc_df = pd.DataFrame({
+            "open": [c.open for c in gc_candles],
+            "high": [c.high for c in gc_candles],
+            "low": [c.low for c in gc_candles],
+            "close": [c.close for c in gc_candles],
+            "volume": [c.volume for c in gc_candles],
+        }, index=pd.DatetimeIndex([c.timestamp for c in gc_candles], name="timestamp"))
+        
+        dxy_df = pd.DataFrame({
+            "open": [c.open for c in dxy_candles],
+            "high": [c.high for c in dxy_candles],
+            "low": [c.low for c in dxy_candles],
+            "close": [c.close for c in dxy_candles],
+            "volume": [c.volume for c in dxy_candles],
+        }, index=pd.DatetimeIndex([c.timestamp for c in dxy_candles], name="timestamp"))
+        
+        # Backtest processor
+        processor = BacktestProcessor(timeframe="1m")
+        backtest_features = list(processor.iterate_with_context(gc_df, dxy_df))
+        
+        # Incremental state
+        state = FeatureState(timeframe="1m")
+        inc_features = []
+        for gc, dxy in zip(gc_candles, dxy_candles):
+            features = state.update(gc_candle=gc, dxy_candle=dxy)
+            if features is not None and state.is_ready():
+                inc_features.append(features)
+        
+        # Compare DXY correlation values (within tolerance)
+        for i, (bt_feat, inc_feat) in enumerate(zip(backtest_features, inc_features)):
+            if bt_feat["dxy_corr"] is not None and inc_feat["dxy_corr"] is not None:
+                assert abs(bt_feat["dxy_corr"] - inc_feat["dxy_corr"]) < 0.05, \
+                    f"DXY corr mismatch at index {i}: backtest={bt_feat['dxy_corr']}, incremental={inc_feat['dxy_corr']}"
 
 
 class TestEdgeCases:

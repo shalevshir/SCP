@@ -15,7 +15,13 @@ The Feature Engine calculates technical indicators required by the Rule Engine f
 - One-candle-at-a-time processing with maintained state
 - No look-ahead bias possible by design
 - Matches live trading execution exactly
-- Essential for realistic backtesting and production deployment
+- Essential for live trading and realistic backtesting
+
+### Backtesting (Vectorized) Mode
+- Fast vectorized batch processing for backtesting at scale
+- No look-ahead bias through strict time slicing and future data masking
+- 10x+ faster than incremental mode on large datasets
+- Produces outputs matching incremental mode within tolerance
 
 Each indicator:
 - Accepts pandas DataFrames with standardized OHLCV columns
@@ -200,6 +206,28 @@ features = process_features(
 ```
 
 [📖 Full Integration Layer Documentation](./integration.md)
+
+---
+
+### ✅ [Backtesting Processor](./backtesting.md)
+**Purpose:** Fast vectorized feature calculation for backtesting without look-ahead bias
+
+**Key Features:**
+- Computes all indicators once using vectorization (10x+ faster than incremental)
+- Guarantees no look-ahead bias through strict time slicing
+- Masks structure labels near dataset end (use future data)
+- Matches incremental mode outputs within tolerance
+
+**Usage:**
+```python
+from feature_engine import BacktestProcessor
+
+processor = BacktestProcessor(timeframe="1m")
+for features in processor.iterate_with_context(gc_df, dxy_df):
+    signal = rule_engine.evaluate(features, context)
+```
+
+[📖 Full Backtesting Processor Documentation](./backtesting.md)
 
 ---
 

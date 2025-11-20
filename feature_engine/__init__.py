@@ -6,6 +6,7 @@ Supports both vectorized (batch) and incremental (stateful) calculation modes:
 """
 
 from feature_engine.aggregator import aggregate_features
+from feature_engine.backtesting import BacktestProcessor
 from feature_engine.dxy_correlation import calculate_dxy_correlation
 from feature_engine.ema import calculate_ema, calculate_ema_multiple
 from feature_engine.integration import (
@@ -28,6 +29,7 @@ from feature_engine.vwap import calculate_vwap, calculate_vwap_deviation
 __all__ = [
     "aggregate_features",
     "align_dataframes",
+    "BacktestProcessor",
     "calculate_dxy_correlation",
     "calculate_ema",
     "calculate_ema_multiple",
