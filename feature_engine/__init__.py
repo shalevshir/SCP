@@ -1,4 +1,9 @@
-"""Feature Engine package for technical indicators and features."""
+"""Feature Engine package for technical indicators and features.
+
+Supports both vectorized (batch) and incremental (stateful) calculation modes:
+- Vectorized: Fast batch processing for backtesting with correct time slicing
+- Incremental: One-candle-at-a-time processing for live trading and realistic backtesting
+"""
 
 from feature_engine.aggregator import aggregate_features
 from feature_engine.dxy_correlation import calculate_dxy_correlation
@@ -9,6 +14,14 @@ from feature_engine.integration import (
     process_features,
 )
 from feature_engine.rsi import calculate_rsi
+from feature_engine.state import (
+    FeatureState,
+    VWAPState,
+    RSIState,
+    EMAState,
+    DXYCorrelationState,
+    StructureState,
+)
 from feature_engine.structure import calculate_structure_labels
 from feature_engine.vwap import calculate_vwap, calculate_vwap_deviation
 
@@ -24,4 +37,11 @@ __all__ = [
     "calculate_vwap_deviation",
     "prepare_for_aggregation",
     "process_features",
+    # Incremental state classes
+    "FeatureState",
+    "VWAPState",
+    "RSIState",
+    "EMAState",
+    "DXYCorrelationState",
+    "StructureState",
 ]

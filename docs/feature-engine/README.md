@@ -4,7 +4,20 @@ The Feature Engine module provides technical indicators and feature calculations
 
 ## Overview
 
-The Feature Engine calculates technical indicators required by the Rule Engine for trade signal generation. Each indicator:
+The Feature Engine calculates technical indicators required by the Rule Engine for trade signal generation. It supports two calculation modes:
+
+### Vectorized (Batch) Mode
+- Fast batch processing using pandas/numpy vectorization
+- Ideal for backtesting with large datasets
+- Requires discipline to avoid look-ahead bias
+
+### Incremental (Stateful) Mode
+- One-candle-at-a-time processing with maintained state
+- No look-ahead bias possible by design
+- Matches live trading execution exactly
+- Essential for realistic backtesting and production deployment
+
+Each indicator:
 - Accepts pandas DataFrames with standardized OHLCV columns
 - Returns pandas Series with the same index as input
 - Handles edge cases (NaN, zero volume, missing data)
