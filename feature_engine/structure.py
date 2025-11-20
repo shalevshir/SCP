@@ -124,7 +124,8 @@ def calculate_structure_labels(
                 else:
                     # First swing low - label as HL
                     labels.loc[i] = "HL"
-            prev_swing_low = current_low
+                # Only update prev_swing_low when swing low is actually labeled
+                prev_swing_low = current_low
 
     return labels
 
