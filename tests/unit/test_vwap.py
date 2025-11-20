@@ -214,8 +214,8 @@ class TestVWAPDeviation:
         with pytest.raises(ValueError, match="VWAP values must be positive"):
             calculate_vwap_deviation(df)
 
-    def test_raises_error_for_nan_vwap(self) -> None:
-        """Test that error is raised for NaN VWAP values."""
+    def test_propagates_nan_vwap(self) -> None:
+        """Test that NaN VWAP values are propagated (not raised as error)."""
         df = pd.DataFrame(
             {
                 "close": [2650.0, 2655.0, 2645.0],
@@ -223,11 +223,15 @@ class TestVWAPDeviation:
             }
         )
 
-        with pytest.raises(ValueError, match="VWAP values must be positive.*NaN"):
-            calculate_vwap_deviation(df)
+        deviation = calculate_vwap_deviation(df)
 
-    def test_raises_error_for_all_nan_vwap(self) -> None:
-        """Test that error is raised when all VWAP values are NaN."""
+        assert len(deviation) == 3
+        assert deviation.iloc[0] == pytest.approx(0.189, abs=0.01)
+        assert pd.isna(deviation.iloc[1])  # NaN propagated
+        assert deviation.iloc[2] == pytest.approx(0.0, abs=0.01)
+
+    def test_propagates_all_nan_vwap(self) -> None:
+        """Test that all NaN VWAP values are propagated during initialization."""
         df = pd.DataFrame(
             {
                 "close": [2650.0, 2655.0, 2645.0],
@@ -235,5 +239,9 @@ class TestVWAPDeviation:
             }
         )
 
-        with pytest.raises(ValueError, match="VWAP values must be positive.*NaN"):
-            calculate_vwap_deviation(df)
+        deviation = calculate_vwap_deviation(df)
+
+        assert len(deviation) == 3
+        assert pd.isna(deviation.iloc[0])
+        assert pd.isna(deviation.iloc[1])
+        assert pd.isna(deviation.iloc[2])

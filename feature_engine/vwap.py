@@ -118,6 +118,10 @@ def calculate_vwap_deviation(
     Significant deviations indicate potential fade opportunities (counter-trend
     setups when price is far from fair value).
 
+    NaN values in VWAP are gracefully propagated through the calculation
+    (common during initialization/warm-up period). Zero or negative VWAP
+    values in non-NaN rows will raise an error.
+
     Args:
         df: DataFrame containing close and vwap columns.
         close_column: Name of the close price column. Default is "close".
@@ -125,11 +129,12 @@ def calculate_vwap_deviation(
 
     Returns:
         Series containing absolute percentage deviation values, indexed same
-        as input DataFrame. Formula: abs((close - vwap) / vwap * 100)
+        as input DataFrame. Formula: abs((close - vwap) / vwap * 100).
+        NaN values are propagated where VWAP is NaN.
 
     Raises:
         ValueError: If required columns are missing.
-        ValueError: If VWAP values are NaN, zero, or negative (division error).
+        ValueError: If non-NaN VWAP values are zero or negative (division error).
 
     Example:
         >>> df = pd.DataFrame({
@@ -151,18 +156,17 @@ def calculate_vwap_deviation(
     close = df[close_column]
     vwap = df[vwap_column]
 
-    # Check for NaN, zero, or negative VWAP values
-    # Note: NaN <= 0 evaluates to False, so we must check NaN separately
-    if vwap.isna().any():
+    # Check for zero or negative VWAP values (only in non-NaN rows)
+    # NaN values are allowed and will be propagated through calculation
+    non_nan_vwap = vwap[~vwap.isna()]
+    if len(non_nan_vwap) > 0 and (non_nan_vwap <= 0).any():
         raise ValueError(
-            "VWAP values must be positive. Found NaN values."
-        )
-    if (vwap <= 0).any():
-        raise ValueError(
-            "VWAP values must be positive. Found zero or negative values."
+            "VWAP values must be positive. Found zero or negative values "
+            "(excluding NaN values which are allowed during initialization)."
         )
 
     # Calculate percentage deviation: abs((close - vwap) / vwap * 100)
+    # NaN values in VWAP will naturally propagate to deviation result
     deviation = abs((close - vwap) / vwap * 100)
 
     return deviation
