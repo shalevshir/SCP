@@ -149,14 +149,14 @@ class TestValidationEngine:
         assert any("news event" in err.lower() for err in result.errors)
 
     def test_dxy_not_clean_fails(self) -> None:
-        """Validation should fail if dxy_trending_clean is False."""
+        """Validation should fail if dxy_trending_clean is False for continuation setups."""
         engine = ValidationEngine()
         context = self._create_valid_context()
         context = ValidationContext(
             **{**context.model_dump(), "dxy_trending_clean": False}
         )
 
-        result = engine.validate(context, TradeDirection.LONG)
+        result = engine.validate(context, TradeDirection.LONG, setup_type="VWAP_RECLAIM")
 
         assert result.valid is False
         assert any("dxy structure" in err.lower() for err in result.errors)
@@ -243,7 +243,7 @@ class TestValidationEngine:
             buffer_phase=BufferPhase.STARTUP,
         )
 
-        result = engine.validate(context, TradeDirection.SHORT)
+        result = engine.validate(context, TradeDirection.SHORT, setup_type="VWAP_RECLAIM")
 
         assert result.valid is False
         # Should have errors for: session, fatigue, risk, news, dxy, htf bias

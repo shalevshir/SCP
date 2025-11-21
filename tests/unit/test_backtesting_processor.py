@@ -47,27 +47,29 @@ class TestBacktestProcessor:
         assert processor.warmup_period == 50
 
     def test_iterate_with_context_yields_features(self, sample_data):
-        """Test that iterate_with_context yields feature series."""
+        """Test that iterate_with_context yields feature series and validation context."""
         gc_df, dxy_df = sample_data
         processor = BacktestProcessor(timeframe="1m")
         
-        features_list = list(processor.iterate_with_context(gc_df, dxy_df))
+        results_list = list(processor.iterate_with_context(gc_df, dxy_df))
         
-        # Should yield features after warmup period
+        # Should yield (features, validation_context) tuples after warmup period
         # (yields start at index warmup_period - 1)
-        assert len(features_list) > 0
-        assert len(features_list) == len(gc_df) - processor.warmup_period + 1
+        assert len(results_list) > 0
+        assert len(results_list) == len(gc_df) - processor.warmup_period + 1
         
-        # Each feature should be a pandas Series
-        assert isinstance(features_list[0], pd.Series)
+        # Each result should be a tuple of (Series, dict)
+        features, validation_context = results_list[0]
+        assert isinstance(features, pd.Series)
+        assert isinstance(validation_context, dict)
 
     def test_features_have_required_columns(self, sample_data):
         """Test that features contain all required columns."""
         gc_df, dxy_df = sample_data
         processor = BacktestProcessor(timeframe="1m")
         
-        features_list = list(processor.iterate_with_context(gc_df, dxy_df))
-        features = features_list[0]
+        # Unpack tuple: (features, validation_context)
+        features, _ = list(processor.iterate_with_context(gc_df, dxy_df))[0]
         
         required_cols = [
             "timestamp", "symbol", "timeframe",
@@ -89,8 +91,9 @@ class TestBacktestProcessor:
         
         processor = BacktestProcessor(timeframe="1m")
         
-        features_without_spike = list(processor.iterate_with_context(gc_df, dxy_df))
-        features_with_spike = list(processor.iterate_with_context(gc_df_with_spike, dxy_df))
+        # Unpack tuples: extract just features
+        features_without_spike = [f for f, _ in processor.iterate_with_context(gc_df, dxy_df)]
+        features_with_spike = [f for f, _ in processor.iterate_with_context(gc_df_with_spike, dxy_df)]
         
         # All features except the last should be identical
         # (the spike is in the last row, so it shouldn't affect earlier rows)
@@ -103,7 +106,8 @@ class TestBacktestProcessor:
         gc_df, dxy_df = sample_data
         processor = BacktestProcessor(timeframe="1m", warmup_period=10)
         
-        features_list = list(processor.iterate_with_context(gc_df, dxy_df))
+        # Unpack tuples: extract just features
+        features_list = [f for f, _ in processor.iterate_with_context(gc_df, dxy_df)]
         
         # Should skip first 9 rows (warmup_period - 1)
         # (yields start after processing warmup_period candles, at index warmup_period - 1)
@@ -139,7 +143,8 @@ class TestBacktestProcessor:
         }, index=pd.DatetimeIndex(timestamps, name="timestamp"))
         
         processor = BacktestProcessor(timeframe="1m", session_reset=True, warmup_period=5)
-        features_list = list(processor.iterate_with_context(gc_df, dxy_df))
+        # Unpack tuples: extract just features
+        features_list = [f for f, _ in processor.iterate_with_context(gc_df, dxy_df)]
         
         # VWAP should reset at day boundary
         # Day 1 last VWAP
@@ -176,7 +181,8 @@ class TestBacktestProcessor:
         }, index=pd.DatetimeIndex(timestamps, name="timestamp"))
         
         processor = BacktestProcessor(timeframe="1m", warmup_period=5)
-        features_list = list(processor.iterate_with_context(gc_df, dxy_df))
+        # Unpack tuples: extract just features
+        features_list = [f for f, _ in processor.iterate_with_context(gc_df, dxy_df)]
         
         # Should not crash and should produce valid VWAP
         assert len(features_list) > 0
@@ -211,7 +217,8 @@ class TestBacktestProcessor:
         # Vectorized mode
         processor = BacktestProcessor(timeframe="1m")
         start_vec = time.time()
-        vec_features = list(processor.iterate_with_context(gc_df, dxy_df))
+        # Unpack tuples: extract just features
+        vec_features = [f for f, _ in processor.iterate_with_context(gc_df, dxy_df)]
         vec_time = time.time() - start_vec
         
         # Incremental mode
