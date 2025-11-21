@@ -70,6 +70,7 @@ class ValidationEngine:
         context: ValidationContext,
         direction: TradeDirection,
         guardrail_result: GuardrailResult | None = None,
+        setup_type: str | None = None,
     ) -> ValidationResult:
         """Validate a trade setup against SOP requirements.
 
@@ -77,6 +78,7 @@ class ValidationEngine:
             context: ValidationContext containing market state and constraints
             direction: Intended trade direction (long/short)
             guardrail_result: Optional behavior guardrail evaluation result
+            setup_type: Optional setup type to apply setup-specific validation rules
 
         Returns:
             ValidationResult indicating pass/fail with error details
@@ -84,7 +86,7 @@ class ValidationEngine:
         Example:
             >>> engine = ValidationEngine()
             >>> context = ValidationContext(...)
-            >>> result = engine.validate(context, TradeDirection.LONG)
+            >>> result = engine.validate(context, TradeDirection.LONG, setup_type="VWAP_RECLAIM")
             >>> if not result.valid:
             ...     print(f"Rejected: {result.errors}")
         """
@@ -135,8 +137,10 @@ class ValidationEngine:
                 f"(bias={context.htf_bias.value}, direction={direction.value})"
             )
 
-        # DXY structure check for continuation setups
-        if not context.dxy_trending_clean:
+        # DXY structure check for continuation setups only
+        # VWAP_FADE is allowed without DXY per SOP (with warning handled in validate_signal_with_sop)
+        continuation_setups = ("VWAP_RECLAIM", "DXY_CONTINUATION")
+        if setup_type in continuation_setups and not context.dxy_trending_clean:
             errors.append(
                 "DXY structure not clean - continuation setups require "
                 "clear DXY trend alignment"
