@@ -17,11 +17,16 @@ from common.logger import get_logger
 from feature_engine.aggregator import aggregate_features
 from feature_engine.structure import calculate_structure_labels
 from feature_engine.vwap import calculate_vwap_deviation
+from rule_engine.scoring import score_signal
+from rule_engine.signal_logger import log_signal
+from rule_engine.validation import validate_signal_with_sop
 
 if TYPE_CHECKING:
+    from rule_engine.signal import Signal
     from validation.engine import ValidationEngine, ValidationResult
+    from validation.guardrails import GuardrailResult
     from validation.schema import ValidationContext
-    from validation.session_validator import SessionValidator
+    from validation.session_validator import SessionConstraints, SessionValidator
 
 logger = get_logger(__name__)
 
@@ -291,4 +296,79 @@ def _apply_validation(
         features["validation_ready"] = True
 
     return features
+
+
+def process_features_with_validation(
+    features: pd.Series,
+    market_state: dict,
+    session_constraints: SessionConstraints,
+    guardrail_result: GuardrailResult | None = None,
+    log_signals: bool = False,
+    log_dir: str | None = None,
+) -> Signal:
+    """Process a single feature row through scoring and validation.
+
+    This function integrates:
+    1. Feature-to-Signal scoring (RuleEngine)
+    2. SOP validation (ValidationEngine + SessionValidator + Guardrails)
+    3. Optional signal logging
+
+    Args:
+        features: Feature series for a single timestamp
+        market_state: Market context dict with:
+            - buffer_phase: Current capital buffer phase
+            - tier_active: Active enforcer tier
+            - ceo_directive_active: CEO directive status
+            - news_ok: News event status
+            - htf_direction: HTF direction for scoring context
+            - htf_score: Optional HTF score for bonus
+        session_constraints: SessionConstraints from SessionValidator
+        guardrail_result: Optional GuardrailResult from BehaviorGuardrails
+        log_signals: Whether to log signals to disk
+        log_dir: Directory for signal logs (required if log_signals=True)
+
+    Returns:
+        Validated Signal object with full SOP compliance
+
+    Example:
+        >>> from feature_engine.backtesting import BacktestProcessor
+        >>> processor = BacktestProcessor("1m")
+        >>> for features, validation_context in processor.iterate_with_context(gc_df, dxy_df):
+        ...     market_state = {"tier_active": "EarlyMild", ...}
+        ...     signal = process_features_with_validation(
+        ...         features,
+        ...         market_state,
+        ...         validation_context["session_constraints"],
+        ...         validation_context.get("guardrail_result")
+        ...     )
+        ...     if signal.confidence == "A+":
+        ...         # Execute trade
+        ...         pass
+    """
+    # Step 1: Build scoring context
+    scoring_context = {
+        "htf_bias": market_state.get("htf_bias", "neutral"),
+        "htf_direction": market_state.get("htf_direction", "neutral"),
+        "htf_score": market_state.get("htf_score"),
+        "session_ok": market_state.get("session_ok", True),
+        "enforcer_tier": market_state.get("tier_active", "Conservative"),
+    }
+
+    # Step 2: Score the signal
+    signal = score_signal(features, scoring_context)
+
+    # Step 3: Apply full SOP validation
+    validated_signal = validate_signal_with_sop(
+        signal=signal,
+        features=features,
+        market_state=market_state,
+        session_constraints=session_constraints,
+        guardrail_result=guardrail_result,
+    )
+
+    # Step 4: Log signal if requested
+    if log_signals and log_dir:
+        log_signal(validated_signal, log_dir=log_dir)
+
+    return validated_signal
 
