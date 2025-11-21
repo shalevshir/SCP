@@ -1,0 +1,166 @@
+# Validation Configuration for SCP Trading Bot
+# Defines seasonality rules, session windows, and trading constraints per SOP
+
+# Timezone for session validation (London time converted to America/New_York for consistency)
+timezone: "Europe/London"
+
+# Default session rules (applied when no season-specific rule matches)
+default_session:
+  name: "Default Conservative"
+  window_start: "10:00"  # London time
+  window_end: "13:00"    # London time
+  allowed_tiers:
+    - "Conservative"
+    - "EarlyMild"
+    - "Mild"
+    - "Offensive"
+  allowed_setups:
+    - "VWAP_RECLAIM"
+    - "DXY_CONTINUATION"
+  min_score: 8.0
+  max_losses: 2
+  dxy_correlation_max: -0.6  # Must be below this threshold (more negative)
+
+# Season-specific rules
+seasons:
+  # September Defensive: Heightened caution, strict requirements
+  - name: "September Defensive"
+    months: [9]  # September
+    window_start: "10:00"
+    window_end: "13:00"
+    allowed_tiers:
+      - "Conservative"
+      - "EarlyMild"
+    allowed_setups:
+      - "VWAP_RECLAIM"
+      - "DXY_CONTINUATION"
+    min_score: 9.0  # Higher threshold
+    max_losses: 1   # Halt after 1 loss
+    dxy_correlation_max: -0.7  # Stricter DXY requirement
+
+  # October Base/Reconstruction: Transitional phase
+  - name: "October Base/Reconstruction"
+    months: [10]  # October
+    window_start: "10:00"
+    window_end: "13:00"
+    allowed_tiers:
+      - "Conservative"
+      - "EarlyMild"
+      - "Mild"
+    allowed_setups:
+      - "VWAP_RECLAIM"
+      - "DXY_CONTINUATION"
+      - "VWAP_FADE"
+    min_score: 8.5
+    max_losses: 2
+    dxy_correlation_max: -0.6
+
+  # November-December Trend Window: Optimal trading conditions
+  - name: "November-December Trend Window"
+    months: [11, 12]  # November and December
+    window_start: "10:00"
+    window_end: "13:00"
+    allowed_tiers:
+      - "Conservative"
+      - "EarlyMild"
+      - "Mild"
+      - "Offensive"
+    allowed_setups:
+      - "VWAP_RECLAIM"
+      - "DXY_CONTINUATION"
+      - "VWAP_FADE"
+    min_score: 8.0
+    max_losses: 2
+    dxy_correlation_max: -0.6
+
+# US Holidays (trading blocked on these dates)
+# Format: YYYY-MM-DD
+holidays:
+  # 2024
+  - "2024-01-01"  # New Year's Day
+  - "2024-01-15"  # Martin Luther King Jr. Day
+  - "2024-02-19"  # Presidents' Day
+  - "2024-03-29"  # Good Friday
+  - "2024-05-27"  # Memorial Day
+  - "2024-06-19"  # Juneteenth
+  - "2024-07-04"  # Independence Day
+  - "2024-09-02"  # Labor Day
+  - "2024-11-28"  # Thanksgiving
+  - "2024-12-25"  # Christmas
+
+  # 2025
+  - "2025-01-01"  # New Year's Day
+  - "2025-01-20"  # Martin Luther King Jr. Day
+  - "2025-02-17"  # Presidents' Day
+  - "2025-04-18"  # Good Friday
+  - "2025-05-26"  # Memorial Day
+  - "2025-06-19"  # Juneteenth
+  - "2025-07-04"  # Independence Day
+  - "2025-09-01"  # Labor Day
+  - "2025-11-27"  # Thanksgiving
+  - "2025-12-25"  # Christmas
+
+  # 2026
+  - "2026-01-01"  # New Year's Day
+  - "2026-01-19"  # Martin Luther King Jr. Day
+  - "2026-02-16"  # Presidents' Day
+  - "2026-04-03"  # Good Friday
+  - "2026-05-25"  # Memorial Day
+  - "2026-06-19"  # Juneteenth
+  - "2026-07-03"  # Independence Day (observed)
+  - "2026-09-07"  # Labor Day
+  - "2026-11-26"  # Thanksgiving
+  - "2026-12-25"  # Christmas
+
+# CEO Directive Configuration
+ceo_directive:
+  # Runtime override flag location (if using file-based override)
+  override_file: "./config/dev.local.json"
+  # Config flag for Early Mild activation
+  early_mild_enabled: false
+  # Whether directive resets daily
+  daily_reset: true
+
+# DXY Unavailability Handling
+dxy_handling:
+  # What happens when DXY data is unavailable
+  on_missing:
+    VWAP_RECLAIM: "reject"      # Reject Reclaim setups
+    DXY_CONTINUATION: "reject"   # Reject Continuation setups
+    VWAP_FADE: "allow_with_warning"  # Allow Fade with warning
+
+# HTF Bias Computation Configuration
+htf_bias:
+  # Timeframes used for HTF bias computation
+  timeframes:
+    - "1h"   # 1-hour structure
+    - "15m"  # 15-minute structure
+  # Factors for HTF bias determination
+  factors:
+    - "structure"  # HH/HL/LH/LL pattern
+    - "ema_trend"  # EMA 9/20/50 alignment
+    - "dxy_alignment"  # DXY inverse correlation
+
+# Risk Ladder per Buffer Phase (from core.yaml, included for reference)
+risk_ladder:
+  startup:
+    range: "0-5k"
+    risk_per_trade: 350
+    daily_max_loss: 600
+    max_contracts: 1
+  growth:
+    range: "5-15k"
+    risk_per_trade: 600
+    daily_max_loss: 900
+    max_contracts: 2
+  scaling:
+    range: "15-40k"
+    risk_per_trade: 1000
+    daily_max_loss: 1500
+    max_contracts: 3
+  institutional:
+    range: "40k+"
+    risk_per_trade: 1200
+    daily_max_loss: 2500
+    max_contracts: 4
+
