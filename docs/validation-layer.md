@@ -164,15 +164,45 @@ HTF (Higher Timeframe) bias is computed internally from multiple signals:
    - `Close > VWAP` → Bullish signal
    - `Close < VWAP` → Bearish signal
 
-4. **DXY Correlation**:
-   - Strong inverse correlation (<-0.6) confirms directional bias
+4. **DXY Correlation** (Confirmation Signal):
+   - Strong inverse correlation (`< -0.6`) acts as a **confirmation signal**
+   - Strengthens whichever direction is currently leading (more signals)
+   - Does NOT break ties when signals are equal (requires other signals to establish direction first)
+   - Example: With 1 bullish signal + 0 bearish, DXY adds a 2nd bullish signal → BULLISH bias
+   - Example: With 1 bullish + 1 bearish (tied), DXY does not add to either → NEUTRAL bias
+
+**Implementation Note**: DXY correlation strengthens the majority direction by adding to the leading signal count. This ensures DXY confirms existing bias rather than creating bias from ambiguous market conditions.
 
 ### Bias Classification
 
 The ValidationContextBuilder aggregates these signals:
-- **BULLISH**: ≥2 bullish signals and more bullish than bearish
-- **BEARISH**: ≥2 bearish signals and more bearish than bullish
-- **NEUTRAL**: Mixed or insufficient signals
+- **BULLISH**: ≥2 bullish signals AND more bullish than bearish
+- **BEARISH**: ≥2 bearish signals AND more bearish than bullish  
+- **NEUTRAL**: Mixed or insufficient signals (< 2 signals in leading direction)
+
+**Signal Counting Example**:
+```python
+# Scenario 1: Clear bullish bias
+structure = "HH"           # +1 bullish
+ema_stack = ascending      # +1 bullish  
+price_vwap = above         # +1 bullish
+dxy_corr = -0.75           # +1 bullish (confirms majority)
+# Result: 4 bullish vs 0 bearish → BULLISH
+
+# Scenario 2: DXY as tiebreaker
+structure = "HH"           # +1 bullish
+ema_stack = flat           # 0 signals
+price_vwap = at_vwap       # 0 signals
+dxy_corr = -0.75           # +1 bullish (confirms leader)
+# Result: 2 bullish vs 0 bearish → BULLISH
+
+# Scenario 3: DXY doesn't break ties
+structure = "HH"           # +1 bullish
+ema_stack = flat           # 0 signals
+price_vwap = below         # +1 bearish
+dxy_corr = -0.75           # No signal added (tied 1-1)
+# Result: 1 bullish vs 1 bearish → NEUTRAL
+```
 
 ### HTF Bias Alignment
 
@@ -185,13 +215,28 @@ Trade signals must align with HTF bias:
 
 ### Setup-Specific Rules
 
-When DXY correlation data is unavailable:
+When DXY correlation data is unavailable, the ValidationEngine applies different rules based on setup type:
 
 | Setup Type | Action | Rationale |
 |------------|--------|-----------|
-| **VWAP_RECLAIM** | REJECT | Requires DXY confirmation for continuation |
+| **VWAP_RECLAIM** | REJECT | Continuation setup requires DXY confirmation |
 | **DXY_CONTINUATION** | REJECT | Core setup depends on DXY correlation |
 | **VWAP_FADE** | ALLOW with WARNING | Counter-trend setup less reliant on DXY |
+
+**ValidationEngine Integration**: Pass `setup_type` parameter to enable setup-specific validation:
+
+```python
+from validation.engine import ValidationEngine, TradeDirection
+
+engine = ValidationEngine()
+result = engine.validate(
+    context=validation_context,
+    direction=TradeDirection.LONG,
+    setup_type="VWAP_RECLAIM"  # Enables setup-specific DXY checks
+)
+```
+
+Without `setup_type`, all setups require clean DXY trends. With `setup_type="VWAP_FADE"`, DXY unavailability generates a warning but doesn't block the trade.
 
 ### DXY Trending Status
 
