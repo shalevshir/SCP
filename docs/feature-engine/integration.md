@@ -439,6 +439,170 @@ if len(df) < min_rows:
 
 ---
 
+## New Validation Integration Functions
+
+### `process_features_with_validation()`
+
+**Added**: Validation Layer Integration  
+**Purpose**: Complete end-to-end processing of a single feature row through scoring and full SOP validation.
+
+This function integrates three major components:
+1. **Feature-to-Signal Scoring** (RuleEngine)
+2. **SOP Validation** (ValidationEngine + SessionValidator + Guardrails)
+3. **Signal Logging** (optional)
+
+```python
+def process_features_with_validation(
+    features: pd.Series,
+    market_state: dict,
+    session_constraints: SessionConstraints,
+    guardrail_result: GuardrailResult | None = None,
+    log_signals: bool = False,
+    log_dir: str | None = None,
+) -> Signal
+```
+
+#### Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `features` | `pd.Series` | Feature series for a single timestamp (from BacktestProcessor) |
+| `market_state` | `dict` | Market context with buffer_phase, tier_active, ceo_directive_active, news_ok, htf_direction, htf_score |
+| `session_constraints` | `SessionConstraints` | Session constraints from SessionValidator |
+| `guardrail_result` | `GuardrailResult \| None` | Optional behavior guardrail evaluation |
+| `log_signals` | `bool` | Whether to log signals to disk |
+| `log_dir` | `str \| None` | Directory for signal logs (required if log_signals=True) |
+
+#### Returns
+
+Validated `Signal` object with:
+- Full SOP compliance checks applied
+- Confidence downgraded to "Reject" if validation fails
+- Rejection reasons appended to rationale
+- Validation flags updated
+
+#### Example
+
+```python
+from feature_engine.backtesting import BacktestProcessor
+from feature_engine.integration import process_features_with_validation
+
+# Setup
+processor = BacktestProcessor("1m")
+
+# Process with full validation
+for features, validation_context in processor.iterate_with_context(gc_df, dxy_df):
+    market_state = {
+        "buffer_phase": "0-5k",
+        "tier_active": "Conservative",
+        "ceo_directive_active": False,
+        "news_ok": True,
+        "session_ok": True,
+        "htf_direction": "long",
+        "htf_score": 9.0,
+    }
+    
+    signal = process_features_with_validation(
+        features=features,
+        market_state=market_state,
+        session_constraints=validation_context["session_constraints"],
+        guardrail_result=validation_context.get("guardrail_result"),
+        log_signals=True,
+        log_dir="logs/signals",
+    )
+    
+    # Only execute A+ signals that passed validation
+    if signal.confidence == "A+":
+        execute_trade(signal)
+    elif signal.confidence == "Reject":
+        print(f"Rejected: {signal.rationale}")
+```
+
+---
+
+### `validate_signal_with_sop()` (RuleEngine)
+
+**Added**: Rule Engine Validation Module  
+**Purpose**: Validate pre-scored signals against full SOP requirements.
+
+This is the comprehensive validation function that integrates:
+- ValidationEngine (SOP compliance)
+- SessionValidator (time windows, seasonality)
+- BehaviorGuardrails (loss streaks, fatigue)
+- DXY unavailability handling
+
+```python
+def validate_signal_with_sop(
+    signal: Signal,
+    features: pd.Series,
+    market_state: dict,
+    session_constraints: SessionConstraints,
+    guardrail_result: GuardrailResult | None = None,
+) -> Signal
+```
+
+#### Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `signal` | `Signal` | Pre-scored signal from `score_signal()` |
+| `features` | `pd.Series` | Feature series with technical indicators |
+| `market_state` | `dict` | Market context (buffer_phase, tier_active, etc.) |
+| `session_constraints` | `SessionConstraints` | Session constraints from SessionValidator |
+| `guardrail_result` | `GuardrailResult \| None` | Optional behavior guardrail result |
+
+#### Returns
+
+Updated `Signal` with validation results applied:
+- `confidence`: Downgraded to "Reject" if validation fails
+- `validation_flags`: Updated with validation results
+- `rationale`: Enhanced with rejection reasons or warnings
+- `enforcer_tier`: Updated from ValidationEngine
+
+#### Example
+
+```python
+from rule_engine.scoring import score_signal
+from rule_engine.validation import validate_signal_with_sop
+
+# Step 1: Score the signal
+scoring_context = {
+    "htf_bias": "bullish",
+    "htf_direction": "long",
+    "session_ok": True,
+    "enforcer_tier": "Conservative",
+}
+signal = score_signal(features, scoring_context)
+
+# Step 2: Apply full SOP validation
+validated_signal = validate_signal_with_sop(
+    signal=signal,
+    features=features,
+    market_state=market_state,
+    session_constraints=session_constraints,
+    guardrail_result=guardrail_result,
+)
+
+# Step 3: Check results
+if validated_signal.confidence == "Reject":
+    print(f"Rejected: {validated_signal.rationale}")
+else:
+    print(f"Approved: Score {validated_signal.score:.1f}")
+```
+
+#### Validation Checks Applied
+
+1. **Session Window**: Time within permitted trading hours
+2. **Seasonality**: Setup allowed in current season, score meets minimum
+3. **Loss Streaks**: Not exceeding max consecutive losses
+4. **Fatigue Flag**: Manual operator fatigue check
+5. **DXY Availability**: Setup-specific DXY requirements
+6. **HTF Bias Alignment**: Trade direction aligns with HTF bias
+7. **News Events**: No high-impact news during trading
+8. **Risk Budget**: Risk limits not exceeded
+
+---
+
 ## Related Documentation
 
 - [Feature Engine Overview](./README.md)

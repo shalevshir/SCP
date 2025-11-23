@@ -7,6 +7,7 @@ data up to current timestamp) while leveraging pandas vectorization for speed.
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Iterator
 
 import pandas as pd
@@ -15,6 +16,12 @@ from common.logger import get_logger
 from feature_engine.aggregator import aggregate_features
 from feature_engine.structure import calculate_structure_labels
 from feature_engine.vwap import calculate_vwap_deviation
+from validation.config_loader import load_session_config
+from validation.guardrails import (
+    BehaviorGuardrails,
+    BehaviorStateTracker,
+)
+from validation.session_validator import SessionValidator
 
 logger = get_logger(__name__)
 
@@ -48,6 +55,7 @@ class BacktestProcessor:
         dxy_window: int = 50,
         swing_window: int = 5,
         warmup_period: int | None = None,
+        enable_validation: bool = True,
     ):
         """Initialize BacktestProcessor with configuration.
         
@@ -60,6 +68,8 @@ class BacktestProcessor:
             swing_window: Structure label swing window. Default is 5.
             warmup_period: Number of periods to skip before yielding features.
                           If None, uses max(dxy_window, swing_window * 2 + 1).
+            enable_validation: Whether to enable validation layer components.
+                              Set to False to disable session/guardrail tracking.
         """
         self.timeframe = timeframe
         self.session_reset = session_reset
@@ -67,6 +77,7 @@ class BacktestProcessor:
         self.ema_periods = ema_periods if ema_periods is not None else [9, 20, 50]
         self.dxy_window = dxy_window
         self.swing_window = swing_window
+        self.enable_validation = enable_validation
         
         # Calculate warmup period if not provided
         if warmup_period is None:
@@ -78,39 +89,55 @@ class BacktestProcessor:
         else:
             self.warmup_period = warmup_period
         
+        # Initialize validation components
+        if self.enable_validation:
+            try:
+                session_config = load_session_config()
+                self._session_validator = SessionValidator(session_config)
+                self._behavior_tracker = BehaviorStateTracker()
+                self._behavior_guardrails = BehaviorGuardrails()
+                self._last_session_date: datetime | None = None
+                logger.info("Validation layer enabled for backtesting")
+            except Exception as e:
+                logger.warning(
+                    f"Failed to initialize validation layer: {e}. "
+                    "Continuing without validation."
+                )
+                self.enable_validation = False
+        
         logger.debug(
             f"BacktestProcessor initialized: timeframe={timeframe}, "
-            f"warmup_period={self.warmup_period}"
+            f"warmup_period={self.warmup_period}, "
+            f"validation_enabled={self.enable_validation}"
         )
 
     def iterate_with_context(
         self,
         gc_df: pd.DataFrame,
         dxy_df: pd.DataFrame,
-    ) -> Iterator[pd.Series]:
-        """Yield features one timestamp at a time without look-ahead bias.
+    ) -> Iterator[tuple[pd.Series, dict]]:
+        """Yield features and validation context one timestamp at a time.
         
         This method computes features ONCE for the entire dataset using
         vectorization, then carefully yields them one at a time ensuring
         that look-ahead-sensitive indicators (like structure labels) are
         handled correctly.
         
-        Most indicators (VWAP, RSI, EMA, DXY correlation) use rolling windows
-        or exponential smoothing that naturally avoid look-ahead when computed
-        vectorized. Structure labels require special handling because they use
-        future data in their calculation.
+        When validation is enabled, also tracks session state and behavior
+        guardrails, yielding both features and validation context.
         
         Args:
             gc_df: GC DataFrame with DatetimeIndex and OHLCV columns.
             dxy_df: DXY DataFrame with DatetimeIndex and OHLCV columns.
             
         Yields:
-            Feature Series for each timestamp after warmup period.
+            Tuple of (features_series, validation_context) for each timestamp.
+            If validation disabled, validation_context will be empty dict.
             
         Example:
             >>> processor = BacktestProcessor(timeframe="1m")
-            >>> for features in processor.iterate_with_context(gc_df, dxy_df):
-            ...     print(f"Timestamp: {features['timestamp']}, VWAP: {features['vwap']}")
+            >>> for features, context in processor.iterate_with_context(gc_df, dxy_df):
+            ...     print(f"Timestamp: {features['timestamp']}, Session OK: {context.get('session_ok')}")
         """
         # Validate inputs
         if not isinstance(gc_df.index, pd.DatetimeIndex):
@@ -135,27 +162,26 @@ class BacktestProcessor:
         features_df = self._compute_features(gc_aligned, dxy_aligned)
         
         # Iterate and yield features one at a time
-        # For structure labels, we need to be careful because they use future data
-        # in their calculation (swing_window periods ahead). We handle this by
-        # only yielding structure labels that were based on past data.
-        # Start at warmup_period - 1 to match incremental mode behavior
-        # (incremental starts yielding after processing warmup_period candles,
-        # which means the first yielded feature is at index warmup_period - 1)
         for i in range(self.warmup_period - 1, len(gc_aligned)):
+            timestamp = gc_aligned.index[i]
             features = features_df.iloc[i]
             
+            # Check for session reset (new trading day)
+            if self.enable_validation:
+                self._check_session_reset(timestamp)
+            
             # For structure labels, mask out labels that were computed using
-            # future data. A swing point at index i needs swing_window bars
-            # on EACH SIDE, so we can only trust labels up to
-            # len(df) - swing_window - 1
+            # future data. Must mask BOTH structure_label AND structure_type
+            # since they contain identical swing point data.
             max_valid_structure_idx = len(gc_aligned) - self.swing_window - 1
             if i > max_valid_structure_idx:
                 features = features.copy()
                 features["structure_label"] = None
+                features["structure_type"] = None
             
-            # Add metadata
+            # Build features series
             features_series = pd.Series({
-                "timestamp": gc_aligned.index[i],
+                "timestamp": timestamp,
                 "symbol": "GC",
                 "timeframe": self.timeframe,
                 "open": features["open"],
@@ -170,10 +196,16 @@ class BacktestProcessor:
                 "ema_50": features["ema_50"],
                 "dxy_corr": features["dxy_corr"],
                 "structure_label": features.get("structure_label"),
+                "structure_type": features.get("structure_type"),
                 "vwap_deviation": features.get("vwap_deviation"),
             })
             
-            yield features_series
+            # Build validation context if enabled
+            validation_context = {}
+            if self.enable_validation:
+                validation_context = self._build_validation_context(timestamp)
+            
+            yield features_series, validation_context
 
     def _compute_features(
         self,
@@ -222,9 +254,72 @@ class BacktestProcessor:
         )
         features["structure_label"] = structure_labels
         
+        # Structure labels already ARE structure types (HH/HL/LH/LL)
+        # No need to derive them - just use them directly
+        features["structure_type"] = structure_labels
+        
         # Add VWAP deviation
         if "vwap" in features.columns:
             vwap_deviation = calculate_vwap_deviation(features)
             features["vwap_deviation"] = vwap_deviation
         
         return features
+
+    def _check_session_reset(self, timestamp: datetime) -> None:
+        """Check if we need to reset behavior state for new session.
+        
+        Per SOP, loss streaks reset at session start (not across days).
+        
+        Args:
+            timestamp: Current timestamp
+        """
+        if not self.enable_validation:
+            return
+        
+        current_date = timestamp.date()
+        
+        # Reset on first run or new day
+        if self._last_session_date is None or current_date != self._last_session_date:
+            self._behavior_tracker.reset_for_session(timestamp)
+            self._last_session_date = current_date
+            logger.debug(f"Session reset at {timestamp.isoformat()}")
+
+    def _build_validation_context(self, timestamp: datetime) -> dict:
+        """Build validation context for current timestamp.
+        
+        Args:
+            timestamp: Current timestamp
+            
+        Returns:
+            Dict with validation context including session_result and guardrail_result
+        """
+        if not self.enable_validation:
+            return {}
+        
+        # Evaluate session
+        session_result = self._session_validator.evaluate(timestamp)
+        
+        # Evaluate behavior guardrails
+        guardrail_result = self._behavior_guardrails.evaluate(
+            state=self._behavior_tracker.state,
+            constraints=session_result.constraints,
+        )
+        
+        return {
+            "session_ok": session_result.session_ok,
+            "session_result": session_result,
+            "session_constraints": session_result.constraints,
+            "guardrail_result": guardrail_result,
+            "behavior_state": self._behavior_tracker.state,
+        }
+
+    def record_trade_outcome(self, won: bool) -> None:
+        """Record trade outcome to update behavior state.
+        
+        Args:
+            won: True if trade was profitable, False if loss
+        """
+        if not self.enable_validation:
+            return
+        
+        self._behavior_tracker.record_trade_outcome(won)

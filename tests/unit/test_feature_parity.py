@@ -448,7 +448,8 @@ class TestFeatureParity:
         
         # Backtest processor
         processor = BacktestProcessor(timeframe="1m")
-        backtest_features = list(processor.iterate_with_context(gc_df, dxy_df))
+        # Unpack tuples: extract just features
+        backtest_features = [f for f, _ in processor.iterate_with_context(gc_df, dxy_df)]
         
         # Incremental state
         state = FeatureState(timeframe="1m")
@@ -489,7 +490,8 @@ class TestFeatureParity:
         
         # Backtest processor
         processor = BacktestProcessor(timeframe="1m")
-        backtest_features = list(processor.iterate_with_context(gc_df, dxy_df))
+        # Unpack tuples: extract just features
+        backtest_features = [f for f, _ in processor.iterate_with_context(gc_df, dxy_df)]
         
         # Incremental state
         state = FeatureState(timeframe="1m")
@@ -528,7 +530,8 @@ class TestFeatureParity:
         
         # Backtest processor
         processor = BacktestProcessor(timeframe="1m")
-        backtest_features = list(processor.iterate_with_context(gc_df, dxy_df))
+        # Unpack tuples: extract just features
+        backtest_features = [f for f, _ in processor.iterate_with_context(gc_df, dxy_df)]
         
         # Incremental state
         state = FeatureState(timeframe="1m")
@@ -568,7 +571,8 @@ class TestFeatureParity:
         
         # Backtest processor
         processor = BacktestProcessor(timeframe="1m")
-        backtest_features = list(processor.iterate_with_context(gc_df, dxy_df))
+        # Unpack tuples: extract just features
+        backtest_features = [f for f, _ in processor.iterate_with_context(gc_df, dxy_df)]
         
         # Incremental state
         state = FeatureState(timeframe="1m")

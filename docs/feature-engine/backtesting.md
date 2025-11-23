@@ -41,7 +41,7 @@ The processor uses two key strategies to prevent look-ahead bias:
 
 1. **Vectorized Computation**: Most indicators (VWAP, RSI, EMA, DXY correlation) use rolling windows or exponential smoothing that naturally avoid look-ahead when computed vectorized. These are computed once for the entire dataset.
 
-2. **Future Data Masking**: Structure labels require special handling because they use future data (swing_window periods ahead) in their calculation. The processor masks out structure labels that were computed using data not yet available at each timestamp.
+2. **Future Data Masking**: Structure labels require special handling because they use future data (swing_window periods ahead) in their calculation. The processor masks out **both `structure_label` and `structure_type`** (which contain identical swing point data) that were computed using data not yet available at each timestamp. This prevents look-ahead bias in HTF bias computation.
 
 ---
 
@@ -85,8 +85,8 @@ def iterate_with_context(
     self,
     gc_df: pd.DataFrame,
     dxy_df: pd.DataFrame,
-) -> Iterator[pd.Series]:
-    """Yield features one timestamp at a time without look-ahead bias."""
+) -> Iterator[tuple[pd.Series, dict]]:
+    """Yield features and validation context without look-ahead bias."""
 ```
 
 #### Parameters
@@ -98,7 +98,16 @@ def iterate_with_context(
 
 #### Returns
 
-Iterator that yields `pd.Series` for each timestamp after warmup period. Each series contains:
+Iterator that yields **tuples of `(features, validation_context)`** for each timestamp after warmup period.
+
+**Tuple Contents**:
+1. **features (pd.Series)**: Feature series with all indicators
+2. **validation_context (dict)**: Validation context with:
+   - `dxy_corr`: DXY correlation for this timestamp
+   - `session_constraints`: SessionConstraints (if session validator configured)
+   - Additional validation-related context
+
+**Features Series Fields**:
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -139,12 +148,13 @@ data = loader.load(["GC", "DXY"], "1m", start, end)
 # Create processor
 processor = BacktestProcessor(timeframe="1m")
 
-# Iterate through features
-for features in processor.iterate_with_context(data["GC"], data["DXY"]):
+# Iterate through features (note: returns tuples!)
+for features, validation_context in processor.iterate_with_context(data["GC"], data["DXY"]):
     # Process each timestamp
     print(f"Timestamp: {features['timestamp']}")
     print(f"VWAP: {features['vwap']:.2f}")
     print(f"RSI: {features['rsi']:.1f}")
+    print(f"DXY Correlation: {validation_context.get('dxy_corr')}")
     
     # Make trading decision
     if features['rsi'] < 30 and features['close'] < features['vwap']:
@@ -155,24 +165,24 @@ for features in processor.iterate_with_context(data["GC"], data["DXY"]):
 
 ```python
 from feature_engine import BacktestProcessor
-from rule_engine import RuleEngine
+from rule_engine import score_signal
 
 # Setup
 processor = BacktestProcessor(timeframe="1m")
-rule_engine = RuleEngine()
 
 # Backtest loop
 signals = []
-for features in processor.iterate_with_context(gc_df, dxy_df):
-    # Evaluate with rule engine
-    signal = rule_engine.evaluate(
-        features=features,
-        context={
-            "session_ok": True,
-            "htf_bias": "bullish",
-            # ... other context
-        }
-    )
+for features, validation_context in processor.iterate_with_context(gc_df, dxy_df):
+    # Build scoring context
+    scoring_context = {
+        "session_ok": True,
+        "htf_bias": "bullish",
+        "htf_direction": "long",
+        "enforcer_tier": "Conservative",
+    }
+    
+    # Score the signal
+    signal = score_signal(features, scoring_context)
     
     if signal.score >= 8.0:
         signals.append(signal)
@@ -195,7 +205,7 @@ processor = BacktestProcessor(
     warmup_period=30,  # Custom warmup
 )
 
-for features in processor.iterate_with_context(gc_df, dxy_df):
+for features, validation_context in processor.iterate_with_context(gc_df, dxy_df):
     # Process features
     pass
 ```
@@ -203,9 +213,11 @@ for features in processor.iterate_with_context(gc_df, dxy_df):
 ### Collecting Features for Analysis
 
 ```python
-# Collect all features into a DataFrame
+# Collect all features into a DataFrame (unpack tuples)
 processor = BacktestProcessor(timeframe="1m")
-features_list = list(processor.iterate_with_context(gc_df, dxy_df))
+
+# Extract just features from tuples
+features_list = [f for f, _ in processor.iterate_with_context(gc_df, dxy_df)]
 
 # Convert to DataFrame
 features_df = pd.DataFrame(features_list)
@@ -261,7 +273,7 @@ See `tests/unit/test_feature_parity.py` for comprehensive parity tests.
 
 Tests verify that:
 1. Features don't change when future data is modified
-2. Structure labels are masked when based on future data
+2. **Both `structure_label` and `structure_type` are masked** when based on future data (see `test_structure_labels_masked_to_prevent_lookahead_bias`)
 3. All indicators use only historical data in their calculations
 
 ---
@@ -282,14 +294,14 @@ The processor requires aligned timestamps between GC and DXY. Missing data will 
 
 ### Structure Labels Near End
 
-Structure labels within `swing_window` periods of the end are masked as None because they would require future data.
+Both `structure_label` and `structure_type` within `swing_window` periods of the end are masked as `None` because they would require future data. This is critical for preventing look-ahead bias since `structure_type` is used in HTF bias computation in the validation layer.
 
 ---
 
 ## Limitations
 
 1. **Memory**: Stores all features in memory. For very large datasets (>1M rows), process in batches.
-2. **Structure Labels**: Masking near the end means fewer structure labels than incremental mode.
+2. **Structure Labels**: Both `structure_label` and `structure_type` are masked near the end (within `swing_window` periods), meaning fewer structure labels available for HTF bias computation than incremental mode.
 3. **Single Iteration**: Each call to `iterate_with_context()` recomputes features. Cache results if iterating multiple times.
 
 ---

@@ -79,10 +79,11 @@ def score_signal(features: pd.Series, context: dict) -> Signal:
     rationale = build_rationale(features, context, factor_scores, setup_type)
 
     # Create validation flags (initially True, will be validated later)
+    dxy_corr_value = features.get("dxy_corr")
     validation_flags = {
         "session_ok": context.get("session_ok", True),
         "tier_ok": True,
-        "dxy_alignment_ok": features.get("dxy_corr", 0) < -0.6,
+        "dxy_alignment_ok": dxy_corr_value is not None and dxy_corr_value < -0.6,
         "htf_bias_ok": context.get("htf_direction") == determine_direction(features, context),
     }
 
@@ -121,7 +122,7 @@ def determine_setup_type(features: pd.Series, context: dict) -> str:
     close = features.get("close", 0)
     vwap = features.get("vwap", 0)
     rsi = features.get("rsi", 50)
-    dxy_corr = features.get("dxy_corr", 0)
+    dxy_corr = features.get("dxy_corr")
 
     # Calculate VWAP deviation percentage
     vwap_dev = abs((close - vwap) / vwap * 100) if vwap != 0 else 0
@@ -131,7 +132,7 @@ def determine_setup_type(features: pd.Series, context: dict) -> str:
         return "VWAP_FADE"
 
     # DXY_CONTINUATION: Very strong inverse correlation
-    if dxy_corr < -0.8:
+    if dxy_corr is not None and dxy_corr < -0.8:
         return "DXY_CONTINUATION"
 
     # Default: VWAP_RECLAIM (continuation setup)
@@ -306,9 +307,9 @@ def calculate_dxy_correlation(
 
     Awards points if inverse correlation is strong (<-0.6).
     """
-    dxy_corr = features.get("dxy_corr", 0)
+    dxy_corr = features.get("dxy_corr")
 
-    if dxy_corr < -0.6:
+    if dxy_corr is not None and dxy_corr < -0.6:
         return max_points
 
     return 0.0
@@ -490,8 +491,8 @@ def build_rationale(
         parts.append(f"RSI mid-reset ({rsi:.1f})")
 
     # DXY correlation
-    dxy_corr = features.get("dxy_corr", 0)
-    if dxy_corr < -0.6:
+    dxy_corr = features.get("dxy_corr")
+    if dxy_corr is not None and dxy_corr < -0.6:
         parts.append(f"DXY correlation {dxy_corr:.2f}")
 
     # EMA alignment
