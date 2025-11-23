@@ -171,11 +171,13 @@ class BacktestProcessor:
                 self._check_session_reset(timestamp)
             
             # For structure labels, mask out labels that were computed using
-            # future data
+            # future data. Must mask BOTH structure_label AND structure_type
+            # since they contain identical swing point data.
             max_valid_structure_idx = len(gc_aligned) - self.swing_window - 1
             if i > max_valid_structure_idx:
                 features = features.copy()
                 features["structure_label"] = None
+                features["structure_type"] = None
             
             # Build features series
             features_series = pd.Series({

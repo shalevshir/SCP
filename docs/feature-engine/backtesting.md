@@ -41,7 +41,7 @@ The processor uses two key strategies to prevent look-ahead bias:
 
 1. **Vectorized Computation**: Most indicators (VWAP, RSI, EMA, DXY correlation) use rolling windows or exponential smoothing that naturally avoid look-ahead when computed vectorized. These are computed once for the entire dataset.
 
-2. **Future Data Masking**: Structure labels require special handling because they use future data (swing_window periods ahead) in their calculation. The processor masks out structure labels that were computed using data not yet available at each timestamp.
+2. **Future Data Masking**: Structure labels require special handling because they use future data (swing_window periods ahead) in their calculation. The processor masks out **both `structure_label` and `structure_type`** (which contain identical swing point data) that were computed using data not yet available at each timestamp. This prevents look-ahead bias in HTF bias computation.
 
 ---
 
@@ -273,7 +273,7 @@ See `tests/unit/test_feature_parity.py` for comprehensive parity tests.
 
 Tests verify that:
 1. Features don't change when future data is modified
-2. Structure labels are masked when based on future data
+2. **Both `structure_label` and `structure_type` are masked** when based on future data (see `test_structure_labels_masked_to_prevent_lookahead_bias`)
 3. All indicators use only historical data in their calculations
 
 ---
@@ -294,14 +294,14 @@ The processor requires aligned timestamps between GC and DXY. Missing data will 
 
 ### Structure Labels Near End
 
-Structure labels within `swing_window` periods of the end are masked as None because they would require future data.
+Both `structure_label` and `structure_type` within `swing_window` periods of the end are masked as `None` because they would require future data. This is critical for preventing look-ahead bias since `structure_type` is used in HTF bias computation in the validation layer.
 
 ---
 
 ## Limitations
 
 1. **Memory**: Stores all features in memory. For very large datasets (>1M rows), process in batches.
-2. **Structure Labels**: Masking near the end means fewer structure labels than incremental mode.
+2. **Structure Labels**: Both `structure_label` and `structure_type` are masked near the end (within `swing_window` periods), meaning fewer structure labels available for HTF bias computation than incremental mode.
 3. **Single Iteration**: Each call to `iterate_with_context()` recomputes features. Cache results if iterating multiple times.
 
 ---
