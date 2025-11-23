@@ -378,10 +378,11 @@ class LocalCSVClient:
         # Check for negative or zero prices
         for col in ["open", "high", "low", "close"]:
             if col in df.columns:
-                # First check if the column has non-numeric values
+                # Convert to numeric and validate
                 try:
-                    # Try to convert to numeric, will raise if non-numeric strings exist
+                    # Convert to numeric, coercing non-numeric values to NaN
                     numeric_col = pd.to_numeric(df[col], errors='coerce')
+                    
                     # Check if we have NaN values after conversion (indicates non-numeric)
                     non_numeric_mask = numeric_col.isna() & df[col].notna()
                     if non_numeric_mask.any():
@@ -398,35 +399,39 @@ class LocalCSVClient:
                             extra={"file": self.file_path, "row": row_info},
                             file_path=self.file_path,
                         )
+                    
+                    # Now check for negative or zero prices using the converted numeric column
+                    # IMPORTANT: Use numeric_col here, not df[col], to ensure we're validating
+                    # the converted numeric values, not the original column
+                    invalid_mask = numeric_col <= 0
+                    if invalid_mask.any():
+                        first_invalid_idx = invalid_mask.idxmax()
+                        first_invalid = df.loc[first_invalid_idx]
+                        row_idx = first_invalid_idx
+                        row_info = {
+                            "timestamp": str(first_invalid.get("ts_event", "unknown")),
+                            "symbol": str(first_invalid.get("symbol", "unknown")),
+                            "open": first_invalid.get("open", "N/A"),
+                            "high": first_invalid.get("high", "N/A"),
+                            "low": first_invalid.get("low", "N/A"),
+                            "close": first_invalid.get("close", "N/A"),
+                            "volume": first_invalid.get("volume", "N/A"),
+                            "row_index": row_idx,
+                        }
+                        # Create a NormalizationError first, then wrap in DataSourceError
+                        norm_error = NormalizationError(
+                            f"{col.capitalize()} price must be positive",
+                            extra={"file": self.file_path, "row": row_info},
+                        )
+                        raise DataSourceError(
+                            f"Invalid data in file {self.file_path}: {col} price must be positive (row {row_idx}, symbol: {row_info['symbol']})",
+                            extra={"file": self.file_path, "row": row_info},
+                            file_path=self.file_path,
+                        ) from norm_error
+                        
                 except TypeError:
                     # Handle the case where comparison fails due to mixed types
                     pass
-                
-                # Now check for negative or zero prices
-                invalid_prices = df[df[col] <= 0]
-                if not invalid_prices.empty:
-                    first_invalid = invalid_prices.iloc[0]
-                    row_idx = invalid_prices.index[0]
-                    row_info = {
-                        "timestamp": str(first_invalid.get("ts_event", "unknown")),
-                        "symbol": str(first_invalid.get("symbol", "unknown")),
-                        "open": first_invalid.get("open", "N/A"),
-                        "high": first_invalid.get("high", "N/A"),
-                        "low": first_invalid.get("low", "N/A"),
-                        "close": first_invalid.get("close", "N/A"),
-                        "volume": first_invalid.get("volume", "N/A"),
-                        "row_index": row_idx,
-                    }
-                    # Create a NormalizationError first, then wrap in DataSourceError
-                    norm_error = NormalizationError(
-                        f"{col.capitalize()} price must be positive",
-                        extra={"file": self.file_path, "row": row_info},
-                    )
-                    raise DataSourceError(
-                        f"Invalid data in file {self.file_path}: {col} price must be positive (row {row_idx}, symbol: {row_info['symbol']})",
-                        extra={"file": self.file_path, "row": row_info},
-                        file_path=self.file_path,
-                    ) from norm_error
 
         # Convert to list of Candle objects
         candles: list[Candle] = []

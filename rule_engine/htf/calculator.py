@@ -61,16 +61,31 @@ def compute_htf_bias_multi_timeframe(
     # No score if structure is unclear
 
     # === 1H EMA STACK (Secondary Signal, 2 points) ===
-    ema_9_1h = features_1h.get("ema_9", 0)
-    ema_20_1h = features_1h.get("ema_20", 0)
-    ema_50_1h = features_1h.get("ema_50", 0)
+    # Only evaluate EMAs if all values are present and valid (not None, not 0, not NaN)
+    ema_9_1h = features_1h.get("ema_9")
+    ema_20_1h = features_1h.get("ema_20")
+    ema_50_1h = features_1h.get("ema_50")
 
-    if ema_9_1h > ema_20_1h > ema_50_1h:
-        bullish_signals += 1
-        total_score += 2.0
-    elif ema_9_1h < ema_20_1h < ema_50_1h:
-        bearish_signals += 1
-        total_score += 2.0
+    # Check if all EMAs are valid (present, non-zero, non-NaN)
+    emas_1h_valid = (
+        ema_9_1h is not None
+        and ema_20_1h is not None
+        and ema_50_1h is not None
+        and not pd.isna(ema_9_1h)
+        and not pd.isna(ema_20_1h)
+        and not pd.isna(ema_50_1h)
+        and ema_9_1h > 0
+        and ema_20_1h > 0
+        and ema_50_1h > 0
+    )
+
+    if emas_1h_valid:
+        if ema_9_1h > ema_20_1h > ema_50_1h:
+            bullish_signals += 1
+            total_score += 2.0
+        elif ema_9_1h < ema_20_1h < ema_50_1h:
+            bearish_signals += 1
+            total_score += 2.0
 
     # === 15M STRUCTURE (Confirmation, 2 points) ===
     structure_15m = features_15m.get("structure_label") or features_15m.get("structure_type", "")
@@ -92,16 +107,31 @@ def compute_htf_bias_multi_timeframe(
             total_score += 2.0
 
     # === 15M EMA STACK (Confirmation, 1 point) ===
-    ema_9_15m = features_15m.get("ema_9", 0)
-    ema_20_15m = features_15m.get("ema_20", 0)
-    ema_50_15m = features_15m.get("ema_50", 0)
+    # Only evaluate EMAs if all values are present and valid (not None, not 0, not NaN)
+    ema_9_15m = features_15m.get("ema_9")
+    ema_20_15m = features_15m.get("ema_20")
+    ema_50_15m = features_15m.get("ema_50")
 
-    if ema_9_15m > ema_20_15m > ema_50_15m:
-        if bullish_signals > bearish_signals:
-            total_score += 1.0
-    elif ema_9_15m < ema_20_15m < ema_50_15m:
-        if bearish_signals > bullish_signals:
-            total_score += 1.0
+    # Check if all EMAs are valid (present, non-zero, non-NaN)
+    emas_15m_valid = (
+        ema_9_15m is not None
+        and ema_20_15m is not None
+        and ema_50_15m is not None
+        and not pd.isna(ema_9_15m)
+        and not pd.isna(ema_20_15m)
+        and not pd.isna(ema_50_15m)
+        and ema_9_15m > 0
+        and ema_20_15m > 0
+        and ema_50_15m > 0
+    )
+
+    if emas_15m_valid:
+        if ema_9_15m > ema_20_15m > ema_50_15m:
+            if bullish_signals > bearish_signals:
+                total_score += 1.0
+        elif ema_9_15m < ema_20_15m < ema_50_15m:
+            if bearish_signals > bullish_signals:
+                total_score += 1.0
 
     # === DXY CORRELATION (Bonus, 2 points) ===
     # Strong inverse correlation on both timeframes adds confidence

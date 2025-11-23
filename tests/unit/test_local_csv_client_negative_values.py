@@ -262,3 +262,58 @@ def test_fetch_fails_on_first_invalid_row():
     finally:
         Path(csv_path).unlink()
 
+
+def test_fetch_validates_converted_numeric_values_not_strings():
+    """Test that negative/zero validation uses converted numeric values, not original strings.
+    
+    This test verifies the fix for the bug where:
+    - Line 384 converts column to numeric: numeric_col = pd.to_numeric(df[col], errors='coerce')
+    - Line 406 incorrectly checked original column: df[df[col] <= 0]
+    
+    The bug meant that numeric string comparisons could fail silently.
+    The fix ensures we validate numeric_col instead of df[col].
+    """
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".csv", delete=False) as f:
+        f.write("ts_event,open,high,low,close,volume,symbol\n")
+        # Write a negative value as a numeric string - should be caught after conversion
+        f.write("2025-01-01T12:00:00+00:00,-50.0,105.0,95.0,102.0,1000.0,GC\n")
+        csv_path = f.name
+
+    try:
+        client = LocalCSVClient(csv_path)
+        start = datetime(2025, 1, 1, 12, 0, 0, tzinfo=UTC)
+        end = datetime(2025, 1, 1, 13, 0, 0, tzinfo=UTC)
+
+        # This should raise DataSourceError because -50.0 is negative
+        with pytest.raises(DataSourceError) as exc_info:
+            client.fetch(start, end, "1m")
+
+        error_msg = str(exc_info.value).lower()
+        # Should detect negative value and mention open price or positive requirement
+        assert ("open" in error_msg or "positive" in error_msg) and ("invalid" in error_msg or "negative" in error_msg)
+    finally:
+        Path(csv_path).unlink()
+
+
+def test_fetch_validates_zero_after_numeric_conversion():
+    """Test that zero validation works on converted numeric values."""
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".csv", delete=False) as f:
+        f.write("ts_event,open,high,low,close,volume,symbol\n")
+        # Zero value should be caught after numeric conversion
+        f.write("2025-01-01T12:00:00+00:00,100.0,0.0,95.0,102.0,1000.0,GC\n")
+        csv_path = f.name
+
+    try:
+        client = LocalCSVClient(csv_path)
+        start = datetime(2025, 1, 1, 12, 0, 0, tzinfo=UTC)
+        end = datetime(2025, 1, 1, 13, 0, 0, tzinfo=UTC)
+
+        # This should raise DataSourceError because 0.0 is not positive
+        with pytest.raises(DataSourceError) as exc_info:
+            client.fetch(start, end, "1m")
+
+        error_msg = str(exc_info.value).lower()
+        assert "positive" in error_msg or "high" in error_msg
+    finally:
+        Path(csv_path).unlink()
+
