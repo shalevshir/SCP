@@ -177,10 +177,12 @@ class ValidationContextBuilder:
         dxy_corr = features.get("dxy_corr")
         if dxy_corr is not None and not pd.isna(dxy_corr) and dxy_corr < -0.6:
             # Strong inverse correlation suggests DXY and Gold moving opposite
-            # If DXY trending, Gold bias is inverse
-            # For now, strong inverse correlation is a confirmation signal
-            # Actual direction determined by other factors
-            pass
+            # This acts as a confirmation signal that adds weight to the leading direction
+            if bullish_signals > bearish_signals:
+                bullish_signals += 1
+            elif bearish_signals > bullish_signals:
+                bearish_signals += 1
+            # If tied, DXY doesn't break the tie (requires other signals to lead)
 
         # Determine final bias
         if bullish_signals >= 2 and bullish_signals > bearish_signals:
