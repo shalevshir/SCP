@@ -246,6 +246,39 @@ class TestSessionWindowEnforcement(BaseValidationTest):
         assert validated.confidence == "A+"
         assert validated.validation_flags["session_ok"] is True
 
+    def test_session_ok_flag_independent_of_other_validations(self) -> None:
+        """session_ok flag should reflect session time validity, not other validation failures.
+        
+        Regression test for bug where session_ok was incorrectly set to False
+        when other validations failed (DXY structure, HTF bias, etc.) even though
+        the actual trading session time was valid.
+        """
+        signal = self._create_test_signal(score=9.0, confidence="A+", setup_type="VWAP_RECLAIM")
+        features, market_state, constraints = self._create_default_context()
+
+        # Session time is valid
+        market_state["session_ok"] = True
+        
+        # But DXY structure is not clean (will fail validation)
+        features["dxy_corr"] = -0.3  # Not clean enough for continuation setup
+        
+        # And HTF bias doesn't match
+        market_state["htf_bias"] = "bearish"  # Mismatched with signal's bullish bias
+
+        validated = validate_signal_with_sop(
+            signal, features, market_state, constraints, None
+        )
+
+        # Signal should be rejected due to DXY and HTF mismatch
+        assert validated.confidence == "Reject"
+        assert "DXY structure" in validated.rationale or "correlation" in validated.rationale.lower()
+        
+        # But session_ok flag should still be True because session time was valid
+        assert validated.validation_flags["session_ok"] is True, (
+            "session_ok flag should only reflect session time validity, "
+            "not aggregate all validation failures"
+        )
+
 
 class TestLossStreakHalts(BaseValidationTest):
     """Test loss streak enforcement."""

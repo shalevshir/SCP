@@ -215,7 +215,7 @@ def validate_signal_with_sop(
 
     # Update validation flags
     validation_flags = dict(signal.validation_flags)
-    validation_flags["session_ok"] = validation_result.valid and validation_context.session_ok
+    validation_flags["session_ok"] = validation_context.session_ok
     validation_flags["tier_ok"] = validation_context.tier_active.value in session_constraints.allowed_tiers
     validation_flags["dxy_alignment_ok"] = dxy_allowed
     validation_flags["htf_bias_ok"] = signal.htf_bias == validation_context.htf_bias.value
