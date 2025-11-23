@@ -400,6 +400,28 @@ class LocalCSVClient:
                             file_path=self.file_path,
                         )
                     
+                    # Check for ANY remaining NaN values (including those already in CSV)
+                    # Note: NaN <= 0 evaluates to False in pandas, so we must check explicitly
+                    nan_mask = numeric_col.isna()
+                    if nan_mask.any():
+                        first_nan_idx = nan_mask.idxmax()
+                        first_nan = df.loc[first_nan_idx]
+                        row_info = {
+                            "timestamp": str(first_nan.get("ts_event", "unknown")),
+                            "symbol": str(first_nan.get("symbol", "unknown")),
+                            "open": first_nan.get("open", "N/A"),
+                            "high": first_nan.get("high", "N/A"),
+                            "low": first_nan.get("low", "N/A"),
+                            "close": first_nan.get("close", "N/A"),
+                            "volume": first_nan.get("volume", "N/A"),
+                            "row_index": first_nan_idx,
+                        }
+                        raise DataSourceError(
+                            f"Invalid data in file {self.file_path}: {col} contains NaN/missing value (row {first_nan_idx}, symbol: {row_info['symbol']})",
+                            extra={"file": self.file_path, "row": row_info},
+                            file_path=self.file_path,
+                        )
+                    
                     # Now check for negative or zero prices using the converted numeric column
                     # IMPORTANT: Use numeric_col here, not df[col], to ensure we're validating
                     # the converted numeric values, not the original column
