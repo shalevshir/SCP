@@ -276,31 +276,31 @@ def main() -> None:
             # Validate signal
             validated = validate_signal(signal, context)
 
-            # Collect signal data
+            # Collect signal data (use validated signal, not original)
             signals_data.append({
                 "timestamp": ts,
-                "symbol": signal.symbol,
-                "timeframe": signal.timeframe,
-                "direction": signal.direction,
-                "setup_type": signal.setup_type,
-                "score": signal.score,
-                "confidence": signal.confidence,
+                "symbol": validated.symbol,
+                "timeframe": validated.timeframe,
+                "direction": validated.direction,
+                "setup_type": validated.setup_type,
+                "score": validated.score,
+                "confidence": validated.confidence,
                 "htf_bias": htf_bias,
                 "htf_direction": htf_direction,
                 "htf_score": htf_score,
                 "session_ok": session_ok,
-                "enforcer_tier": signal.enforcer_tier,
+                "enforcer_tier": validated.enforcer_tier,
                 # Factor scores
-                **signal.factors,
+                **validated.factors,
                 # Validation flags
-                **{f"valid_{k}": v for k, v in signal.validation_flags.items()},
+                **{f"valid_{k}": v for k, v in validated.validation_flags.items()},
                 # Market data
                 "close": row_1m["close"],
                 "vwap": row_1m["vwap"],
                 "rsi": row_1m.get("rsi"),
                 "dxy_corr": row_1m.get("dxy_corr"),
                 # Rationale
-                "rationale": signal.rationale,
+                "rationale": validated.rationale,
             })
 
         except Exception as e:
