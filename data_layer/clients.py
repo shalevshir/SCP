@@ -379,81 +379,80 @@ class LocalCSVClient:
         for col in ["open", "high", "low", "close"]:
             if col in df.columns:
                 # Convert to numeric and validate
-                try:
-                    # Convert to numeric, coercing non-numeric values to NaN
-                    numeric_col = pd.to_numeric(df[col], errors='coerce')
-                    
-                    # Check if we have NaN values after conversion (indicates non-numeric)
-                    non_numeric_mask = numeric_col.isna() & df[col].notna()
-                    if non_numeric_mask.any():
-                        first_invalid_idx = non_numeric_mask.idxmax()
-                        first_invalid = df.loc[first_invalid_idx]
-                        row_info = {
-                            "timestamp": str(first_invalid.get("ts_event", "unknown")),
-                            "symbol": str(first_invalid.get("symbol", "unknown")),
-                            "open": first_invalid.get("open", "N/A"),
-                            "row_index": first_invalid_idx,
-                        }
-                        raise DataSourceError(
-                            f"Failed to parse file {self.file_path}: Invalid non-numeric value in column '{col}' at row {first_invalid_idx}",
-                            extra={"file": self.file_path, "row": row_info},
-                            file_path=self.file_path,
-                        )
-                    
-                    # Check for ANY remaining NaN values (including those already in CSV)
-                    # Note: NaN <= 0 evaluates to False in pandas, so we must check explicitly
-                    nan_mask = numeric_col.isna()
-                    if nan_mask.any():
-                        first_nan_idx = nan_mask.idxmax()
-                        first_nan = df.loc[first_nan_idx]
-                        row_info = {
-                            "timestamp": str(first_nan.get("ts_event", "unknown")),
-                            "symbol": str(first_nan.get("symbol", "unknown")),
-                            "open": first_nan.get("open", "N/A"),
-                            "high": first_nan.get("high", "N/A"),
-                            "low": first_nan.get("low", "N/A"),
-                            "close": first_nan.get("close", "N/A"),
-                            "volume": first_nan.get("volume", "N/A"),
-                            "row_index": first_nan_idx,
-                        }
-                        raise DataSourceError(
-                            f"Invalid data in file {self.file_path}: {col} contains NaN/missing value (row {first_nan_idx}, symbol: {row_info['symbol']})",
-                            extra={"file": self.file_path, "row": row_info},
-                            file_path=self.file_path,
-                        )
-                    
-                    # Now check for negative or zero prices using the converted numeric column
-                    # IMPORTANT: Use numeric_col here, not df[col], to ensure we're validating
-                    # the converted numeric values, not the original column
-                    invalid_mask = numeric_col <= 0
-                    if invalid_mask.any():
-                        first_invalid_idx = invalid_mask.idxmax()
-                        first_invalid = df.loc[first_invalid_idx]
-                        row_idx = first_invalid_idx
-                        row_info = {
-                            "timestamp": str(first_invalid.get("ts_event", "unknown")),
-                            "symbol": str(first_invalid.get("symbol", "unknown")),
-                            "open": first_invalid.get("open", "N/A"),
-                            "high": first_invalid.get("high", "N/A"),
-                            "low": first_invalid.get("low", "N/A"),
-                            "close": first_invalid.get("close", "N/A"),
-                            "volume": first_invalid.get("volume", "N/A"),
-                            "row_index": row_idx,
-                        }
-                        # Create a NormalizationError first, then wrap in DataSourceError
-                        norm_error = NormalizationError(
-                            f"{col.capitalize()} price must be positive",
-                            extra={"file": self.file_path, "row": row_info},
-                        )
-                        raise DataSourceError(
-                            f"Invalid data in file {self.file_path}: {col} price must be positive (row {row_idx}, symbol: {row_info['symbol']})",
-                            extra={"file": self.file_path, "row": row_info},
-                            file_path=self.file_path,
-                        ) from norm_error
-                        
-                except TypeError:
-                    # Handle the case where comparison fails due to mixed types
-                    pass
+                # Note: pd.to_numeric with errors='coerce' handles mixed types gracefully,
+                # converting non-numeric values to NaN. We then check for NaN explicitly.
+                # Any TypeError here is a real bug that should surface, not be hidden.
+                
+                # Convert to numeric, coercing non-numeric values to NaN
+                numeric_col = pd.to_numeric(df[col], errors='coerce')
+                
+                # Check if we have NaN values after conversion (indicates non-numeric)
+                non_numeric_mask = numeric_col.isna() & df[col].notna()
+                if non_numeric_mask.any():
+                    first_invalid_idx = non_numeric_mask.idxmax()
+                    first_invalid = df.loc[first_invalid_idx]
+                    row_info = {
+                        "timestamp": str(first_invalid.get("ts_event", "unknown")),
+                        "symbol": str(first_invalid.get("symbol", "unknown")),
+                        "open": first_invalid.get("open", "N/A"),
+                        "row_index": first_invalid_idx,
+                    }
+                    raise DataSourceError(
+                        f"Failed to parse file {self.file_path}: Invalid non-numeric value in column '{col}' at row {first_invalid_idx}",
+                        extra={"file": self.file_path, "row": row_info},
+                        file_path=self.file_path,
+                    )
+                
+                # Check for ANY remaining NaN values (including those already in CSV)
+                # Note: NaN <= 0 evaluates to False in pandas, so we must check explicitly
+                nan_mask = numeric_col.isna()
+                if nan_mask.any():
+                    first_nan_idx = nan_mask.idxmax()
+                    first_nan = df.loc[first_nan_idx]
+                    row_info = {
+                        "timestamp": str(first_nan.get("ts_event", "unknown")),
+                        "symbol": str(first_nan.get("symbol", "unknown")),
+                        "open": first_nan.get("open", "N/A"),
+                        "high": first_nan.get("high", "N/A"),
+                        "low": first_nan.get("low", "N/A"),
+                        "close": first_nan.get("close", "N/A"),
+                        "volume": first_nan.get("volume", "N/A"),
+                        "row_index": first_nan_idx,
+                    }
+                    raise DataSourceError(
+                        f"Invalid data in file {self.file_path}: {col} contains NaN/missing value (row {first_nan_idx}, symbol: {row_info['symbol']})",
+                        extra={"file": self.file_path, "row": row_info},
+                        file_path=self.file_path,
+                    )
+                
+                # Now check for negative or zero prices using the converted numeric column
+                # IMPORTANT: Use numeric_col here, not df[col], to ensure we're validating
+                # the converted numeric values, not the original column
+                invalid_mask = numeric_col <= 0
+                if invalid_mask.any():
+                    first_invalid_idx = invalid_mask.idxmax()
+                    first_invalid = df.loc[first_invalid_idx]
+                    row_idx = first_invalid_idx
+                    row_info = {
+                        "timestamp": str(first_invalid.get("ts_event", "unknown")),
+                        "symbol": str(first_invalid.get("symbol", "unknown")),
+                        "open": first_invalid.get("open", "N/A"),
+                        "high": first_invalid.get("high", "N/A"),
+                        "low": first_invalid.get("low", "N/A"),
+                        "close": first_invalid.get("close", "N/A"),
+                        "volume": first_invalid.get("volume", "N/A"),
+                        "row_index": row_idx,
+                    }
+                    # Create a NormalizationError first, then wrap in DataSourceError
+                    norm_error = NormalizationError(
+                        f"{col.capitalize()} price must be positive",
+                        extra={"file": self.file_path, "row": row_info},
+                    )
+                    raise DataSourceError(
+                        f"Invalid data in file {self.file_path}: {col} price must be positive (row {row_idx}, symbol: {row_info['symbol']})",
+                        extra={"file": self.file_path, "row": row_info},
+                        file_path=self.file_path,
+                    ) from norm_error
 
         # Convert to list of Candle objects
         candles: list[Candle] = []
