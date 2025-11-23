@@ -33,6 +33,9 @@ def detect_swings(
     Returns:
         Tuple of (swing_high_indices, swing_low_indices)
 
+    Raises:
+        ValueError: If required columns are missing or lookback < 1
+
     Example:
         >>> df = pd.DataFrame({
         ...     'high': [100, 102, 105, 103, 101],
@@ -42,7 +45,50 @@ def detect_swings(
         >>> highs
         [2]  # Index 2 has highest high
     """
-    # TODO: Implement swing detection logic
-    # See task: https://www.notion.so/2b42bd6fbda680af8811ec757faffe73
-    raise NotImplementedError("Swing detection pending implementation")
+    # Validate lookback
+    if lookback < 1:
+        raise ValueError("lookback must be >= 1")
+
+    # Validate required columns
+    required_cols = {"high", "low"}
+    missing_cols = required_cols - set(df.columns)
+    if missing_cols:
+        raise ValueError(
+            f"Missing required column(s): {missing_cols}. "
+            f"Available columns: {list(df.columns)}"
+        )
+
+    # Initialize result lists
+    swing_highs: list[int] = []
+    swing_lows: list[int] = []
+
+    # Handle empty or insufficient data
+    if len(df) < 2 * lookback + 1:
+        return swing_highs, swing_lows
+
+    # Detect swing highs: local maxima
+    # Iterate through valid range [lookback, len(df) - lookback)
+    for i in range(lookback, len(df) - lookback):
+        # Extract window around current position
+        window_highs = df["high"].iloc[i - lookback : i + lookback + 1]
+        
+        # Check if current position is maximum in window
+        if df["high"].iloc[i] == window_highs.max():
+            swing_highs.append(i)
+
+    # Detect swing lows: local minima
+    for i in range(lookback, len(df) - lookback):
+        # Extract window around current position
+        window_lows = df["low"].iloc[i - lookback : i + lookback + 1]
+        
+        # Check if current position is minimum in window
+        if df["low"].iloc[i] == window_lows.min():
+            swing_lows.append(i)
+
+    logger.debug(
+        f"Detected {len(swing_highs)} swing highs and {len(swing_lows)} swing lows "
+        f"in {len(df)} bars (lookback={lookback})"
+    )
+
+    return swing_highs, swing_lows
 
