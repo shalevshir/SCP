@@ -356,6 +356,19 @@ class LocalCSVClient:
         # Filter by date range (start <= ts_event < end)
         df = df[(df["ts_event"] >= start) & (df["ts_event"] < end)]
 
+        # Filter out spread symbols (those with "-" in symbol name)
+        # Spread symbols have negative prices and are not tradeable
+        if "symbol" in df.columns:
+            df = df[~df["symbol"].str.contains("-", na=False)]
+
+        # Filter out rows with negative OHLC values (corrupt data)
+        df = df[
+            (df["open"] > 0)
+            & (df["high"] > 0)
+            & (df["low"] > 0)
+            & (df["close"] > 0)
+        ]
+
         # Convert to list of Candle objects
         candles: list[Candle] = []
         for idx, row in df.iterrows():
