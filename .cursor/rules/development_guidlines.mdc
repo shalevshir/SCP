@@ -86,6 +86,7 @@ alwaysApply: true
 ## Python Standards (Project is Python-first)
 
 - **Version**: Target Python 3.11+.
+- **Package Manager**: Always use `uv` to run Python commands and manage dependencies. Run tests with `uv run pytest`, scripts with `uv run python`, and any other Python tooling through `uv run` to ensure consistent environment isolation.
 - **Testing**: Use `pytest` (with `pytest-xdist` for parallel), property tests with `hypothesis` when valuable.
 - **Layout**: Use `src/` layout. Mirror production packages under `tests/` with clear `unit/`, `integration/`, `e2e/` folders.
 - **Fixtures**: Centralize reusable fixtures in `tests/conftest.py`. Prefer fakes over heavy mocks.
