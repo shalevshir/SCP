@@ -411,10 +411,11 @@ def compute_htf_bias(
         vwap_slope_1h = features_1h.get("vwap_slope")
         
         # Determine VWAP trend confirmation
-        # Confirmed if VWAP trend aligns with bias
-        if bias == "bullish" and vwap_distance_1h is not None and vwap_distance_1h > 0:
+        # IMPORTANT: Use original_bias to reflect underlying market structure
+        # even when bias is neutralized due to DXY chop or conflicts
+        if original_bias == "bullish" and vwap_distance_1h is not None and vwap_distance_1h > 0:
             vwap_trend_confirmed = True
-        elif bias == "bearish" and vwap_distance_1h is not None and vwap_distance_1h < 0:
+        elif original_bias == "bearish" and vwap_distance_1h is not None and vwap_distance_1h < 0:
             vwap_trend_confirmed = True
     
     # 4. FVG alignment score
@@ -439,7 +440,9 @@ def compute_htf_bias(
     
     # DXY alignment: strong negative correlation expected for both bull and bear bias
     # Gold typically moves inverse to DXY
-    if bias != "neutral":
+    # IMPORTANT: Use original_bias to reflect underlying market structure
+    # even when bias is neutralized due to DXY chop or conflicts
+    if original_bias != "neutral":
         if (dxy_corr_1h is not None and not pd.isna(dxy_corr_1h) and dxy_corr_1h < -0.6 and
             dxy_corr_15m is not None and not pd.isna(dxy_corr_15m) and dxy_corr_15m < -0.6):
             dxy_alignment = True
