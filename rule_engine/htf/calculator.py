@@ -186,21 +186,25 @@ def compute_htf_bias(
     features_1h: pd.Series,
     features_15m: pd.Series,
     dxy_1h: pd.DataFrame | None = None,
+    df_15m: pd.DataFrame | None = None,
+    sweep_events_15m: pd.Series | None = None,
     timestamp: pd.Timestamp | None = None,
 ) -> HTFBias:
     """Compute comprehensive HTF bias with all components.
 
     This is the new interface that returns a full HTFBias object with all
-    structure, VWAP, DXY, and seasonality components.
+    structure, VWAP, DXY, seasonality, and conflict detection components.
 
     Args:
         features_1h: 1h timeframe features
         features_15m: 15m timeframe features
         dxy_1h: Optional DXY 1h DataFrame for chop detection (needs OHLC columns)
+        df_15m: Optional 15M price DataFrame for price chop detection (needs OHLC columns)
+        sweep_events_15m: Optional Series with liquidity sweep events from detect_liquidity_sweeps()
         timestamp: Current timestamp for seasonality
 
     Returns:
-        HTFBias object with all components populated
+        HTFBias object with all components populated including conflict detection
 
     Task: Create final HTFBias object
     Epic: Full HTF Bias Engine Upgrade
@@ -214,6 +218,10 @@ def compute_htf_bias(
     
     # Use legacy logic to compute base bias and score
     bias, direction, score = compute_htf_bias_multi_timeframe(features_1h, features_15m)
+    
+    # Store original bias before any neutralization for conflict detection
+    original_bias = bias
+    original_score = score
     
     # Detect DXY chop if data provided
     dxy_chop_detected = False
@@ -237,6 +245,62 @@ def compute_htf_bias(
         except Exception as e:
             logger.error(f"Error detecting DXY chop: {e}")
             # Continue without chop detection rather than failing
+    
+    # Check for conflicts between timeframes
+    # Use ORIGINAL bias (before DXY chop neutralization) for conflict detection
+    from rule_engine.htf.conflicts import (
+        detect_structure_conflict,
+        detect_price_chop_15m,
+        detect_sweep_against_trend,
+    )
+    
+    conflict_detected = False
+    conflict_reason = None
+    
+    # Rule 1: Structure conflict between 1H and 15M
+    is_conflict, reason = detect_structure_conflict(
+        structure_1h=features_1h.get("structure_label") or features_1h.get("structure_type"),
+        structure_15m=features_15m.get("structure_label") or features_15m.get("structure_type"),
+    )
+    if is_conflict:
+        conflict_detected = True
+        conflict_reason = reason
+    
+    # Rule 2: 15M price chop
+    if not conflict_detected and df_15m is not None and len(df_15m) > 0:
+        try:
+            if detect_price_chop_15m(df_15m):
+                conflict_detected = True
+                conflict_reason = "15M price action in chop"
+        except Exception as e:
+            logger.error(f"Error detecting 15M price chop: {e}")
+            # Continue without chop detection
+    
+    # Rule 3: Liquidity sweep against trend
+    # IMPORTANT: Use original_bias (before DXY chop neutralization)
+    # to detect sweep conflicts based on the actual market structure
+    if not conflict_detected and sweep_events_15m is not None:
+        try:
+            is_conflict, reason = detect_sweep_against_trend(
+                bias=original_bias,  # Use original bias, not neutralized one
+                sweep_events=sweep_events_15m,
+            )
+            if is_conflict:
+                conflict_detected = True
+                conflict_reason = reason
+        except Exception as e:
+            logger.error(f"Error detecting sweep conflict: {e}")
+            # Continue without sweep conflict detection
+    
+    # Apply neutralization if conflict detected
+    if conflict_detected:
+        logger.warning(
+            f"Conflict detected - forcing HTF bias to neutral: {conflict_reason} "
+            f"(original: {original_bias}, score: {original_score:.1f})"
+        )
+        bias = "neutral"
+        direction = "neutral"
+        score = min(score, 5.0)
     
     # Apply seasonality adjustment if timestamp provided
     seasonality_period = None
@@ -265,7 +329,8 @@ def compute_htf_bias(
             score
         )
     
-    if dxy_chop_detected:
+    # Re-cap score after seasonality if neutralization conditions exist
+    if dxy_chop_detected or conflict_detected:
         # Re-cap score after any post-processing to enforce neutral bias
         score = min(score, 5.0)
     
@@ -295,6 +360,8 @@ def compute_htf_bias(
         dxy_chop_detected=dxy_chop_detected,
         seasonality_period=seasonality_period,
         seasonality_adjustment=seasonality_adjustment,
+        conflict_detected=conflict_detected,
+        conflict_reason=conflict_reason,
     )
 
 

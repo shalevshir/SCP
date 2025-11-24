@@ -85,6 +85,10 @@ class HTFBias:
     dxy_chop_detected: bool = False
     dxy_alignment: bool = False
 
+    # Conflict detection
+    conflict_detected: bool = False
+    conflict_reason: Optional[str] = None
+
     def to_dict(self) -> dict:
         """Convert HTFBias to dictionary for logging/serialization."""
         return {
@@ -109,5 +113,7 @@ class HTFBias:
             "dxy_corr_15m": self.dxy_corr_15m,
             "dxy_chop_detected": self.dxy_chop_detected,
             "dxy_alignment": self.dxy_alignment,
+            "conflict_detected": self.conflict_detected,
+            "conflict_reason": self.conflict_reason,
         }
 

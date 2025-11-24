@@ -99,6 +99,59 @@ adjusted_score, details = adjust_score_with_htf(
 
 ## Components
 
+### Conflict Rules ✅
+
+**Status**: Complete  
+**Documentation**: [HTF Conflict Rules Guide](../../docs/rule-engine/htf-conflict-rules.md)
+
+The conflict rules module implements automatic bias neutralization when conflicting market conditions are detected. This enforces structure-first discipline by preventing trades during multi-timeframe conflicts.
+
+#### Key Features
+
+- **Structure Conflict Detection**: Detects when 1H and 15M timeframes show opposing directional bias
+- **15M Chop Detection**: Identifies when 15M price action is ranging/indecisive (wick-to-wick behavior)
+- **Sweep Against Trend**: Detects liquidity sweeps that oppose the established trend direction
+- **Automatic Neutralization**: Forces HTF bias to "neutral" when any conflict is detected
+- **Conflict Tracking**: Records which conflict rule triggered for debugging/analysis
+
+#### Conflict Types
+
+| Type | Condition | Action |
+|------|-----------|--------|
+| **Structure Conflict** | 1H bullish + 15M bearish (or vice versa) | Force neutral bias |
+| **15M Chop** | 3+ consecutive chop candles on 15M | Force neutral bias |
+| **Sweep vs Trend** | Successful sweep against established trend | Force neutral bias |
+
+#### Usage
+
+```python
+from rule_engine.htf.calculator import compute_htf_bias
+
+# Conflict detection is automatic when optional data provided
+htf_bias = compute_htf_bias(
+    features_1h=features_1h,
+    features_15m=features_15m,
+    df_15m=df_15m,  # For 15M chop detection
+    sweep_events_15m=sweep_events,  # For sweep conflict detection
+)
+
+# Check for conflicts
+if htf_bias.conflict_detected:
+    print(f"Conflict: {htf_bias.conflict_reason}")
+    # bias will be "neutral", score capped at 5.0
+```
+
+#### Testing
+
+- **17 unit tests** (6 structure + 5 chop + 6 sweep)
+- **6 integration tests** in test_htf_calculator.py (including DXY chop + sweep regression test)
+- **100% coverage** on conflict detection logic
+- All edge cases and integration scenarios covered
+
+See [conflicts.py](conflicts.py) for module details and [test_conflicts.py](../../tests/unit/rule_engine/htf/test_conflicts.py) for comprehensive test examples.
+
+---
+
 ### Seasonality Module ✅
 
 **Status**: Complete  
