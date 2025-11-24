@@ -415,8 +415,8 @@ class TestHTFCalculatorConflictRules:
         # (original bias was bullish with sweep_low = reversal signal)
         assert result.conflict_detected is True
         assert result.conflict_reason is not None
-        # Should mention sweep, not just chop
-        assert "sweep" in result.conflict_reason.lower() or result.conflict_reason == "15M price action in chop"
+        # Should mention sweep (df_15m not provided, so can't be 15M chop)
+        assert "sweep" in result.conflict_reason.lower()
 
     def test_conflict_score_remains_capped_after_seasonality_adjustment(
         self,
