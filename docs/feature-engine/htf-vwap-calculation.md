@@ -414,7 +414,11 @@ fvg_df = detect_fvg(df)
 fvg_df = check_fvg_filled(df, fvg_df)
 
 # Determine bias from VWAP
-current_bias = "bullish" if df['close'].iloc[-1] > df['vwap'].iloc[-1] else "bearish"
+current_bias = (
+    "bullish" if df['close'].iloc[-1] > df['vwap'].iloc[-1] 
+    else "bearish" if df['close'].iloc[-1] < df['vwap'].iloc[-1]
+    else "neutral"
+)
 
 # Score FVG alignment
 fvg_score = score_fvg_alignment(fvg_df, current_bias)
