@@ -8,6 +8,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal, Optional
 
+from rule_engine.htf.seasonality.rules import SeasonalityPeriod
+
 
 @dataclass
 class HTFBias:
@@ -74,7 +76,7 @@ class HTFBias:
     fvg_alignment_score: float = 0.0
 
     # Seasonality
-    seasonality_period: Optional[str] = None
+    seasonality_period: Optional[SeasonalityPeriod] = None
     seasonality_adjustment: float = 0.0
 
     # DXY

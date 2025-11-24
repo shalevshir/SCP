@@ -199,13 +199,42 @@ def compute_htf_bias(
     Epic: Full HTF Bias Engine Upgrade
     Status: Not started
     """
-    # TODO: Integrate all HTF components
-    # See task: https://www.notion.so/2b42bd6fbda680b9a91ffd8b27027e78
+    from rule_engine.htf.seasonality import (
+        get_seasonality_period,
+        apply_seasonality_adjustment,
+    )
     
-    # For now, use legacy logic and create basic HTFBias
+    # Use legacy logic to compute base bias and score
     bias, direction, score = compute_htf_bias_multi_timeframe(features_1h, features_15m)
     
-    # Determine confidence based on score
+    # Apply seasonality adjustment if timestamp provided
+    seasonality_period = None
+    seasonality_adjustment = 0.0
+    
+    if timestamp is not None:
+        # Convert pandas Timestamp to datetime if needed
+        if hasattr(timestamp, 'to_pydatetime'):
+            dt = timestamp.to_pydatetime()
+        else:
+            dt = timestamp
+        
+        seasonality_period = get_seasonality_period(dt)
+        dxy_corr = features_1h.get("dxy_corr")
+        
+        score, seasonality_adjustment = apply_seasonality_adjustment(
+            base_score=score,
+            period=seasonality_period,
+            dxy_corr=dxy_corr,
+        )
+        
+        logger.debug(
+            "Seasonality integrated: period=%s | adjustment=%.2f | final_score=%.2f",
+            seasonality_period,
+            seasonality_adjustment,
+            score
+        )
+    
+    # Determine confidence based on adjusted score
     if score >= 8.0:
         confidence = "high"
     elif score >= 6.0:
@@ -222,6 +251,8 @@ def compute_htf_bias(
         structure_15m=features_15m.get("structure_label") or features_15m.get("structure_type"),
         dxy_corr_1h=features_1h.get("dxy_corr"),
         dxy_corr_15m=features_15m.get("dxy_corr"),
+        seasonality_period=seasonality_period,
+        seasonality_adjustment=seasonality_adjustment,
     )
 
 
