@@ -40,9 +40,25 @@ def get_seasonality_period(timestamp: datetime) -> SeasonalityPeriod:
         - October → neutral baseline
         - Seasonality attribute included in HTF output
     """
-    # TODO: Implement seasonality period detection
-    # See task: https://www.notion.so/2b42bd6fbda6806b9ae2f498addb965a
-    raise NotImplementedError("Seasonality period detection pending implementation")
+    month = timestamp.month
+    
+    if month == 9:
+        period: SeasonalityPeriod = "september"
+    elif month == 10:
+        period = "october"
+    elif month in (11, 12):
+        period = "november_december"
+    else:
+        period = "other"
+    
+    logger.debug(
+        "Seasonality period detected: %s | month=%d | timestamp=%s",
+        period,
+        month,
+        timestamp.isoformat()
+    )
+    
+    return period
 
 
 def get_seasonality_config(period: SeasonalityPeriod) -> dict:
@@ -61,6 +77,43 @@ def get_seasonality_config(period: SeasonalityPeriod) -> dict:
         >>> config["dxy_corr_threshold"]
         -0.65
     """
-    # TODO: Implement seasonality configuration
-    raise NotImplementedError("Seasonality configuration pending implementation")
+    # SOP-defined seasonality configurations
+    configs = {
+        "september": {
+            "min_score_threshold": 8.5,
+            "dxy_corr_threshold": -0.65,
+            "max_losses": 1,
+            "description": "September - Defensive mode (stricter thresholds)",
+        },
+        "october": {
+            "min_score_threshold": 8.0,
+            "dxy_corr_threshold": -0.6,
+            "max_losses": 2,
+            "description": "October - Neutral baseline",
+        },
+        "november_december": {
+            "min_score_threshold": 8.0,
+            "dxy_corr_threshold": -0.55,
+            "max_losses": 2,
+            "description": "November-December - Trend season (relaxed DXY correlation)",
+        },
+        "other": {
+            "min_score_threshold": 8.0,
+            "dxy_corr_threshold": -0.6,
+            "max_losses": 2,
+            "description": "Standard months - Baseline thresholds",
+        },
+    }
+    
+    config = configs[period]
+    
+    logger.debug(
+        "Seasonality config retrieved: %s | min_score=%.1f | dxy_corr=%.2f | max_losses=%d",
+        period,
+        config["min_score_threshold"],
+        config["dxy_corr_threshold"],
+        config["max_losses"]
+    )
+    
+    return config
 
