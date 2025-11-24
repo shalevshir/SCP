@@ -8,8 +8,31 @@ from datetime import datetime, timezone
 
 import pytest
 
+from rule_engine.htf.types import HTFBias
 from rule_engine.signal import Signal
 from rule_engine.validation import validate_signal
+
+
+def create_htf_bias_from_context(context: dict) -> HTFBias:
+    """Helper to create HTFBias from context dict for validation tests."""
+    bias = context.get("htf_bias", "neutral")
+    direction = context.get("htf_direction", "neutral")
+    score = context.get("htf_score", 6.5)
+    
+    if score >= 8.0:
+        confidence = "high"
+    elif score >= 6.0:
+        confidence = "medium"
+    else:
+        confidence = "low"
+    
+    return HTFBias(
+        bias=bias,
+        direction=direction,
+        score=score,
+        confidence=confidence,
+        dxy_alignment=context.get("dxy_corr", -0.7) < -0.6,
+    )
 
 
 class TestValidateSignal:
@@ -43,7 +66,8 @@ class TestValidateSignal:
             "htf_direction": "long",
         }
 
-        validated = validate_signal(signal, context)
+        htf_bias = create_htf_bias_from_context(context)
+        validated = validate_signal(signal, htf_bias, context)
 
         assert validated.confidence == "A+"
         assert validated.validation_flags["session_ok"] is True
@@ -77,7 +101,8 @@ class TestValidateSignal:
             "htf_direction": "long",
         }
 
-        validated = validate_signal(signal, context)
+        htf_bias = create_htf_bias_from_context(context)
+        validated = validate_signal(signal, htf_bias, context)
 
         assert validated.confidence == "Reject"
         assert validated.validation_flags["session_ok"] is False
@@ -110,7 +135,8 @@ class TestValidateSignal:
             "htf_direction": "short",  # Mismatch with signal direction
         }
 
-        validated = validate_signal(signal, context)
+        htf_bias = create_htf_bias_from_context(context)
+        validated = validate_signal(signal, htf_bias, context)
 
         assert validated.confidence == "Reject"
         assert validated.validation_flags["htf_bias_ok"] is False
@@ -145,7 +171,8 @@ class TestValidateSignal:
             "dxy_corr": -0.3,  # Weak correlation
         }
 
-        validated = validate_signal(signal, context)
+        htf_bias = create_htf_bias_from_context(context)
+        validated = validate_signal(signal, htf_bias, context)
 
         assert validated.validation_flags["dxy_alignment_ok"] is False
 
@@ -178,7 +205,8 @@ class TestValidateSignal:
             "htf_direction": "short",
         }
 
-        validated = validate_signal(signal, context)
+        htf_bias = create_htf_bias_from_context(context)
+        validated = validate_signal(signal, htf_bias, context)
 
         # Conservative tier doesn't allow VWAP_FADE
         assert validated.validation_flags["tier_ok"] is False
@@ -217,7 +245,8 @@ class TestValidationFlags:
             "htf_direction": "long",
         }
 
-        validated = validate_signal(signal, context_invalid)
+        htf_bias = create_htf_bias_from_context(context_invalid)
+        validated = validate_signal(signal, htf_bias, context_invalid)
         assert validated.validation_flags["session_ok"] is False
 
     def test_tier_ok_flag_updates(self) -> None:
@@ -248,7 +277,8 @@ class TestValidationFlags:
             "htf_direction": "short",
         }
 
-        validated = validate_signal(signal, context)
+        htf_bias = create_htf_bias_from_context(context)
+        validated = validate_signal(signal, htf_bias, context)
         # Conservative doesn't allow VWAP_FADE
         assert validated.validation_flags["tier_ok"] is False
 
@@ -280,7 +310,8 @@ class TestValidationFlags:
             "htf_direction": "short",  # Mismatch
         }
 
-        validated = validate_signal(signal, context)
+        htf_bias = create_htf_bias_from_context(context)
+        validated = validate_signal(signal, htf_bias, context)
         assert validated.validation_flags["htf_bias_ok"] is False
 
 
@@ -319,7 +350,8 @@ class TestValidationEnforcerTiers:
                 "htf_direction": "long",
             }
 
-            validated = validate_signal(signal, context)
+            htf_bias = create_htf_bias_from_context(context)
+            validated = validate_signal(signal, htf_bias, context)
             assert validated.validation_flags["tier_ok"] is True
 
         for setup_type in forbidden_setups:
@@ -349,7 +381,8 @@ class TestValidationEnforcerTiers:
                 "htf_direction": "short",
             }
 
-            validated = validate_signal(signal, context)
+            htf_bias = create_htf_bias_from_context(context)
+            validated = validate_signal(signal, htf_bias, context)
             assert validated.validation_flags["tier_ok"] is False
 
     def test_offensive_tier_allows_all_setups(self) -> None:
@@ -383,6 +416,7 @@ class TestValidationEnforcerTiers:
                 "htf_direction": "long",
             }
 
-            validated = validate_signal(signal, context)
+            htf_bias = create_htf_bias_from_context(context)
+            validated = validate_signal(signal, htf_bias, context)
             assert validated.validation_flags["tier_ok"] is True
 

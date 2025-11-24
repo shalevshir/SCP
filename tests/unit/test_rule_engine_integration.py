@@ -15,6 +15,29 @@ from rule_engine import (
     score_signal,
     validate_signal,
 )
+from rule_engine.htf.types import HTFBias
+
+
+def create_htf_bias_from_context(context: dict) -> HTFBias:
+    """Helper to create HTFBias from context dict for integration tests."""
+    bias = context.get("htf_bias", "neutral")
+    direction = context.get("htf_direction", "neutral")
+    score = context.get("htf_score", 6.5)
+    
+    if score >= 8.0:
+        confidence = "high"
+    elif score >= 6.0:
+        confidence = "medium"
+    else:
+        confidence = "low"
+    
+    return HTFBias(
+        bias=bias,
+        direction=direction,
+        score=score,
+        confidence=confidence,
+        dxy_alignment=True,
+    )
 
 
 class TestRuleEngineIntegration:
@@ -46,7 +69,8 @@ class TestRuleEngineIntegration:
         }
 
         # Step 2: Score signal
-        signal = score_signal(features, context)
+        htf_bias = create_htf_bias_from_context(context)
+        signal = score_signal(features, htf_bias, context)
 
         assert isinstance(signal, Signal)
         assert signal.score >= 8.0
@@ -55,7 +79,7 @@ class TestRuleEngineIntegration:
         assert signal.direction == "long"
 
         # Step 3: Validate signal
-        validated_signal = validate_signal(signal, context)
+        validated_signal = validate_signal(signal, htf_bias, context)
 
         assert validated_signal.validation_flags["session_ok"] is True
         assert validated_signal.validation_flags["tier_ok"] is True
@@ -96,11 +120,12 @@ class TestRuleEngineIntegration:
         }
 
         # Score signal
-        signal = score_signal(features, context)
+        htf_bias = create_htf_bias_from_context(context)
+        signal = score_signal(features, htf_bias, context)
         assert signal.confidence == "A+"  # Before validation
 
         # Validate signal (should reject due to invalid session)
-        validated_signal = validate_signal(signal, context)
+        validated_signal = validate_signal(signal, htf_bias, context)
         assert validated_signal.confidence == "Reject"
         assert validated_signal.validation_flags["session_ok"] is False
 
@@ -129,8 +154,9 @@ class TestRuleEngineIntegration:
                 "enforcer_tier": "Early Mild",
             }
 
-            signal = score_signal(features, context)
-            validated_signal = validate_signal(signal, context)
+            htf_bias = create_htf_bias_from_context(context)
+            signal = score_signal(features, htf_bias, context)
+            validated_signal = validate_signal(signal, htf_bias, context)
             signals.append(validated_signal)
 
         # Log all signals
@@ -168,7 +194,8 @@ class TestRuleEngineIntegration:
             "enforcer_tier": "Mild",
         }
 
-        signal_reclaim = score_signal(features_reclaim, context)
+        htf_bias = create_htf_bias_from_context(context)
+        signal_reclaim = score_signal(features_reclaim, htf_bias, context)
         assert signal_reclaim.setup_type == "VWAP_RECLAIM"
 
         # VWAP_FADE setup
@@ -185,7 +212,7 @@ class TestRuleEngineIntegration:
             "dxy_corr": -0.75,
         })
 
-        signal_fade = score_signal(features_fade, context)
+        signal_fade = score_signal(features_fade, htf_bias, context)
         assert signal_fade.setup_type == "VWAP_FADE"
 
         # DXY_CONTINUATION setup
@@ -202,6 +229,6 @@ class TestRuleEngineIntegration:
             "dxy_corr": -0.85,  # Very strong correlation
         })
 
-        signal_dxy = score_signal(features_dxy, context)
+        signal_dxy = score_signal(features_dxy, htf_bias, context)
         assert signal_dxy.setup_type == "DXY_CONTINUATION"
 
