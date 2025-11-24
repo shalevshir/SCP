@@ -207,3 +207,213 @@ class TestHTFCalculatorDXYChop:
         assert result.seasonality_adjustment > 0  # Defensive check
         assert result.score <= 5.0
 
+
+class TestHTFCalculatorConflictRules:
+    """Test HTF calculator integration with conflict detection rules."""
+
+    @pytest.fixture
+    def features_1h_bullish(self) -> pd.Series:
+        """Create 1H features indicating bullish bias."""
+        return pd.Series(
+            {
+                "structure_label": "HH",
+                "ema_9": 2100.0,
+                "ema_20": 2090.0,
+                "ema_50": 2080.0,
+                "dxy_corr": -0.7,
+            }
+        )
+
+    @pytest.fixture
+    def features_15m_bearish(self) -> pd.Series:
+        """Create 15M features indicating bearish bias."""
+        return pd.Series(
+            {
+                "structure_label": "LH",
+                "ema_9": 2085.0,
+                "ema_20": 2095.0,
+                "ema_50": 2105.0,
+                "dxy_corr": -0.65,
+            }
+        )
+
+    @pytest.fixture
+    def features_15m_bullish(self) -> pd.Series:
+        """Create 15M features indicating bullish bias."""
+        return pd.Series(
+            {
+                "structure_label": "HL",
+                "ema_9": 2105.0,
+                "ema_20": 2095.0,
+                "ema_50": 2085.0,
+                "dxy_corr": -0.65,
+            }
+        )
+
+    @pytest.fixture
+    def price_chop_data(self) -> pd.DataFrame:
+        """Create 15M price data with chop (large wicks)."""
+        return pd.DataFrame(
+            {
+                "high": [2100.0, 2105.0, 2110.0, 2115.0, 2120.0],
+                "low": [2080.0, 2085.0, 2090.0, 2095.0, 2100.0],
+                "open": [2095.0, 2097.0, 2099.0, 2101.0, 2103.0],
+                "close": [2097.0, 2099.0, 2101.0, 2103.0, 2105.0],
+            }
+        )
+
+    @pytest.fixture
+    def sweep_low_events(self) -> pd.Series:
+        """Create sweep events with recent sweep_low."""
+        return pd.Series([None, None, None, "sweep_low"], index=pd.RangeIndex(4))
+
+    def test_structure_conflict_neutralizes_strong_bias(
+        self,
+        features_1h_bullish: pd.Series,
+        features_15m_bearish: pd.Series,
+    ) -> None:
+        """Test that 1H/15M structure conflict forces neutral bias."""
+        result = compute_htf_bias(features_1h_bullish, features_15m_bearish)
+
+        # Conflict should force neutral
+        assert result.bias == "neutral"
+        assert result.direction == "neutral"
+        assert result.conflict_detected is True
+        assert result.conflict_reason is not None
+        assert "conflict" in result.conflict_reason.lower()
+        # Score should be capped at 5.0
+        assert result.score <= 5.0
+
+    def test_15m_chop_neutralizes_bias(
+        self,
+        features_1h_bullish: pd.Series,
+        features_15m_bullish: pd.Series,
+        price_chop_data: pd.DataFrame,
+    ) -> None:
+        """Test that 15M price chop forces neutral bias."""
+        result = compute_htf_bias(
+            features_1h_bullish,
+            features_15m_bullish,
+            df_15m=price_chop_data,
+        )
+
+        # Chop should force neutral
+        assert result.bias == "neutral"
+        assert result.direction == "neutral"
+        assert result.conflict_detected is True
+        assert result.conflict_reason == "15M price action in chop"
+        assert result.score <= 5.0
+
+    def test_sweep_against_trend_neutralizes_bias(
+        self,
+        features_1h_bullish: pd.Series,
+        features_15m_bullish: pd.Series,
+        sweep_low_events: pd.Series,
+    ) -> None:
+        """Test that liquidity sweep against trend forces neutral."""
+        result = compute_htf_bias(
+            features_1h_bullish,
+            features_15m_bullish,
+            sweep_events_15m=sweep_low_events,
+        )
+
+        # Sweep against trend should force neutral
+        assert result.bias == "neutral"
+        assert result.direction == "neutral"
+        assert result.conflict_detected is True
+        assert "sweep" in result.conflict_reason.lower()
+        assert result.score <= 5.0
+
+    def test_multiple_conflicts_first_one_recorded(
+        self,
+        features_1h_bullish: pd.Series,
+        features_15m_bearish: pd.Series,
+        price_chop_data: pd.DataFrame,
+    ) -> None:
+        """Test that when multiple conflicts exist, first is recorded."""
+        result = compute_htf_bias(
+            features_1h_bullish,
+            features_15m_bearish,
+            df_15m=price_chop_data,  # Also has chop
+        )
+
+        # Should detect conflict
+        assert result.bias == "neutral"
+        assert result.conflict_detected is True
+        # Should report structure conflict (Rule 1 checked first)
+        assert "conflict" in result.conflict_reason.lower()
+
+    def test_conflict_fields_in_htf_bias_output(
+        self,
+        features_1h_bullish: pd.Series,
+        features_15m_bullish: pd.Series,
+    ) -> None:
+        """Test that conflict fields are properly included in HTFBias."""
+        # No conflict case
+        result_no_conflict = compute_htf_bias(
+            features_1h_bullish,
+            features_15m_bullish,
+        )
+        assert result_no_conflict.conflict_detected is False
+        assert result_no_conflict.conflict_reason is None
+
+        # With conflict
+        features_15m_conflicting = pd.Series(
+            {
+                "structure_label": "LH",
+                "ema_9": 2085.0,
+                "ema_20": 2095.0,
+                "ema_50": 2105.0,
+                "dxy_corr": -0.65,
+            }
+        )
+        result_with_conflict = compute_htf_bias(
+            features_1h_bullish,
+            features_15m_conflicting,
+        )
+        assert result_with_conflict.conflict_detected is True
+        assert result_with_conflict.conflict_reason is not None
+        assert isinstance(result_with_conflict.conflict_reason, str)
+
+        # Verify to_dict includes conflict fields
+        as_dict = result_with_conflict.to_dict()
+        assert "conflict_detected" in as_dict
+        assert "conflict_reason" in as_dict
+        assert as_dict["conflict_detected"] is True
+
+    def test_sweep_conflict_detected_even_with_dxy_chop(
+        self,
+        features_1h_bullish: pd.Series,
+        features_15m_bullish: pd.Series,
+        sweep_low_events: pd.Series,
+    ) -> None:
+        """Test that sweep conflict is detected even if DXY chop already detected.
+        
+        Bug: If DXY chop neutralizes bias first, sweep detection receives 
+        neutral bias and returns early, missing the sweep conflict.
+        """
+        # Create DXY chop data
+        dxy_chop = pd.DataFrame(
+            {
+                "high": [101.0, 101.5, 102.0, 102.5, 103.0],
+                "low": [99.0, 99.5, 100.0, 100.5, 101.0],
+                "open": [100.0, 100.5, 101.0, 101.5, 102.0],
+                "close": [100.2, 100.7, 101.2, 101.7, 102.2],
+            }
+        )
+
+        result = compute_htf_bias(
+            features_1h_bullish,
+            features_15m_bullish,
+            dxy_1h=dxy_chop,  # DXY chop will neutralize first
+            sweep_events_15m=sweep_low_events,  # Sweep conflict should still be detected
+        )
+
+        # Both conditions should be detected
+        assert result.dxy_chop_detected is True
+        # CRITICAL: Sweep conflict should also be detected
+        # (original bias was bullish with sweep_low = reversal signal)
+        assert result.conflict_detected is True
+        assert result.conflict_reason is not None
+        # Should mention sweep, not just chop
+        assert "sweep" in result.conflict_reason.lower() or result.conflict_reason == "15M price action in chop"
