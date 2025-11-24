@@ -329,7 +329,8 @@ def compute_htf_bias(
             score
         )
     
-    if dxy_chop_detected:
+    # Re-cap score after seasonality if neutralization conditions exist
+    if dxy_chop_detected or conflict_detected:
         # Re-cap score after any post-processing to enforce neutral bias
         score = min(score, 5.0)
     

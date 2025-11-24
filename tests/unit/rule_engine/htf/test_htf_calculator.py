@@ -417,3 +417,37 @@ class TestHTFCalculatorConflictRules:
         assert result.conflict_reason is not None
         # Should mention sweep, not just chop
         assert "sweep" in result.conflict_reason.lower() or result.conflict_reason == "15M price action in chop"
+
+    def test_conflict_score_remains_capped_after_seasonality_adjustment(
+        self,
+        features_1h_bullish: pd.Series,
+        features_15m_bearish: pd.Series,
+    ) -> None:
+        """Test that conflict-detected score stays <= 5.0 even after seasonality adjustment.
+        
+        Bug: Conflict detection caps score at 5.0, but seasonality adjustments
+        applied afterward can increase it above 5.0. Only DXY chop has a re-cap
+        after seasonality, but conflict detection does not.
+        """
+        # Use a timestamp in London session (positive seasonality adjustment)
+        timestamp = pd.Timestamp("2024-01-15 08:00:00", tz="UTC")  # Monday, London session
+
+        result = compute_htf_bias(
+            features_1h_bullish,
+            features_15m_bearish,  # Structure conflict
+            timestamp=timestamp,
+        )
+
+        # Conflict should be detected
+        assert result.conflict_detected is True
+        assert result.bias == "neutral"
+        
+        # Seasonality adjustment should be positive
+        assert result.seasonality_adjustment > 0
+        
+        # CRITICAL: Score must remain <= 5.0 despite positive seasonality
+        # This is the bug - currently fails without re-cap
+        assert result.score <= 5.0, (
+            f"Conflict detected but score {result.score:.2f} exceeds 5.0 cap after "
+            f"seasonality adjustment of +{result.seasonality_adjustment:.2f}"
+        )
