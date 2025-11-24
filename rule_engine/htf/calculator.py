@@ -178,7 +178,7 @@ def compute_htf_bias_multi_timeframe(
 def compute_htf_bias(
     features_1h: pd.Series,
     features_15m: pd.Series,
-    dxy_1h: pd.Series | None = None,
+    dxy_1h: pd.DataFrame | None = None,
     timestamp: pd.Timestamp | None = None,
 ) -> HTFBias:
     """Compute comprehensive HTF bias with all components.
@@ -189,7 +189,7 @@ def compute_htf_bias(
     Args:
         features_1h: 1h timeframe features
         features_15m: 15m timeframe features
-        dxy_1h: Optional DXY 1h data for chop detection
+        dxy_1h: Optional DXY 1h DataFrame for chop detection (needs OHLC columns)
         timestamp: Current timestamp for seasonality
 
     Returns:
@@ -203,9 +203,33 @@ def compute_htf_bias(
         get_seasonality_period,
         apply_seasonality_adjustment,
     )
+    from rule_engine.htf.dxy import detect_dxy_chop
     
     # Use legacy logic to compute base bias and score
     bias, direction, score = compute_htf_bias_multi_timeframe(features_1h, features_15m)
+    
+    # Detect DXY chop if data provided
+    dxy_chop_detected = False
+    if dxy_1h is not None and len(dxy_1h) > 0:
+        try:
+            chop_series = detect_dxy_chop(dxy_1h)
+            # Get the latest chop detection value
+            if len(chop_series) > 0:
+                dxy_chop_detected = bool(chop_series.iloc[-1])
+                
+                if dxy_chop_detected:
+                    # Force HTF bias to neutral when DXY is in chop
+                    logger.warning(
+                        "DXY chop detected - forcing HTF bias to neutral "
+                        f"(original: {bias}, score: {score:.1f})"
+                    )
+                    bias = "neutral"
+                    direction = "neutral"
+                    # Optionally reduce score to reflect uncertainty
+                    score = min(score, 5.0)
+        except Exception as e:
+            logger.error(f"Error detecting DXY chop: {e}")
+            # Continue without chop detection rather than failing
     
     # Apply seasonality adjustment if timestamp provided
     seasonality_period = None
@@ -251,6 +275,7 @@ def compute_htf_bias(
         structure_15m=features_15m.get("structure_label") or features_15m.get("structure_type"),
         dxy_corr_1h=features_1h.get("dxy_corr"),
         dxy_corr_15m=features_15m.get("dxy_corr"),
+        dxy_chop_detected=dxy_chop_detected,
         seasonality_period=seasonality_period,
         seasonality_adjustment=seasonality_adjustment,
     )
