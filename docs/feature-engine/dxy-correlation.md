@@ -12,6 +12,8 @@ Pearson Correlation = Σ((GC - GC_mean) × (DXY - DXY_mean)) /
 
 Rolling correlation computed over a configurable window (default 50 periods).
 
+> **Enhanced Version Available**: For more robust correlation analysis, see [Multi-Window DXY Correlation](dxy-multiwindow-correlation.md) which analyzes correlation across 15/30/60 minute windows with weighted scoring. This provides smoother signals and reduces noise compared to single-window correlation.
+
 ## Basic Usage
 
 ```python
