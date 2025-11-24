@@ -49,6 +49,14 @@ validation:
   # DXY correlation threshold for Gold trades
   dxy_corr_threshold: -0.6  # Must be < -0.6 for valid inverse correlation
   
+  # Multi-window DXY correlation weights
+  # Used for enhanced correlation analysis across multiple timeframes
+  # Weights must sum to 1.0
+  dxy_multiwindow_weights:
+    15min: 0.5   # Short-term correlation (recent relationship)
+    30min: 0.3   # Medium-term correlation
+    60min: 0.2   # Long-term correlation (macro trend)
+  
   # Valid trading sessions (hours in UTC)
   sessions:
     - name: "London Open"
@@ -110,6 +118,12 @@ factors:
     criteria:
       - "Correlation coefficient < -0.6"
       - "DXY trend opposite to Gold direction"
+    notes: |
+      Can use either single-window or multi-window correlation:
+      - Single-window: calculate_dxy_correlation(window=50)
+      - Multi-window: calculate_multiwindow_dxy_correlation()
+        Returns weighted score across 15/30/60 min windows
+        Provides smoother signal with less noise
   
   htf_bonus:
     description: "Higher timeframe bias bonus"

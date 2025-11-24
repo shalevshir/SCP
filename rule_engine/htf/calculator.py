@@ -9,8 +9,8 @@ Supports both vectorized (backtesting) and incremental (live) processing modes.
 from __future__ import annotations
 
 import pandas as pd
-
 from common.logger import get_logger
+
 from rule_engine.htf.types import HTFBias
 
 logger = get_logger(__name__)
@@ -51,7 +51,10 @@ def compute_htf_bias_multi_timeframe(
     bearish_signals = 0
 
     # === 1H STRUCTURE (Primary Signal, 3 points) ===
-    structure_1h = features_1h.get("structure_label") or features_1h.get("structure_type", "")
+    structure_1h = (
+        features_1h.get("structure_label")
+        or features_1h.get("structure_type", "")
+    )
     if structure_1h in ("HH", "HL"):
         bullish_signals += 1
         total_score += 3.0
@@ -88,7 +91,10 @@ def compute_htf_bias_multi_timeframe(
             total_score += 2.0
 
     # === 15M STRUCTURE (Confirmation, 2 points) ===
-    structure_15m = features_15m.get("structure_label") or features_15m.get("structure_type", "")
+    structure_15m = (
+        features_15m.get("structure_label")
+        or features_15m.get("structure_type", "")
+    )
     if structure_15m in ("HH", "HL"):
         if bullish_signals > bearish_signals:
             # Confirms bullish bias
@@ -169,7 +175,8 @@ def compute_htf_bias_multi_timeframe(
 
     logger.debug(
         f"HTF Bias: {htf_bias} (1h: {structure_1h}, 15m: {structure_15m}, "
-        f"bullish={bullish_signals}, bearish={bearish_signals}, score={total_score:.1f})"
+        f"bullish={bullish_signals}, bearish={bearish_signals}, "
+        f"score={total_score:.1f})"
     )
 
     return htf_bias, htf_direction, total_score
@@ -178,7 +185,7 @@ def compute_htf_bias_multi_timeframe(
 def compute_htf_bias(
     features_1h: pd.Series,
     features_15m: pd.Series,
-    dxy_1h: pd.Series | None = None,
+    dxy_1h: pd.DataFrame | None = None,
     timestamp: pd.Timestamp | None = None,
 ) -> HTFBias:
     """Compute comprehensive HTF bias with all components.
@@ -189,7 +196,7 @@ def compute_htf_bias(
     Args:
         features_1h: 1h timeframe features
         features_15m: 15m timeframe features
-        dxy_1h: Optional DXY 1h data for chop detection
+        dxy_1h: Optional DXY 1h DataFrame for chop detection (needs OHLC columns)
         timestamp: Current timestamp for seasonality
 
     Returns:
@@ -199,13 +206,37 @@ def compute_htf_bias(
     Epic: Full HTF Bias Engine Upgrade
     Status: Not started
     """
+    from rule_engine.htf.dxy import detect_dxy_chop
     from rule_engine.htf.seasonality import (
-        get_seasonality_period,
         apply_seasonality_adjustment,
+        get_seasonality_period,
     )
     
     # Use legacy logic to compute base bias and score
     bias, direction, score = compute_htf_bias_multi_timeframe(features_1h, features_15m)
+    
+    # Detect DXY chop if data provided
+    dxy_chop_detected = False
+    if dxy_1h is not None and len(dxy_1h) > 0:
+        try:
+            chop_series = detect_dxy_chop(dxy_1h)
+            # Get the latest chop detection value
+            if len(chop_series) > 0:
+                dxy_chop_detected = bool(chop_series.iloc[-1])
+                
+                if dxy_chop_detected:
+                    # Force HTF bias to neutral when DXY is in chop
+                    logger.warning(
+                        "DXY chop detected - forcing HTF bias to neutral "
+                        f"(original: {bias}, score: {score:.1f})"
+                    )
+                    bias = "neutral"
+                    direction = "neutral"
+                    # Optionally reduce score to reflect uncertainty
+                    score = min(score, 5.0)
+        except Exception as e:
+            logger.error(f"Error detecting DXY chop: {e}")
+            # Continue without chop detection rather than failing
     
     # Apply seasonality adjustment if timestamp provided
     seasonality_period = None
@@ -234,6 +265,10 @@ def compute_htf_bias(
             score
         )
     
+    if dxy_chop_detected:
+        # Re-cap score after any post-processing to enforce neutral bias
+        score = min(score, 5.0)
+    
     # Determine confidence based on adjusted score
     if score >= 8.0:
         confidence = "high"
@@ -247,10 +282,17 @@ def compute_htf_bias(
         direction=direction,
         score=score,
         confidence=confidence,
-        structure_1h=features_1h.get("structure_label") or features_1h.get("structure_type"),
-        structure_15m=features_15m.get("structure_label") or features_15m.get("structure_type"),
+        structure_1h=(
+            features_1h.get("structure_label")
+            or features_1h.get("structure_type")
+        ),
+        structure_15m=(
+            features_15m.get("structure_label")
+            or features_15m.get("structure_type")
+        ),
         dxy_corr_1h=features_1h.get("dxy_corr"),
         dxy_corr_15m=features_15m.get("dxy_corr"),
+        dxy_chop_detected=dxy_chop_detected,
         seasonality_period=seasonality_period,
         seasonality_adjustment=seasonality_adjustment,
     )

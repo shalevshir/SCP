@@ -7,7 +7,10 @@ Supports both vectorized (batch) and incremental (stateful) calculation modes:
 
 from feature_engine.aggregator import aggregate_features
 from feature_engine.backtesting import BacktestProcessor
-from feature_engine.dxy_correlation import calculate_dxy_correlation
+from feature_engine.dxy_correlation import (
+    calculate_dxy_correlation,
+    calculate_multiwindow_dxy_correlation,
+)
 from feature_engine.ema import calculate_ema, calculate_ema_multiple
 from feature_engine.integration import (
     align_dataframes,
@@ -31,6 +34,7 @@ __all__ = [
     "align_dataframes",
     "BacktestProcessor",
     "calculate_dxy_correlation",
+    "calculate_multiwindow_dxy_correlation",
     "calculate_ema",
     "calculate_ema_multiple",
     "calculate_rsi",

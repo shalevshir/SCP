@@ -111,6 +111,28 @@ correlation = calculate_dxy_correlation(gc_df, dxy_df, window=50)
 
 ---
 
+### ✅ [Multi-Window DXY Correlation](./dxy-multiwindow-correlation.md)
+**Purpose:** Enhanced correlation analysis across multiple timeframes with weighted scoring
+
+**Key Features:**
+- Multi-window analysis (15/30/60 minute windows)
+- Weighted composite scoring (configurable weights)
+- Smoother signal with less noise than single-window
+- Default weights favor recent correlation (50% on 15min)
+- Comprehensive test coverage (20 tests)
+
+**Usage:**
+```python
+from feature_engine import calculate_multiwindow_dxy_correlation
+result = calculate_multiwindow_dxy_correlation(gc_df, dxy_df)
+# Access weighted score
+weighted_corr = result["weighted_score"]
+```
+
+[📖 Full Multi-Window DXY Correlation Documentation](./dxy-multiwindow-correlation.md)
+
+---
+
 ### ✅ [Feature Engine Aggregator](./aggregator.md)
 **Purpose:** Combine all indicators into a unified DataFrame with modular configuration
 
