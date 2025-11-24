@@ -187,3 +187,23 @@ class TestHTFCalculatorDXYChop:
         assert result.direction == "neutral"
         assert result.dxy_chop_detected == True
 
+    def test_dxy_chop_score_stays_capped_after_seasonality(
+        self,
+        features_1h_bullish: pd.Series,
+        features_15m_bullish: pd.Series,
+        dxy_chop_data: pd.DataFrame,
+    ) -> None:
+        """Seasonality adjustments must not lift score above 5 when chop detected."""
+        timestamp = pd.Timestamp("2024-11-15 14:00:00+00:00")
+
+        result = compute_htf_bias(
+            features_1h_bullish,
+            features_15m_bullish,
+            dxy_1h=dxy_chop_data,
+            timestamp=timestamp,
+        )
+
+        assert result.dxy_chop_detected is True
+        assert result.seasonality_adjustment > 0  # Defensive check
+        assert result.score <= 5.0
+
