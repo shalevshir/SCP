@@ -17,6 +17,7 @@ from common.logger import get_logger
 from feature_engine.aggregator import aggregate_features
 from feature_engine.structure import calculate_structure_labels
 from feature_engine.vwap import calculate_vwap_deviation
+from rule_engine.htf.types import HTFBias
 from rule_engine.scoring import score_signal
 from rule_engine.signal_logger import log_signal
 from rule_engine.validation import validate_signal_with_sop
@@ -300,6 +301,7 @@ def _apply_validation(
 
 def process_features_with_validation(
     features: pd.Series,
+    htf_bias: HTFBias,
     market_state: dict,
     session_constraints: SessionConstraints,
     guardrail_result: GuardrailResult | None = None,
@@ -315,13 +317,13 @@ def process_features_with_validation(
 
     Args:
         features: Feature series for a single timestamp
+        htf_bias: HTFBias object containing HTF analysis
         market_state: Market context dict with:
             - buffer_phase: Current capital buffer phase
             - tier_active: Active enforcer tier
             - ceo_directive_active: CEO directive status
             - news_ok: News event status
-            - htf_direction: HTF direction for scoring context
-            - htf_score: Optional HTF score for bonus
+            - session_ok: Session validity
         session_constraints: SessionConstraints from SessionValidator
         guardrail_result: Optional GuardrailResult from BehaviorGuardrails
         log_signals: Whether to log signals to disk
@@ -332,11 +334,15 @@ def process_features_with_validation(
 
     Example:
         >>> from feature_engine.backtesting import BacktestProcessor
+        >>> from rule_engine.htf.calculator import compute_htf_bias
         >>> processor = BacktestProcessor("1m")
         >>> for features, validation_context in processor.iterate_with_context(gc_df, dxy_df):
+        ...     # Compute HTF bias first
+        ...     htf_bias = compute_htf_bias(features_1h, features_15m, dxy_1h, df_15m)
         ...     market_state = {"tier_active": "EarlyMild", ...}
         ...     signal = process_features_with_validation(
         ...         features,
+        ...         htf_bias,
         ...         market_state,
         ...         validation_context["session_constraints"],
         ...         validation_context.get("guardrail_result")
@@ -345,17 +351,14 @@ def process_features_with_validation(
         ...         # Execute trade
         ...         pass
     """
-    # Step 1: Build scoring context
+    # Step 1: Build scoring context (minimal, most data now in HTFBias)
     scoring_context = {
-        "htf_bias": market_state.get("htf_bias", "neutral"),
-        "htf_direction": market_state.get("htf_direction", "neutral"),
-        "htf_score": market_state.get("htf_score"),
         "session_ok": market_state.get("session_ok", True),
         "enforcer_tier": market_state.get("tier_active", "Conservative"),
     }
 
-    # Step 2: Score the signal
-    signal = score_signal(features, scoring_context)
+    # Step 2: Score the signal with HTFBias
+    signal = score_signal(features, htf_bias, scoring_context)
 
     # Step 3: Apply full SOP validation
     validated_signal = validate_signal_with_sop(
@@ -364,6 +367,7 @@ def process_features_with_validation(
         market_state=market_state,
         session_constraints=session_constraints,
         guardrail_result=guardrail_result,
+        htf_bias=htf_bias,
     )
 
     # Step 4: Log signal if requested

@@ -10,9 +10,14 @@ import pandas as pd
 
 from rule_engine.config_loader import load_scoring_config
 from rule_engine.signal import Signal
+from rule_engine.htf.types import HTFBias
+from rule_engine.htf.integration import validate_signal_with_htf, adjust_score_with_htf
+from common.logger import get_logger
+
+logger = get_logger(__name__)
 
 
-def score_signal(features: pd.Series, context: dict) -> Signal:
+def score_signal(features: pd.Series, htf_bias: HTFBias, context: dict) -> Signal:
     """Calculate SOP-compliant signal score and create Signal object.
 
     Args:
@@ -25,10 +30,8 @@ def score_signal(features: pd.Series, context: dict) -> Signal:
             - rsi: Relative strength index
             - ema_9, ema_20, ema_50: Exponential moving averages
             - dxy_corr: DXY correlation coefficient
+        htf_bias: HTFBias object containing HTF analysis results
         context: Dict containing contextual data:
-            - htf_bias: Higher timeframe bias ("bullish", "bearish", "neutral")
-            - htf_direction: HTF direction ("long", "short", "neutral")
-            - htf_score: Optional HTF bias score (for bonus calculation)
             - session_ok: Whether current session is valid for trading
             - enforcer_tier: Active enforcer tier
 
@@ -48,43 +51,80 @@ def score_signal(features: pd.Series, context: dict) -> Signal:
         ...     "ema_50": 2640.0,
         ...     "dxy_corr": -0.75,
         ... })
+        >>> htf_bias = HTFBias(
+        ...     bias="bullish",
+        ...     direction="long",
+        ...     score=8.5,
+        ...     confidence="high"
+        ... )
         >>> context = {
-        ...     "htf_bias": "bullish",
-        ...     "htf_direction": "long",
         ...     "session_ok": True,
         ...     "enforcer_tier": "Early Mild",
         ... }
-        >>> signal = score_signal(features, context)
+        >>> signal = score_signal(features, htf_bias, context)
     """
+    # Determine signal direction from features
+    signal_direction = determine_direction(features, htf_bias)
+    
+    # Validate signal against HTF bias
+    is_valid, rejection_reason = validate_signal_with_htf(signal_direction, htf_bias)
+    
+    if not is_valid:
+        # Return rejected signal with reason
+        logger.warning(f"Signal rejected: {rejection_reason}")
+        return Signal(
+            timestamp=features["timestamp"],
+            symbol=features["symbol"],
+            timeframe=features["timeframe"],
+            direction=signal_direction,
+            setup_type="REJECTED",
+            htf_bias=htf_bias.bias,
+            score=0.0,
+            confidence="Reject",
+            factors={},
+            rationale=f"Rejected: {rejection_reason}",
+            validation_flags={"htf_valid": False},
+            enforcer_tier=context.get("enforcer_tier", "Conservative"),
+        )
+    
     # Load scoring configuration
     config = load_scoring_config()
 
     # Determine setup type based on features
-    setup_type = determine_setup_type(features, context)
+    setup_type = determine_setup_type(features, htf_bias)
 
     # Get setup configuration and weights
     setup_config = config.setup_types[setup_type]
     weights = setup_config["weights"]
 
     # Calculate individual factor scores
-    factor_scores = calculate_factor_scores(features, context, weights, setup_type)
+    factor_scores = calculate_factor_scores(features, htf_bias, weights, setup_type)
 
-    # Calculate total score (sum of all factors, capped at 10)
-    total_score = min(sum(factor_scores.values()), 10.0)
+    # Calculate base score (sum of all factors, capped at 10)
+    base_score = min(sum(factor_scores.values()), 10.0)
+    
+    # Apply HTF-based score adjustments
+    adjusted_score, htf_adjustments = adjust_score_with_htf(
+        base_score, htf_bias, signal_direction
+    )
+    
+    # Add HTF adjustments to factor scores for transparency
+    factor_scores.update(htf_adjustments)
 
-    # Classify confidence level
-    confidence = classify_confidence(total_score, setup_type)
+    # Classify confidence level based on adjusted score
+    confidence = classify_confidence(adjusted_score, setup_type)
 
     # Generate human-readable rationale
-    rationale = build_rationale(features, context, factor_scores, setup_type)
+    rationale = build_rationale(features, htf_bias, factor_scores, setup_type)
 
-    # Create validation flags (initially True, will be validated later)
+    # Create validation flags
     dxy_corr_value = features.get("dxy_corr")
     validation_flags = {
         "session_ok": context.get("session_ok", True),
         "tier_ok": True,
-        "dxy_alignment_ok": dxy_corr_value is not None and dxy_corr_value < -0.6,
-        "htf_bias_ok": context.get("htf_direction") == determine_direction(features, context),
+        "dxy_alignment_ok": htf_bias.dxy_alignment,
+        "htf_bias_ok": signal_direction == htf_bias.direction,
+        "htf_valid": is_valid,
     }
 
     # Create and return Signal object
@@ -92,10 +132,10 @@ def score_signal(features: pd.Series, context: dict) -> Signal:
         timestamp=features["timestamp"],
         symbol=features["symbol"],
         timeframe=features["timeframe"],
-        direction=context.get("htf_direction", "neutral"),
+        direction=signal_direction,
         setup_type=setup_type,
-        htf_bias=context.get("htf_bias", "neutral"),
-        score=total_score,
+        htf_bias=htf_bias.bias,
+        score=adjusted_score,
         confidence=confidence,
         factors=factor_scores,
         rationale=rationale,
@@ -104,12 +144,12 @@ def score_signal(features: pd.Series, context: dict) -> Signal:
     )
 
 
-def determine_setup_type(features: pd.Series, context: dict) -> str:
+def determine_setup_type(features: pd.Series, htf_bias: HTFBias) -> str:
     """Determine setup type based on market features.
 
     Args:
         features: Feature data including VWAP, RSI, DXY correlation
-        context: Context including HTF direction
+        htf_bias: HTFBias object
 
     Returns:
         Setup type name: "VWAP_RECLAIM", "VWAP_FADE", or "DXY_CONTINUATION"
@@ -140,13 +180,13 @@ def determine_setup_type(features: pd.Series, context: dict) -> str:
 
 
 def calculate_factor_scores(
-    features: pd.Series, context: dict, weights: dict, setup_type: str
+    features: pd.Series, htf_bias: HTFBias, weights: dict, setup_type: str
 ) -> dict[str, float]:
     """Calculate individual factor scores based on setup type.
 
     Args:
         features: Feature data
-        context: Context data
+        htf_bias: HTFBias object
         weights: Dict of factor weights from config
         setup_type: Setup type name
 
@@ -158,86 +198,85 @@ def calculate_factor_scores(
     # Structure alignment: Price action matches HTF bias
     if "structure_alignment" in weights:
         scores["structure_alignment"] = calculate_structure_alignment(
-            features, context, weights["structure_alignment"]
+            features, htf_bias, weights["structure_alignment"]
         )
 
     # VWAP relation: Position relative to VWAP
     if "vwap_relation" in weights:
         scores["vwap_relation"] = calculate_vwap_relation(
-            features, context, weights["vwap_relation"]
+            features, htf_bias, weights["vwap_relation"]
         )
 
     # RSI state: RSI in optimal zone
     if "rsi_state" in weights:
         scores["rsi_state"] = calculate_rsi_state(
-            features, context, weights["rsi_state"]
+            features, htf_bias, weights["rsi_state"]
         )
 
     if "rsi_mid_reset" in weights:
         scores["rsi_mid_reset"] = calculate_rsi_state(
-            features, context, weights["rsi_mid_reset"]
+            features, htf_bias, weights["rsi_mid_reset"]
         )
 
     # EMA stack: EMA alignment
     if "ema_stack" in weights:
         scores["ema_stack"] = calculate_ema_stack(
-            features, context, weights["ema_stack"]
+            features, htf_bias, weights["ema_stack"]
         )
 
     # DXY correlation
     if "dxy_corr" in weights:
         scores["dxy_corr"] = calculate_dxy_correlation(
-            features, context, weights["dxy_corr"]
+            features, htf_bias, weights["dxy_corr"]
         )
 
     # HTF bonus
     if "htf_bonus" in weights:
         scores["htf_bonus"] = calculate_htf_bonus(
-            features, context, weights["htf_bonus"]
+            features, htf_bias, weights["htf_bonus"]
         )
 
     # Fade-specific factors
     if "vwap_deviation" in weights:
         scores["vwap_deviation"] = calculate_vwap_deviation(
-            features, context, weights["vwap_deviation"]
+            features, htf_bias, weights["vwap_deviation"]
         )
 
     if "rsi_extreme" in weights:
         scores["rsi_extreme"] = calculate_rsi_extreme(
-            features, context, weights["rsi_extreme"]
+            features, htf_bias, weights["rsi_extreme"]
         )
 
     if "rejection_candle" in weights:
         scores["rejection_candle"] = calculate_rejection_candle(
-            features, context, weights["rejection_candle"]
+            features, htf_bias, weights["rejection_candle"]
         )
 
     if "volume_spike" in weights:
         scores["volume_spike"] = calculate_volume_spike(
-            features, context, weights["volume_spike"]
+            features, htf_bias, weights["volume_spike"]
         )
 
     return scores
 
 
 def calculate_structure_alignment(
-    features: pd.Series, context: dict, max_points: float
+    features: pd.Series, htf_bias: HTFBias, max_points: float
 ) -> float:
     """Calculate structure alignment score.
 
     Awards points if direction matches HTF bias.
     """
-    htf_direction = context.get("htf_direction", "neutral")
-    direction = determine_direction(features, context)
+    direction = determine_direction(features, htf_bias)
 
-    if htf_direction == direction and direction != "neutral":
+    if htf_bias.direction == direction and direction != "neutral":
         return max_points
 
     return 0.0
 
 
 def calculate_vwap_relation(
-    features: pd.Series, context: dict, max_points: float
+    features: pd.Series, htf_bias: HTFBias, max_points: float
 ) -> float:
     """Calculate VWAP relation score.
 
@@ -245,18 +284,17 @@ def calculate_vwap_relation(
     """
     close = features.get("close", 0)
     vwap = features.get("vwap", 0)
-    htf_direction = context.get("htf_direction", "neutral")
 
-    if htf_direction == "long" and close > vwap:
+    if htf_bias.direction == "long" and close > vwap:
         return max_points
-    elif htf_direction == "short" and close < vwap:
+    elif htf_bias.direction == "short" and close < vwap:
         return max_points
 
     return 0.0
 
 
 def calculate_rsi_state(
-    features: pd.Series, context: dict, max_points: float
+    features: pd.Series, htf_bias: HTFBias, max_points: float
 ) -> float:
     """Calculate RSI state score.
 
@@ -271,7 +309,7 @@ def calculate_rsi_state(
 
 
 def calculate_ema_stack(
-    features: pd.Series, context: dict, max_points: float
+    features: pd.Series, htf_bias: HTFBias, max_points: float
 ) -> float:
     """Calculate EMA stack score.
 
@@ -280,28 +318,27 @@ def calculate_ema_stack(
     ema_9 = features.get("ema_9", 0)
     ema_20 = features.get("ema_20", 0)
     ema_50 = features.get("ema_50", 0)
-    htf_direction = context.get("htf_direction", "neutral")
 
     # Bullish: 9 > 20 > 50
-    if htf_direction == "long" and ema_9 > ema_20 > ema_50:
+    if htf_bias.direction == "long" and ema_9 > ema_20 > ema_50:
         return max_points
 
     # Bearish: 9 < 20 < 50
-    if htf_direction == "short" and ema_9 < ema_20 < ema_50:
+    if htf_bias.direction == "short" and ema_9 < ema_20 < ema_50:
         return max_points
 
     # Partial alignment gets partial points
-    if htf_direction == "long" and ema_9 > ema_20:
+    if htf_bias.direction == "long" and ema_9 > ema_20:
         return max_points / 2
 
-    if htf_direction == "short" and ema_9 < ema_20:
+    if htf_bias.direction == "short" and ema_9 < ema_20:
         return max_points / 2
 
     return 0.0
 
 
 def calculate_dxy_correlation(
-    features: pd.Series, context: dict, max_points: float
+    features: pd.Series, htf_bias: HTFBias, max_points: float
 ) -> float:
     """Calculate DXY correlation score.
 
@@ -316,22 +353,20 @@ def calculate_dxy_correlation(
 
 
 def calculate_htf_bonus(
-    features: pd.Series, context: dict, max_points: float
+    features: pd.Series, htf_bias: HTFBias, max_points: float
 ) -> float:
     """Calculate HTF bonus score.
 
     Awards bonus point if HTF bias score is >= 8.
     """
-    htf_score = context.get("htf_score", 0)
-
-    if htf_score >= 8.0:
+    if htf_bias.score >= 8.0:
         return max_points
 
     return 0.0
 
 
 def calculate_vwap_deviation(
-    features: pd.Series, context: dict, max_points: float
+    features: pd.Series, htf_bias: HTFBias, max_points: float
 ) -> float:
     """Calculate VWAP deviation score for fade setups."""
     close = features.get("close", 0)
@@ -350,7 +385,7 @@ def calculate_vwap_deviation(
 
 
 def calculate_rsi_extreme(
-    features: pd.Series, context: dict, max_points: float
+    features: pd.Series, htf_bias: HTFBias, max_points: float
 ) -> float:
     """Calculate RSI extreme score for fade setups."""
     rsi = features.get("rsi", 50)
@@ -362,7 +397,7 @@ def calculate_rsi_extreme(
 
 
 def calculate_rejection_candle(
-    features: pd.Series, context: dict, max_points: float
+    features: pd.Series, htf_bias: HTFBias, max_points: float
 ) -> float:
     """Calculate rejection candle score for fade setups.
 
@@ -374,7 +409,7 @@ def calculate_rejection_candle(
 
 
 def calculate_volume_spike(
-    features: pd.Series, context: dict, max_points: float
+    features: pd.Series, htf_bias: HTFBias, max_points: float
 ) -> float:
     """Calculate volume spike score for fade setups.
 
@@ -385,12 +420,12 @@ def calculate_volume_spike(
     return max_points / 2
 
 
-def determine_direction(features: pd.Series, context: dict) -> str:
+def determine_direction(features: pd.Series, htf_bias: HTFBias) -> str:
     """Determine trade direction based on features.
 
     Args:
         features: Feature data
-        context: Context data
+        htf_bias: HTFBias object
 
     Returns:
         Direction: "long", "short", or "neutral"
@@ -451,13 +486,13 @@ def classify_confidence(score: float, setup_type: str) -> str:
 
 
 def build_rationale(
-    features: pd.Series, context: dict, factor_scores: dict, setup_type: str
+    features: pd.Series, htf_bias: HTFBias, factor_scores: dict, setup_type: str
 ) -> str:
     """Build human-readable rationale for the signal.
 
     Args:
         features: Feature data
-        context: Context data
+        htf_bias: HTFBias object
         factor_scores: Individual factor scores
         setup_type: Setup type name
 
@@ -470,8 +505,7 @@ def build_rationale(
     parts.append(f"{setup_type} setup")
 
     # HTF bias
-    htf_bias = context.get("htf_bias", "neutral")
-    parts.append(f"HTF {htf_bias}")
+    parts.append(f"HTF {htf_bias.bias} ({htf_bias.confidence} confidence, score={htf_bias.score:.1f})")
 
     # VWAP position
     close = features.get("close", 0)
@@ -490,14 +524,23 @@ def build_rationale(
     elif 40 <= rsi <= 60:
         parts.append(f"RSI mid-reset ({rsi:.1f})")
 
-    # DXY correlation
-    dxy_corr = features.get("dxy_corr")
-    if dxy_corr is not None and dxy_corr < -0.6:
-        parts.append(f"DXY correlation {dxy_corr:.2f}")
+    # DXY alignment
+    if htf_bias.dxy_alignment and htf_bias.dxy_corr_1h is not None and htf_bias.dxy_corr_15m is not None:
+        parts.append(f"DXY aligned (1H:{htf_bias.dxy_corr_1h:.2f}, 15M:{htf_bias.dxy_corr_15m:.2f})")
 
     # EMA alignment
     if factor_scores.get("ema_stack", 0) > 0:
         parts.append("EMA alignment confirmed")
+    
+    # VWAP trend confirmation
+    if htf_bias.vwap_trend_confirmed:
+        parts.append("VWAP trend confirmed")
+    
+    # Structure events
+    if htf_bias.bos_detected:
+        parts.append("BOS detected")
+    if htf_bias.choch_detected:
+        parts.append("CHoCH detected")
 
     return ", ".join(parts)
 

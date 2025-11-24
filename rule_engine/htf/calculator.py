@@ -187,6 +187,7 @@ def compute_htf_bias(
     features_15m: pd.Series,
     dxy_1h: pd.DataFrame | None = None,
     df_15m: pd.DataFrame | None = None,
+    df_1h: pd.DataFrame | None = None,
     sweep_events_15m: pd.Series | None = None,
     timestamp: pd.Timestamp | None = None,
 ) -> HTFBias:
@@ -200,6 +201,7 @@ def compute_htf_bias(
         features_15m: 15m timeframe features
         dxy_1h: Optional DXY 1h DataFrame for chop detection (needs OHLC columns)
         df_15m: Optional 15M price DataFrame for price chop detection (needs OHLC columns)
+        df_1h: Optional 1H price DataFrame for BOS/CHoCH/FVG detection (needs OHLC columns)
         sweep_events_15m: Optional Series with liquidity sweep events from detect_liquidity_sweeps()
         timestamp: Current timestamp for seasonality
 
@@ -208,13 +210,21 @@ def compute_htf_bias(
 
     Task: Create final HTFBias object
     Epic: Full HTF Bias Engine Upgrade
-    Status: Not started
+    Status: In Progress
     """
     from rule_engine.htf.dxy import detect_dxy_chop
     from rule_engine.htf.seasonality import (
         apply_seasonality_adjustment,
         get_seasonality_period,
     )
+    from rule_engine.htf.structure import (
+        detect_swings,
+        detect_bos,
+        detect_choch,
+        detect_fvg,
+        check_fvg_filled,
+    )
+    from rule_engine.htf.vwap.fvg import score_fvg_alignment
     
     # Use legacy logic to compute base bias and score
     bias, direction, score = compute_htf_bias_multi_timeframe(features_1h, features_15m)
@@ -342,6 +352,101 @@ def compute_htf_bias(
     else:
         confidence = "low"
     
+    # === POPULATE MISSING FIELDS ===
+    
+    # 1. BOS/CHoCH detection from 1H data
+    bos_detected = False
+    choch_detected = False
+    if df_1h is not None and len(df_1h) > 0:
+        try:
+            swing_highs_1h, swing_lows_1h = detect_swings(df_1h, lookback=5)
+            
+            # Detect BOS events
+            bos_series = detect_bos(df_1h, swing_highs_1h, swing_lows_1h)
+            # Check if any BOS detected in recent bars
+            if len(bos_series) > 0 and pd.notna(bos_series.iloc[-1]):
+                bos_detected = True
+            
+            # Detect CHoCH events
+            choch_series = detect_choch(df_1h, swing_highs_1h, swing_lows_1h)
+            # Check if any CHoCH detected in recent bars
+            if len(choch_series) > 0 and pd.notna(choch_series.iloc[-1]):
+                choch_detected = True
+                
+        except Exception as e:
+            logger.error(f"Error detecting BOS/CHoCH: {e}")
+            # Continue without BOS/CHoCH detection
+    
+    # 2. Liquidity sweep detection from sweep_events_15m
+    liquidity_sweep_detected = False
+    liquidity_sweep_type = None
+    if sweep_events_15m is not None and len(sweep_events_15m) > 0:
+        try:
+            # Get the most recent sweep event
+            latest_sweep = sweep_events_15m.iloc[-1]
+            if pd.notna(latest_sweep):
+                liquidity_sweep_detected = True
+                # Determine sweep type based on event label
+                if latest_sweep == "sweep_high":
+                    liquidity_sweep_type = "bearish"  # Sweep high = bearish sweep
+                elif latest_sweep == "sweep_low":
+                    liquidity_sweep_type = "bullish"  # Sweep low = bullish sweep
+        except Exception as e:
+            logger.error(f"Error extracting liquidity sweep: {e}")
+            # Continue without sweep detection
+    
+    # 3. VWAP metrics from features_1h
+    vwap_1h = features_1h.get("vwap")
+    vwap_distance_1h = None
+    vwap_slope_1h = None
+    vwap_trend_confirmed = False
+    
+    if vwap_1h is not None and not pd.isna(vwap_1h):
+        # Calculate VWAP distance as percentage
+        close_1h = features_1h.get("close")
+        if close_1h is not None and not pd.isna(close_1h) and vwap_1h > 0:
+            vwap_distance_1h = ((close_1h - vwap_1h) / vwap_1h) * 100
+        
+        # Extract VWAP slope from features if available
+        vwap_slope_1h = features_1h.get("vwap_slope")
+        
+        # Determine VWAP trend confirmation
+        # IMPORTANT: Use original_bias to reflect underlying market structure
+        # even when bias is neutralized due to DXY chop or conflicts
+        if original_bias == "bullish" and vwap_distance_1h is not None and vwap_distance_1h > 0:
+            vwap_trend_confirmed = True
+        elif original_bias == "bearish" and vwap_distance_1h is not None and vwap_distance_1h < 0:
+            vwap_trend_confirmed = True
+    
+    # 4. FVG alignment score
+    fvg_alignment_score = 0.0
+    if df_1h is not None and len(df_1h) >= 3:
+        try:
+            # Detect FVGs on 1H timeframe
+            fvg_df = detect_fvg(df_1h)
+            if len(fvg_df) > 0:
+                # Check which FVGs are filled
+                fvg_df = check_fvg_filled(df_1h, fvg_df)
+                # Score FVG alignment with current bias
+                fvg_alignment_score = score_fvg_alignment(fvg_df, original_bias)
+        except Exception as e:
+            logger.error(f"Error calculating FVG alignment: {e}")
+            # Continue with 0.0 score
+    
+    # 5. DXY alignment flag
+    dxy_alignment = False
+    dxy_corr_1h = features_1h.get("dxy_corr")
+    dxy_corr_15m = features_15m.get("dxy_corr")
+    
+    # DXY alignment: strong negative correlation expected for both bull and bear bias
+    # Gold typically moves inverse to DXY
+    # IMPORTANT: Use original_bias to reflect underlying market structure
+    # even when bias is neutralized due to DXY chop or conflicts
+    if original_bias != "neutral":
+        if (dxy_corr_1h is not None and not pd.isna(dxy_corr_1h) and dxy_corr_1h < -0.6 and
+            dxy_corr_15m is not None and not pd.isna(dxy_corr_15m) and dxy_corr_15m < -0.6):
+            dxy_alignment = True
+    
     return HTFBias(
         bias=bias,
         direction=direction,
@@ -355,9 +460,19 @@ def compute_htf_bias(
             features_15m.get("structure_label")
             or features_15m.get("structure_type")
         ),
-        dxy_corr_1h=features_1h.get("dxy_corr"),
-        dxy_corr_15m=features_15m.get("dxy_corr"),
+        bos_detected=bos_detected,
+        choch_detected=choch_detected,
+        liquidity_sweep_detected=liquidity_sweep_detected,
+        liquidity_sweep_type=liquidity_sweep_type,
+        vwap_1h=vwap_1h,
+        vwap_distance_1h=vwap_distance_1h,
+        vwap_slope_1h=vwap_slope_1h,
+        vwap_trend_confirmed=vwap_trend_confirmed,
+        fvg_alignment_score=fvg_alignment_score,
+        dxy_corr_1h=dxy_corr_1h,
+        dxy_corr_15m=dxy_corr_15m,
         dxy_chop_detected=dxy_chop_detected,
+        dxy_alignment=dxy_alignment,
         seasonality_period=seasonality_period,
         seasonality_adjustment=seasonality_adjustment,
         conflict_detected=conflict_detected,

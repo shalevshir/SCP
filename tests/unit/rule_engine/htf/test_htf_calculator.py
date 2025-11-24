@@ -9,6 +9,117 @@ import pytest
 from rule_engine.htf.calculator import compute_htf_bias
 
 
+class TestHTFCalculatorBiasConsistency:
+    """Test that HTFBias fields consistently use original_bias vs neutralized bias."""
+
+    def test_vwap_and_dxy_alignment_use_original_bias_when_neutralized(self) -> None:
+        """Test that vwap_trend_confirmed and dxy_alignment use original_bias.
+        
+        When bias is neutralized due to DXY chop or conflicts, vwap_trend_confirmed
+        and dxy_alignment should still reflect the underlying market structure by
+        using original_bias, not the neutralized bias value.
+        
+        This ensures consistency with fvg_alignment_score which already uses original_bias.
+        """
+        # Setup: Strong bullish market structure with DXY alignment
+        features_1h = pd.Series({
+            "structure_label": "HH",
+            "ema_9": 2100.0,
+            "ema_20": 2090.0,
+            "ema_50": 2080.0,
+            "close": 2110.0,
+            "vwap": 2100.0,  # Close above VWAP = bullish
+            "vwap_slope": 0.5,
+            "dxy_corr": -0.75,  # Strong negative correlation
+        })
+        
+        features_15m = pd.Series({
+            "structure_label": "HL",
+            "ema_9": 2105.0,
+            "ema_20": 2095.0,
+            "ema_50": 2085.0,
+            "dxy_corr": -0.70,  # Strong negative correlation
+        })
+        
+        # DXY in chop mode (large wicks, small bodies)
+        dxy_1h_chop = pd.DataFrame({
+            "high": [101.0, 101.5, 102.0, 102.5, 103.0],
+            "low": [99.0, 99.5, 100.0, 100.5, 101.0],
+            "open": [100.0, 100.5, 101.0, 101.5, 102.0],
+            "close": [100.2, 100.7, 101.2, 101.7, 102.2],
+        })
+        
+        # Execute
+        htf_bias = compute_htf_bias(
+            features_1h=features_1h,
+            features_15m=features_15m,
+            dxy_1h=dxy_1h_chop,
+        )
+        
+        # Verify bias is neutralized
+        assert htf_bias.bias == "neutral", "Bias should be neutralized due to DXY chop"
+        assert htf_bias.dxy_chop_detected is True
+        
+        # BUG FIX VERIFICATION: These should use original_bias (bullish), not neutralized
+        # The underlying market structure is bullish with VWAP and DXY alignment
+        assert htf_bias.vwap_trend_confirmed is True, (
+            "vwap_trend_confirmed should be True based on original bullish bias "
+            "(close > vwap), not neutralized state"
+        )
+        assert htf_bias.dxy_alignment is True, (
+            "dxy_alignment should be True based on original bullish bias with strong "
+            "negative DXY correlation, not neutralized state"
+        )
+
+    def test_vwap_and_dxy_alignment_use_original_bias_on_conflict(self) -> None:
+        """Test that vwap_trend_confirmed and dxy_alignment use original_bias on conflict.
+        
+        When bias is neutralized due to structure conflict, vwap_trend_confirmed
+        and dxy_alignment should still reflect the underlying market structure.
+        """
+        # Setup: Bearish on 1H, Bullish on 15M = conflict
+        features_1h = pd.Series({
+            "structure_label": "LL",  # Bearish
+            "ema_9": 2080.0,
+            "ema_20": 2090.0,
+            "ema_50": 2100.0,
+            "close": 2085.0,
+            "vwap": 2095.0,  # Close below VWAP = bearish
+            "vwap_slope": -0.5,
+            "dxy_corr": -0.75,
+        })
+        
+        features_15m = pd.Series({
+            "structure_label": "HH",  # Bullish = conflict!
+            "ema_9": 2105.0,
+            "ema_20": 2095.0,
+            "ema_50": 2085.0,
+            "dxy_corr": -0.70,
+        })
+        
+        # Execute
+        htf_bias = compute_htf_bias(
+            features_1h=features_1h,
+            features_15m=features_15m,
+        )
+        
+        # Verify bias is neutralized due to conflict
+        assert htf_bias.bias == "neutral", "Bias should be neutralized due to structure conflict"
+        assert htf_bias.conflict_detected is True
+        
+        # BUG FIX VERIFICATION: These should use original_bias (bearish from 1H multi-timeframe logic)
+        # Note: The original_bias reflects the multi-timeframe computation result
+        # Since 1H is bearish (LL, EMAs declining, close < VWAP), original_bias should be bearish
+        assert htf_bias.vwap_trend_confirmed is True, (
+            "vwap_trend_confirmed should be True based on original bearish bias "
+            "(close < vwap), not neutralized state"
+        )
+        assert htf_bias.dxy_alignment is True, (
+            "dxy_alignment should be True based on original bearish bias with strong "
+            "negative DXY correlation, not neutralized state"
+        )
+
+
 class TestHTFCalculatorDXYChop:
     """Test HTF calculator integration with DXY chop detection."""
 

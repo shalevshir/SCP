@@ -21,10 +21,33 @@ from rule_engine.htf.calculator import (
     compute_htf_bias_multi_timeframe,
     is_london_or_ny_session,
 )
+from rule_engine.htf.types import HTFBias
 from rule_engine.scoring import score_signal
 from rule_engine.validation import validate_signal
 
 logger = get_logger(__name__)
+
+
+def create_htf_bias_from_context(context: dict) -> HTFBias:
+    """Helper to create HTFBias from context dict for e2e script."""
+    bias = context.get("htf_bias", "neutral")
+    direction = context.get("htf_direction", "neutral")
+    score = context.get("htf_score", 6.5)
+    
+    if score >= 8.0:
+        confidence = "high"
+    elif score >= 6.0:
+        confidence = "medium"
+    else:
+        confidence = "low"
+    
+    return HTFBias(
+        bias=bias,
+        direction=direction,
+        score=score,
+        confidence=confidence,
+        dxy_alignment=context.get("dxy_corr", -0.5) < -0.6,
+    )
 
 
 def parse_iso_datetime(value: str) -> datetime:
@@ -271,10 +294,11 @@ def main() -> None:
             if "symbol" not in row_1m_for_scoring:
                 row_1m_for_scoring["symbol"] = row_1m_for_scoring.get("symbol", "GC")
             
-            signal = score_signal(row_1m_for_scoring, context)
+            htf_bias_obj = create_htf_bias_from_context(context)
+            signal = score_signal(row_1m_for_scoring, htf_bias_obj, context)
 
             # Validate signal
-            validated = validate_signal(signal, context)
+            validated = validate_signal(signal, htf_bias_obj, context)
 
             # Collect signal data (use validated signal, not original)
             signals_data.append({

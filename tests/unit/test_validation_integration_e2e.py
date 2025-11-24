@@ -11,11 +11,34 @@ import pandas as pd
 import pytest
 
 from feature_engine.integration import process_features_with_validation
+from rule_engine.htf.types import HTFBias
 from rule_engine.signal_logger import log_signal, signal_to_dict
 from validation.config_loader import load_session_config
 from validation.guardrails import BehaviorGuardrails, BehaviorStateTracker
 from validation.schema import BufferPhase, EnforcerTier
 from validation.session_validator import SessionConstraints, SessionValidator
+
+
+def create_htf_bias_from_market_state(market_state: dict) -> HTFBias:
+    """Helper to create HTFBias from market_state dict for e2e tests."""
+    bias = market_state.get("htf_bias", "neutral")
+    direction = market_state.get("htf_direction", "neutral")
+    score = market_state.get("htf_score", 6.5)
+    
+    if score >= 8.0:
+        confidence = "high"
+    elif score >= 6.0:
+        confidence = "medium"
+    else:
+        confidence = "low"
+    
+    return HTFBias(
+        bias=bias if bias else ("bullish" if direction == "long" else "bearish" if direction == "short" else "neutral"),
+        direction=direction,
+        score=score,
+        confidence=confidence,
+        dxy_alignment=market_state.get("dxy_corr", -0.7) < -0.6,
+    )
 
 
 class TestE2EValidationPipeline:
@@ -65,8 +88,10 @@ class TestE2EValidationPipeline:
         guardrail_result = None
 
         # Step 5: Process through pipeline
+        htf_bias = create_htf_bias_from_market_state(market_state)
         signal = process_features_with_validation(
             features,
+            htf_bias,
             market_state,
             session_constraints,
             guardrail_result,
@@ -129,8 +154,10 @@ class TestE2EValidationPipeline:
         )
 
         # Step 4: Process through pipeline
+        htf_bias = create_htf_bias_from_market_state(market_state)
         signal = process_features_with_validation(
             features,
+            htf_bias,
             market_state,
             session_constraints,
             None,
@@ -199,8 +226,10 @@ class TestE2EValidationPipeline:
         guardrail_result = guardrails.evaluate(state, session_constraints)
 
         # Step 5: Process through pipeline
+        htf_bias = create_htf_bias_from_market_state(market_state)
         signal = process_features_with_validation(
             features,
+            htf_bias,
             market_state,
             session_constraints,
             guardrail_result,
@@ -252,8 +281,10 @@ class TestE2EValidationPipeline:
         )
 
         # Step 4: Process through pipeline (should reject VWAP_RECLAIM without DXY)
+        htf_bias = create_htf_bias_from_market_state(market_state)
         signal = process_features_with_validation(
             features,
+            htf_bias,
             market_state,
             session_constraints,
             None,
@@ -307,8 +338,10 @@ class TestE2EValidationPipeline:
         )
 
         # Process signal
+        htf_bias = create_htf_bias_from_market_state(market_state)
         signal = process_features_with_validation(
             features,
+            htf_bias,
             market_state,
             session_constraints,
             None,
