@@ -184,8 +184,10 @@ def calculate_multiwindow_dxy_correlation(
                Must contain timestamp_column and gc_price_column.
         dxy_df: DataFrame containing Dollar Index (DXY) price data.
                 Must contain timestamp_column and dxy_price_column.
-        weights: Dictionary with weights for each window. Keys: '15min', '30min', '60min'.
-                Must sum to 1.0. Default: {'15min': 0.5, '30min': 0.3, '60min': 0.2}
+        weights: Dictionary with weights for each window.
+                Keys: '15min', '30min', '60min'.
+                Must sum to 1.0.
+                Default: {'15min': 0.5, '30min': 0.3, '60min': 0.2}
                 (prioritizes shorter-term correlation).
         gc_price_column: Name of the column containing GC prices.
                         Default is "close".
@@ -223,7 +225,8 @@ def calculate_multiwindow_dxy_correlation(
         ... })
         >>> result = calculate_multiwindow_dxy_correlation(gc_df, dxy_df)
         >>> print(result.columns)
-        Index(['corr_15min', 'corr_30min', 'corr_60min', 'weighted_score'], dtype='object')
+        Index(['corr_15min', 'corr_30min', 'corr_60min', 'weighted_score'],
+              dtype='object')
 
     Notes:
         - Weighted score only computed when all windows have valid data (60+ periods)

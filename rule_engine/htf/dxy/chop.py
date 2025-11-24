@@ -11,7 +11,6 @@ Status: Not started
 from __future__ import annotations
 
 import pandas as pd
-
 from common.logger import get_logger
 
 logger = get_logger(__name__)
@@ -77,7 +76,8 @@ def detect_dxy_chop(
     # Calculate normal ratio for non-zero bodies
     non_zero_mask = ~zero_body_mask
     wick_ratio[non_zero_mask] = (
-        (upper_wick[non_zero_mask] + lower_wick[non_zero_mask]) / body_size[non_zero_mask]
+        (upper_wick[non_zero_mask] + lower_wick[non_zero_mask])
+        / body_size[non_zero_mask]
     )
 
     # Identify individual chop candles
