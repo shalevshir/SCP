@@ -519,8 +519,9 @@ class TestGetFutureCandles:
         )
 
         class DummyProcessor:
-            def __init__(self, timeframe: str):
+            def __init__(self, timeframe: str, enable_validation: bool = True):
                 self.timeframe = timeframe
+                self.enable_validation = enable_validation
 
             def iterate_with_entry_context(self, *_args, **_kwargs):
                 yield signal_features, {}, next_candle
@@ -528,6 +529,10 @@ class TestGetFutureCandles:
             def iterate_with_context(self, *_args, **_kwargs):
                 yield signal_features, {}
                 yield entry_features, {}
+            
+            def record_trade_outcome(self, won: bool) -> None:
+                """Mock method for recording trade outcomes."""
+                pass
 
         monkeypatch.setattr("backtester.pipeline.BacktestProcessor", DummyProcessor)
 
