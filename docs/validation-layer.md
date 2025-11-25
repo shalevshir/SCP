@@ -128,6 +128,88 @@ if consecutive_losses >= max_losses_for_season:
     halt_trading()  # Reject all signals
 ```
 
+## Historical Replay
+
+### Overview
+
+The Validation Replay Engine enables running all SOP validators incrementally over historical data, ensuring validation results match live behavior. This is critical for accurate backtesting where validation state (loss streaks, daily risk) must evolve correctly.
+
+### Key Features
+
+- **Incremental Validation**: All validators run candle-by-candle (no lookahead)
+- **State Evolution**: Loss streaks and daily risk evolve based on trade outcomes
+- **Session Resets**: State automatically resets at session boundaries
+- **No Lookahead Bias**: Only uses data up to current timestamp
+
+### Usage
+
+```python
+from backtester.replay_engine import ReplayEngine
+
+# Initialize engine
+engine = ReplayEngine(timeframe="1m", enable_validation=True)
+
+# Replay historical data
+for features, validation_context in engine.replay(gc_df, dxy_df):
+    # Process signal with validation
+    signal = process_signal(features, validation_context)
+    
+    # Check validation flags
+    if not validation_context.get("guardrail_result").allowed:
+        # Blocked by loss streak or other guardrails
+        continue
+
+# Record trade outcomes to update state
+engine.record_trade_outcome(won=True)  # or won=False
+```
+
+### Integration with Backtest Pipeline
+
+The backtest pipeline automatically integrates replay:
+
+```python
+from backtester.pipeline import run_backtest_with_trades
+
+# Trade outcomes are automatically recorded
+# Loss streaks evolve correctly during backtest
+trades = run_backtest_with_trades(
+    gc_df=gc_df,
+    dxy_df=dxy_df,
+    timeframe="1m",
+    market_state=market_state,
+    htf_bias_func=compute_htf_bias,
+    risk_config=risk_config,
+)
+```
+
+### Loss Streak Replay Rules
+
+During historical replay, loss streaks follow the same rules as live trading:
+
+- **September**: Halt after 1 consecutive loss
+- **Other Months**: Halt after 2 consecutive losses
+- **Reset on Win**: Streak resets to 0 on any winning trade
+- **Reset on Session**: Streak resets to 0 at session start
+
+### State Evolution During Replay
+
+The replay engine ensures state evolves correctly:
+
+1. **Initial State**: Loss streak starts at 0
+2. **Trade Outcomes**: Each trade outcome updates the streak
+3. **Session Resets**: New trading day resets streak to 0
+4. **Guardrail Evaluation**: Future signals check current streak against season limits
+
+### Verification
+
+The replay engine guarantees:
+- Validation results match live behavior when run on same data slice
+- No lookahead bias (future data doesn't affect past features)
+- State evolution based only on past outcomes
+- Session resets work correctly across multiple days
+
+For detailed documentation, see [Replay Engine Documentation](../backtester/replay-engine.md).
+
 ## Tier-Based Setup Restrictions
 
 ### Enforcer Tiers
