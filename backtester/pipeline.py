@@ -387,12 +387,67 @@ def run_backtest_with_trades(
 
         future_candles = get_future_candles(gc_df, entry.entry_timestamp, max_bars)
 
+        # Compute features for future candles
+        # Use BacktestProcessor to compute features (vectorized, fast)
+        future_features = None
+        if not future_candles.empty:
+            try:
+                # Create a processor to compute features
+                feature_processor = BacktestProcessor(timeframe=timeframe)
+                
+                # Get the slice of data up to and including future candles
+                # Find entry index
+                entry_idx = gc_df.index.get_loc(entry.entry_timestamp)
+                # Get data from start up to end of future candles
+                end_idx = min(entry_idx + 1 + len(future_candles), len(gc_df))
+                gc_slice = gc_df.iloc[:end_idx]
+                dxy_slice = dxy_df.iloc[:end_idx] if len(dxy_df) >= end_idx else dxy_df
+                
+                # Compute features for the entire slice
+                features_df = feature_processor._compute_features(gc_slice, dxy_slice)
+                
+                # Extract only features for future candles (after entry)
+                # Features are indexed by position, need to align with timestamps
+                if len(features_df) > entry_idx + 1:
+                    future_features_df = features_df.iloc[entry_idx + 1:].copy()
+                    
+                    # Set timestamp index to match future_candles
+                    if "ts_event" in future_features_df.columns:
+                        # Use ts_event column as index
+                        future_features_df = future_features_df.set_index("ts_event")
+                    elif isinstance(features_df.index, pd.DatetimeIndex):
+                        # Features already have DatetimeIndex, use it directly
+                        # But we need to align with future_candles timestamps
+                        pass
+                    else:
+                        # Try to use gc_slice index for alignment
+                        if len(gc_slice) > entry_idx + 1:
+                            future_timestamps = gc_slice.index[entry_idx + 1:]
+                            future_features_df.index = future_timestamps[:len(future_features_df)]
+                    
+                    # Align with future_candles timestamps (handle missing timestamps)
+                    future_features = future_features_df.reindex(
+                        future_candles.index, method=None
+                    )
+                    
+                    logger.debug(
+                        f"Computed features for {len(future_features)} future candles "
+                        f"(aligned with {len(future_candles)} candles)"
+                    )
+            except Exception as e:
+                logger.warning(
+                    f"Failed to compute features for future candles: {e}. "
+                    "Continuing without features."
+                )
+                future_features = None
+
         # Simulate trade outcome
         closed_trade = simulate_trade_outcome(
             trade=trade,
             future_candles=future_candles,
             invalidation_checker=invalidation_checker,
             config=config,
+            future_features=future_features,
         )
 
         trades.append(closed_trade)
