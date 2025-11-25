@@ -80,7 +80,8 @@ def run_backtest_with_entries(
     htf_bias_func: Callable[[pd.Series, dict], HTFBias],
     log_signals: bool = False,
     log_dir: str | None = None,
-) -> list[EntryExecution]:
+    processor: BacktestProcessor | None = None,
+) -> tuple[list[EntryExecution], BacktestProcessor]:
     """Run complete backtest pipeline with entry execution.
 
     This function orchestrates the full backtesting pipeline:
@@ -107,11 +108,13 @@ def run_backtest_with_entries(
             Signature: (pd.Series, dict) -> HTFBias
         log_signals: Whether to log signals to disk (default: False)
         log_dir: Directory for signal logs (required if log_signals=True)
+        processor: Optional BacktestProcessor instance to reuse (for state persistence)
 
     Returns:
-        List of EntryExecution objects, one per signal generated.
-        Includes both successful entries (executed=True) and rejected entries
-        (executed=False with rejection_reason).
+        Tuple of (list of EntryExecution objects, processor instance).
+        EntryExecution list includes both successful entries (executed=True) and
+        rejected entries (executed=False with rejection_reason).
+        Processor instance is returned to allow recording trade outcomes.
 
     Example:
         >>> def compute_htf_bias(features, context):
@@ -126,7 +129,7 @@ def run_backtest_with_entries(
         ...     "session_ok": True,
         ... }
         >>>
-        >>> executions = run_backtest_with_entries(
+        >>> executions, processor = run_backtest_with_entries(
         ...     gc_df=gc_data,
         ...     dxy_df=dxy_data,
         ...     timeframe="1m",
@@ -143,8 +146,9 @@ def run_backtest_with_entries(
         f"tier={market_state.get('tier_active')}"
     )
 
-    # Initialize processor
-    processor = BacktestProcessor(timeframe=timeframe)
+    # Initialize processor (reuse if provided)
+    if processor is None:
+        processor = BacktestProcessor(timeframe=timeframe)
 
     # Collect all entry executions
     executions: list[EntryExecution] = []
@@ -198,7 +202,7 @@ def run_backtest_with_entries(
         f"({100*executed_count/signal_count if signal_count > 0 else 0:.1f}%)"
     )
 
-    return executions
+    return executions, processor
 
 
 def get_future_candles(
@@ -327,8 +331,12 @@ def run_backtest_with_trades(
         f"tier={market_state.get('tier_active')}"
     )
 
-    # Step 1: Get executed entries
-    executions = run_backtest_with_entries(
+    # Create processor upfront for state persistence across the entire backtest
+    # This ensures loss streaks and other state evolve correctly as trades close
+    processor = BacktestProcessor(timeframe=timeframe)
+
+    # Step 1: Get executed entries (reuse processor for state persistence)
+    executions, processor = run_backtest_with_entries(
         gc_df=gc_df,
         dxy_df=dxy_df,
         timeframe=timeframe,
@@ -336,6 +344,7 @@ def run_backtest_with_trades(
         htf_bias_func=htf_bias_func,
         log_signals=log_signals,
         log_dir=log_dir,
+        processor=processor,  # Pass processor to reuse state
     )
 
     # Filter to only executed entries
@@ -465,10 +474,20 @@ def run_backtest_with_trades(
             future_features=future_features,
         )
 
-        # Record trade outcome to update daily state (consecutive losses, daily PnL)
-        # This enables daily risk stop mechanism (loss streak detection)
+        # Record trade outcome to update behavior state (loss streaks)
+        # This enables loss streak guardrails during backtest
+        # The processor's behavior tracker maintains state across the entire backtest,
+        # which affects future validation (preventing new signals if loss streaks are too high)
         won = closed_trade.pnl is not None and closed_trade.pnl > 0
-        invalidation_checker.record_trade_outcome(closed_trade, won=won)
+        
+        # Record to behavior tracker (for loss streak guardrails)
+        # This updates the state that affects future validation
+        if processor and processor.enable_validation:
+            processor.record_trade_outcome(won)
+            logger.debug(
+                f"Recorded trade outcome to behavior tracker: won={won}, "
+                f"consecutive_losses={processor._behavior_tracker.state.consecutive_losses if hasattr(processor, '_behavior_tracker') else 'N/A'}"
+            )
 
         trades.append(closed_trade)
 
