@@ -6,10 +6,16 @@ with support for session/day resets.
 VWAP Formula:
     VWAP = Σ(Typical Price × Volume) / Σ(Volume)
     where Typical Price = (High + Low + Close) / 3
+
+Session Reset:
+    VWAP resets at 08:20 AM Eastern Time (Regular Trading Hours open).
+    This aligns with institutional standards for Gold futures.
 """
 
 import numpy as np
 import pandas as pd
+
+from feature_engine.timezone_utils import get_vwap_session_id
 
 
 def calculate_vwap(
@@ -24,11 +30,12 @@ def calculate_vwap(
             - close: Close price
             - volume: Trading volume
             - ts_event (or custom session_column): Timestamp for session detection
-        session_reset: If True, reset VWAP calculation at session boundaries
-                      (detected by day changes in session_column).
+        session_reset: If True, reset VWAP calculation at session boundaries.
+                      Sessions reset at 08:20 AM Eastern Time (RTH open for Gold futures).
                       If False, calculate cumulative VWAP across entire dataset.
         session_column: Name of the timestamp column for session detection.
                        Default is "ts_event".
+                       If timezone-naive, assumes UTC.
 
     Returns:
         Series containing VWAP values, indexed same as input DataFrame.
@@ -40,14 +47,20 @@ def calculate_vwap(
 
     Example:
         >>> df = pd.DataFrame({
-        ...     'ts_event': pd.date_range('2025-01-01 09:00', periods=3, freq='1min'),
+        ...     'ts_event': pd.date_range('2025-01-01 09:00', periods=3, freq='1min', tz='UTC'),
         ...     'high': [101.0, 102.0, 103.0],
         ...     'low': [99.0, 100.0, 101.0],
         ...     'close': [100.5, 101.5, 102.5],
         ...     'volume': [1000, 1500, 2000]
         ... })
-        >>> vwap = calculate_vwap(df, session_reset=False)
+        >>> vwap = calculate_vwap(df, session_reset=True)
         >>> print(vwap)
+
+    Notes:
+        - VWAP resets at 08:20 AM ET (Regular Trading Hours open)
+        - DST transitions are handled automatically (EST ↔ EDT)
+        - Bars before 08:20 ET belong to previous session
+        - Bars at/after 08:20 ET start new session
     """
     # Validate required columns
     required_cols = {"high", "low", "close", "volume"}
@@ -89,8 +102,9 @@ def calculate_vwap(
         else:
             session_dates = df[session_column]
 
-        # Extract date to identify session boundaries
-        session_groups = session_dates.dt.date
+        # Compute session IDs based on 08:20 ET reset time
+        # Sessions run from 08:20 ET to 08:19:59 ET next day
+        session_groups = session_dates.apply(get_vwap_session_id)
 
         # Calculate cumulative sums within each session group
         cum_pv = pv.groupby(session_groups).cumsum()
