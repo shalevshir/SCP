@@ -245,7 +245,7 @@ def simulate_trade_outcome(
             source="SIMULATION",
         )
 
-        # Validate candle data - skip invalid candles without incrementing bars_elapsed
+        # Validate candle data - skip invalid candles (don't count toward timeout)
         if not is_valid_candle(candle):
             logger.warning(
                 f"Skipping candle with NaN/Inf values at {timestamp} "
@@ -254,6 +254,7 @@ def simulate_trade_outcome(
             continue
 
         # Only increment bars_elapsed for valid candles
+        # SOP timeout rules apply to valid candles only
         bars_elapsed += 1
 
         # Extract features for this candle if available

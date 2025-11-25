@@ -845,3 +845,158 @@ class TestSimulateTradeOutcome:
         assert result.exit_reason == "TP"
         assert result.status == "CLOSED_WIN"
 
+    def test_invalid_candles_dont_count_toward_timeout(self, long_continuation_trade):
+        """Test that invalid candles (NaN/Inf) don't count toward timeout limits.
+        
+        SOP requires timeout to be based on valid candles only (20 bars for continuation).
+        If we have 15 valid candles and 10 invalid candles, timeout should occur at
+        the 20th valid candle, not after 25 total candles.
+        """
+        import math
+        
+        candles = []
+        base_time = datetime(2025, 1, 1, 10, 2, tzinfo=UTC)
+        
+        # Create 15 valid candles (not enough to timeout)
+        for i in range(15):
+            candles.append(
+                make_candle(
+                    timestamp=base_time + timedelta(minutes=i),
+                    open=2650.0,
+                    high=2652.0,
+                    low=2648.0,
+                    close=2651.0,
+                    volume=100,
+                )
+            )
+        
+        # Insert 10 invalid candles (NaN values) - these should be skipped
+        for i in range(10):
+            candles.append(
+                make_candle(
+                    timestamp=base_time + timedelta(minutes=15 + i),
+                    open=math.nan,  # Invalid candle
+                    high=2652.0,
+                    low=2648.0,
+                    close=2651.0,
+                    volume=100,
+                )
+            )
+        
+        # Add 5 more valid candles to reach 20 valid candles total
+        for i in range(5):
+            candles.append(
+                make_candle(
+                    timestamp=base_time + timedelta(minutes=25 + i),
+                    open=2650.0,
+                    high=2652.0,
+                    low=2648.0,
+                    close=2651.0,
+                    volume=100,
+                )
+            )
+        
+        df = pd.DataFrame([c.__dict__ for c in candles])
+        df = df.set_index("timestamp")
+        
+        closed_trade = simulate_trade_outcome(long_continuation_trade, df)
+        
+        # Should timeout at 20th valid candle (not after 30 total candles)
+        # The timeout check uses bars_elapsed which only counts valid candles
+        assert closed_trade.exit_reason == "timeout"
+        # duration_bars is time-based (30 minutes = 30 candles worth of time)
+        # but timeout triggers at 20th valid candle due to our fix
+        assert closed_trade.duration_bars == 30  # Time-based: 30 minutes elapsed
+        assert closed_trade.exit_price == 2651.0  # Last valid candle close
+        
+        # Verify timeout triggered at the 20th valid candle by checking
+        # that it didn't timeout earlier (at 15 valid candles)
+        # Create a test with only 15 valid candles + 10 invalid - should NOT timeout
+        candles_15_valid = []
+        for i in range(15):
+            candles_15_valid.append(
+                make_candle(
+                    timestamp=base_time + timedelta(minutes=i),
+                    open=2650.0,
+                    high=2652.0,
+                    low=2648.0,
+                    close=2651.0,
+                    volume=100,
+                )
+            )
+        for i in range(10):
+            candles_15_valid.append(
+                make_candle(
+                    timestamp=base_time + timedelta(minutes=15 + i),
+                    open=math.nan,  # Invalid
+                    high=2652.0,
+                    low=2648.0,
+                    close=2651.0,
+                    volume=100,
+                )
+            )
+        df_15 = pd.DataFrame([c.__dict__ for c in candles_15_valid])
+        df_15 = df_15.set_index("timestamp")
+        
+        closed_15 = simulate_trade_outcome(long_continuation_trade, df_15)
+        # Should NOT timeout (only 15 valid candles, need 20)
+        assert closed_15.exit_reason == "end_of_data"
+
+    def test_invalid_candles_dont_count_toward_fade_timeout(self, short_fade_trade):
+        """Test that invalid candles don't count toward fade timeout (10 bars)."""
+        import math
+        
+        candles = []
+        base_time = datetime(2025, 1, 1, 10, 2, tzinfo=UTC)
+        
+        # Create 5 valid candles
+        for i in range(5):
+            candles.append(
+                make_candle(
+                    timestamp=base_time + timedelta(minutes=i),
+                    open=2650.0,
+                    high=2652.0,
+                    low=2648.0,
+                    close=2651.0,
+                    volume=100,
+                )
+            )
+        
+        # Insert 10 invalid candles (should be skipped)
+        for i in range(10):
+            candles.append(
+                make_candle(
+                    timestamp=base_time + timedelta(minutes=5 + i),
+                    open=math.nan,  # Invalid candle
+                    high=2652.0,
+                    low=2648.0,
+                    close=2651.0,
+                    volume=100,
+                )
+            )
+        
+        # Add 5 more valid candles to reach 10 valid candles total
+        for i in range(5):
+            candles.append(
+                make_candle(
+                    timestamp=base_time + timedelta(minutes=15 + i),
+                    open=2650.0,
+                    high=2652.0,
+                    low=2648.0,
+                    close=2651.0,
+                    volume=100,
+                )
+            )
+        
+        df = pd.DataFrame([c.__dict__ for c in candles])
+        df = df.set_index("timestamp")
+        
+        closed_trade = simulate_trade_outcome(short_fade_trade, df)
+        
+        # Should timeout at 10th valid candle (not after 20 total candles)
+        # The timeout check uses bars_elapsed which only counts valid candles
+        assert closed_trade.exit_reason == "timeout"
+        # duration_bars is time-based (20 minutes = 20 candles worth of time)
+        # but timeout triggers at 10th valid candle due to our fix
+        assert closed_trade.duration_bars == 20  # Time-based: 20 minutes elapsed
+

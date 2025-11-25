@@ -669,3 +669,537 @@ class TestInvalidationCheckerWithFeatures:
         assert is_invalid is True
         assert "vwap" in reason.lower()
 
+
+class TestHTFStructureInvalidation:
+    """Tests for HTF structure invalidation detection."""
+
+    @pytest.fixture
+    def long_trade_bullish_bias(self):
+        """Create a long trade with bullish HTF bias."""
+        signal = Signal(
+            timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
+            symbol="GC",
+            timeframe="1m",
+            direction="long",
+            setup_type="VWAP_RECLAIM",
+            htf_bias="bullish",
+            score=9.0,
+            confidence="A+",
+            factors={},
+            rationale="Test",
+            validation_flags={},
+            enforcer_tier="EarlyMild",
+        )
+        entry_execution = EntryExecution(
+            signal_timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
+            entry_timestamp=datetime(2025, 1, 1, 10, 1, tzinfo=UTC),
+            entry_price=2650.0,
+            signal=signal,
+            executed=True,
+            rejection_reason=None,
+        )
+        return Trade(
+            trade_id="test-htf-1",
+            symbol="GC",
+            timeframe="1m",
+            entry_execution=entry_execution,
+            entry_timestamp=datetime(2025, 1, 1, 10, 1, tzinfo=UTC),
+            entry_price=2650.0,
+            direction="long",
+            setup_type="VWAP_RECLAIM",
+            stop_loss=2645.0,
+            take_profit=2665.0,
+            sl_rationale="Below structure",
+            tp_rationale="3R continuation",
+            risk_amount=5.0,
+            reward_amount=15.0,
+            r_multiple=3.0,
+            contracts=1,
+            exit_timestamp=None,
+            exit_price=None,
+            exit_reason=None,
+            pnl=None,
+            pnl_percent=None,
+            r_realized=None,
+            pnl_dollars=None,
+            pnl_net=None,
+            slippage_cost=None,
+            commission_cost=None,
+            status="OPEN",
+            duration_bars=None,
+            invalidation_triggered=False,
+        )
+
+    @pytest.fixture
+    def long_trade_bearish_bias(self):
+        """Create a long trade with bearish HTF bias (misaligned trade)."""
+        signal = Signal(
+            timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
+            symbol="GC",
+            timeframe="1m",
+            direction="long",
+            setup_type="VWAP_RECLAIM",
+            htf_bias="bearish",  # Misaligned: long trade with bearish bias
+            score=9.0,
+            confidence="A+",
+            factors={},
+            rationale="Test",
+            validation_flags={},
+            enforcer_tier="EarlyMild",
+        )
+        entry_execution = EntryExecution(
+            signal_timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
+            entry_timestamp=datetime(2025, 1, 1, 10, 1, tzinfo=UTC),
+            entry_price=2650.0,
+            signal=signal,
+            executed=True,
+            rejection_reason=None,
+        )
+        return Trade(
+            trade_id="test-htf-2",
+            symbol="GC",
+            timeframe="1m",
+            entry_execution=entry_execution,
+            entry_timestamp=datetime(2025, 1, 1, 10, 1, tzinfo=UTC),
+            entry_price=2650.0,
+            direction="long",
+            setup_type="VWAP_RECLAIM",
+            stop_loss=2645.0,
+            take_profit=2665.0,
+            sl_rationale="Below structure",
+            tp_rationale="3R continuation",
+            risk_amount=5.0,
+            reward_amount=15.0,
+            r_multiple=3.0,
+            contracts=1,
+            exit_timestamp=None,
+            exit_price=None,
+            exit_reason=None,
+            pnl=None,
+            pnl_percent=None,
+            r_realized=None,
+            pnl_dollars=None,
+            pnl_net=None,
+            slippage_cost=None,
+            commission_cost=None,
+            status="OPEN",
+            duration_bars=None,
+            invalidation_triggered=False,
+        )
+
+    @pytest.fixture
+    def short_trade_bearish_bias(self):
+        """Create a short trade with bearish HTF bias."""
+        signal = Signal(
+            timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
+            symbol="GC",
+            timeframe="1m",
+            direction="short",
+            setup_type="VWAP_FADE",
+            htf_bias="bearish",
+            score=8.5,
+            confidence="A+",
+            factors={},
+            rationale="Test",
+            validation_flags={},
+            enforcer_tier="Mild",
+        )
+        entry_execution = EntryExecution(
+            signal_timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
+            entry_timestamp=datetime(2025, 1, 1, 10, 1, tzinfo=UTC),
+            entry_price=2650.0,
+            signal=signal,
+            executed=True,
+            rejection_reason=None,
+        )
+        return Trade(
+            trade_id="test-htf-3",
+            symbol="GC",
+            timeframe="1m",
+            entry_execution=entry_execution,
+            entry_timestamp=datetime(2025, 1, 1, 10, 1, tzinfo=UTC),
+            entry_price=2650.0,
+            direction="short",
+            setup_type="VWAP_FADE",
+            stop_loss=2655.0,
+            take_profit=2640.0,
+            sl_rationale="Above sweep",
+            tp_rationale="2R fade",
+            risk_amount=5.0,
+            reward_amount=10.0,
+            r_multiple=2.0,
+            contracts=1,
+            exit_timestamp=None,
+            exit_price=None,
+            exit_reason=None,
+            pnl=None,
+            pnl_percent=None,
+            r_realized=None,
+            pnl_dollars=None,
+            pnl_net=None,
+            slippage_cost=None,
+            commission_cost=None,
+            status="OPEN",
+            duration_bars=None,
+            invalidation_triggered=False,
+        )
+
+    @pytest.fixture
+    def short_trade_bullish_bias(self):
+        """Create a short trade with bullish HTF bias (misaligned trade)."""
+        signal = Signal(
+            timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
+            symbol="GC",
+            timeframe="1m",
+            direction="short",
+            setup_type="VWAP_FADE",
+            htf_bias="bullish",  # Misaligned: short trade with bullish bias
+            score=8.5,
+            confidence="A+",
+            factors={},
+            rationale="Test",
+            validation_flags={},
+            enforcer_tier="Mild",
+        )
+        entry_execution = EntryExecution(
+            signal_timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
+            entry_timestamp=datetime(2025, 1, 1, 10, 1, tzinfo=UTC),
+            entry_price=2650.0,
+            signal=signal,
+            executed=True,
+            rejection_reason=None,
+        )
+        return Trade(
+            trade_id="test-htf-4",
+            symbol="GC",
+            timeframe="1m",
+            entry_execution=entry_execution,
+            entry_timestamp=datetime(2025, 1, 1, 10, 1, tzinfo=UTC),
+            entry_price=2650.0,
+            direction="short",
+            setup_type="VWAP_FADE",
+            stop_loss=2655.0,
+            take_profit=2640.0,
+            sl_rationale="Above sweep",
+            tp_rationale="2R fade",
+            risk_amount=5.0,
+            reward_amount=10.0,
+            r_multiple=2.0,
+            contracts=1,
+            exit_timestamp=None,
+            exit_price=None,
+            exit_reason=None,
+            pnl=None,
+            pnl_percent=None,
+            r_realized=None,
+            pnl_dollars=None,
+            pnl_net=None,
+            slippage_cost=None,
+            commission_cost=None,
+            status="OPEN",
+            duration_bars=None,
+            invalidation_triggered=False,
+        )
+
+    def test_long_trade_invalidated_by_lh_structure_bullish_bias(
+        self, long_trade_bullish_bias
+    ):
+        """Test long trade with bullish bias invalidated by LH structure break."""
+        checker = InvalidationChecker()
+        
+        candle = make_candle(
+            timestamp=datetime(2025, 1, 1, 10, 5, tzinfo=UTC),
+            open=2650.0,
+            high=2651.0,
+            low=2649.0,
+            close=2650.0,
+        )
+        
+        features = {"structure_label": "LH"}
+        
+        is_invalid, reason = checker.check_htf_structure_invalidation(
+            long_trade_bullish_bias, candle, features
+        )
+        
+        assert is_invalid is True
+        assert "htf structure" in reason.lower()
+        assert "lh" in reason.lower()
+
+    def test_long_trade_invalidated_by_ll_structure_bullish_bias(
+        self, long_trade_bullish_bias
+    ):
+        """Test long trade with bullish bias invalidated by LL structure break."""
+        checker = InvalidationChecker()
+        
+        candle = make_candle(
+            timestamp=datetime(2025, 1, 1, 10, 5, tzinfo=UTC),
+            open=2650.0,
+            high=2651.0,
+            low=2649.0,
+            close=2650.0,
+        )
+        
+        features = {"structure_label": "LL"}
+        
+        is_invalid, reason = checker.check_htf_structure_invalidation(
+            long_trade_bullish_bias, candle, features
+        )
+        
+        assert is_invalid is True
+        assert "htf structure" in reason.lower()
+        assert "ll" in reason.lower()
+
+    def test_long_trade_invalidated_by_lh_structure_bearish_bias(
+        self, long_trade_bearish_bias
+    ):
+        """Test long trade with bearish bias invalidated by LH structure break.
+        
+        This test verifies the bug fix: long trades should be invalidated by
+        bearish structure breaks (LH, LL) regardless of entry bias.
+        """
+        checker = InvalidationChecker()
+        
+        candle = make_candle(
+            timestamp=datetime(2025, 1, 1, 10, 5, tzinfo=UTC),
+            open=2650.0,
+            high=2651.0,
+            low=2649.0,
+            close=2650.0,
+        )
+        
+        features = {"structure_label": "LH"}
+        
+        is_invalid, reason = checker.check_htf_structure_invalidation(
+            long_trade_bearish_bias, candle, features
+        )
+        
+        assert is_invalid is True, (
+            "Long trade should be invalidated by LH structure break "
+            "regardless of entry bias"
+        )
+        assert "htf structure" in reason.lower()
+        assert "lh" in reason.lower()
+
+    def test_long_trade_invalidated_by_ll_structure_bearish_bias(
+        self, long_trade_bearish_bias
+    ):
+        """Test long trade with bearish bias invalidated by LL structure break.
+        
+        This test verifies the bug fix: long trades should be invalidated by
+        bearish structure breaks (LH, LL) regardless of entry bias.
+        """
+        checker = InvalidationChecker()
+        
+        candle = make_candle(
+            timestamp=datetime(2025, 1, 1, 10, 5, tzinfo=UTC),
+            open=2650.0,
+            high=2651.0,
+            low=2649.0,
+            close=2650.0,
+        )
+        
+        features = {"structure_label": "LL"}
+        
+        is_invalid, reason = checker.check_htf_structure_invalidation(
+            long_trade_bearish_bias, candle, features
+        )
+        
+        assert is_invalid is True, (
+            "Long trade should be invalidated by LL structure break "
+            "regardless of entry bias"
+        )
+        assert "htf structure" in reason.lower()
+        assert "ll" in reason.lower()
+
+    def test_short_trade_invalidated_by_hh_structure_bearish_bias(
+        self, short_trade_bearish_bias
+    ):
+        """Test short trade with bearish bias invalidated by HH structure break."""
+        checker = InvalidationChecker()
+        
+        candle = make_candle(
+            timestamp=datetime(2025, 1, 1, 10, 5, tzinfo=UTC),
+            open=2650.0,
+            high=2651.0,
+            low=2649.0,
+            close=2650.0,
+        )
+        
+        features = {"structure_label": "HH"}
+        
+        is_invalid, reason = checker.check_htf_structure_invalidation(
+            short_trade_bearish_bias, candle, features
+        )
+        
+        assert is_invalid is True
+        assert "htf structure" in reason.lower()
+        assert "hh" in reason.lower()
+
+    def test_short_trade_invalidated_by_hl_structure_bearish_bias(
+        self, short_trade_bearish_bias
+    ):
+        """Test short trade with bearish bias invalidated by HL structure break."""
+        checker = InvalidationChecker()
+        
+        candle = make_candle(
+            timestamp=datetime(2025, 1, 1, 10, 5, tzinfo=UTC),
+            open=2650.0,
+            high=2651.0,
+            low=2649.0,
+            close=2650.0,
+        )
+        
+        features = {"structure_label": "HL"}
+        
+        is_invalid, reason = checker.check_htf_structure_invalidation(
+            short_trade_bearish_bias, candle, features
+        )
+        
+        assert is_invalid is True
+        assert "htf structure" in reason.lower()
+        assert "hl" in reason.lower()
+
+    def test_short_trade_invalidated_by_hh_structure_bullish_bias(
+        self, short_trade_bullish_bias
+    ):
+        """Test short trade with bullish bias invalidated by HH structure break.
+        
+        This test verifies the bug fix: short trades should be invalidated by
+        bullish structure breaks (HH, HL) regardless of entry bias.
+        """
+        checker = InvalidationChecker()
+        
+        candle = make_candle(
+            timestamp=datetime(2025, 1, 1, 10, 5, tzinfo=UTC),
+            open=2650.0,
+            high=2651.0,
+            low=2649.0,
+            close=2650.0,
+        )
+        
+        features = {"structure_label": "HH"}
+        
+        is_invalid, reason = checker.check_htf_structure_invalidation(
+            short_trade_bullish_bias, candle, features
+        )
+        
+        assert is_invalid is True, (
+            "Short trade should be invalidated by HH structure break "
+            "regardless of entry bias"
+        )
+        assert "htf structure" in reason.lower()
+        assert "hh" in reason.lower()
+
+    def test_short_trade_invalidated_by_hl_structure_bullish_bias(
+        self, short_trade_bullish_bias
+    ):
+        """Test short trade with bullish bias invalidated by HL structure break.
+        
+        This test verifies the bug fix: short trades should be invalidated by
+        bullish structure breaks (HH, HL) regardless of entry bias.
+        """
+        checker = InvalidationChecker()
+        
+        candle = make_candle(
+            timestamp=datetime(2025, 1, 1, 10, 5, tzinfo=UTC),
+            open=2650.0,
+            high=2651.0,
+            low=2649.0,
+            close=2650.0,
+        )
+        
+        features = {"structure_label": "HL"}
+        
+        is_invalid, reason = checker.check_htf_structure_invalidation(
+            short_trade_bullish_bias, candle, features
+        )
+        
+        assert is_invalid is True, (
+            "Short trade should be invalidated by HL structure break "
+            "regardless of entry bias"
+        )
+        assert "htf structure" in reason.lower()
+        assert "hl" in reason.lower()
+
+    def test_long_trade_not_invalidated_by_hh_structure(self, long_trade_bullish_bias):
+        """Test long trade not invalidated by bullish structure (HH)."""
+        checker = InvalidationChecker()
+        
+        candle = make_candle(
+            timestamp=datetime(2025, 1, 1, 10, 5, tzinfo=UTC),
+            open=2650.0,
+            high=2651.0,
+            low=2649.0,
+            close=2650.0,
+        )
+        
+        features = {"structure_label": "HH"}
+        
+        is_invalid, reason = checker.check_htf_structure_invalidation(
+            long_trade_bullish_bias, candle, features
+        )
+        
+        assert is_invalid is False
+        assert reason is None
+
+    def test_short_trade_not_invalidated_by_ll_structure(self, short_trade_bearish_bias):
+        """Test short trade not invalidated by bearish structure (LL)."""
+        checker = InvalidationChecker()
+        
+        candle = make_candle(
+            timestamp=datetime(2025, 1, 1, 10, 5, tzinfo=UTC),
+            open=2650.0,
+            high=2651.0,
+            low=2649.0,
+            close=2650.0,
+        )
+        
+        features = {"structure_label": "LL"}
+        
+        is_invalid, reason = checker.check_htf_structure_invalidation(
+            short_trade_bearish_bias, candle, features
+        )
+        
+        assert is_invalid is False
+        assert reason is None
+
+    def test_htf_invalidation_requires_features(self, long_trade_bullish_bias):
+        """Test HTF invalidation returns False when features are None."""
+        checker = InvalidationChecker()
+        
+        candle = make_candle(
+            timestamp=datetime(2025, 1, 1, 10, 5, tzinfo=UTC),
+            open=2650.0,
+            high=2651.0,
+            low=2649.0,
+            close=2650.0,
+        )
+        
+        is_invalid, reason = checker.check_htf_structure_invalidation(
+            long_trade_bullish_bias, candle, features=None
+        )
+        
+        assert is_invalid is False
+        assert reason is None
+
+    def test_htf_invalidation_requires_structure_label(self, long_trade_bullish_bias):
+        """Test HTF invalidation returns False when structure_label is missing."""
+        checker = InvalidationChecker()
+        
+        candle = make_candle(
+            timestamp=datetime(2025, 1, 1, 10, 5, tzinfo=UTC),
+            open=2650.0,
+            high=2651.0,
+            low=2649.0,
+            close=2650.0,
+        )
+        
+        features = {"vwap": 2650.0}  # No structure_label
+        
+        is_invalid, reason = checker.check_htf_structure_invalidation(
+            long_trade_bullish_bias, candle, features
+        )
+        
+        assert is_invalid is False
+        assert reason is None
+

@@ -287,28 +287,26 @@ class InvalidationChecker:
             return False, None
 
         # Check for structure break against trade direction
+        # Long trades invalidated by bearish structure (LH, LL) regardless of entry bias
+        # Short trades invalidated by bullish structure (HH, HL) regardless of entry bias
         if trade.direction == "long":
             # Long trade invalidated by bearish structure
-            if entry_htf_bias == "bullish":
-                # Entry was bullish, check for bearish structure break
-                if structure_label in ("LH", "LL"):
-                    reason = (
-                        f"HTF structure invalidation: {structure_label} detected "
-                        f"(bearish structure breaks bullish bias)"
-                    )
-                    logger.info(f"Trade {trade.trade_id} invalidated: {reason}")
-                    return True, reason
+            if structure_label in ("LH", "LL"):
+                reason = (
+                    f"HTF structure invalidation: {structure_label} detected "
+                    f"(bearish structure breaks against long trade)"
+                )
+                logger.info(f"Trade {trade.trade_id} invalidated: {reason}")
+                return True, reason
         else:  # short
             # Short trade invalidated by bullish structure
-            if entry_htf_bias == "bearish":
-                # Entry was bearish, check for bullish structure break
-                if structure_label in ("HH", "HL"):
-                    reason = (
-                        f"HTF structure invalidation: {structure_label} detected "
-                        f"(bullish structure breaks bearish bias)"
-                    )
-                    logger.info(f"Trade {trade.trade_id} invalidated: {reason}")
-                    return True, reason
+            if structure_label in ("HH", "HL"):
+                reason = (
+                    f"HTF structure invalidation: {structure_label} detected "
+                    f"(bullish structure breaks against short trade)"
+                )
+                logger.info(f"Trade {trade.trade_id} invalidated: {reason}")
+                return True, reason
 
         return False, None
 
