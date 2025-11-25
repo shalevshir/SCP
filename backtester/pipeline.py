@@ -240,6 +240,27 @@ def get_future_candles(
     return future_candles
 
 
+def _align_future_features_index(
+    future_features_df: pd.DataFrame,
+    features_df: pd.DataFrame,
+    gc_slice: pd.DataFrame,
+    entry_idx: int,
+) -> pd.DataFrame:
+    """Ensure future feature slices have a timestamp index for alignment."""
+    if "ts_event" in future_features_df.columns:
+        return future_features_df.set_index("ts_event")
+
+    if isinstance(future_features_df.index, pd.DatetimeIndex):
+        return future_features_df
+
+    if len(gc_slice) > entry_idx + 1:
+        future_timestamps = gc_slice.index[entry_idx + 1 :]
+        future_features_df = future_features_df.copy()
+        future_features_df.index = future_timestamps[: len(future_features_df)]
+
+    return future_features_df
+
+
 def run_backtest_with_trades(
     gc_df: pd.DataFrame,
     dxy_df: pd.DataFrame,
@@ -409,22 +430,16 @@ def run_backtest_with_trades(
                 # Extract only features for future candles (after entry)
                 # Features are indexed by position, need to align with timestamps
                 if len(features_df) > entry_idx + 1:
-                    future_features_df = features_df.iloc[entry_idx + 1:].copy()
-                    
+                    future_features_df = features_df.iloc[entry_idx + 1 :].copy()
+
                     # Set timestamp index to match future_candles
-                    if "ts_event" in future_features_df.columns:
-                        # Use ts_event column as index
-                        future_features_df = future_features_df.set_index("ts_event")
-                    elif isinstance(features_df.index, pd.DatetimeIndex):
-                        # Features already have DatetimeIndex, use it directly
-                        # But we need to align with future_candles timestamps
-                        pass
-                    else:
-                        # Try to use gc_slice index for alignment
-                        if len(gc_slice) > entry_idx + 1:
-                            future_timestamps = gc_slice.index[entry_idx + 1:]
-                            future_features_df.index = future_timestamps[:len(future_features_df)]
-                    
+                    future_features_df = _align_future_features_index(
+                        future_features_df=future_features_df,
+                        features_df=features_df,
+                        gc_slice=gc_slice,
+                        entry_idx=entry_idx,
+                    )
+
                     # Align with future_candles timestamps (handle missing timestamps)
                     future_features = future_features_df.reindex(
                         future_candles.index, method=None
