@@ -1203,3 +1203,87 @@ class TestHTFStructureInvalidation:
         assert is_invalid is False
         assert reason is None
 
+    def test_htf_invalidation_works_without_entry_htf_bias(self):
+        """Test HTF invalidation works when entry HTF bias is None.
+        
+        This verifies the fix: the function should work regardless of entry HTF bias,
+        using only the structure_label from features.
+        """
+        checker = InvalidationChecker()
+        
+        # Create a trade without HTF bias
+        signal = Signal(
+            timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
+            symbol="GC",
+            timeframe="1m",
+            direction="long",
+            setup_type="VWAP_RECLAIM",
+            htf_bias=None,  # No HTF bias
+            score=9.0,
+            confidence="A+",
+            factors={},
+            rationale="Test",
+            validation_flags={},
+            enforcer_tier="EarlyMild",
+        )
+        entry_execution = EntryExecution(
+            signal_timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
+            entry_timestamp=datetime(2025, 1, 1, 10, 1, tzinfo=UTC),
+            entry_price=2650.0,
+            signal=signal,
+            executed=True,
+            rejection_reason=None,
+        )
+        trade = Trade(
+            trade_id="test-htf-no-bias",
+            symbol="GC",
+            timeframe="1m",
+            entry_execution=entry_execution,
+            entry_timestamp=datetime(2025, 1, 1, 10, 1, tzinfo=UTC),
+            entry_price=2650.0,
+            direction="long",
+            setup_type="VWAP_RECLAIM",
+            stop_loss=2645.0,
+            take_profit=2665.0,
+            sl_rationale="Below structure",
+            tp_rationale="3R continuation",
+            risk_amount=5.0,
+            reward_amount=15.0,
+            r_multiple=3.0,
+            contracts=1,
+            exit_timestamp=None,
+            exit_price=None,
+            exit_reason=None,
+            pnl=None,
+            pnl_percent=None,
+            r_realized=None,
+            pnl_dollars=None,
+            pnl_net=None,
+            slippage_cost=None,
+            commission_cost=None,
+            status="OPEN",
+            duration_bars=None,
+            invalidation_triggered=False,
+        )
+        
+        # Test with bearish structure (should invalidate long trade)
+        candle = make_candle(
+            timestamp=datetime(2025, 1, 1, 10, 5, tzinfo=UTC),
+            open=2650.0,
+            high=2651.0,
+            low=2649.0,
+            close=2650.0,
+        )
+        
+        features = {"structure_label": "LH"}  # Bearish structure
+        
+        is_invalid, reason = checker.check_htf_structure_invalidation(
+            trade, candle, features
+        )
+        
+        # Should detect invalidation even without entry HTF bias
+        assert is_invalid is True
+        assert reason is not None
+        assert "HTF structure invalidation" in reason
+        assert "LH" in reason
+

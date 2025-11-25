@@ -268,15 +268,10 @@ class InvalidationChecker:
         SOP Rules:
             - Long: Invalid if structure breaks bearish (LH, LL, or bearish BOS/CHoCH)
             - Short: Invalid if structure breaks bullish (HH, HL, or bullish BOS/CHoCH)
-            - Uses structure labels from features or entry HTF bias
+            - Uses structure labels from features (regardless of entry HTF bias)
         """
-        # Need structure info from features or trade entry
+        # Need structure info from features
         if features is None:
-            return False, None
-
-        # Get entry HTF bias from trade signal
-        entry_htf_bias = trade.entry_execution.signal.htf_bias
-        if entry_htf_bias is None:
             return False, None
 
         # Get structure label from features
