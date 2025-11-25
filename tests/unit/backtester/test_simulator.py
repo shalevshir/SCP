@@ -715,6 +715,84 @@ class TestSimulateTradeOutcome:
         assert closed_trade.exit_price == 2651.0  # Last candle close
         assert closed_trade.duration_bars == 10
 
+    def test_skipped_nan_candles_dont_count_toward_timeout(self, long_continuation_trade):
+        """Test that skipped NaN/Inf candles don't increment bars_elapsed.
+
+        This ensures trades don't timeout prematurely when invalid candles are skipped.
+        """
+        import math
+
+        # Create 18 valid candles + 2 NaN candles = 20 total candles
+        # But only 18 valid candles should be processed
+        candles = []
+        base_time = datetime(2025, 1, 1, 10, 2, tzinfo=UTC)
+        
+        # First 5 valid candles
+        for i in range(5):
+            candles.append(
+                make_candle(
+                    timestamp=base_time + timedelta(minutes=i),
+                    open=2650.0,
+                    high=2652.0,
+                    low=2648.0,
+                    close=2651.0,
+                    volume=100,
+                )
+            )
+        
+        # Insert 2 NaN candles (should be skipped)
+        candles.append(
+            make_candle(
+                timestamp=base_time + timedelta(minutes=5),
+                open=math.nan,  # Invalid candle
+                high=2652.0,
+                low=2648.0,
+                close=2651.0,
+                volume=100,
+            )
+        )
+        candles.append(
+            make_candle(
+                timestamp=base_time + timedelta(minutes=6),
+                open=2650.0,
+                high=math.inf,  # Invalid candle
+                low=2648.0,
+                close=2651.0,
+                volume=100,
+            )
+        )
+        
+        # Add 15 more valid candles (total: 5 + 15 = 20 valid, 2 skipped)
+        for i in range(7, 22):
+            candles.append(
+                make_candle(
+                    timestamp=base_time + timedelta(minutes=i),
+                    open=2650.0,
+                    high=2652.0,
+                    low=2648.0,
+                    close=2651.0,
+                    volume=100,
+                )
+            )
+
+        df = pd.DataFrame([c.__dict__ for c in candles])
+        df = df.set_index("timestamp")
+
+        closed_trade = simulate_trade_outcome(long_continuation_trade, df)
+
+        # Should timeout at 20 valid candles, not 20 total candles
+        # The key fix: bars_elapsed only counts valid candles, so timeout happens
+        # at the 20th valid candle, not after 20 total candles (which would include skipped ones)
+        assert closed_trade.exit_reason == "TIME"
+        # duration_bars is time-based (timestamp difference), so it will be 22 minutes
+        # because 22 minutes elapsed (20 valid + 2 skipped candles)
+        # But the timeout check uses bars_elapsed which only counts valid candles (20)
+        assert closed_trade.duration_bars == 22  # 22 minutes elapsed (time-based)
+        # Verify exit happened at the 20th valid candle's timestamp
+        # (5 initial + 2 skipped + 15 more = 20 valid, last one at minute 21)
+        expected_exit_time = base_time + timedelta(minutes=21)  # 20th valid candle
+        assert closed_trade.exit_timestamp == expected_exit_time
+
     def test_end_of_data(self, long_continuation_trade):
         """Test trade closes at end of dataset if still open."""
         # Only 5 candles, trade doesn't hit TP/SL/timeout

@@ -226,8 +226,6 @@ def simulate_trade_outcome(
 
     # Iterate through future candles
     for timestamp, row in future_candles.iterrows():
-        bars_elapsed += 1
-
         # Reconstruct Candle from DataFrame row
         candle = Candle(
             timestamp=timestamp,
@@ -241,13 +239,16 @@ def simulate_trade_outcome(
             source="SIMULATION",
         )
 
-        # Validate candle data
+        # Validate candle data - skip invalid candles without incrementing bars_elapsed
         if not is_valid_candle(candle):
             logger.warning(
                 f"Skipping candle with NaN/Inf values at {timestamp} "
                 f"for trade {trade.trade_id}"
             )
             continue
+
+        # Only increment bars_elapsed for valid candles
+        bars_elapsed += 1
 
         # 1. Check for invalidation (exit at open)
         if invalidation_checker is not None:
