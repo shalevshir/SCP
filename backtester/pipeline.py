@@ -450,6 +450,11 @@ def run_backtest_with_trades(
             future_features=future_features,
         )
 
+        # Record trade outcome to update daily state (consecutive losses, daily PnL)
+        # This enables daily risk stop mechanism (loss streak detection)
+        won = closed_trade.pnl is not None and closed_trade.pnl > 0
+        invalidation_checker.record_trade_outcome(closed_trade, won=won)
+
         trades.append(closed_trade)
 
         logger.debug(

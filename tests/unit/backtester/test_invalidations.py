@@ -1325,3 +1325,278 @@ class TestHTFStructureInvalidation:
         assert "HTF structure invalidation" in reason
         assert "LH" in reason
 
+
+class TestRecordTradeOutcome:
+    """Tests for record_trade_outcome() method."""
+
+    def test_record_trade_outcome_updates_consecutive_losses(self):
+        """Test that record_trade_outcome updates consecutive losses counter."""
+        from datetime import UTC, datetime
+
+        checker = InvalidationChecker()
+
+        # Create a losing trade
+        losing_trade = Trade(
+            trade_id="test-loss-1",
+            symbol="GC",
+            timeframe="1m",
+            entry_execution=None,
+            entry_timestamp=datetime(2025, 1, 1, 10, 1, tzinfo=UTC),
+            entry_price=2650.0,
+            direction="long",
+            setup_type="VWAP_RECLAIM",
+            stop_loss=2645.0,
+            take_profit=2665.0,
+            sl_rationale="Below structure",
+            tp_rationale="3R continuation",
+            risk_amount=5.0,
+            reward_amount=15.0,
+            r_multiple=3.0,
+            contracts=1,
+            exit_timestamp=datetime(2025, 1, 1, 10, 5, tzinfo=UTC),
+            exit_price=2645.0,
+            exit_reason="sl",
+            pnl=-5.0,  # Loss
+            pnl_percent=-1.0,
+            r_realized=-1.0,
+            pnl_dollars=None,
+            pnl_net=None,
+            slippage_cost=None,
+            commission_cost=None,
+            status="STOPPED_OUT",
+            duration_bars=4,
+            invalidation_triggered=False,
+        )
+
+        # Record first loss
+        checker.record_trade_outcome(losing_trade, won=False)
+        assert checker._daily_state["consecutive_losses"] == 1
+
+        # Record second loss
+        losing_trade2 = Trade(
+            trade_id="test-loss-2",
+            symbol="GC",
+            timeframe="1m",
+            entry_execution=None,
+            entry_timestamp=datetime(2025, 1, 1, 10, 6, tzinfo=UTC),
+            entry_price=2650.0,
+            direction="long",
+            setup_type="VWAP_RECLAIM",
+            stop_loss=2645.0,
+            take_profit=2665.0,
+            sl_rationale="Below structure",
+            tp_rationale="3R continuation",
+            risk_amount=5.0,
+            reward_amount=15.0,
+            r_multiple=3.0,
+            contracts=1,
+            exit_timestamp=datetime(2025, 1, 1, 10, 10, tzinfo=UTC),
+            exit_price=2645.0,
+            exit_reason="sl",
+            pnl=-5.0,
+            pnl_percent=-1.0,
+            r_realized=-1.0,
+            pnl_dollars=None,
+            pnl_net=None,
+            slippage_cost=None,
+            commission_cost=None,
+            status="STOPPED_OUT",
+            duration_bars=4,
+            invalidation_triggered=False,
+        )
+        checker.record_trade_outcome(losing_trade2, won=False)
+        assert checker._daily_state["consecutive_losses"] == 2
+
+        # Record a win - should reset counter
+        winning_trade = Trade(
+            trade_id="test-win-1",
+            symbol="GC",
+            timeframe="1m",
+            entry_execution=None,
+            entry_timestamp=datetime(2025, 1, 1, 10, 11, tzinfo=UTC),
+            entry_price=2650.0,
+            direction="long",
+            setup_type="VWAP_RECLAIM",
+            stop_loss=2645.0,
+            take_profit=2665.0,
+            sl_rationale="Below structure",
+            tp_rationale="3R continuation",
+            risk_amount=5.0,
+            reward_amount=15.0,
+            r_multiple=3.0,
+            contracts=1,
+            exit_timestamp=datetime(2025, 1, 1, 10, 15, tzinfo=UTC),
+            exit_price=2665.0,
+            exit_reason="tp",
+            pnl=15.0,  # Win
+            pnl_percent=3.0,
+            r_realized=3.0,
+            pnl_dollars=None,
+            pnl_net=None,
+            slippage_cost=None,
+            commission_cost=None,
+            status="CLOSED_WIN",
+            duration_bars=4,
+            invalidation_triggered=False,
+        )
+        checker.record_trade_outcome(winning_trade, won=True)
+        assert checker._daily_state["consecutive_losses"] == 0
+
+    def test_record_trade_outcome_updates_daily_pnl(self):
+        """Test that record_trade_outcome updates daily PnL."""
+        from datetime import UTC, datetime
+
+        checker = InvalidationChecker()
+
+        # Create trades with PnL
+        trade1 = Trade(
+            trade_id="test-1",
+            symbol="GC",
+            timeframe="1m",
+            entry_execution=None,
+            entry_timestamp=datetime(2025, 1, 1, 10, 1, tzinfo=UTC),
+            entry_price=2650.0,
+            direction="long",
+            setup_type="VWAP_RECLAIM",
+            stop_loss=2645.0,
+            take_profit=2665.0,
+            sl_rationale="Below structure",
+            tp_rationale="3R continuation",
+            risk_amount=5.0,
+            reward_amount=15.0,
+            r_multiple=3.0,
+            contracts=1,
+            exit_timestamp=datetime(2025, 1, 1, 10, 5, tzinfo=UTC),
+            exit_price=2665.0,
+            exit_reason="tp",
+            pnl=15.0,
+            pnl_percent=3.0,
+            r_realized=3.0,
+            pnl_dollars=None,
+            pnl_net=None,
+            slippage_cost=None,
+            commission_cost=None,
+            status="CLOSED_WIN",
+            duration_bars=4,
+            invalidation_triggered=False,
+        )
+
+        checker.record_trade_outcome(trade1, won=True)
+        assert checker._daily_state["daily_pnl"] == 15.0
+
+        trade2 = Trade(
+            trade_id="test-2",
+            symbol="GC",
+            timeframe="1m",
+            entry_execution=None,
+            entry_timestamp=datetime(2025, 1, 1, 10, 6, tzinfo=UTC),
+            entry_price=2650.0,
+            direction="long",
+            setup_type="VWAP_RECLAIM",
+            stop_loss=2645.0,
+            take_profit=2665.0,
+            sl_rationale="Below structure",
+            tp_rationale="3R continuation",
+            risk_amount=5.0,
+            reward_amount=15.0,
+            r_multiple=3.0,
+            contracts=1,
+            exit_timestamp=datetime(2025, 1, 1, 10, 10, tzinfo=UTC),
+            exit_price=2645.0,
+            exit_reason="sl",
+            pnl=-5.0,
+            pnl_percent=-1.0,
+            r_realized=-1.0,
+            pnl_dollars=None,
+            pnl_net=None,
+            slippage_cost=None,
+            commission_cost=None,
+            status="STOPPED_OUT",
+            duration_bars=4,
+            invalidation_triggered=False,
+        )
+
+        checker.record_trade_outcome(trade2, won=False)
+        assert checker._daily_state["daily_pnl"] == 10.0  # 15.0 - 5.0
+
+    def test_record_trade_outcome_resets_on_new_session(self):
+        """Test that record_trade_outcome resets state on new session date."""
+        from datetime import UTC, datetime
+
+        checker = InvalidationChecker()
+
+        # First trade on day 1
+        trade1 = Trade(
+            trade_id="test-day1",
+            symbol="GC",
+            timeframe="1m",
+            entry_execution=None,
+            entry_timestamp=datetime(2025, 1, 1, 10, 1, tzinfo=UTC),
+            entry_price=2650.0,
+            direction="long",
+            setup_type="VWAP_RECLAIM",
+            stop_loss=2645.0,
+            take_profit=2665.0,
+            sl_rationale="Below structure",
+            tp_rationale="3R continuation",
+            risk_amount=5.0,
+            reward_amount=15.0,
+            r_multiple=3.0,
+            contracts=1,
+            exit_timestamp=datetime(2025, 1, 1, 10, 5, tzinfo=UTC),
+            exit_price=2645.0,
+            exit_reason="sl",
+            pnl=-5.0,
+            pnl_percent=-1.0,
+            r_realized=-1.0,
+            pnl_dollars=None,
+            pnl_net=None,
+            slippage_cost=None,
+            commission_cost=None,
+            status="STOPPED_OUT",
+            duration_bars=4,
+            invalidation_triggered=False,
+        )
+
+        checker.record_trade_outcome(trade1, won=False)
+        assert checker._daily_state["consecutive_losses"] == 1
+        assert checker._daily_state["daily_pnl"] == -5.0
+
+        # Second trade on day 2 (new session)
+        trade2 = Trade(
+            trade_id="test-day2",
+            symbol="GC",
+            timeframe="1m",
+            entry_execution=None,
+            entry_timestamp=datetime(2025, 1, 2, 10, 1, tzinfo=UTC),
+            entry_price=2650.0,
+            direction="long",
+            setup_type="VWAP_RECLAIM",
+            stop_loss=2645.0,
+            take_profit=2665.0,
+            sl_rationale="Below structure",
+            tp_rationale="3R continuation",
+            risk_amount=5.0,
+            reward_amount=15.0,
+            r_multiple=3.0,
+            contracts=1,
+            exit_timestamp=datetime(2025, 1, 2, 10, 5, tzinfo=UTC),
+            exit_price=2645.0,
+            exit_reason="sl",
+            pnl=-5.0,
+            pnl_percent=-1.0,
+            r_realized=-1.0,
+            pnl_dollars=None,
+            pnl_net=None,
+            slippage_cost=None,
+            commission_cost=None,
+            status="STOPPED_OUT",
+            duration_bars=4,
+            invalidation_triggered=False,
+        )
+
+        checker.record_trade_outcome(trade2, won=False)
+        # Should reset on new day
+        assert checker._daily_state["consecutive_losses"] == 1  # Reset to 0, then +1
+        assert checker._daily_state["daily_pnl"] == -5.0  # Reset to 0, then -5.0
+
