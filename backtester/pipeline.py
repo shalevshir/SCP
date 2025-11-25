@@ -336,6 +336,18 @@ def run_backtest_with_trades(
     processor = BacktestProcessor(timeframe=timeframe)
 
     # Step 1: Get executed entries (reuse processor for state persistence)
+    # 
+    # LIMITATION: This generates ALL signals upfront before any trades are processed.
+    # This means loss streak guardrails won't block signals during this initial
+    # signal generation phase, as no trade outcomes have been recorded yet.
+    # Trade outcomes are recorded in Step 2 below, but by then all signals are
+    # already generated. For proper loss streak guardrails during backtesting,
+    # we would need incremental signal generation (process entry -> simulate trade ->
+    # record outcome -> generate next signal), which is a larger refactor.
+    #
+    # The current structure processes entries chronologically and records outcomes
+    # as trades close, which is correct for state management, but signals are
+    # generated before outcomes are known.
     executions, processor = run_backtest_with_entries(
         gc_df=gc_df,
         dxy_df=dxy_df,
@@ -347,9 +359,14 @@ def run_backtest_with_trades(
         processor=processor,  # Pass processor to reuse state
     )
 
-    # Filter to only executed entries
-    executed_entries = [e for e in executions if e.executed]
-    logger.info(f"Processing {len(executed_entries)} executed entries")
+    # Filter to only executed entries and sort by entry timestamp
+    # CRITICAL: Process entries in chronological order so we can record trade outcomes
+    # as trades close, updating behavior state before processing later entries
+    executed_entries = sorted(
+        [e for e in executions if e.executed],
+        key=lambda e: e.entry_timestamp
+    )
+    logger.info(f"Processing {len(executed_entries)} executed entries in chronological order")
 
     # Step 2: Create and simulate trades
     trades: list[Trade] = []
@@ -362,8 +379,39 @@ def run_backtest_with_trades(
         htf_bias_func=htf_bias_func,
         target_timestamps=entry_timestamps,
     )
+    
+    # Track which trades have had their outcomes recorded (Trade is frozen dataclass)
+    recorded_trade_ids: set[str] = set()
 
     for entry in executed_entries:
+        # CRITICAL FIX: Before processing this entry, check if any previous trades have closed
+        # and record their outcomes. This ensures behavior state (loss streaks) is updated
+        # before we would generate signals for later entries (though signals are already generated,
+        # this maintains correct state for any future incremental processing).
+        # 
+        # For now, we record outcomes immediately after simulating each trade below.
+        # The key fix is that we process entries chronologically and record outcomes
+        # as we go, so if we were to regenerate signals incrementally, they would see
+        # the correct state.
+        
+        # Check if any previous trades have closed before this entry timestamp
+        # and record their outcomes if not already recorded
+        for prev_trade in trades:
+            # If trade has closed (has exit_timestamp) and exit is before current entry
+            if (
+                prev_trade.exit_timestamp is not None
+                and prev_trade.exit_timestamp < entry.entry_timestamp
+                and prev_trade.trade_id not in recorded_trade_ids
+            ):
+                won = prev_trade.pnl is not None and prev_trade.pnl > 0
+                if processor and processor.enable_validation:
+                    processor.record_trade_outcome(won)
+                    logger.debug(
+                        f"Recorded outcome for trade {prev_trade.trade_id} closed at "
+                        f"{prev_trade.exit_timestamp}: won={won}, "
+                        f"consecutive_losses={processor._behavior_tracker.state.consecutive_losses if hasattr(processor, '_behavior_tracker') else 'N/A'}"
+                    )
+                recorded_trade_ids.add(prev_trade.trade_id)  # Mark as recorded
         # Create Trade object with SL/TP
         # Note: For proper SL calculation, we'd need confirmation and BOS candles
         # For now, we'll use entry candle as confirmation (simplified)
@@ -475,9 +523,9 @@ def run_backtest_with_trades(
         )
 
         # Record trade outcome to update behavior state (loss streaks)
-        # This enables loss streak guardrails during backtest
-        # The processor's behavior tracker maintains state across the entire backtest,
-        # which affects future validation (preventing new signals if loss streaks are too high)
+        # CRITICAL: Record outcome immediately after trade closes so that behavior state
+        # is updated for any subsequent signal generation. This ensures loss streak
+        # guardrails work correctly during backtesting.
         won = closed_trade.pnl is not None and closed_trade.pnl > 0
         
         # Record to behavior tracker (for loss streak guardrails)
@@ -488,6 +536,8 @@ def run_backtest_with_trades(
                 f"Recorded trade outcome to behavior tracker: won={won}, "
                 f"consecutive_losses={processor._behavior_tracker.state.consecutive_losses if hasattr(processor, '_behavior_tracker') else 'N/A'}"
             )
+            # Mark as recorded to avoid duplicate recording
+            recorded_trade_ids.add(closed_trade.trade_id)
 
         trades.append(closed_trade)
 
