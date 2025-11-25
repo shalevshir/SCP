@@ -148,6 +148,7 @@ def simulate_trade_outcome(
     future_candles: pd.DataFrame,
     invalidation_checker=None,
     config: dict | None = None,
+    future_features: pd.DataFrame | None = None,
 ) -> Trade:
     """Simulate trade outcome by processing future candles.
 
@@ -159,16 +160,21 @@ def simulate_trade_outcome(
         future_candles: DataFrame with candles after entry (DatetimeIndex)
         invalidation_checker: Optional InvalidationChecker for early exits
         config: Optional config dict for dollar PnL calculation
+        future_features: Optional DataFrame with features for future candles (DatetimeIndex)
 
     Returns:
         Closed Trade with exit_reason, exit_price, and PnL
 
-    Exit Priority (checked in order for each candle):
-        1. Invalidation (if checker provided) → exit at candle open
-        2. Stop Loss → exit at SL price
-        3. Take Profit → exit at TP price
-        4. Timeout (max bars) → exit at candle close
-        5. End of data → exit at last candle close
+    Exit Priority (checked in order for each candle per SOP):
+        1. Stop Loss → exit at SL price
+        2. Take Profit → exit at TP price
+        3. VWAP invalidation → exit at candle open
+        4. HTF invalidation → exit at candle open
+        5. DXY flip → exit at candle open
+        6. Session end → exit at candle open
+        7. Setup window expiration → exit at candle open
+        8. Timeout (max bars) → exit at candle close
+        9. End of data → exit at last candle close
 
     SOP Rules:
         - SL takes priority over TP within same candle
@@ -192,7 +198,7 @@ def simulate_trade_outcome(
             timeframe=trade.timeframe,
             source="SIMULATION",
         )
-        return close_trade(trade, exit_candle, "INVALID_SETUP", config)
+        return close_trade(trade, exit_candle, "invalid_setup", config)
 
     # Check if trade is already closed
     if trade.status != "OPEN":
@@ -220,7 +226,7 @@ def simulate_trade_outcome(
             timeframe=trade.timeframe,
             source="SIMULATION",
         )
-        return close_trade(trade, exit_candle, "END_OF_DATA", config)
+        return close_trade(trade, exit_candle, "end_of_data", config)
 
     bars_elapsed = 0
 
@@ -250,40 +256,69 @@ def simulate_trade_outcome(
         # Only increment bars_elapsed for valid candles
         bars_elapsed += 1
 
-        # 1. Check for invalidation (exit at open)
-        if invalidation_checker is not None:
-            is_invalid, reason = invalidation_checker.check_all(
-                trade, candle, bars_elapsed
-            )
-            if is_invalid:
-                logger.info(
-                    f"Trade {trade.trade_id} invalidated: {reason} "
-                    f"(bars={bars_elapsed})"
-                )
-                return close_trade(trade, candle, "INVALIDATION", config)
+        # Extract features for this candle if available
+        candle_features = None
+        if future_features is not None and timestamp in future_features.index:
+            feature_row = future_features.loc[timestamp]
+            # Convert to dict if it's a Series
+            if isinstance(feature_row, pd.Series):
+                candle_features = feature_row.to_dict()
+            elif isinstance(feature_row, dict):
+                candle_features = feature_row
+            else:
+                # Try to convert to dict
+                candle_features = dict(feature_row) if hasattr(feature_row, '__iter__') else None
 
-        # 2. Check for SL hit (priority over TP per SOP)
+        # Exit Priority Order (per SOP):
+        # 1. Stop Loss (highest priority)
         if check_sl_hit(trade, candle):
             logger.info(
                 f"Trade {trade.trade_id} hit SL at {trade.stop_loss} "
                 f"(bars={bars_elapsed})"
             )
-            return close_trade(trade, candle, "SL", config)
+            return close_trade(trade, candle, "sl", config)
 
-        # 3. Check for TP hit
+        # 2. Take Profit
         if check_tp_hit(trade, candle):
             logger.info(
                 f"Trade {trade.trade_id} hit TP at {trade.take_profit} "
                 f"(bars={bars_elapsed})"
             )
-            return close_trade(trade, candle, "TP", config)
+            return close_trade(trade, candle, "tp", config)
 
-        # 4. Check for timeout
+        # 3-7. Invalidation checks (VWAP, HTF, DXY, Session, Window)
+        if invalidation_checker is not None:
+            is_invalid, reason = invalidation_checker.check_all(
+                trade, candle, bars_elapsed, features=candle_features
+            )
+            if is_invalid:
+                # Map reason to exit code
+                exit_reason = "invalidation"  # Default
+                if "vwap" in reason.lower():
+                    exit_reason = "vwap_invalidation"
+                elif "htf" in reason.lower() or "structure" in reason.lower():
+                    exit_reason = "htf_invalidation"
+                elif "dxy" in reason.lower():
+                    exit_reason = "dxy_flip"
+                elif "session" in reason.lower():
+                    exit_reason = "session_close"
+                elif "window" in reason.lower():
+                    exit_reason = "window_expired"
+                elif "daily" in reason.lower() or "risk" in reason.lower():
+                    exit_reason = "daily_risk_stop"
+                
+                logger.info(
+                    f"Trade {trade.trade_id} invalidated: {reason} "
+                    f"(bars={bars_elapsed}, exit_reason={exit_reason})"
+                )
+                return close_trade(trade, candle, exit_reason, config)
+
+        # 8. Timeout (only if no other exit occurred)
         if check_timeout(bars_elapsed, trade.setup_type):
             logger.info(
                 f"Trade {trade.trade_id} timed out after {bars_elapsed} bars"
             )
-            return close_trade(trade, candle, "TIME", config)
+            return close_trade(trade, candle, "timeout", config)
 
     # 5. End of data - close at last candle
     last_candle = Candle(
@@ -301,5 +336,5 @@ def simulate_trade_outcome(
     logger.info(
         f"Trade {trade.trade_id} reached end of data after {bars_elapsed} bars"
     )
-    return close_trade(trade, last_candle, "END_OF_DATA", config)
+    return close_trade(trade, last_candle, "end_of_data", config)
 
