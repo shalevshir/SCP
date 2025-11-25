@@ -1387,6 +1387,195 @@ class TestCloseTrade:
         assert closed_trade.status == "CLOSED_WIN"  # Did make money in absolute terms
         assert closed_trade.pnl == 15.0  # 15 points profit (TP at 2665 - entry 2650)
 
+    def test_close_trade_pnl_percent_consistent_with_r_realized_multiple_contracts(
+        self,
+    ):
+        """Test pnl_percent is consistent with r_realized for multiple contracts.
+
+        Regression test for bug where pnl_percent was calculated as
+        (total_pnl / per_contract_risk) * 100, causing it to be inconsistent
+        with r_realized when contracts > 1.
+
+        For a 3R trade with 3 contracts:
+        - r_realized should equal 3.0
+        - pnl_percent should equal 300% (not 900%)
+        """
+        # Create signal
+        signal = Signal(
+            timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
+            symbol="GC",
+            timeframe="1m",
+            direction="long",
+            setup_type="VWAP_RECLAIM",
+            htf_bias="bullish",
+            score=9.0,
+            confidence="A+",
+            factors={},
+            rationale="Test",
+            validation_flags={},
+            enforcer_tier="EarlyMild",
+        )
+
+        entry_execution = EntryExecution(
+            signal_timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
+            entry_timestamp=datetime(2025, 1, 1, 10, 1, tzinfo=UTC),
+            entry_price=2650.0,
+            signal=signal,
+            executed=True,
+            rejection_reason=None,
+        )
+
+        # Create trade with 3 contracts, risk=5.0 points, r_multiple=3.0
+        trade = Trade(
+            trade_id="test-multi-contracts",
+            symbol="GC",
+            timeframe="1m",
+            entry_execution=entry_execution,
+            entry_timestamp=datetime(2025, 1, 1, 10, 1, tzinfo=UTC),
+            entry_price=2650.0,
+            direction="long",
+            setup_type="VWAP_RECLAIM",
+            stop_loss=2645.0,  # 5 points risk
+            take_profit=2665.0,  # 15 points reward (3R)
+            sl_rationale="Continuation SL",
+            tp_rationale="3R target",
+            risk_amount=5.0,  # Per-contract risk
+            reward_amount=15.0,  # Per-contract reward
+            r_multiple=3.0,
+            contracts=3,  # Multiple contracts
+            exit_timestamp=None,
+            exit_price=None,
+            exit_reason=None,
+            pnl=None,
+            pnl_percent=None,
+            r_realized=None,
+            pnl_dollars=None,
+            pnl_net=None,
+            slippage_cost=None,
+            commission_cost=None,
+            status="OPEN",
+            duration_bars=None,
+            invalidation_triggered=False,
+        )
+
+        # Exit at +3R (take profit)
+        exit_candle = Candle(
+            timestamp=datetime(2025, 1, 1, 10, 15, tzinfo=UTC),
+            open=2665.0,
+            high=2665.0,
+            low=2665.0,
+            close=2665.0,
+            volume=100.0,
+            symbol="GC",
+            timeframe="1m",
+            source="TEST",
+        )
+
+        closed_trade = close_trade(trade, exit_candle, "TP")
+
+        # Verify PnL calculations
+        # Total PnL = 15 points × 3 contracts = 45 points
+        assert closed_trade.pnl == pytest.approx(45.0)
+
+        # r_realized = per-contract PnL / per-contract risk = 15 / 5 = 3.0
+        assert closed_trade.r_realized == pytest.approx(3.0)
+
+        # pnl_percent should be consistent with r_realized
+        # Expected: 3.0R × 100 = 300%
+        # Bug would give: 45 / 5 × 100 = 900%
+        expected_pnl_percent = closed_trade.r_realized * 100
+        assert closed_trade.pnl_percent == pytest.approx(expected_pnl_percent)
+        assert closed_trade.pnl_percent == pytest.approx(300.0)
+
+    def test_close_trade_pnl_percent_consistent_with_r_realized_short_multiple_contracts(
+        self,
+    ):
+        """Test pnl_percent consistency for short trades with multiple contracts."""
+        # Create signal for short trade
+        signal = Signal(
+            timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
+            symbol="GC",
+            timeframe="1m",
+            direction="short",
+            setup_type="VWAP_FADE",
+            htf_bias="bearish",
+            score=9.0,
+            confidence="A+",
+            factors={},
+            rationale="Test short",
+            validation_flags={},
+            enforcer_tier="Mild",
+        )
+
+        entry_execution = EntryExecution(
+            signal_timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
+            entry_timestamp=datetime(2025, 1, 1, 10, 1, tzinfo=UTC),
+            entry_price=2650.0,
+            signal=signal,
+            executed=True,
+            rejection_reason=None,
+        )
+
+        # Short trade with 2 contracts, 2R target
+        trade = Trade(
+            trade_id="test-short-multi",
+            symbol="GC",
+            timeframe="1m",
+            entry_execution=entry_execution,
+            entry_timestamp=datetime(2025, 1, 1, 10, 1, tzinfo=UTC),
+            entry_price=2650.0,
+            direction="short",
+            setup_type="VWAP_FADE",
+            stop_loss=2655.0,  # 5 points risk (above entry for short)
+            take_profit=2640.0,  # 10 points reward (2R)
+            sl_rationale="Fade SL",
+            tp_rationale="2R target",
+            risk_amount=5.0,
+            reward_amount=10.0,
+            r_multiple=2.0,
+            contracts=2,  # Multiple contracts
+            exit_timestamp=None,
+            exit_price=None,
+            exit_reason=None,
+            pnl=None,
+            pnl_percent=None,
+            r_realized=None,
+            pnl_dollars=None,
+            pnl_net=None,
+            slippage_cost=None,
+            commission_cost=None,
+            status="OPEN",
+            duration_bars=None,
+            invalidation_triggered=False,
+        )
+
+        # Exit at +2R (take profit)
+        exit_candle = Candle(
+            timestamp=datetime(2025, 1, 1, 10, 10, tzinfo=UTC),
+            open=2640.0,
+            high=2640.0,
+            low=2640.0,
+            close=2640.0,
+            volume=100.0,
+            symbol="GC",
+            timeframe="1m",
+            source="TEST",
+        )
+
+        closed_trade = close_trade(trade, exit_candle, "TP")
+
+        # Total PnL = 10 points × 2 contracts = 20 points
+        assert closed_trade.pnl == pytest.approx(20.0)
+
+        # r_realized = 10 / 5 = 2.0
+        assert closed_trade.r_realized == pytest.approx(2.0)
+
+        # pnl_percent should be 200%, not 400%
+        assert closed_trade.pnl_percent == pytest.approx(200.0)
+        assert closed_trade.pnl_percent == pytest.approx(
+            closed_trade.r_realized * 100
+        )
+
 
 class TestJSONSerialization:
     """Tests for JSON serialization (to_dict/from_dict)."""

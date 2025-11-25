@@ -459,10 +459,7 @@ def close_trade(
     else:
         pnl = (trade.entry_price - exit_price) * trade.contracts
 
-    # Calculate PnL as % of risk
-    pnl_percent = (pnl / trade.risk_amount) * 100 if trade.risk_amount > 0 else 0
-
-    # Calculate R realized
+    # Calculate R realized (per-contract)
     if trade.risk_amount > 0:
         if trade.direction == "long":
             r_realized = (exit_price - trade.entry_price) / trade.risk_amount
@@ -470,6 +467,10 @@ def close_trade(
             r_realized = (trade.entry_price - exit_price) / trade.risk_amount
     else:
         r_realized = 0
+
+    # Calculate PnL as % of risk (must be consistent with r_realized)
+    # pnl_percent = (r_realized * 100) to ensure consistency regardless of contracts
+    pnl_percent = r_realized * 100
 
     # Calculate dollar-based PnL if config provided
     pnl_dollars = None
