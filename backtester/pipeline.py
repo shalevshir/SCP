@@ -244,27 +244,6 @@ def get_future_candles(
     return future_candles
 
 
-def _align_future_features_index(
-    future_features_df: pd.DataFrame,
-    features_df: pd.DataFrame,
-    gc_slice: pd.DataFrame,
-    entry_idx: int,
-) -> pd.DataFrame:
-    """Ensure future feature slices have a timestamp index for alignment."""
-    if "ts_event" in future_features_df.columns:
-        return future_features_df.set_index("ts_event")
-
-    if isinstance(future_features_df.index, pd.DatetimeIndex):
-        return future_features_df
-
-    if len(gc_slice) > entry_idx + 1:
-        future_timestamps = gc_slice.index[entry_idx + 1 :]
-        future_features_df = future_features_df.copy()
-        future_features_df.index = future_timestamps[: len(future_features_df)]
-
-    return future_features_df
-
-
 def run_backtest_with_trades(
     gc_df: pd.DataFrame,
     dxy_df: pd.DataFrame,
@@ -336,18 +315,6 @@ def run_backtest_with_trades(
     processor = BacktestProcessor(timeframe=timeframe)
 
     # Step 1: Get executed entries (reuse processor for state persistence)
-    # 
-    # LIMITATION: This generates ALL signals upfront before any trades are processed.
-    # This means loss streak guardrails won't block signals during this initial
-    # signal generation phase, as no trade outcomes have been recorded yet.
-    # Trade outcomes are recorded in Step 2 below, but by then all signals are
-    # already generated. For proper loss streak guardrails during backtesting,
-    # we would need incremental signal generation (process entry -> simulate trade ->
-    # record outcome -> generate next signal), which is a larger refactor.
-    #
-    # The current structure processes entries chronologically and records outcomes
-    # as trades close, which is correct for state management, but signals are
-    # generated before outcomes are known.
     executions, processor = run_backtest_with_entries(
         gc_df=gc_df,
         dxy_df=dxy_df,
@@ -359,14 +326,9 @@ def run_backtest_with_trades(
         processor=processor,  # Pass processor to reuse state
     )
 
-    # Filter to only executed entries and sort by entry timestamp
-    # CRITICAL: Process entries in chronological order so we can record trade outcomes
-    # as trades close, updating behavior state before processing later entries
-    executed_entries = sorted(
-        [e for e in executions if e.executed],
-        key=lambda e: e.entry_timestamp
-    )
-    logger.info(f"Processing {len(executed_entries)} executed entries in chronological order")
+    # Filter to only executed entries
+    executed_entries = [e for e in executions if e.executed]
+    logger.info(f"Processing {len(executed_entries)} executed entries")
 
     # Step 2: Create and simulate trades
     trades: list[Trade] = []
@@ -379,39 +341,8 @@ def run_backtest_with_trades(
         htf_bias_func=htf_bias_func,
         target_timestamps=entry_timestamps,
     )
-    
-    # Track which trades have had their outcomes recorded (Trade is frozen dataclass)
-    recorded_trade_ids: set[str] = set()
 
     for entry in executed_entries:
-        # CRITICAL FIX: Before processing this entry, check if any previous trades have closed
-        # and record their outcomes. This ensures behavior state (loss streaks) is updated
-        # before we would generate signals for later entries (though signals are already generated,
-        # this maintains correct state for any future incremental processing).
-        # 
-        # For now, we record outcomes immediately after simulating each trade below.
-        # The key fix is that we process entries chronologically and record outcomes
-        # as we go, so if we were to regenerate signals incrementally, they would see
-        # the correct state.
-        
-        # Check if any previous trades have closed before this entry timestamp
-        # and record their outcomes if not already recorded
-        for prev_trade in trades:
-            # If trade has closed (has exit_timestamp) and exit is before current entry
-            if (
-                prev_trade.exit_timestamp is not None
-                and prev_trade.exit_timestamp < entry.entry_timestamp
-                and prev_trade.trade_id not in recorded_trade_ids
-            ):
-                won = prev_trade.pnl is not None and prev_trade.pnl > 0
-                if processor and processor.enable_validation:
-                    processor.record_trade_outcome(won)
-                    logger.debug(
-                        f"Recorded outcome for trade {prev_trade.trade_id} closed at "
-                        f"{prev_trade.exit_timestamp}: won={won}, "
-                        f"consecutive_losses={processor._behavior_tracker.state.consecutive_losses if hasattr(processor, '_behavior_tracker') else 'N/A'}"
-                    )
-                recorded_trade_ids.add(prev_trade.trade_id)  # Mark as recorded
         # Create Trade object with SL/TP
         # Note: For proper SL calculation, we'd need confirmation and BOS candles
         # For now, we'll use entry candle as confirmation (simplified)
@@ -465,79 +396,30 @@ def run_backtest_with_trades(
 
         future_candles = get_future_candles(gc_df, entry.entry_timestamp, max_bars)
 
-        # Compute features for future candles
-        # Use BacktestProcessor to compute features (vectorized, fast)
-        future_features = None
-        if not future_candles.empty:
-            try:
-                # Create a processor to compute features
-                feature_processor = BacktestProcessor(timeframe=timeframe)
-                
-                # Get the slice of data up to and including future candles
-                # Find entry index
-                entry_idx = gc_df.index.get_loc(entry.entry_timestamp)
-                # Get data from start up to end of future candles
-                end_idx = min(entry_idx + 1 + len(future_candles), len(gc_df))
-                gc_slice = gc_df.iloc[:end_idx]
-                dxy_slice = dxy_df.iloc[:end_idx] if len(dxy_df) >= end_idx else dxy_df
-                
-                # Compute features for the entire slice
-                features_df = feature_processor._compute_features(gc_slice, dxy_slice)
-                
-                # Extract only features for future candles (after entry)
-                # Features are indexed by position, need to align with timestamps
-                if len(features_df) > entry_idx + 1:
-                    future_features_df = features_df.iloc[entry_idx + 1 :].copy()
-
-                    # Set timestamp index to match future_candles
-                    future_features_df = _align_future_features_index(
-                        future_features_df=future_features_df,
-                        features_df=features_df,
-                        gc_slice=gc_slice,
-                        entry_idx=entry_idx,
-                    )
-
-                    # Align with future_candles timestamps (handle missing timestamps)
-                    future_features = future_features_df.reindex(
-                        future_candles.index, method=None
-                    )
-                    
-                    logger.debug(
-                        f"Computed features for {len(future_features)} future candles "
-                        f"(aligned with {len(future_candles)} candles)"
-                    )
-            except Exception as e:
-                logger.warning(
-                    f"Failed to compute features for future candles: {e}. "
-                    "Continuing without features."
-                )
-                future_features = None
-
         # Simulate trade outcome
         closed_trade = simulate_trade_outcome(
             trade=trade,
             future_candles=future_candles,
             invalidation_checker=invalidation_checker,
             config=config,
-            future_features=future_features,
         )
 
-        # Record trade outcome to update behavior state (loss streaks)
-        # CRITICAL: Record outcome immediately after trade closes so that behavior state
-        # is updated for any subsequent signal generation. This ensures loss streak
-        # guardrails work correctly during backtesting.
+        # Record trade outcome to update state in two places:
+        # 1. InvalidationChecker: Updates daily_pnl, consecutive_losses for PDLL checks during trades
+        # 2. Behavior Tracker: Updates loss streak guardrails before entry
         won = closed_trade.pnl is not None and closed_trade.pnl > 0
         
-        # Record to behavior tracker (for loss streak guardrails)
-        # This updates the state that affects future validation
+        # Update InvalidationChecker daily state (for PDLL checks during trade simulation)
+        invalidation_checker.record_trade_outcome(closed_trade, won=won)
+        
+        # Update behavior tracker (for loss streak guardrails before entry)
         if processor and processor.enable_validation:
             processor.record_trade_outcome(won)
             logger.debug(
-                f"Recorded trade outcome to behavior tracker: won={won}, "
-                f"consecutive_losses={processor._behavior_tracker.state.consecutive_losses if hasattr(processor, '_behavior_tracker') else 'N/A'}"
+                f"Recorded trade outcome: won={won}, "
+                f"daily_pnl={invalidation_checker._daily_state['daily_pnl']:.2f}, "
+                f"consecutive_losses={invalidation_checker._daily_state['consecutive_losses']}"
             )
-            # Mark as recorded to avoid duplicate recording
-            recorded_trade_ids.add(closed_trade.trade_id)
 
         trades.append(closed_trade)
 
