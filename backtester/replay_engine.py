@@ -129,19 +129,23 @@ class ReplayEngine:
 
         logger.info("Replay complete")
 
-    def record_trade_outcome(self, won: bool) -> None:
+    def record_trade_outcome(self, won: bool | None) -> None:
         """Record trade outcome to update behavior state.
 
         This method updates the behavior state tracker with trade outcomes,
         which affects loss streak tracking and guardrail evaluation.
 
         Args:
-            won: True if trade was profitable, False if loss
+            won: True if trade was profitable (pnl > 0),
+                 False if trade was a loss (pnl < 0),
+                 None if trade was breakeven (pnl == 0)
 
         Example:
             >>> engine = ReplayEngine(timeframe="1m")
             >>> # ... process trade ...
-            >>> engine.record_trade_outcome(won=True)
+            >>> engine.record_trade_outcome(won=True)  # Win
+            >>> engine.record_trade_outcome(won=False)  # Loss
+            >>> engine.record_trade_outcome(won=None)  # Breakeven
         """
         if not self.enable_validation:
             logger.debug("Validation disabled - skipping trade outcome recording")

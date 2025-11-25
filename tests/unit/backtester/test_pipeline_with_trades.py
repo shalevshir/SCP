@@ -783,3 +783,174 @@ class TestDailyPnLTracking:
             f"got {checker._daily_state['consecutive_losses']}"
         )
 
+    def test_breakeven_trades_do_not_increment_loss_streak(self):
+        """Test that breakeven trades (pnl == 0) don't increment loss streak.
+        
+        This is a critical fix: per SOP, only losing trades should increment
+        the loss streak. Breakeven trades (where no capital was lost) should
+        not affect the streak. This prevents premature trading halts when
+        breakeven trades occur during a sequence.
+        """
+        from backtester.invalidations import InvalidationChecker
+        from backtester.trade import Trade
+        from datetime import datetime, UTC
+        
+        checker = InvalidationChecker()
+        
+        # Create a losing trade (pnl < 0)
+        losing_trade = Trade(
+            trade_id="loss_1",
+            symbol="GC",
+            timeframe="1m",
+            entry_execution=None,
+            entry_timestamp=datetime(2024, 10, 15, 10, 0, tzinfo=UTC),
+            entry_price=2000.0,
+            direction="long",
+            setup_type="VWAP_RECLAIM",
+            stop_loss=1990.0,
+            take_profit=2030.0,
+            sl_rationale="Below structure",
+            tp_rationale="3R continuation",
+            risk_amount=10.0,
+            reward_amount=30.0,
+            r_multiple=3.0,
+            contracts=1,
+            exit_timestamp=datetime(2024, 10, 15, 10, 5, tzinfo=UTC),
+            exit_price=1990.0,
+            exit_reason="sl",
+            pnl=-10.0,
+            pnl_percent=-100.0,
+            r_realized=-1.0,
+            pnl_dollars=None,
+            pnl_net=None,
+            slippage_cost=None,
+            commission_cost=None,
+            status="STOPPED_OUT",
+            duration_bars=5,
+            invalidation_triggered=False,
+        )
+        
+        # Record loss - should increment streak
+        checker.record_trade_outcome(losing_trade, won=False)
+        assert checker._daily_state["consecutive_losses"] == 1
+        assert checker._daily_state["daily_pnl"] == -10.0
+        
+        # Create a breakeven trade (pnl == 0)
+        breakeven_trade = Trade(
+            trade_id="breakeven_1",
+            symbol="GC",
+            timeframe="1m",
+            entry_execution=None,
+            entry_timestamp=datetime(2024, 10, 15, 10, 10, tzinfo=UTC),
+            entry_price=2000.0,
+            direction="long",
+            setup_type="VWAP_RECLAIM",
+            stop_loss=1990.0,
+            take_profit=2030.0,
+            sl_rationale="Below structure",
+            tp_rationale="3R continuation",
+            risk_amount=10.0,
+            reward_amount=30.0,
+            r_multiple=3.0,
+            contracts=1,
+            exit_timestamp=datetime(2024, 10, 15, 10, 15, tzinfo=UTC),
+            exit_price=2000.0,  # Same as entry
+            exit_reason="manual",
+            pnl=0.0,  # Breakeven
+            pnl_percent=0.0,
+            r_realized=0.0,
+            pnl_dollars=None,
+            pnl_net=None,
+            slippage_cost=None,
+            commission_cost=None,
+            status="CLOSED_LOSS",
+            duration_bars=5,
+            invalidation_triggered=False,
+        )
+        
+        # Record breakeven - should NOT increment streak
+        checker.record_trade_outcome(breakeven_trade, won=None)
+        assert checker._daily_state["consecutive_losses"] == 1, (
+            "Breakeven trade should not increment loss streak, "
+            f"expected 1, got {checker._daily_state['consecutive_losses']}"
+        )
+        assert checker._daily_state["daily_pnl"] == -10.0  # No change in PnL
+        
+        # Another breakeven trade
+        breakeven_trade_2 = Trade(
+            trade_id="breakeven_2",
+            symbol="GC",
+            timeframe="1m",
+            entry_execution=None,
+            entry_timestamp=datetime(2024, 10, 15, 10, 20, tzinfo=UTC),
+            entry_price=2000.0,
+            direction="short",
+            setup_type="VWAP_FADE",
+            stop_loss=2010.0,
+            take_profit=1970.0,
+            sl_rationale="Above structure",
+            tp_rationale="2R fade",
+            risk_amount=10.0,
+            reward_amount=20.0,
+            r_multiple=2.0,
+            contracts=1,
+            exit_timestamp=datetime(2024, 10, 15, 10, 25, tzinfo=UTC),
+            exit_price=2000.0,
+            exit_reason="manual",
+            pnl=0.0,
+            pnl_percent=0.0,
+            r_realized=0.0,
+            pnl_dollars=None,
+            pnl_net=None,
+            slippage_cost=None,
+            commission_cost=None,
+            status="CLOSED_LOSS",
+            duration_bars=5,
+            invalidation_triggered=False,
+        )
+        
+        # Another breakeven - still should NOT increment
+        checker.record_trade_outcome(breakeven_trade_2, won=None)
+        assert checker._daily_state["consecutive_losses"] == 1, (
+            "Multiple breakeven trades should not increment loss streak"
+        )
+        assert checker._daily_state["daily_pnl"] == -10.0
+        
+        # Create a winning trade
+        winning_trade = Trade(
+            trade_id="win_1",
+            symbol="GC",
+            timeframe="1m",
+            entry_execution=None,
+            entry_timestamp=datetime(2024, 10, 15, 10, 30, tzinfo=UTC),
+            entry_price=2000.0,
+            direction="long",
+            setup_type="VWAP_RECLAIM",
+            stop_loss=1990.0,
+            take_profit=2030.0,
+            sl_rationale="Below structure",
+            tp_rationale="3R continuation",
+            risk_amount=10.0,
+            reward_amount=30.0,
+            r_multiple=3.0,
+            contracts=1,
+            exit_timestamp=datetime(2024, 10, 15, 10, 35, tzinfo=UTC),
+            exit_price=2030.0,
+            exit_reason="tp",
+            pnl=30.0,
+            pnl_percent=300.0,
+            r_realized=3.0,
+            pnl_dollars=None,
+            pnl_net=None,
+            slippage_cost=None,
+            commission_cost=None,
+            status="CLOSED_WIN",
+            duration_bars=5,
+            invalidation_triggered=False,
+        )
+        
+        # Win should reset streak
+        checker.record_trade_outcome(winning_trade, won=True)
+        assert checker._daily_state["consecutive_losses"] == 0
+        assert checker._daily_state["daily_pnl"] == 20.0  # -10 + 0 + 0 + 30
+

@@ -46,22 +46,32 @@ class BehaviorStateTracker:
         """Get current immutable state snapshot."""
         return self._state
 
-    def record_trade_outcome(self, won: bool) -> None:
+    def record_trade_outcome(self, won: bool | None) -> None:
         """
         Record trade outcome and update loss streak.
 
         Args:
-            won: True if trade was profitable, False otherwise.
+            won: True if trade was profitable (pnl > 0),
+                 False if trade was a loss (pnl < 0),
+                 None if trade was breakeven (pnl == 0).
+                 
+        Note:
+            Breakeven trades (won=None) do not affect the loss streak.
+            Only actual losses (won=False) increment the streak.
+            Only actual wins (won=True) reset the streak.
         """
-        if won:
+        if won is True:
+            # Win: reset streak
             self._state = replace(self._state, consecutive_losses=0)
-        else:
+        elif won is False:
+            # Loss: increment streak
             self._state = replace(
                 self._state, consecutive_losses=self._state.consecutive_losses + 1
             )
             logger.info(
                 "Loss recorded: consecutive_losses=%d", self._state.consecutive_losses
             )
+        # If won is None (breakeven): do nothing, streak unchanged
 
     def set_fatigue_flag(self, flagged: bool) -> None:
         """Set or clear the fatigue flag."""

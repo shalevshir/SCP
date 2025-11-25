@@ -407,7 +407,19 @@ def run_backtest_with_trades(
         # Record trade outcome to update state in two places:
         # 1. InvalidationChecker: Updates daily_pnl, consecutive_losses for PDLL checks during trades
         # 2. Behavior Tracker: Updates loss streak guardrails before entry
-        won = closed_trade.pnl is not None and closed_trade.pnl > 0
+        # 
+        # Outcome classification:
+        # - won=True: pnl > 0 (actual profit)
+        # - won=False: pnl < 0 (actual loss)
+        # - won=None: pnl == 0 (breakeven, no capital lost)
+        if closed_trade.pnl is None:
+            won = None  # No PnL available (shouldn't happen, but handle gracefully)
+        elif closed_trade.pnl > 0:
+            won = True
+        elif closed_trade.pnl < 0:
+            won = False
+        else:  # pnl == 0
+            won = None  # Breakeven: no win, no loss
         
         # Update InvalidationChecker daily state (for PDLL checks during trade simulation)
         invalidation_checker.record_trade_outcome(closed_trade, won=won)

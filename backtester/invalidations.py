@@ -498,12 +498,18 @@ class InvalidationChecker:
 
         return False, None
 
-    def record_trade_outcome(self, trade: Trade, won: bool) -> None:
+    def record_trade_outcome(self, trade: Trade, won: bool | None) -> None:
         """Record trade outcome to update daily state.
 
         Args:
             trade: Closed trade
-            won: True if trade was profitable, False if loss
+            won: True if trade was profitable (pnl > 0),
+                 False if trade was a loss (pnl < 0),
+                 None if trade was breakeven (pnl == 0)
+                 
+        Note:
+            Breakeven trades (won=None) do not affect the loss streak.
+            Only actual losses (won=False) increment the streak.
         """
         # Reset daily state if new session
         trade_date = trade.exit_timestamp.date() if trade.exit_timestamp else None
@@ -513,10 +519,13 @@ class InvalidationChecker:
             self._daily_state["last_session_date"] = trade_date
 
         # Update consecutive losses
-        if not won:
-            self._daily_state["consecutive_losses"] += 1
-        else:
+        if won is True:
+            # Win: reset streak
             self._daily_state["consecutive_losses"] = 0
+        elif won is False:
+            # Loss: increment streak
+            self._daily_state["consecutive_losses"] += 1
+        # If won is None (breakeven): do nothing, streak unchanged
 
         # Update daily PnL
         if trade.pnl is not None:
