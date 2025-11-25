@@ -491,6 +491,208 @@ class TestVWAPInvalidation:
         assert is_invalid is False
         assert reason is None
 
+    @pytest.fixture
+    def long_fade_trade(self):
+        """Create a long fade trade for testing."""
+        signal = Signal(
+            timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
+            symbol="GC",
+            timeframe="1m",
+            direction="long",
+            setup_type="VWAP_FADE",
+            htf_bias="bearish",
+            score=8.5,
+            confidence="A+",
+            factors={},
+            rationale="Test",
+            validation_flags={},
+            enforcer_tier="Mild",
+        )
+        entry_execution = EntryExecution(
+            signal_timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
+            entry_timestamp=datetime(2025, 1, 1, 10, 1, tzinfo=UTC),
+            entry_price=2645.0,  # Below VWAP (fading from below)
+            signal=signal,
+            executed=True,
+            rejection_reason=None,
+        )
+        return Trade(
+            trade_id="test-fade-long",
+            symbol="GC",
+            timeframe="1m",
+            entry_execution=entry_execution,
+            entry_timestamp=datetime(2025, 1, 1, 10, 1, tzinfo=UTC),
+            entry_price=2645.0,
+            direction="long",
+            setup_type="VWAP_FADE",
+            stop_loss=2640.0,
+            take_profit=2655.0,
+            sl_rationale="Below sweep",
+            tp_rationale="2R fade",
+            risk_amount=5.0,
+            reward_amount=10.0,
+            r_multiple=2.0,
+            contracts=1,
+            exit_timestamp=None,
+            exit_price=None,
+            exit_reason=None,
+            pnl=None,
+            pnl_percent=None,
+            r_realized=None,
+            pnl_dollars=None,
+            pnl_net=None,
+            slippage_cost=None,
+            commission_cost=None,
+            status="OPEN",
+            duration_bars=None,
+            invalidation_triggered=False,
+        )
+
+    @pytest.fixture
+    def short_fade_trade(self):
+        """Create a short fade trade for testing."""
+        signal = Signal(
+            timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
+            symbol="GC",
+            timeframe="1m",
+            direction="short",
+            setup_type="VWAP_FADE",
+            htf_bias="bearish",
+            score=8.5,
+            confidence="A+",
+            factors={},
+            rationale="Test",
+            validation_flags={},
+            enforcer_tier="Mild",
+        )
+        entry_execution = EntryExecution(
+            signal_timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
+            entry_timestamp=datetime(2025, 1, 1, 10, 1, tzinfo=UTC),
+            entry_price=2650.0,  # Above VWAP (fading from above)
+            signal=signal,
+            executed=True,
+            rejection_reason=None,
+        )
+        return Trade(
+            trade_id="test-fade-short",
+            symbol="GC",
+            timeframe="1m",
+            entry_execution=entry_execution,
+            entry_timestamp=datetime(2025, 1, 1, 10, 1, tzinfo=UTC),
+            entry_price=2650.0,
+            direction="short",
+            setup_type="VWAP_FADE",
+            stop_loss=2655.0,
+            take_profit=2640.0,
+            sl_rationale="Above sweep",
+            tp_rationale="2R fade",
+            risk_amount=5.0,
+            reward_amount=10.0,
+            r_multiple=2.0,
+            contracts=1,
+            exit_timestamp=None,
+            exit_price=None,
+            exit_reason=None,
+            pnl=None,
+            pnl_percent=None,
+            r_realized=None,
+            pnl_dollars=None,
+            pnl_net=None,
+            slippage_cost=None,
+            commission_cost=None,
+            status="OPEN",
+            duration_bars=None,
+            invalidation_triggered=False,
+        )
+
+    def test_vwap_invalidation_long_fade_above_vwap(self, long_fade_trade):
+        """Test VWAP invalidation for long fade when close > VWAP (reclaim)."""
+        checker = InvalidationChecker()
+        
+        candle = make_candle(
+            timestamp=datetime(2025, 1, 1, 10, 5, tzinfo=UTC),
+            open=2651.0,
+            high=2652.0,
+            low=2650.0,
+            close=2651.0,  # Above VWAP (reclaim - invalidates fade)
+        )
+        
+        features = {"vwap": 2650.0}
+        
+        is_invalid, reason = checker.check_vwap_invalidation(
+            long_fade_trade, candle, features
+        )
+        
+        assert is_invalid is True
+        assert "vwap" in reason.lower()
+        assert "invalidation" in reason.lower()
+        assert "reclaimed" in reason.lower()
+
+    def test_vwap_invalidation_long_fade_not_triggered_below_vwap(self, long_fade_trade):
+        """Test VWAP invalidation NOT triggered for long fade when close < VWAP (expected direction)."""
+        checker = InvalidationChecker()
+        
+        candle = make_candle(
+            timestamp=datetime(2025, 1, 1, 10, 5, tzinfo=UTC),
+            open=2648.0,
+            high=2649.0,
+            low=2647.0,
+            close=2648.0,  # Below VWAP (expected direction for fade - should NOT invalidate)
+        )
+        
+        features = {"vwap": 2650.0}
+        
+        is_invalid, reason = checker.check_vwap_invalidation(
+            long_fade_trade, candle, features
+        )
+        
+        assert is_invalid is False
+        assert reason is None
+
+    def test_vwap_invalidation_short_fade_below_vwap(self, short_fade_trade):
+        """Test VWAP invalidation for short fade when close < VWAP (reclaim)."""
+        checker = InvalidationChecker()
+        
+        candle = make_candle(
+            timestamp=datetime(2025, 1, 1, 10, 5, tzinfo=UTC),
+            open=2648.0,
+            high=2649.0,
+            low=2647.0,
+            close=2648.0,  # Below VWAP (reclaim - invalidates fade)
+        )
+        
+        features = {"vwap": 2650.0}
+        
+        is_invalid, reason = checker.check_vwap_invalidation(
+            short_fade_trade, candle, features
+        )
+        
+        assert is_invalid is True
+        assert "vwap" in reason.lower()
+        assert "invalidation" in reason.lower()
+        assert "reclaimed" in reason.lower()
+
+    def test_vwap_invalidation_short_fade_not_triggered_above_vwap(self, short_fade_trade):
+        """Test VWAP invalidation NOT triggered for short fade when close > VWAP (expected direction)."""
+        checker = InvalidationChecker()
+        
+        candle = make_candle(
+            timestamp=datetime(2025, 1, 1, 10, 5, tzinfo=UTC),
+            open=2652.0,
+            high=2653.0,
+            low=2651.0,
+            close=2652.0,  # Above VWAP (expected direction for fade - should NOT invalidate)
+        )
+        
+        features = {"vwap": 2650.0}
+        
+        is_invalid, reason = checker.check_vwap_invalidation(
+            short_fade_trade, candle, features
+        )
+        
+        assert is_invalid is False
+        assert reason is None
+
 
 class TestSessionEnd:
     """Tests for session end detection."""

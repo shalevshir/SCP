@@ -178,8 +178,12 @@ class InvalidationChecker:
 
         SOP Rules:
             - Applies to VWAP_RECLAIM and VWAP_FADE setups only
-            - Long: Invalid if close < VWAP
-            - Short: Invalid if close > VWAP
+            - VWAP_RECLAIM (continuation):
+              * Long: Invalid if close < VWAP (price falls below VWAP, breaking continuation)
+              * Short: Invalid if close > VWAP (price rises above VWAP, breaking continuation)
+            - VWAP_FADE (fading VWAP):
+              * Long: Invalid if close > VWAP (price reclaims VWAP from below, invalidating fade)
+              * Short: Invalid if close < VWAP (price reclaims VWAP from above, invalidating fade)
         """
         # Only applies to VWAP-based setups
         if trade.setup_type not in ("VWAP_RECLAIM", "VWAP_FADE"):
@@ -193,17 +197,31 @@ class InvalidationChecker:
         if vwap is None or (isinstance(vwap, float) and (math.isnan(vwap) or math.isinf(vwap))):
             return False, None
 
-        # Check VWAP invalidation
-        if trade.direction == "long":
-            if candle.close < vwap:
-                reason = f"VWAP invalidation: close {candle.close:.2f} < VWAP {vwap:.2f}"
-                logger.info(f"Trade {trade.trade_id} invalidated: {reason}")
-                return True, reason
-        else:  # short
-            if candle.close > vwap:
-                reason = f"VWAP invalidation: close {candle.close:.2f} > VWAP {vwap:.2f}"
-                logger.info(f"Trade {trade.trade_id} invalidated: {reason}")
-                return True, reason
+        # Check VWAP invalidation - different logic for RECLAIM vs FADE
+        if trade.setup_type == "VWAP_RECLAIM":
+            # Continuation setups: invalid if price moves against continuation
+            if trade.direction == "long":
+                if candle.close < vwap:
+                    reason = f"VWAP invalidation: close {candle.close:.2f} < VWAP {vwap:.2f}"
+                    logger.info(f"Trade {trade.trade_id} invalidated: {reason}")
+                    return True, reason
+            else:  # short
+                if candle.close > vwap:
+                    reason = f"VWAP invalidation: close {candle.close:.2f} > VWAP {vwap:.2f}"
+                    logger.info(f"Trade {trade.trade_id} invalidated: {reason}")
+                    return True, reason
+        else:  # VWAP_FADE
+            # Fade setups: invalid if price reclaims VWAP (opposite of continuation)
+            if trade.direction == "long":
+                if candle.close > vwap:
+                    reason = f"VWAP invalidation: close {candle.close:.2f} > VWAP {vwap:.2f} (VWAP reclaimed)"
+                    logger.info(f"Trade {trade.trade_id} invalidated: {reason}")
+                    return True, reason
+            else:  # short
+                if candle.close < vwap:
+                    reason = f"VWAP invalidation: close {candle.close:.2f} < VWAP {vwap:.2f} (VWAP reclaimed)"
+                    logger.info(f"Trade {trade.trade_id} invalidated: {reason}")
+                    return True, reason
 
         return False, None
 
