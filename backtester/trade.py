@@ -425,7 +425,9 @@ def close_trade(
     Args:
         trade: Open trade to close
         exit_candle: Exit candle
-        exit_reason: Exit reason ("TP", "SL", "TIME", "INVALIDATION")
+        exit_reason: Exit reason ("tp", "sl", "timeout", "vwap_invalidation",
+                   "htf_invalidation", "dxy_flip", "session_close",
+                   "window_expired", "daily_risk_stop", "end_of_data", etc.)
         config: Configuration dict with tick values, slippage, and commission
                 If None, dollar-based PnL fields will be None
 
@@ -435,22 +437,27 @@ def close_trade(
     Example:
         >>> from common.config import load_config
         >>> config = load_config()
-        >>> closed = close_trade(open_trade, exit_candle, "TP", config)
+        >>> closed = close_trade(open_trade, exit_candle, "tp", config)
         >>> print(f"PnL: {closed.pnl} points, ${closed.pnl_net} net")
     """
     # Determine exit price based on exit reason
-    if exit_reason == "TP":
+    # Handle both old (uppercase) and new (lowercase) exit reasons for backward compatibility
+    exit_reason_lower = exit_reason.lower() if exit_reason else ""
+    
+    if exit_reason_lower in ("tp", "take_profit"):
         exit_price = trade.take_profit
-    elif exit_reason == "SL":
+    elif exit_reason_lower in ("sl", "stop_loss"):
         exit_price = trade.stop_loss
-    elif exit_reason == "INVALIDATION":
-        # Use close price of exit candle
-        exit_price = exit_candle.close
-    elif exit_reason == "TIME":
-        # Use close price of exit candle
+    elif exit_reason_lower in (
+        "vwap_invalidation", "htf_invalidation", "dxy_flip",
+        "session_close", "window_expired", "daily_risk_stop",
+        "invalidation", "timeout", "time", "end_of_data",
+        "invalid_setup"
+    ):
+        # Use close price of exit candle for all invalidation/timeout exits
         exit_price = exit_candle.close
     else:
-        # Default to close price
+        # Default to close price (backward compatibility)
         exit_price = exit_candle.close
 
     # Calculate PnL in points
@@ -526,7 +533,8 @@ def close_trade(
             )
 
     # Determine trade status
-    if exit_reason == "SL":
+    exit_reason_lower = exit_reason.lower() if exit_reason else ""
+    if exit_reason_lower in ("sl", "stop_loss"):
         status = "STOPPED_OUT"
     elif pnl > 0:
         status = "CLOSED_WIN"
@@ -547,7 +555,12 @@ def close_trade(
     duration_bars = int(time_delta.total_seconds() / 60 / minutes_per_bar)
 
     # Determine if invalidation triggered
-    invalidation_triggered = exit_reason == "INVALIDATION"
+    exit_reason_lower = exit_reason.lower() if exit_reason else ""
+    invalidation_triggered = exit_reason_lower in (
+        "vwap_invalidation", "htf_invalidation", "dxy_flip",
+        "session_close", "window_expired", "daily_risk_stop",
+        "invalidation"
+    )
 
     logger.info(
         f"Trade closed: {trade.trade_id} {trade.direction} {trade.symbol} "

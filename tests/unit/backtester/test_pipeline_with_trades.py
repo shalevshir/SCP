@@ -134,9 +134,15 @@ class TestRunBacktestWithTrades:
             risk_config=risk_config,
         )
 
-        valid_reasons = ["TP", "SL", "TIME", "INVALIDATION", "END_OF_DATA", "INVALID_SETUP"]
+        valid_reasons = [
+            "tp", "sl", "timeout", "vwap_invalidation", "htf_invalidation",
+            "dxy_flip", "session_close", "window_expired", "daily_risk_stop",
+            "end_of_data", "invalid_setup", "invalidation"  # Legacy support
+        ]
         for trade in trades:
-            assert trade.exit_reason in valid_reasons
+            assert trade.exit_reason in valid_reasons, (
+                f"Trade {trade.trade_id} has invalid exit_reason: {trade.exit_reason}"
+            )
 
     def test_trades_have_calculated_pnl(
         self, sample_gc_data, sample_dxy_data, market_state, risk_config
@@ -596,4 +602,48 @@ class TestGetFutureCandles:
         # HTF alignment should be False because entry-time bias is bearish vs long direction
         assert trades[0].setup_type == "VWAP_FADE"
         assert trades[0].r_multiple == 2.0
+
+
+class TestFutureFeatureIndexAlignment:
+    """Tests for future feature index alignment helper."""
+
+    def test_preserves_existing_datetime_index_when_slice_is_already_timed(
+        self,
+    ):
+        """Ensure helper keeps existing datetime index on future slice."""
+        from backtester.pipeline import _align_future_features_index
+
+        entry_idx = 1
+        features_df = pd.DataFrame(
+            {"feature": [1.0, 2.0, 3.0, 4.0]},
+            index=pd.RangeIndex(start=0, stop=4),
+        )
+
+        future_features_df = features_df.iloc[entry_idx + 1 :].copy()
+        desired_index = pd.date_range(
+            start="2025-01-01 10:00",
+            periods=len(future_features_df),
+            freq="1min",
+            tz=UTC,
+        )
+        future_features_df.index = desired_index
+
+        gc_slice_index = pd.date_range(
+            start="2025-01-01 09:00",
+            periods=len(features_df) + 2,
+            freq="1min",
+            tz=UTC,
+        )
+        gc_slice = pd.DataFrame(
+            {"open": range(len(gc_slice_index))}, index=gc_slice_index
+        )
+
+        aligned = _align_future_features_index(
+            future_features_df=future_features_df,
+            features_df=features_df,
+            gc_slice=gc_slice,
+            entry_idx=entry_idx,
+        )
+
+        pd.testing.assert_index_equal(aligned.index, desired_index)
 

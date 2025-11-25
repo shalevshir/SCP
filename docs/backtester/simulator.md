@@ -31,18 +31,23 @@ closed_trade = simulate_trade_outcome(
     future_candles=future_candles_df,  # DataFrame with DatetimeIndex
     invalidation_checker=checker,  # Optional
     config=config,  # Optional for dollar PnL
+    future_features=features_df,  # Optional: Features for invalidation checks
 )
 
 print(f"Exit reason: {closed_trade.exit_reason}")
 print(f"PnL: {closed_trade.pnl:.2f} points ({closed_trade.r_realized:.2f}R)")
 ```
 
-**Exit Priority (checked in order):**
-1. **Invalidation** (if checker provided) → exit at candle open
-2. **Stop Loss** → exit at SL price
-3. **Take Profit** → exit at TP price
-4. **Timeout** (max bars reached) → exit at candle close
-5. **End of data** → exit at last candle close
+**Exit Priority (checked in order per SOP):**
+1. **Stop Loss** → exit at SL price (highest priority)
+2. **Take Profit** → exit at TP price
+3. **VWAP Invalidation** → exit at candle open (for VWAP_RECLAIM and VWAP_FADE)
+4. **HTF Structure Invalidation** → exit at candle open (structure breaks against trade)
+5. **DXY Flip** → exit at candle open (DXY structure flips opposite)
+6. **Session End** → exit at candle open (13:00 ILT default)
+7. **Setup Window Expiration** → exit at candle open (window closes)
+8. **Timeout** (max bars reached) → exit at candle close (last resort)
+9. **End of data** → exit at last candle close
 
 ### `check_tp_hit(trade, candle)`
 
@@ -119,12 +124,37 @@ for bars_elapsed, candle in enumerate(candles, start=1):
 - Continuation: Must reach +1R within 20 bars
 - Fade: Must reach +1R within 10 bars
 
-**Future Invalidations (not yet implemented):**
-- DXY flip
-- VWAP invalidation (continuation trades)
-- Structure break (microstructure)
-- HTF bias flip
-- Session end (13:00 ILT)
+**VWAP Invalidation:**
+- Applies to: VWAP_RECLAIM and VWAP_FADE setups
+- Long: Invalid if `close < VWAP`
+- Short: Invalid if `close > VWAP`
+- Requires VWAP value in features dictionary
+
+**HTF Structure Invalidation:**
+- Detects structure breaks against trade direction
+- Long: Invalid if structure breaks bearish (LH, LL)
+- Short: Invalid if structure breaks bullish (HH, HL)
+- Uses entry HTF bias as baseline
+
+**DXY Flip:**
+- Detects DXY correlation/structure flips opposite to trade
+- Long: Invalid if DXY correlation flips positive (> -0.3)
+- Short: Invalid if DXY correlation becomes very negative (< -0.6)
+- Requires DXY correlation in features dictionary
+
+**Session End:**
+- Force exit at session end (13:00 ILT default, configurable)
+- Executes before timeout
+- Handles timezone-aware and naive timestamps
+
+**Setup Window Expiration:**
+- VWAP_FADE: Window expires when VWAP is reclaimed
+- VWAP_RECLAIM: Window remains active after reclaim
+- DXY_CONTINUATION: Window remains active during continuation
+
+**Daily Risk Stop:**
+- Loss streak: 2 consecutive losses (1 in September)
+- PDLL/PDRR breach: Force exit if daily risk limit reached
 
 ## Pipeline Integration
 
@@ -193,12 +223,17 @@ print(f"Executed entries: {len(executed)}/{len(executions)}")
 
 | Reason | Description |
 |--------|-------------|
-| `TP` | Take profit hit (winning trade) |
-| `SL` | Stop loss hit (losing trade) |
-| `TIME` | Max time in trade exceeded (20 bars continuation, 10 bars fade) |
-| `INVALIDATION` | Trade invalidated (e.g., +1R not reached within time limit) |
-| `END_OF_DATA` | Reached end of dataset while trade still open |
-| `INVALID_SETUP` | Trade had invalid setup (zero risk, NaN values) |
+| `sl` | Stop loss hit (losing trade) |
+| `tp` | Take profit hit (winning trade) |
+| `vwap_invalidation` | VWAP structure lost (close < VWAP for long, close > VWAP for short) |
+| `htf_invalidation` | HTF structure breaks against trade direction |
+| `dxy_flip` | DXY structure/correlation flips opposite to trade |
+| `session_close` | Session ended (13:00 ILT default) |
+| `window_expired` | Setup-specific execution window expired |
+| `daily_risk_stop` | Daily risk limit breached (loss streak or PDLL/PDRR) |
+| `timeout` | Max time in trade exceeded (20 bars continuation, 10 bars fade) |
+| `end_of_data` | Reached end of dataset while trade still open |
+| `invalid_setup` | Trade had invalid setup (zero risk, NaN values) |
 
 ## Edge Cases
 
@@ -255,20 +290,27 @@ The simulator follows all Shir Capital SOP rules:
 ✓ Gaps handled realistically (exit at limit, not worse)
 ✓ Timeout: 20 bars continuation, 10 bars fade
 ✓ +1R must be reached within time limits
+✓ VWAP invalidation for continuation/fade setups
+✓ HTF structure invalidation detection
+✓ DXY flip detection
+✓ Session end enforcement (13:00 ILT)
+✓ Setup window expiration tracking
+✓ Daily risk stop (loss streak, PDLL/PDRR)
 ✓ Structure-based SL placement
 ✓ R-multiple based TP calculation
 
 ## Testing
 
-The simulator has 100% test coverage with 29 unit tests covering:
+The simulator has comprehensive test coverage with 139 unit tests covering:
 
 - TP/SL hit detection for long and short trades
 - Timeout logic for continuation and fade setups
 - SL priority rule enforcement
 - Gap handling (beyond SL and TP)
 - End of data handling
-- Invalidation detection (+1R time limit)
+- Invalidation detection (+1R time limit, VWAP, HTF, DXY, Session, Window, Daily Risk)
 - Edge cases (NaN, zero risk, closed trades)
+- Feature integration and priority ordering
 
 Run tests:
 
@@ -292,18 +334,22 @@ uv run pytest tests/unit/backtester/ -v
 - **Memory**: InvalidationChecker stores minimal state per trade
 - **Scalability**: Can simulate thousands of trades efficiently
 
-## Future Enhancements
+## Implementation Status
 
-The simulator is designed to be extensible. Future invalidation checks can be added:
+All SOP exit conditions are now implemented:
 
-```python
-# In InvalidationChecker.check_all():
-# - check_dxy_flip(features)
-# - check_vwap_invalidation(features)
-# - check_structure_break(features)
-# - check_htf_flip(features)
-# - check_session_end(candle.timestamp)
-```
+✓ VWAP invalidation detection
+✓ HTF structure invalidation detection
+✓ DXY flip detection
+✓ Session end enforcement
+✓ Setup window expiration tracking
+✓ Daily risk stop (loss streak, PDLL/PDRR)
+✓ Proper exit priority ordering per SOP
+
+**Future Enhancements:**
+- News event exit (deferred per plan)
+- Enhanced HTF structure detection with full BOS/CHoCH tracking
+- Enhanced DXY structure detection with full BOS/CHoCH tracking
 
 ## Related Modules
 
