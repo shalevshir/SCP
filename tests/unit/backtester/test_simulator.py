@@ -783,7 +783,7 @@ class TestSimulateTradeOutcome:
         # Should timeout at 20 valid candles, not 20 total candles
         # The key fix: bars_elapsed only counts valid candles, so timeout happens
         # at the 20th valid candle, not after 20 total candles (which would include skipped ones)
-        assert closed_trade.exit_reason == "TIME"
+        assert closed_trade.exit_reason == "timeout"
         # duration_bars is time-based (timestamp difference), so it will be 22 minutes
         # because 22 minutes elapsed (20 valid + 2 skipped candles)
         # But the timeout check uses bars_elapsed which only counts valid candles (20)
@@ -831,7 +831,7 @@ class TestSimulateTradeOutcome:
             close=2665.0,
             volume=100,
         )
-        closed = close_trade(long_continuation_trade, exit_candle, "TP")
+        closed = close_trade(long_continuation_trade, exit_candle, "tp")
 
         # Try to simulate it again
         candles = [exit_candle]
@@ -842,7 +842,7 @@ class TestSimulateTradeOutcome:
 
         # Should return the same closed trade
         assert result.trade_id == closed.trade_id
-        assert result.exit_reason == "TP"
+        assert result.exit_reason == "tp"
         assert result.status == "CLOSED_WIN"
 
     def test_invalid_candles_dont_count_toward_timeout(self, long_continuation_trade):
