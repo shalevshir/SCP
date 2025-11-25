@@ -23,3 +23,6 @@ db/**
 !.gitkeep
 
 data/feature_integration.csv
+.cursor/rules/sl_tp_rules.mdc
+docs/CEO-Progress-Summary.md
+docs/Critical-Issues-Analysis.md
