@@ -12,6 +12,13 @@ assets:
   broker: "SIMULATION"
   start_date: "2022-01-01"
   end_date: "2025-12-31"
+  # Tick value configuration for PnL calculation
+  tick_values:
+    GC: 10.0  # $10 per 0.1 point (1 tick)
+    ES: 12.5  # Future-proofing for other symbols
+  tick_sizes:
+    GC: 0.1   # Minimum price increment
+    ES: 0.25
 
 risk:
   phases: ["Startup", "Growth", "Scaling", "Institutional"]
