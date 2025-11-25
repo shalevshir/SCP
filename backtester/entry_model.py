@@ -73,7 +73,7 @@ def execute_entry_at_next_open(
         EntryExecution object with execution details or rejection reason
 
     Behavior:
-        - If signal confidence is "Reject" or "Watch": entry not executed
+        - If signal confidence is not "A+": entry not executed
         - If next_candle is None: entry not executed (end of dataset)
         - If next_candle exists and signal is "A+": entry at next_candle.open
         - Entry timestamp = next_candle.timestamp
@@ -87,9 +87,9 @@ def execute_entry_at_next_open(
         >>> assert execution.entry_price == 2650.0
     """
     # Check 1: Only execute A+ confidence signals
-    if signal.confidence in ["Reject", "Watch"]:
+    if signal.confidence != "A+":
         logger.debug(
-            f"Entry skipped: Signal confidence {signal.confidence} not tradeable "
+            f"Entry skipped: Signal confidence {signal.confidence} is below A+ "
             f"(symbol={signal.symbol}, timestamp={signal.timestamp})"
         )
         return EntryExecution(

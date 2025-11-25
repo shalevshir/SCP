@@ -149,6 +149,32 @@ class TestExecuteEntryAtNextOpen:
         assert execution.entry_price == 0.0
         assert "confidence Watch not tradeable" in execution.rejection_reason
 
+    @pytest.mark.parametrize("confidence", ["A", "B", "C", "D"])
+    def test_execute_entry_rejects_non_aplus_confidence(
+        self, confidence, valid_next_candle
+    ):
+        """Ensure only A+ confidence signals reach execution."""
+        downgraded_signal = Signal(
+            timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
+            symbol="GC",
+            timeframe="1m",
+            direction="long",
+            setup_type="VWAP_RECLAIM",
+            htf_bias="bullish",
+            score=8.5,
+            confidence=confidence,
+            factors={"structure_alignment": 1.5},
+            rationale="Sub-A+ confidence should be rejected",
+            validation_flags={"session_ok": True},
+            enforcer_tier="EarlyMild",
+        )
+
+        execution = execute_entry_at_next_open(downgraded_signal, valid_next_candle)
+
+        assert execution.executed is False
+        assert execution.entry_price == 0.0
+        assert f"confidence {confidence} not tradeable" in execution.rejection_reason
+
     def test_entry_price_matches_next_open_exactly(self, valid_signal):
         """Test that entry price matches next candle open exactly (no slippage)."""
         next_candle = Candle(
