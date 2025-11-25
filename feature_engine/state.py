@@ -16,6 +16,7 @@ from datetime import date, datetime
 from typing import TYPE_CHECKING
 
 from common.logger import get_logger
+from feature_engine.timezone_utils import get_vwap_session_id
 
 if TYPE_CHECKING:
     from common.types import Candle
@@ -35,27 +36,30 @@ class VWAPState:
     def update(self, candle: Candle) -> float:
         """Update VWAP state with new candle and return current VWAP.
 
+        VWAP resets at 08:20 AM Eastern Time (RTH open for Gold futures).
+        Sessions run from 08:20 ET to 08:19:59 ET next day.
+
         Args:
             candle: New candle to process
 
         Returns:
             Current VWAP value
         """
-        # Extract session date from timestamp
-        session_date = candle.timestamp.date()
+        # Compute session ID based on 08:20 ET reset time
+        session_id = get_vwap_session_id(candle.timestamp)
 
-        # Check for session boundary (day change)
+        # Check for session boundary (session ID change)
         if self.session_reset and self.current_session_date is not None:
-            if session_date != self.current_session_date:
+            if session_id != self.current_session_date:
                 # New session - reset cumulative values
                 logger.debug(
-                    f"VWAP session reset: {self.current_session_date} -> {session_date}"
+                    f"VWAP session reset: {self.current_session_date} -> {session_id}"
                 )
                 self.cum_pv = 0.0
                 self.cum_volume = 0.0
 
-        # Update current session date
-        self.current_session_date = session_date
+        # Update current session ID
+        self.current_session_date = session_id
 
         # Calculate typical price
         typical_price = (candle.high + candle.low + candle.close) / 3
