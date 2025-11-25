@@ -303,7 +303,7 @@ def process_features_with_validation(
     features: pd.Series,
     htf_bias: HTFBias,
     market_state: dict,
-    session_constraints: SessionConstraints,
+    session_constraints: SessionConstraints | None,
     guardrail_result: GuardrailResult | None = None,
     log_signals: bool = False,
     log_dir: str | None = None,
@@ -324,7 +324,8 @@ def process_features_with_validation(
             - ceo_directive_active: CEO directive status
             - news_ok: News event status
             - session_ok: Session validity
-        session_constraints: SessionConstraints from SessionValidator
+        session_constraints: SessionConstraints from SessionValidator. If None,
+            validation is skipped and the scored signal is returned unchanged.
         guardrail_result: Optional GuardrailResult from BehaviorGuardrails
         log_signals: Whether to log signals to disk
         log_dir: Directory for signal logs (required if log_signals=True)
@@ -361,14 +362,21 @@ def process_features_with_validation(
     signal = score_signal(features, htf_bias, scoring_context)
 
     # Step 3: Apply full SOP validation
-    validated_signal = validate_signal_with_sop(
-        signal=signal,
-        features=features,
-        market_state=market_state,
-        session_constraints=session_constraints,
-        guardrail_result=guardrail_result,
-        htf_bias=htf_bias,
-    )
+    if session_constraints is None:
+        logger.debug(
+            "No session constraints provided; skipping SOP validation for "
+            f"{features.get('timestamp')}"
+        )
+        validated_signal = signal
+    else:
+        validated_signal = validate_signal_with_sop(
+            signal=signal,
+            features=features,
+            market_state=market_state,
+            session_constraints=session_constraints,
+            guardrail_result=guardrail_result,
+            htf_bias=htf_bias,
+        )
 
     # Step 4: Log signal if requested
     if log_signals and log_dir:

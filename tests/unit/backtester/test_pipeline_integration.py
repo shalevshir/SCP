@@ -358,3 +358,81 @@ class TestPipelineIntegration:
         for e1, e2 in zip(executions1, executions2, strict=False):
             assert e1.entry_price == e2.entry_price
             assert e1.executed == e2.executed
+
+    def test_pipeline_handles_missing_session_constraints(self, minimal_data, monkeypatch):
+        """Pipeline should still run when validation context lacks session constraints."""
+        gc_df, dxy_df = minimal_data
+
+        timestamp = datetime(2025, 1, 1, 10, 0, tzinfo=UTC)
+        features_series = pd.Series(
+            {
+                "timestamp": timestamp,
+                "symbol": "GC",
+                "timeframe": "1m",
+                "open": 2000.0,
+                "high": 2001.0,
+                "low": 1999.5,
+                "close": 2000.5,
+                "volume": 1000.0,
+                "vwap": 2000.0,
+                "rsi": 50.0,
+                "ema_9": 2000.2,
+                "ema_20": 1999.8,
+                "ema_50": 1999.0,
+                "dxy_corr": -0.9,
+                "structure_label": "HH",
+                "structure_type": "HH",
+                "vwap_deviation": 0.1,
+            }
+        )
+
+        next_candle = Candle(
+            timestamp=timestamp + timedelta(minutes=1),
+            open=2001.0,
+            high=2002.0,
+            low=1999.0,
+            close=2001.5,
+            volume=1100.0,
+            symbol="GC",
+            timeframe="1m",
+            source="SIM",
+        )
+
+        class DummyProcessor:
+            def __init__(self, timeframe):
+                self.timeframe = timeframe
+
+            def iterate_with_entry_context(self, *_args, **_kwargs):
+                yield features_series, {}, next_candle
+
+        monkeypatch.setattr("backtester.pipeline.BacktestProcessor", DummyProcessor)
+
+        def dummy_htf_func(features, context):
+            assert context == {}
+            return HTFBias(
+                bias="bullish",
+                direction="long",
+                score=9.0,
+                confidence="high",
+                vwap_trend_confirmed=True,
+                dxy_alignment=True,
+            )
+
+        market_state = {
+            "buffer_phase": "growth",
+            "tier_active": "EarlyMild",
+            "ceo_directive_active": True,
+            "news_ok": True,
+            "session_ok": True,
+        }
+
+        executions = run_backtest_with_entries(
+            gc_df=gc_df,
+            dxy_df=dxy_df,
+            timeframe="1m",
+            market_state=market_state,
+            htf_bias_func=dummy_htf_func,
+        )
+
+        assert len(executions) == 1
+        assert isinstance(executions[0], EntryExecution)
