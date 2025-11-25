@@ -659,35 +659,35 @@ class TestEdgeCases:
         assert features2 is not None
 
     def test_session_boundary(self):
-        """Test VWAP resets at session boundary."""
+        """Test VWAP resets at 08:20 ET session boundary."""
         state = FeatureState(timeframe="1m", session_reset=True)
         
-        # First session
-        day1_time = datetime(2025, 1, 1, 10, 0, tzinfo=timezone.utc)
+        # Before 08:20 ET (13:00 UTC = 08:00 ET)
+        before_reset_time = datetime(2025, 1, 15, 13, 0, tzinfo=timezone.utc)
         gc1 = Candle(
-            day1_time, 2000.0, 2002.0, 1998.0, 2001.0, 1000.0, "GC", "1m", "TEST"
+            before_reset_time, 2000.0, 2002.0, 1998.0, 2001.0, 1000.0, "GC", "1m", "TEST"
         )
         features1 = state.update(gc_candle=gc1)
         vwap1 = features1["vwap"]
         
-        # Add more candles same day
+        # Add more candles before 08:20 ET
         for i in range(1, 5):
             gc = Candle(
-                day1_time + timedelta(minutes=i),
+                before_reset_time + timedelta(minutes=i),
                 2000.0 + i, 2002.0 + i, 1998.0 + i, 2001.0 + i,
                 1000.0, "GC", "1m", "TEST"
             )
             state.update(gc_candle=gc)
         
-        # New session (next day)
-        day2_time = datetime(2025, 1, 2, 10, 0, tzinfo=timezone.utc)
+        # At 08:20 ET (13:20 UTC = 08:20 ET) - NEW SESSION
+        reset_time = datetime(2025, 1, 15, 13, 20, tzinfo=timezone.utc)
         gc2 = Candle(
-            day2_time, 2000.0, 2002.0, 1998.0, 2001.0, 1000.0, "GC", "1m", "TEST"
+            reset_time, 2000.0, 2002.0, 1998.0, 2001.0, 1000.0, "GC", "1m", "TEST"
         )
         features2 = state.update(gc_candle=gc2)
         vwap2 = features2["vwap"]
         
-        # VWAP should reset (be close to typical price)
+        # VWAP should reset at 08:20 ET (be close to typical price)
         typical_price = (2002.0 + 1998.0 + 2001.0) / 3
         assert abs(vwap2 - typical_price) < 0.01
 

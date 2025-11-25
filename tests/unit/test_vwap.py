@@ -137,18 +137,20 @@ class TestVWAPCalculation:
         assert np.isclose(result.iloc[0], expected, rtol=1e-5)
 
     def test_vwap_session_reset(self) -> None:
-        """Test VWAP with session reset functionality."""
-        # Create data spanning two days
+        """Test VWAP with session reset at 08:20 ET."""
+        # Create data spanning the 08:20 ET reset boundary
+        # Sessions reset at 08:20 ET, so bars before 08:20 ET belong to previous session
         df = pd.DataFrame(
             {
                 "ts_event": pd.to_datetime(
                     [
-                        "2025-01-01 09:00",
-                        "2025-01-01 10:00",
-                        "2025-01-01 11:00",
-                        "2025-01-02 09:00",  # New day
-                        "2025-01-02 10:00",
-                    ]
+                        "2025-01-15 13:00:00",  # 08:00 ET (before reset)
+                        "2025-01-15 13:10:00",  # 08:10 ET (before reset)
+                        "2025-01-15 13:20:00",  # 08:20 ET (RESET - new session starts)
+                        "2025-01-15 13:30:00",  # 08:30 ET (after reset)
+                        "2025-01-15 14:00:00",  # 09:00 ET (after reset)
+                    ],
+                    utc=True
                 ),
                 "open": [100.0, 101.0, 102.0, 103.0, 104.0],
                 "high": [101.0, 102.0, 103.0, 104.0, 105.0],
@@ -160,10 +162,10 @@ class TestVWAPCalculation:
 
         result = calculate_vwap(df, session_reset=True)
 
-        # VWAP on day 2 should reset (not be cumulative from day 1)
-        # Row 3 (index 3) should have VWAP equal to its own typical price
-        typical_price_day2_start = (104.0 + 102.0 + 103.5) / 3
-        assert np.isclose(result.iloc[3], typical_price_day2_start, rtol=1e-5)
+        # VWAP should reset at 08:20 ET (index 2)
+        # Row 2 (08:20 ET) should have VWAP equal to its own typical price (first bar of new session)
+        typical_price_new_session = (103.0 + 101.0 + 102.5) / 3
+        assert np.isclose(result.iloc[2], typical_price_new_session, rtol=1e-5)
 
     def test_vwap_return_type_and_index(self, simple_ohlcv: pd.DataFrame) -> None:
         """Test that VWAP returns Series with correct index."""

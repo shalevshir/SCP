@@ -118,13 +118,15 @@ class TestBacktestProcessor:
         assert first_feature["timestamp"] == gc_df.index[9]
 
     def test_session_boundary_vwap_reset(self):
-        """Test VWAP resets at session boundaries."""
-        # Create data spanning two days
-        day1_base = datetime(2025, 1, 1, 10, 0, tzinfo=timezone.utc)
-        day1_times = [day1_base + timedelta(minutes=i) for i in range(30)]
-        day2_base = datetime(2025, 1, 2, 10, 0, tzinfo=timezone.utc)
-        day2_times = [day2_base + timedelta(minutes=i) for i in range(30)]
-        timestamps = day1_times + day2_times
+        """Test VWAP resets at 08:20 ET session boundary."""
+        # Create data spanning the 08:20 ET reset boundary
+        # Before 08:20 ET (13:00 UTC = 08:00 ET)
+        before_reset_base = datetime(2025, 1, 15, 13, 0, tzinfo=timezone.utc)
+        before_times = [before_reset_base + timedelta(minutes=i) for i in range(20)]
+        # At/after 08:20 ET (13:20 UTC = 08:20 ET)
+        after_reset_base = datetime(2025, 1, 15, 13, 20, tzinfo=timezone.utc)
+        after_times = [after_reset_base + timedelta(minutes=i) for i in range(40)]
+        timestamps = before_times + after_times
         
         gc_df = pd.DataFrame({
             "open": [2000.0] * 60,
@@ -146,18 +148,24 @@ class TestBacktestProcessor:
         # Unpack tuples: extract just features
         features_list = [f for f, _ in processor.iterate_with_context(gc_df, dxy_df)]
         
-        # VWAP should reset at day boundary
-        # Day 1 last VWAP
-        day1_last_idx = 29 - 5  # index 24 in features_list
-        # Day 2 first VWAP (after warmup)
-        day2_first_idx = 30 - 5  # index 25 in features_list
+        # VWAP should reset at 08:20 ET boundary
+        # BacktestProcessor iterates from index (warmup_period - 1) onwards
+        # With warmup_period=5, iteration starts from index 4
+        # So: features_list[k] corresponds to original index (k + 4)
+        # Inverse mapping: original index i → features_list[i - 4]
+        warmup_offset = processor.warmup_period - 1  # 4 for warmup_period=5
         
-        if day2_first_idx < len(features_list):
+        # Last bar before reset: original index 19 → features_list[15]
+        before_reset_idx = 19 - warmup_offset
+        # First bar at reset (08:20 ET): original index 20 → features_list[16]
+        after_reset_idx = 20 - warmup_offset
+        
+        if after_reset_idx < len(features_list):
             # VWAP should be close to typical price after reset
-            day2_first_vwap = features_list[day2_first_idx]["vwap"]
+            after_reset_vwap = features_list[after_reset_idx]["vwap"]
             typical_price = (2002.0 + 1998.0 + 2001.0) / 3
             # Should be close since it's reset
-            assert abs(day2_first_vwap - typical_price) < 1.0
+            assert abs(after_reset_vwap - typical_price) < 1.0
 
     def test_zero_volume_handling(self):
         """Test processor handles zero volume gracefully."""

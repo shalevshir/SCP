@@ -60,31 +60,31 @@ class TestVWAPState:
         assert all(isinstance(v, float) for v in vwaps)
 
     def test_session_reset(self):
-        """Test VWAP resets at session boundary."""
+        """Test VWAP resets at 08:20 ET session boundary."""
         state = VWAPState(session_reset=True)
         
-        # First session
+        # Before 08:20 ET (part of previous session)
         candle1 = Candle(
-            datetime(2025, 1, 1, 10, 0, tzinfo=timezone.utc),
+            datetime(2025, 1, 15, 13, 0, tzinfo=timezone.utc),  # 08:00 ET
             100.0, 102.0, 98.0, 101.0, 1000.0, "GC", "1m", "TEST"
         )
         vwap1 = state.update(candle1)
         
-        # Same session
+        # Still before 08:20 ET (same session)
         candle2 = Candle(
-            datetime(2025, 1, 1, 10, 1, tzinfo=timezone.utc),
+            datetime(2025, 1, 15, 13, 10, tzinfo=timezone.utc),  # 08:10 ET
             101.0, 103.0, 99.0, 102.0, 1000.0, "GC", "1m", "TEST"
         )
         vwap2 = state.update(candle2)
         
-        # New session (next day)
+        # At 08:20 ET (RESET - new session starts)
         candle3 = Candle(
-            datetime(2025, 1, 2, 10, 0, tzinfo=timezone.utc),
+            datetime(2025, 1, 15, 13, 20, tzinfo=timezone.utc),  # 08:20 ET
             100.0, 102.0, 98.0, 101.0, 1000.0, "GC", "1m", "TEST"
         )
         vwap3 = state.update(candle3)
         
-        # VWAP should reset on new session
+        # VWAP should reset at 08:20 ET (should equal typical price of candle3)
         typical_price3 = (102.0 + 98.0 + 101.0) / 3
         assert abs(vwap3 - typical_price3) < 0.01
 
