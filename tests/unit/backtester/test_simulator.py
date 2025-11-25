@@ -548,7 +548,7 @@ class TestSimulateTradeOutcome:
 
         closed_trade = simulate_trade_outcome(long_continuation_trade, df)
 
-        assert closed_trade.exit_reason == "TP"
+        assert closed_trade.exit_reason == "tp"
         assert closed_trade.exit_price == 2665.0
         assert closed_trade.status == "CLOSED_WIN"
         assert closed_trade.r_realized == pytest.approx(3.0)
@@ -587,7 +587,7 @@ class TestSimulateTradeOutcome:
 
         closed_trade = simulate_trade_outcome(long_continuation_trade, df)
 
-        assert closed_trade.exit_reason == "SL"
+        assert closed_trade.exit_reason == "sl"
         assert closed_trade.exit_price == 2645.0
         assert closed_trade.status == "STOPPED_OUT"
         assert closed_trade.r_realized == pytest.approx(-1.0)
@@ -613,7 +613,7 @@ class TestSimulateTradeOutcome:
         closed_trade = simulate_trade_outcome(long_continuation_trade, df)
 
         # SL should take priority per SOP
-        assert closed_trade.exit_reason == "SL"
+        assert closed_trade.exit_reason == "sl"
         assert closed_trade.exit_price == 2645.0
         assert closed_trade.status == "STOPPED_OUT"
 
@@ -637,7 +637,7 @@ class TestSimulateTradeOutcome:
         closed_trade = simulate_trade_outcome(long_continuation_trade, df)
 
         # Should exit at SL, not at worse gap price
-        assert closed_trade.exit_reason == "SL"
+        assert closed_trade.exit_reason == "sl"
         assert closed_trade.exit_price == 2645.0
 
     def test_gap_beyond_tp_long(self, long_continuation_trade):
@@ -660,7 +660,7 @@ class TestSimulateTradeOutcome:
         closed_trade = simulate_trade_outcome(long_continuation_trade, df)
 
         # Should exit at TP
-        assert closed_trade.exit_reason == "TP"
+        assert closed_trade.exit_reason == "tp"
         assert closed_trade.exit_price == 2665.0
 
     def test_timeout_continuation(self, long_continuation_trade):
@@ -685,7 +685,7 @@ class TestSimulateTradeOutcome:
 
         closed_trade = simulate_trade_outcome(long_continuation_trade, df)
 
-        assert closed_trade.exit_reason == "TIME"
+        assert closed_trade.exit_reason == "timeout"
         assert closed_trade.exit_price == 2651.0  # Last candle close
         assert closed_trade.duration_bars == 20
 
@@ -711,7 +711,7 @@ class TestSimulateTradeOutcome:
 
         closed_trade = simulate_trade_outcome(short_fade_trade, df)
 
-        assert closed_trade.exit_reason == "TIME"
+        assert closed_trade.exit_reason == "timeout"
         assert closed_trade.exit_price == 2651.0  # Last candle close
         assert closed_trade.duration_bars == 10
 
@@ -815,7 +815,7 @@ class TestSimulateTradeOutcome:
 
         closed_trade = simulate_trade_outcome(long_continuation_trade, df)
 
-        assert closed_trade.exit_reason == "END_OF_DATA"
+        assert closed_trade.exit_reason == "end_of_data"
         assert closed_trade.exit_price == 2651.0  # Last candle close
 
     def test_already_closed_trade_returns_unchanged(self, long_continuation_trade):

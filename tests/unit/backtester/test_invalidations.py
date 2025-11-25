@@ -317,20 +317,355 @@ class TestInvalidationChecker:
         assert reason is None
 
 
+class TestVWAPInvalidation:
+    """Tests for VWAP invalidation detection."""
+
+    @pytest.fixture
+    def long_continuation_trade(self):
+        """Create a long continuation trade for testing."""
+        signal = Signal(
+            timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
+            symbol="GC",
+            timeframe="1m",
+            direction="long",
+            setup_type="VWAP_RECLAIM",
+            htf_bias="bullish",
+            score=9.0,
+            confidence="A+",
+            factors={},
+            rationale="Test",
+            validation_flags={},
+            enforcer_tier="EarlyMild",
+        )
+        entry_execution = EntryExecution(
+            signal_timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
+            entry_timestamp=datetime(2025, 1, 1, 10, 1, tzinfo=UTC),
+            entry_price=2650.0,
+            signal=signal,
+            executed=True,
+            rejection_reason=None,
+        )
+        return Trade(
+            trade_id="test-001",
+            symbol="GC",
+            timeframe="1m",
+            entry_execution=entry_execution,
+            entry_timestamp=datetime(2025, 1, 1, 10, 1, tzinfo=UTC),
+            entry_price=2650.0,
+            direction="long",
+            setup_type="VWAP_RECLAIM",
+            stop_loss=2645.0,
+            take_profit=2665.0,
+            sl_rationale="Below structure",
+            tp_rationale="3R continuation",
+            risk_amount=5.0,
+            reward_amount=15.0,
+            r_multiple=3.0,
+            contracts=1,
+            exit_timestamp=None,
+            exit_price=None,
+            exit_reason=None,
+            pnl=None,
+            pnl_percent=None,
+            r_realized=None,
+            pnl_dollars=None,
+            pnl_net=None,
+            slippage_cost=None,
+            commission_cost=None,
+            status="OPEN",
+            duration_bars=None,
+            invalidation_triggered=False,
+        )
+
+    def test_vwap_invalidation_long_below_vwap(self, long_continuation_trade):
+        """Test VWAP invalidation for long when close < VWAP."""
+        checker = InvalidationChecker()
+        
+        candle = make_candle(
+            timestamp=datetime(2025, 1, 1, 10, 5, tzinfo=UTC),
+            open=2648.0,
+            high=2649.0,
+            low=2647.0,
+            close=2648.0,  # Below VWAP
+        )
+        
+        features = {"vwap": 2650.0}
+        
+        is_invalid, reason = checker.check_vwap_invalidation(
+            long_continuation_trade, candle, features
+        )
+        
+        assert is_invalid is True
+        assert "vwap" in reason.lower()
+        assert "invalidation" in reason.lower()
+
+    def test_vwap_invalidation_not_triggered_above_vwap(self, long_continuation_trade):
+        """Test VWAP invalidation not triggered when close > VWAP."""
+        checker = InvalidationChecker()
+        
+        candle = make_candle(
+            timestamp=datetime(2025, 1, 1, 10, 5, tzinfo=UTC),
+            open=2652.0,
+            high=2653.0,
+            low=2651.0,
+            close=2652.0,  # Above VWAP
+        )
+        
+        features = {"vwap": 2650.0}
+        
+        is_invalid, reason = checker.check_vwap_invalidation(
+            long_continuation_trade, candle, features
+        )
+        
+        assert is_invalid is False
+        assert reason is None
+
+    def test_vwap_invalidation_not_applicable_to_dxy_continuation(self):
+        """Test VWAP invalidation doesn't apply to DXY_CONTINUATION setups."""
+        signal = Signal(
+            timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
+            symbol="GC",
+            timeframe="1m",
+            direction="long",
+            setup_type="DXY_CONTINUATION",
+            htf_bias="bullish",
+            score=9.0,
+            confidence="A+",
+            factors={},
+            rationale="Test",
+            validation_flags={},
+            enforcer_tier="EarlyMild",
+        )
+        entry_execution = EntryExecution(
+            signal_timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
+            entry_timestamp=datetime(2025, 1, 1, 10, 1, tzinfo=UTC),
+            entry_price=2650.0,
+            signal=signal,
+            executed=True,
+            rejection_reason=None,
+        )
+        trade = Trade(
+            trade_id="test-dxy",
+            symbol="GC",
+            timeframe="1m",
+            entry_execution=entry_execution,
+            entry_timestamp=datetime(2025, 1, 1, 10, 1, tzinfo=UTC),
+            entry_price=2650.0,
+            direction="long",
+            setup_type="DXY_CONTINUATION",
+            stop_loss=2645.0,
+            take_profit=2665.0,
+            sl_rationale="Below structure",
+            tp_rationale="3R continuation",
+            risk_amount=5.0,
+            reward_amount=15.0,
+            r_multiple=3.0,
+            contracts=1,
+            exit_timestamp=None,
+            exit_price=None,
+            exit_reason=None,
+            pnl=None,
+            pnl_percent=None,
+            r_realized=None,
+            pnl_dollars=None,
+            pnl_net=None,
+            slippage_cost=None,
+            commission_cost=None,
+            status="OPEN",
+            duration_bars=None,
+            invalidation_triggered=False,
+        )
+        
+        checker = InvalidationChecker()
+        candle = make_candle(
+            timestamp=datetime(2025, 1, 1, 10, 5, tzinfo=UTC),
+            open=2648.0,
+            high=2649.0,
+            low=2647.0,
+            close=2648.0,
+        )
+        features = {"vwap": 2650.0}
+        
+        is_invalid, reason = checker.check_vwap_invalidation(trade, candle, features)
+        
+        assert is_invalid is False
+        assert reason is None
+
+
+class TestSessionEnd:
+    """Tests for session end detection."""
+
+    @pytest.fixture
+    def long_trade(self):
+        """Create a long trade for testing."""
+        signal = Signal(
+            timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
+            symbol="GC",
+            timeframe="1m",
+            direction="long",
+            setup_type="VWAP_RECLAIM",
+            htf_bias="bullish",
+            score=9.0,
+            confidence="A+",
+            factors={},
+            rationale="Test",
+            validation_flags={},
+            enforcer_tier="EarlyMild",
+        )
+        entry_execution = EntryExecution(
+            signal_timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
+            entry_timestamp=datetime(2025, 1, 1, 10, 1, tzinfo=UTC),
+            entry_price=2650.0,
+            signal=signal,
+            executed=True,
+            rejection_reason=None,
+        )
+        return Trade(
+            trade_id="test-session",
+            symbol="GC",
+            timeframe="1m",
+            entry_execution=entry_execution,
+            entry_timestamp=datetime(2025, 1, 1, 10, 1, tzinfo=UTC),
+            entry_price=2650.0,
+            direction="long",
+            setup_type="VWAP_RECLAIM",
+            stop_loss=2645.0,
+            take_profit=2665.0,
+            sl_rationale="Below structure",
+            tp_rationale="3R continuation",
+            risk_amount=5.0,
+            reward_amount=15.0,
+            r_multiple=3.0,
+            contracts=1,
+            exit_timestamp=None,
+            exit_price=None,
+            exit_reason=None,
+            pnl=None,
+            pnl_percent=None,
+            r_realized=None,
+            pnl_dollars=None,
+            pnl_net=None,
+            slippage_cost=None,
+            commission_cost=None,
+            status="OPEN",
+            duration_bars=None,
+            invalidation_triggered=False,
+        )
+
+    def test_session_end_at_13_00_ilt(self, long_trade):
+        """Test session end detection at 13:00 ILT."""
+        from zoneinfo import ZoneInfo
+        
+        checker = InvalidationChecker()
+        
+        # 13:00 ILT = 13:00 UTC (during winter) or 12:00 UTC (during summer)
+        # Use 13:00 UTC for simplicity (winter time)
+        candle = make_candle(
+            timestamp=datetime(2025, 1, 1, 13, 0, tzinfo=UTC),
+            open=2650.0,
+            high=2651.0,
+            low=2649.0,
+            close=2650.0,
+        )
+        
+        is_invalid, reason = checker.check_session_end(long_trade, candle)
+        
+        assert is_invalid is True
+        assert "session" in reason.lower()
+
+    def test_session_end_not_triggered_during_session(self, long_trade):
+        """Test session end not triggered during active session."""
+        checker = InvalidationChecker()
+        
+        # 11:00 UTC = 11:00 ILT (during winter) - within session
+        candle = make_candle(
+            timestamp=datetime(2025, 1, 1, 11, 0, tzinfo=UTC),
+            open=2650.0,
+            high=2651.0,
+            low=2649.0,
+            close=2650.0,
+        )
+        
+        is_invalid, reason = checker.check_session_end(long_trade, candle)
+        
+        assert is_invalid is False
+        assert reason is None
+
+
 class TestInvalidationCheckerWithFeatures:
     """Tests for InvalidationChecker with feature-based checks.
     
-    These tests will be implemented once we add DXY, VWAP, HTF invalidation checks.
-    For now, we'll keep the checker minimal and focus on the +1R time limit.
+    These tests cover the integrated invalidation checks.
     """
 
-    def test_placeholder(self):
-        """Placeholder for future feature-based invalidation tests."""
-        # TODO: Add tests for:
-        # - DXY flip invalidation
-        # - VWAP invalidation (continuation trades)
-        # - Structure break invalidation
-        # - HTF bias flip invalidation
-        # - Session end invalidation
-        pass
+    def test_check_all_with_vwap_invalidation(self):
+        """Test check_all detects VWAP invalidation."""
+        signal = Signal(
+            timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
+            symbol="GC",
+            timeframe="1m",
+            direction="long",
+            setup_type="VWAP_RECLAIM",
+            htf_bias="bullish",
+            score=9.0,
+            confidence="A+",
+            factors={},
+            rationale="Test",
+            validation_flags={},
+            enforcer_tier="EarlyMild",
+        )
+        entry_execution = EntryExecution(
+            signal_timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
+            entry_timestamp=datetime(2025, 1, 1, 10, 1, tzinfo=UTC),
+            entry_price=2650.0,
+            signal=signal,
+            executed=True,
+            rejection_reason=None,
+        )
+        trade = Trade(
+            trade_id="test-all",
+            symbol="GC",
+            timeframe="1m",
+            entry_execution=entry_execution,
+            entry_timestamp=datetime(2025, 1, 1, 10, 1, tzinfo=UTC),
+            entry_price=2650.0,
+            direction="long",
+            setup_type="VWAP_RECLAIM",
+            stop_loss=2645.0,
+            take_profit=2665.0,
+            sl_rationale="Below structure",
+            tp_rationale="3R continuation",
+            risk_amount=5.0,
+            reward_amount=15.0,
+            r_multiple=3.0,
+            contracts=1,
+            exit_timestamp=None,
+            exit_price=None,
+            exit_reason=None,
+            pnl=None,
+            pnl_percent=None,
+            r_realized=None,
+            pnl_dollars=None,
+            pnl_net=None,
+            slippage_cost=None,
+            commission_cost=None,
+            status="OPEN",
+            duration_bars=None,
+            invalidation_triggered=False,
+        )
+        
+        checker = InvalidationChecker()
+        candle = make_candle(
+            timestamp=datetime(2025, 1, 1, 10, 5, tzinfo=UTC),
+            open=2648.0,
+            high=2649.0,
+            low=2647.0,
+            close=2648.0,  # Below VWAP
+        )
+        features = {"vwap": 2650.0}
+        
+        is_invalid, reason = checker.check_all(trade, candle, bars_elapsed=5, features=features)
+        
+        assert is_invalid is True
+        assert "vwap" in reason.lower()
 

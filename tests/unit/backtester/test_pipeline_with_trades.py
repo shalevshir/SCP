@@ -134,9 +134,15 @@ class TestRunBacktestWithTrades:
             risk_config=risk_config,
         )
 
-        valid_reasons = ["TP", "SL", "TIME", "INVALIDATION", "END_OF_DATA", "INVALID_SETUP"]
+        valid_reasons = [
+            "tp", "sl", "timeout", "vwap_invalidation", "htf_invalidation",
+            "dxy_flip", "session_close", "window_expired", "daily_risk_stop",
+            "end_of_data", "invalid_setup", "invalidation"  # Legacy support
+        ]
         for trade in trades:
-            assert trade.exit_reason in valid_reasons
+            assert trade.exit_reason in valid_reasons, (
+                f"Trade {trade.trade_id} has invalid exit_reason: {trade.exit_reason}"
+            )
 
     def test_trades_have_calculated_pnl(
         self, sample_gc_data, sample_dxy_data, market_state, risk_config
