@@ -12,21 +12,20 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 import pandas as pd
-
 from common.logger import get_logger
-from feature_engine.aggregator import aggregate_features
-from feature_engine.structure import calculate_structure_labels
-from feature_engine.vwap import calculate_vwap_deviation
 from rule_engine.htf.types import HTFBias
 from rule_engine.scoring import score_signal
 from rule_engine.signal_logger import log_signal
 from rule_engine.validation import validate_signal_with_sop
 
+from feature_engine.aggregator import aggregate_features
+from feature_engine.structure import calculate_structure_labels
+from feature_engine.vwap import calculate_vwap_deviation
+
 if TYPE_CHECKING:
     from rule_engine.signal import Signal
-    from validation.engine import ValidationEngine, ValidationResult
+    from validation.engine import ValidationEngine
     from validation.guardrails import GuardrailResult
-    from validation.schema import ValidationContext
     from validation.session_validator import SessionConstraints, SessionValidator
 
 logger = get_logger(__name__)
@@ -303,7 +302,7 @@ def process_features_with_validation(
     features: pd.Series,
     htf_bias: HTFBias,
     market_state: dict,
-    session_constraints: SessionConstraints | None,
+    session_constraints: SessionConstraints | None = None,
     guardrail_result: GuardrailResult | None = None,
     log_signals: bool = False,
     log_dir: str | None = None,
@@ -324,8 +323,8 @@ def process_features_with_validation(
             - ceo_directive_active: CEO directive status
             - news_ok: News event status
             - session_ok: Session validity
-        session_constraints: SessionConstraints from SessionValidator. If None,
-            validation is skipped and the scored signal is returned unchanged.
+        session_constraints: Optional SessionConstraints from SessionValidator.
+            If None, creates permissive defaults (validation disabled mode).
         guardrail_result: Optional GuardrailResult from BehaviorGuardrails
         log_signals: Whether to log signals to disk
         log_dir: Directory for signal logs (required if log_signals=True)
@@ -352,6 +351,31 @@ def process_features_with_validation(
         ...         # Execute trade
         ...         pass
     """
+    # Step 0: Create default session constraints if validation disabled
+    if session_constraints is None:
+        from datetime import time
+
+        from validation.session_validator import SessionConstraints
+
+        logger.debug(
+            "No session constraints provided - using permissive defaults "
+            "(validation disabled mode)"
+        )
+        session_constraints = SessionConstraints(
+            name="Default",
+            window_start=time(0, 0),
+            window_end=time(23, 59),
+            allowed_tiers=frozenset(
+                ["Conservative", "EarlyMild", "Mild", "Offensive"]
+            ),
+            allowed_setups=frozenset(
+                ["VWAP_RECLAIM", "DXY_CONTINUATION", "VWAP_FADE"]
+            ),
+            min_score=0.0,  # Permissive: allow all scores
+            max_losses=999,  # Permissive: no loss limit
+            dxy_correlation_max=1.0,  # Permissive: allow any correlation
+        )
+
     # Step 1: Build scoring context (minimal, most data now in HTFBias)
     scoring_context = {
         "session_ok": market_state.get("session_ok", True),
@@ -362,21 +386,15 @@ def process_features_with_validation(
     signal = score_signal(features, htf_bias, scoring_context)
 
     # Step 3: Apply full SOP validation
-    if session_constraints is None:
-        logger.debug(
-            "No session constraints provided; skipping SOP validation for "
-            f"{features.get('timestamp')}"
-        )
-        validated_signal = signal
-    else:
-        validated_signal = validate_signal_with_sop(
-            signal=signal,
-            features=features,
-            market_state=market_state,
-            session_constraints=session_constraints,
-            guardrail_result=guardrail_result,
-            htf_bias=htf_bias,
-        )
+    # Note: session_constraints is guaranteed to be non-None here due to Step 0
+    validated_signal = validate_signal_with_sop(
+        signal=signal,
+        features=features,
+        market_state=market_state,
+        session_constraints=session_constraints,
+        guardrail_result=guardrail_result,
+        htf_bias=htf_bias,
+    )
 
     # Step 4: Log signal if requested
     if log_signals and log_dir:

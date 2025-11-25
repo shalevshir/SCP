@@ -10,16 +10,16 @@ from dataclasses import replace
 from typing import TYPE_CHECKING
 
 import pandas as pd
-
 from common.logger import get_logger
-from rule_engine.config_loader import load_scoring_config
-from rule_engine.signal import Signal
-from rule_engine.htf.types import HTFBias
 from validation.context_builder import (
     ValidationContextBuilder,
     check_dxy_handling_for_setup,
 )
 from validation.engine import TradeDirection, ValidationEngine
+
+from rule_engine.config_loader import load_scoring_config
+from rule_engine.htf.types import HTFBias
+from rule_engine.signal import Signal
 
 if TYPE_CHECKING:
     from validation.guardrails import GuardrailResult
@@ -147,7 +147,7 @@ def validate_signal_with_sop(
     signal: Signal,
     features: pd.Series,
     market_state: dict,
-    session_constraints: SessionConstraints,
+    session_constraints: SessionConstraints | None = None,
     guardrail_result: GuardrailResult | None = None,
     htf_bias: HTFBias | None = None,
 ) -> Signal:
@@ -164,7 +164,8 @@ def validate_signal_with_sop(
         signal: Signal object to validate
         features: Feature series containing technical indicators
         market_state: Dict with market context (buffer_phase, tier_active, etc.)
-        session_constraints: SessionConstraints from SessionValidator
+        session_constraints: Optional SessionConstraints from SessionValidator.
+            If None, creates permissive defaults (validation disabled mode).
         guardrail_result: Optional GuardrailResult from BehaviorGuardrails
         htf_bias: Optional HTFBias object for conflict/chop detection
 
@@ -180,6 +181,31 @@ def validate_signal_with_sop(
         >>> if validated.confidence == "Reject":
         ...     logger.info(f"Rejected: {validated.rationale}")
     """
+    # Create default session constraints if validation disabled
+    if session_constraints is None:
+        from datetime import time
+
+        from validation.session_validator import SessionConstraints
+
+        logger.debug(
+            "No session constraints provided - using permissive defaults "
+            "(validation disabled mode)"
+        )
+        session_constraints = SessionConstraints(
+            name="Default",
+            window_start=time(0, 0),
+            window_end=time(23, 59),
+            allowed_tiers=frozenset(
+                ["Conservative", "EarlyMild", "Mild", "Offensive"]
+            ),
+            allowed_setups=frozenset(
+                ["VWAP_RECLAIM", "DXY_CONTINUATION", "VWAP_FADE"]
+            ),
+            min_score=0.0,  # Permissive: allow all scores
+            max_losses=999,  # Permissive: no loss limit
+            dxy_correlation_max=1.0,  # Permissive: allow any correlation
+        )
+
     # Build session result from constraints
     from validation.session_validator import SessionResult
 
