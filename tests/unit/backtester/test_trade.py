@@ -1301,6 +1301,92 @@ class TestCloseTrade:
         assert closed_trade.pnl is not None
         assert closed_trade.r_realized is not None
 
+    def test_close_trade_with_zero_risk_amount(self):
+        """Test close_trade handles zero risk_amount without ZeroDivisionError.
+
+        This edge case occurs when entry_price equals stop_loss (which should
+        never happen in production, but we must handle it gracefully in tests).
+        """
+        # Create trade with zero risk (entry_price == stop_loss)
+        signal = Signal(
+            timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
+            symbol="GC",
+            timeframe="1m",
+            direction="long",
+            setup_type="VWAP_RECLAIM",
+            htf_bias="bullish",
+            score=8.0,
+            confidence="A+",
+            factors={"structure_alignment": 2.0},
+            rationale="Test signal",
+            validation_flags={"session_ok": True},
+            enforcer_tier="EarlyMild",
+        )
+
+        entry_execution = EntryExecution(
+            signal_timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
+            entry_timestamp=datetime(2025, 1, 1, 10, 1, tzinfo=UTC),
+            entry_price=2650.0,
+            signal=signal,
+            executed=True,
+            rejection_reason=None,
+        )
+
+        # Create trade where entry_price == stop_loss (zero risk)
+        trade = Trade(
+            trade_id="test-zero-risk",
+            symbol="GC",
+            timeframe="1m",
+            entry_execution=entry_execution,
+            entry_timestamp=datetime(2025, 1, 1, 10, 1, tzinfo=UTC),
+            entry_price=2650.0,
+            direction="long",
+            setup_type="VWAP_RECLAIM",
+            stop_loss=2650.0,  # Same as entry_price!
+            take_profit=2665.0,
+            sl_rationale="Test SL",
+            tp_rationale="Test TP",
+            risk_amount=0.0,  # Zero risk
+            reward_amount=15.0,
+            r_multiple=0.0,  # Cannot calculate R when risk is zero
+            contracts=1,
+            status="OPEN",
+            exit_timestamp=None,
+            exit_price=None,
+            exit_reason=None,
+            pnl=None,
+            pnl_percent=None,
+            r_realized=None,
+            duration_bars=None,
+            invalidation_triggered=False,
+            pnl_dollars=None,
+            pnl_net=None,
+            slippage_cost=None,
+            commission_cost=None,
+        )
+
+        # Create exit candle
+        exit_candle = Candle(
+            timestamp=datetime(2025, 1, 1, 10, 5, tzinfo=UTC),
+            open=2655.0,
+            high=2656.0,
+            low=2654.0,
+            close=2655.0,
+            volume=1000.0,
+            symbol="GC",
+            timeframe="1m",
+            source="TEST",
+        )
+
+        # This should NOT raise ZeroDivisionError
+        closed_trade = close_trade(trade, exit_candle, "TP")
+
+        # Verify calculations handled zero risk gracefully
+        assert closed_trade.pnl_percent == 0  # Should be 0, not error
+        assert closed_trade.r_realized == 0  # Should be 0, not error
+        assert closed_trade.status == "CLOSED_WIN"  # Did make money in absolute terms
+        assert closed_trade.pnl == 15.0  # 15 points profit (TP at 2665 - entry 2650)
+
 
 class TestJSONSerialization:
     """Tests for JSON serialization (to_dict/from_dict)."""
