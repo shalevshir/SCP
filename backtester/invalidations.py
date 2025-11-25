@@ -225,19 +225,19 @@ class InvalidationChecker:
             - Force exit at session end (13:00 ILT by default)
             - Executes BEFORE timeout
         """
-        # Default session end: 13:00 ILT (London time)
+        # Default session end: 13:00 ILT (Israel Local Time)
         if session_end_time is None:
             session_end_time = time(13, 0, 0)  # 13:00:00
 
-        # Convert candle timestamp to London timezone
-        london_tz = ZoneInfo("Europe/London")
+        # Convert candle timestamp to Israel timezone (Asia/Jerusalem)
+        israel_tz = ZoneInfo("Asia/Jerusalem")
         
         # Handle timezone-aware and naive timestamps
         if candle.timestamp.tzinfo is None:
             # Assume UTC if naive
-            local_dt = candle.timestamp.replace(tzinfo=ZoneInfo("UTC")).astimezone(london_tz)
+            local_dt = candle.timestamp.replace(tzinfo=ZoneInfo("UTC")).astimezone(israel_tz)
         else:
-            local_dt = candle.timestamp.astimezone(london_tz)
+            local_dt = candle.timestamp.astimezone(israel_tz)
 
         current_time = local_dt.time()
 

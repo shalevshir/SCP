@@ -558,10 +558,11 @@ class TestSessionEnd:
         
         checker = InvalidationChecker()
         
-        # 13:00 ILT = 13:00 UTC (during winter) or 12:00 UTC (during summer)
-        # Use 13:00 UTC for simplicity (winter time)
+        # 13:00 ILT (winter, IST) = 11:00 UTC
+        # 13:00 ILT (summer, IDT) = 10:00 UTC
+        # Use 11:00 UTC for January (winter time)
         candle = make_candle(
-            timestamp=datetime(2025, 1, 1, 13, 0, tzinfo=UTC),
+            timestamp=datetime(2025, 1, 1, 11, 0, tzinfo=UTC),
             open=2650.0,
             high=2651.0,
             low=2649.0,
@@ -577,9 +578,46 @@ class TestSessionEnd:
         """Test session end not triggered during active session."""
         checker = InvalidationChecker()
         
-        # 11:00 UTC = 11:00 ILT (during winter) - within session
+        # 09:00 UTC = 11:00 ILT (during winter, IST) - within session (before 13:00 ILT)
         candle = make_candle(
-            timestamp=datetime(2025, 1, 1, 11, 0, tzinfo=UTC),
+            timestamp=datetime(2025, 1, 1, 9, 0, tzinfo=UTC),
+            open=2650.0,
+            high=2651.0,
+            low=2649.0,
+            close=2650.0,
+        )
+        
+        is_invalid, reason = checker.check_session_end(long_trade, candle)
+        
+        assert is_invalid is False
+        assert reason is None
+
+    def test_session_end_at_13_00_ilt_summer(self, long_trade):
+        """Test session end detection at 13:00 ILT during summer (IDT)."""
+        checker = InvalidationChecker()
+        
+        # 13:00 ILT (summer, IDT) = 10:00 UTC
+        # Use 10:00 UTC for July (summer time)
+        candle = make_candle(
+            timestamp=datetime(2025, 7, 1, 10, 0, tzinfo=UTC),
+            open=2650.0,
+            high=2651.0,
+            low=2649.0,
+            close=2650.0,
+        )
+        
+        is_invalid, reason = checker.check_session_end(long_trade, candle)
+        
+        assert is_invalid is True
+        assert "session" in reason.lower()
+
+    def test_session_end_before_13_00_ilt_summer(self, long_trade):
+        """Test session end not triggered before 13:00 ILT during summer."""
+        checker = InvalidationChecker()
+        
+        # 09:00 UTC = 12:00 ILT (during summer, IDT) - within session (before 13:00 ILT)
+        candle = make_candle(
+            timestamp=datetime(2025, 7, 1, 9, 0, tzinfo=UTC),
             open=2650.0,
             high=2651.0,
             low=2649.0,
