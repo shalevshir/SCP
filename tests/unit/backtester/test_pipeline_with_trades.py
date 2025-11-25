@@ -4,10 +4,12 @@ Following TDD principles: tests demonstrate complete workflow.
 """
 
 from datetime import UTC, datetime
+from dataclasses import replace
 
 import pandas as pd
 import pytest
 from backtester.pipeline import run_backtest_with_trades
+from common.types import Candle
 from rule_engine.htf.types import HTFBias
 
 
@@ -434,4 +436,164 @@ class TestGetFutureCandles:
 
         # Should get 2R (not 3R) because htf_aligned is False
         assert trade3.r_multiple == 2.0
+
+    def test_vwap_fade_uses_entry_time_htf_bias_for_alignment(
+        self, market_state, risk_config, monkeypatch
+    ):
+        """Ensure HTF alignment is based on entry timestamp bias, not signal timestamp."""
+        import pandas as pd
+        from rule_engine.signal import Signal
+
+        # Create November dataset so fades can upgrade to 3R
+        timestamps = pd.date_range(
+            start="2025-11-01 09:00", periods=30, freq="1min", tz=UTC
+        )
+        gc_df = pd.DataFrame(
+            {
+                "open": [2000.0 + i * 0.5 for i in range(len(timestamps))],
+                "high": [2000.5 + i * 0.5 for i in range(len(timestamps))],
+                "low": [1999.5 + i * 0.5 for i in range(len(timestamps))],
+                "close": [2000.2 + i * 0.5 for i in range(len(timestamps))],
+                "volume": [100.0] * len(timestamps),
+            },
+            index=timestamps,
+        )
+        dxy_df = pd.DataFrame(
+            {
+                "open": [106.0] * len(timestamps),
+                "high": [106.1] * len(timestamps),
+                "low": [105.9] * len(timestamps),
+                "close": [106.0] * len(timestamps),
+                "volume": [50.0] * len(timestamps),
+            },
+            index=timestamps,
+        )
+
+        signal_timestamp = timestamps[5]
+        entry_timestamp = timestamps[6]
+        signal_row = gc_df.loc[signal_timestamp]
+        entry_row = gc_df.loc[entry_timestamp]
+
+        signal_features = pd.Series(
+            {
+                "timestamp": signal_timestamp,
+                "symbol": "GC",
+                "timeframe": "1m",
+                "open": signal_row["open"],
+                "high": signal_row["high"],
+                "low": signal_row["low"],
+                "close": signal_row["close"],
+                "volume": signal_row["volume"],
+            }
+        )
+
+        entry_features = pd.Series(
+            {
+                "timestamp": entry_timestamp,
+                "symbol": "GC",
+                "timeframe": "1m",
+                "open": entry_row["open"],
+                "high": entry_row["high"],
+                "low": entry_row["low"],
+                "close": entry_row["close"],
+                "volume": entry_row["volume"],
+            }
+        )
+
+        next_candle = Candle(
+            timestamp=entry_timestamp,
+            open=entry_row["open"],
+            high=entry_row["high"],
+            low=entry_row["low"],
+            close=entry_row["close"],
+            volume=entry_row["volume"],
+            symbol="GC",
+            timeframe="1m",
+            source="TEST",
+        )
+
+        class DummyProcessor:
+            def __init__(self, timeframe: str):
+                self.timeframe = timeframe
+
+            def iterate_with_entry_context(self, *_args, **_kwargs):
+                yield signal_features, {}, next_candle
+
+            def iterate_with_context(self, *_args, **_kwargs):
+                yield signal_features, {}
+                yield entry_features, {}
+
+        monkeypatch.setattr("backtester.pipeline.BacktestProcessor", DummyProcessor)
+
+        def fake_process_features_with_validation(
+            features, htf_bias, market_state, **kwargs
+        ):
+            return Signal(
+                timestamp=features["timestamp"],
+                symbol=features["symbol"],
+                timeframe=features["timeframe"],
+                direction="long",
+                setup_type="VWAP_FADE",
+                htf_bias=htf_bias.bias,
+                score=9.0,
+                confidence="A+",
+                factors={},
+                rationale="test signal",
+                validation_flags={},
+                enforcer_tier=market_state["tier_active"],
+            )
+
+        monkeypatch.setattr(
+            "backtester.pipeline.process_features_with_validation",
+            fake_process_features_with_validation,
+        )
+
+        def shifting_htf_bias(features: pd.Series, _context: dict) -> HTFBias:
+            if features["timestamp"] == signal_timestamp:
+                return HTFBias(
+                    bias="bullish",
+                    direction="long",
+                    score=9.5,
+                    confidence="high",
+                    vwap_trend_confirmed=True,
+                    dxy_alignment=True,
+                )
+            return HTFBias(
+                bias="bearish",
+                direction="short",
+                score=9.5,
+                confidence="high",
+                vwap_trend_confirmed=True,
+                dxy_alignment=True,
+            )
+
+        def fake_simulate_trade_outcome(trade, *_args, **_kwargs):
+            return replace(
+                trade,
+                exit_timestamp=trade.entry_timestamp,
+                exit_price=trade.take_profit,
+                exit_reason="TP",
+                pnl=trade.reward_amount,
+                pnl_percent=100.0,
+                r_realized=trade.r_multiple,
+                status="CLOSED_WIN",
+            )
+
+        monkeypatch.setattr(
+            "backtester.pipeline.simulate_trade_outcome", fake_simulate_trade_outcome
+        )
+
+        trades = run_backtest_with_trades(
+            gc_df=gc_df,
+            dxy_df=dxy_df,
+            timeframe="1m",
+            market_state=market_state,
+            htf_bias_func=shifting_htf_bias,
+            risk_config=risk_config,
+        )
+
+        assert len(trades) == 1
+        # HTF alignment should be False because entry-time bias is bearish vs long direction
+        assert trades[0].setup_type == "VWAP_FADE"
+        assert trades[0].r_multiple == 2.0
 

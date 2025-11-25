@@ -12,6 +12,7 @@ This module provides the complete backtesting pipeline that orchestrates:
 """
 
 from collections.abc import Callable
+from datetime import datetime
 
 import pandas as pd
 from common.logger import get_logger
@@ -25,6 +26,50 @@ from backtester.simulator import simulate_trade_outcome
 from backtester.trade import Trade, create_trade_from_entry
 
 logger = get_logger(__name__)
+
+
+def _timestamp_to_datetime(value: pd.Timestamp | datetime) -> datetime:
+    """Normalize pandas timestamps to timezone-aware datetimes."""
+    if isinstance(value, pd.Timestamp):
+        return value.to_pydatetime()
+    if isinstance(value, datetime):
+        return value
+    msg = f"Unsupported timestamp type: {type(value)}"
+    raise TypeError(msg)
+
+
+def _compute_entry_htf_bias_map(
+    gc_df: pd.DataFrame,
+    dxy_df: pd.DataFrame,
+    timeframe: str,
+    htf_bias_func: Callable[[pd.Series, dict], HTFBias],
+    target_timestamps: set[datetime],
+) -> dict[datetime, HTFBias]:
+    """Compute HTF bias for the specific timestamps where entries execute."""
+    if not target_timestamps:
+        return {}
+
+    processor = BacktestProcessor(timeframe=timeframe)
+    bias_map: dict[datetime, HTFBias] = {}
+
+    for features, validation_context in processor.iterate_with_context(gc_df, dxy_df):
+        timestamp = _timestamp_to_datetime(features["timestamp"])
+        if timestamp in target_timestamps and timestamp not in bias_map:
+            bias_map[timestamp] = htf_bias_func(features, validation_context)
+            if len(bias_map) == len(target_timestamps):
+                break
+
+    return bias_map
+
+
+def _is_htf_aligned(direction: str, bias_value: str | None) -> bool:
+    """Check if trade direction aligns with HTF bias string."""
+    if bias_value is None:
+        return False
+
+    return (bias_value == "bullish" and direction == "long") or (
+        bias_value == "bearish" and direction == "short"
+    )
 
 
 def run_backtest_with_entries(
@@ -279,6 +324,14 @@ def run_backtest_with_trades(
     # Step 2: Create and simulate trades
     trades: list[Trade] = []
     invalidation_checker = InvalidationChecker()
+    entry_timestamps = {entry.entry_timestamp for entry in executed_entries}
+    entry_htf_bias_map = _compute_entry_htf_bias_map(
+        gc_df=gc_df,
+        dxy_df=dxy_df,
+        timeframe=timeframe,
+        htf_bias_func=htf_bias_func,
+        target_timestamps=entry_timestamps,
+    )
 
     for entry in executed_entries:
         # Create Trade object with SL/TP
@@ -302,6 +355,17 @@ def run_backtest_with_trades(
             source="BACKTEST",
         )
 
+        entry_bias_obj = entry_htf_bias_map.get(entry.entry_timestamp)
+        if entry_bias_obj is None:
+            entry_bias_value = entry.signal.htf_bias
+            if entry_timestamps:
+                logger.warning(
+                    "Missing HTF bias for entry timestamp %s; falling back to signal bias",
+                    entry.entry_timestamp,
+                )
+        else:
+            entry_bias_value = entry_bias_obj.bias
+
         trade = create_trade_from_entry(
             entry_execution=entry,
             confirmation_candle=confirmation_candle,
@@ -309,10 +373,7 @@ def run_backtest_with_trades(
             risk_config=risk_config,
             market_context={
                 "month": entry.entry_timestamp.month,
-                "htf_aligned": (
-                    (entry.signal.htf_bias == "bullish" and entry.signal.direction == "long")
-                    or (entry.signal.htf_bias == "bearish" and entry.signal.direction == "short")
-                ),
+                "htf_aligned": _is_htf_aligned(entry.signal.direction, entry_bias_value),
                 "dxy_aligned": True,  # TODO: Get from features
             },
         )
