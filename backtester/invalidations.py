@@ -32,6 +32,22 @@ R1_TIME_LIMITS = {
 }
 
 
+def _sanitize_float(value: object | None) -> float | None:
+    """Convert value to a finite float if possible; otherwise return None."""
+    if value is None:
+        return None
+
+    try:
+        numeric_value = float(value)
+    except (TypeError, ValueError):
+        return None
+
+    if math.isnan(numeric_value) or math.isinf(numeric_value):
+        return None
+
+    return numeric_value
+
+
 class InvalidationChecker:
     """Checks for trade invalidation conditions.
 
@@ -112,8 +128,8 @@ class InvalidationChecker:
         # Track VWAP reclaim for fade setups
         if trade.setup_type == "VWAP_FADE" and not state["vwap_reclaimed"]:
             if features is not None:
-                vwap = features.get("vwap")
-                if vwap is not None and not (math.isnan(vwap) or math.isinf(vwap)):
+                vwap = _sanitize_float(features.get("vwap"))
+                if vwap is not None:
                     # VWAP reclaimed if price closes above VWAP (for long fade) or below (for short fade)
                     if trade.direction == "long":
                         if candle.close > vwap:
@@ -193,8 +209,8 @@ class InvalidationChecker:
         if features is None:
             return False, None
 
-        vwap = features.get("vwap")
-        if vwap is None or (isinstance(vwap, float) and (math.isnan(vwap) or math.isinf(vwap))):
+        vwap = _sanitize_float(features.get("vwap"))
+        if vwap is None:
             return False, None
 
         # Check VWAP invalidation - different logic for RECLAIM vs FADE
@@ -347,40 +363,40 @@ class InvalidationChecker:
             return False, None
 
         # Get DXY correlation from features
-        dxy_corr = features.get("dxy_corr")
+        dxy_corr = _sanitize_float(features.get("dxy_corr"))
         
         # For now, use a simple heuristic: if DXY correlation flips significantly
         # against the trade direction, consider it invalidated
         # This is a simplified check - can be enhanced with actual DXY structure detection
+        if dxy_corr is None:
+            return False, None
         
         # Long trade: DXY should be negatively correlated (DXY down = GC up)
         # If correlation becomes positive or less negative, DXY may be flipping
         if trade.direction == "long":
-            if dxy_corr is not None and not (math.isnan(dxy_corr) or math.isinf(dxy_corr)):
-                # DXY correlation should be negative for long GC trades
-                # If it flips to positive or becomes less negative, DXY may be flipping
-                # Use a threshold: if correlation > -0.3, consider it flipped
-                if dxy_corr > -0.3:
-                    reason = (
-                        f"DXY flip: correlation {dxy_corr:.3f} indicates DXY structure "
-                        f"breaking against long trade (expected < -0.6)"
-                    )
-                    logger.info(f"Trade {trade.trade_id} invalidated: {reason}")
-                    return True, reason
+            # DXY correlation should be negative for long GC trades
+            # If it flips to positive or becomes less negative, DXY may be flipping
+            # Use a threshold: if correlation > -0.3, consider it flipped
+            if dxy_corr > -0.3:
+                reason = (
+                    f"DXY flip: correlation {dxy_corr:.3f} indicates DXY structure "
+                    f"breaking against long trade (expected < -0.6)"
+                )
+                logger.info(f"Trade {trade.trade_id} invalidated: {reason}")
+                return True, reason
         
         # Short trade: DXY should be positively correlated or less negative
         # If correlation becomes very negative, DXY may be flipping
         else:  # short
-            if dxy_corr is not None and not (math.isnan(dxy_corr) or math.isinf(dxy_corr)):
-                # For short GC trades, DXY correlation can be less negative
-                # If it becomes very negative (< -0.6), DXY is strongly inverse (flipping)
-                if dxy_corr < -0.6:
-                    reason = (
-                        f"DXY flip: correlation {dxy_corr:.3f} indicates DXY structure "
-                        f"breaking against short trade (strong inverse correlation)"
-                    )
-                    logger.info(f"Trade {trade.trade_id} invalidated: {reason}")
-                    return True, reason
+            # For short GC trades, DXY correlation can be less negative
+            # If it becomes very negative (< -0.6), DXY is strongly inverse (flipping)
+            if dxy_corr < -0.6:
+                reason = (
+                    f"DXY flip: correlation {dxy_corr:.3f} indicates DXY structure "
+                    f"breaking against short trade (strong inverse correlation)"
+                )
+                logger.info(f"Trade {trade.trade_id} invalidated: {reason}")
+                return True, reason
 
         return False, None
 

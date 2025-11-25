@@ -5,6 +5,7 @@ Following TDD principles: tests written first to define behavior.
 
 from datetime import UTC, datetime
 
+import numpy as np
 import pytest
 from backtester.entry_model import EntryExecution
 from backtester.invalidations import InvalidationChecker
@@ -417,6 +418,28 @@ class TestVWAPInvalidation:
             long_continuation_trade, candle, features
         )
         
+        assert is_invalid is False
+        assert reason is None
+
+    def test_vwap_invalidation_ignores_numpy_inf_values(self, long_continuation_trade):
+        """Ensure numpy float values like inf/NaN don't trigger false invalidations."""
+        checker = InvalidationChecker()
+
+        candle = make_candle(
+            timestamp=datetime(2025, 1, 1, 10, 5, tzinfo=UTC),
+            open=2648.0,
+            high=2649.0,
+            low=2647.0,
+            close=2648.0,
+        )
+
+        # pandas often provides numpy scalar types; inf should be treated as invalid data
+        features = {"vwap": np.float32(float("inf"))}
+
+        is_invalid, reason = checker.check_vwap_invalidation(
+            long_continuation_trade, candle, features
+        )
+
         assert is_invalid is False
         assert reason is None
 
