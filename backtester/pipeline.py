@@ -8,6 +8,7 @@ This module provides the complete backtesting pipeline that orchestrates:
 3. Signal scoring (RuleEngine)
 4. Signal validation (ValidationEngine)
 5. Entry execution (EntryModel)
+6. Trade simulation (Simulator)
 """
 
 from collections.abc import Callable
@@ -19,6 +20,9 @@ from feature_engine.integration import process_features_with_validation
 from rule_engine.htf.types import HTFBias
 
 from backtester.entry_model import EntryExecution, execute_entry_at_next_open
+from backtester.invalidations import InvalidationChecker
+from backtester.simulator import simulate_trade_outcome
+from backtester.trade import Trade, create_trade_from_entry
 
 logger = get_logger(__name__)
 
@@ -150,3 +154,197 @@ def run_backtest_with_entries(
     )
 
     return executions
+
+
+def get_future_candles(
+    gc_df: pd.DataFrame,
+    entry_timestamp: pd.Timestamp,
+    max_bars: int,
+) -> pd.DataFrame:
+    """Extract future candles after entry for simulation.
+
+    Args:
+        gc_df: Full GC DataFrame with DatetimeIndex
+        entry_timestamp: Entry timestamp
+        max_bars: Maximum number of bars to extract (20 for continuation, 10 for fade)
+
+    Returns:
+        DataFrame with future candles (up to max_bars)
+    """
+    # Find entry index
+    try:
+        entry_idx = gc_df.index.get_loc(entry_timestamp)
+    except KeyError:
+        logger.warning(
+            f"Entry timestamp {entry_timestamp} not found in dataset. "
+            "Returning empty DataFrame."
+        )
+        return pd.DataFrame()
+
+    # Get candles after entry (up to max_bars)
+    start_idx = entry_idx + 1
+    end_idx = min(start_idx + max_bars, len(gc_df))
+
+    future_candles = gc_df.iloc[start_idx:end_idx]
+
+    logger.debug(
+        f"Extracted {len(future_candles)} future candles "
+        f"(max_bars={max_bars}, available={len(gc_df) - entry_idx - 1})"
+    )
+
+    return future_candles
+
+
+def run_backtest_with_trades(
+    gc_df: pd.DataFrame,
+    dxy_df: pd.DataFrame,
+    timeframe: str,
+    market_state: dict,
+    htf_bias_func: Callable[[pd.Series, dict], HTFBias],
+    risk_config: dict,
+    config: dict | None = None,
+    log_signals: bool = False,
+    log_dir: str | None = None,
+) -> list[Trade]:
+    """Run complete backtest pipeline with trade simulation.
+
+    This function orchestrates the full backtesting pipeline including trade outcomes:
+    1. Generate signals (run_backtest_with_entries)
+    2. For each executed entry:
+       a. Create Trade object with SL/TP
+       b. Simulate outcome (TP/SL/timeout/invalidation)
+    3. Return list of closed trades
+
+    Args:
+        gc_df: GC DataFrame with DatetimeIndex and OHLCV columns
+        dxy_df: DXY DataFrame with DatetimeIndex and OHLCV columns
+        timeframe: Timeframe string (e.g., "1m", "15m", "1h")
+        market_state: Market context dict (buffer_phase, tier_active, etc.)
+        htf_bias_func: Function that computes HTFBias given (features, context)
+        risk_config: Risk configuration dict containing:
+            - risk_per_trade: Dollar risk per trade
+            - buffer_phase: Current capital phase
+            - max_contracts: Maximum contracts allowed
+        config: Optional config dict for dollar PnL calculation
+        log_signals: Whether to log signals to disk (default: False)
+        log_dir: Directory for signal logs (required if log_signals=True)
+
+    Returns:
+        List of Trade objects (all closed with outcomes)
+
+    Example:
+        >>> def compute_htf_bias(features, context):
+        ...     return HTFBias(bias="bullish", direction="long", ...)
+        >>>
+        >>> risk_config = {
+        ...     "risk_per_trade": 350,
+        ...     "buffer_phase": "startup",
+        ...     "max_contracts": 1,
+        ... }
+        >>>
+        >>> trades = run_backtest_with_trades(
+        ...     gc_df=gc_data,
+        ...     dxy_df=dxy_data,
+        ...     timeframe="1m",
+        ...     market_state=market_state,
+        ...     htf_bias_func=compute_htf_bias,
+        ...     risk_config=risk_config,
+        ...     config=config,
+        ... )
+        >>>
+        >>> # Analyze results
+        >>> winning_trades = [t for t in trades if t.pnl > 0]
+        >>> print(f"Win rate: {len(winning_trades)/len(trades)*100:.1f}%")
+    """
+    logger.info(
+        f"Starting backtest with trades: timeframe={timeframe}, "
+        f"tier={market_state.get('tier_active')}"
+    )
+
+    # Step 1: Get executed entries
+    executions = run_backtest_with_entries(
+        gc_df=gc_df,
+        dxy_df=dxy_df,
+        timeframe=timeframe,
+        market_state=market_state,
+        htf_bias_func=htf_bias_func,
+        log_signals=log_signals,
+        log_dir=log_dir,
+    )
+
+    # Filter to only executed entries
+    executed_entries = [e for e in executions if e.executed]
+    logger.info(f"Processing {len(executed_entries)} executed entries")
+
+    # Step 2: Create and simulate trades
+    trades: list[Trade] = []
+    invalidation_checker = InvalidationChecker()
+
+    for entry in executed_entries:
+        # Create Trade object with SL/TP
+        # Note: For proper SL calculation, we'd need confirmation and BOS candles
+        # For now, we'll use entry candle as confirmation (simplified)
+        # TODO: Pass actual confirmation and BOS candles from feature engine
+        entry_idx = gc_df.index.get_loc(entry.entry_timestamp)
+        confirmation_candle_row = gc_df.iloc[entry_idx]
+
+        from common.types import Candle
+
+        confirmation_candle = Candle(
+            timestamp=confirmation_candle_row.name,
+            open=confirmation_candle_row["open"],
+            high=confirmation_candle_row["high"],
+            low=confirmation_candle_row["low"],
+            close=confirmation_candle_row["close"],
+            volume=confirmation_candle_row["volume"],
+            symbol=entry.signal.symbol,
+            timeframe=entry.signal.timeframe,
+            source="BACKTEST",
+        )
+
+        trade = create_trade_from_entry(
+            entry_execution=entry,
+            confirmation_candle=confirmation_candle,
+            bos_candle=None,  # TODO: Get from feature engine
+            risk_config=risk_config,
+            market_context={
+                "month": entry.entry_timestamp.month,
+                "htf_aligned": (
+                    (entry.signal.htf_bias == "bullish" and entry.signal.direction == "long")
+                    or (entry.signal.htf_bias == "bearish" and entry.signal.direction == "short")
+                ),
+                "dxy_aligned": True,  # TODO: Get from features
+            },
+        )
+
+        # Get future candles for simulation
+        # Determine max bars based on setup type
+        if trade.setup_type == "VWAP_FADE":
+            max_bars = 10
+        else:
+            max_bars = 20
+
+        future_candles = get_future_candles(gc_df, entry.entry_timestamp, max_bars)
+
+        # Simulate trade outcome
+        closed_trade = simulate_trade_outcome(
+            trade=trade,
+            future_candles=future_candles,
+            invalidation_checker=invalidation_checker,
+            config=config,
+        )
+
+        trades.append(closed_trade)
+
+        logger.debug(
+            f"Trade {closed_trade.trade_id} closed: {closed_trade.exit_reason} "
+            f"(PnL={closed_trade.pnl:.2f}, R={closed_trade.r_realized:.2f})"
+        )
+
+    logger.info(
+        f"Backtest with trades complete: {len(trades)} trades, "
+        f"{len([t for t in trades if t.pnl and t.pnl > 0])} winners, "
+        f"{len([t for t in trades if t.pnl and t.pnl < 0])} losers"
+    )
+
+    return trades
