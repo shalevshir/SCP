@@ -257,31 +257,71 @@ Run tests:
 uv run pytest tests/unit/backtester/test_pipeline_integration.py -v
 ```
 
+## Trade Simulation (NEW)
+
+The pipeline now supports complete trade lifecycle simulation with the `run_backtest_with_trades()` function:
+
+```python
+from backtester.pipeline import run_backtest_with_trades
+
+# Run complete backtest with trade outcomes
+trades = run_backtest_with_trades(
+    gc_df=gc_df,
+    dxy_df=dxy_df,
+    timeframe="1m",
+    market_state=market_state,
+    htf_bias_func=htf_bias_function,
+    risk_config={
+        "risk_per_trade": 350.0,
+        "buffer_phase": "startup",
+        "max_contracts": 1,
+    },
+    config=config,  # For dollar PnL calculation
+)
+
+# All trades are closed with outcomes
+for trade in trades:
+    print(f"Trade {trade.trade_id}: {trade.exit_reason}")
+    print(f"  PnL: {trade.pnl:.2f} points ({trade.r_realized:.2f}R)")
+    if trade.pnl_net:
+        print(f"  Net: ${trade.pnl_net:.2f}")
+```
+
+**Features:**
+- ✓ Structure-based SL placement
+- ✓ R-multiple TP targets (2R/3R based on setup and seasonality)
+- ✓ Invalidation detection (+1R time limit)
+- ✓ Timeout logic (20 bars continuation, 10 bars fade)
+- ✓ Gap handling (exit at limit, never worse)
+- ✓ SL priority over TP (per SOP)
+- ✓ Dollar-based PnL with slippage and commission
+
+See [Trade Simulator Documentation](./simulator.md) for details.
+
 ## Next Steps
 
-The pipeline produces `EntryExecution` records but does not yet implement:
+Remaining components to implement:
 
-1. **Exit Logic** (SL/TP rules)
-   - Structure-based SL placement
-   - R-multiple TP targets
-   - Invalidation exits
-
-2. **Trade Management**
+1. **Advanced Trade Management**
    - Trailing SL after +1R
    - Partial profit taking
-   - Risk ladder adjustments
+   - Dynamic risk ladder adjustments
 
-3. **PnL Calculation**
-   - Per-trade PnL
-   - Cumulative equity curve
-   - Drawdown tracking
-
-4. **Performance Metrics**
+2. **Performance Metrics Dashboard**
    - Win rate, R:R ratio
    - Max drawdown, Sharpe ratio
    - SOP adherence percentage
+   - Equity curve visualization
 
-These components will be implemented in subsequent tasks to build the complete backtesting system.
+3. **Multi-Session Backtesting**
+   - Cumulative PnL tracking across sessions
+   - Session-level guardrails (2-loss halt)
+   - Buffer phase progression
+
+4. **LLM Enforcer Integration**
+   - Pre-trade validation with GPT
+   - Post-trade analysis and journaling
+   - SOP drift detection
 
 ## References
 
