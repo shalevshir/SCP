@@ -193,7 +193,7 @@ class TestPipelineIntegration:
             "session_ok": True,
         }
 
-        executions = run_backtest_with_entries(
+        executions, _ = run_backtest_with_entries(
             gc_df=gc_df,
             dxy_df=dxy_df,
             timeframe="1m",
@@ -230,7 +230,7 @@ class TestPipelineIntegration:
             "session_ok": True,
         }
 
-        executions = run_backtest_with_entries(
+        executions, _ = run_backtest_with_entries(
             gc_df=gc_df,
             dxy_df=dxy_df,
             timeframe="1m",
@@ -264,7 +264,7 @@ class TestPipelineIntegration:
             "session_ok": True,
         }
 
-        executions = run_backtest_with_entries(
+        executions, _ = run_backtest_with_entries(
             gc_df=gc_df,
             dxy_df=dxy_df,
             timeframe="1m",
@@ -299,7 +299,7 @@ class TestPipelineIntegration:
             "session_ok": True,
         }
 
-        executions = run_backtest_with_entries(
+        executions, _ = run_backtest_with_entries(
             gc_df=gc_df,
             dxy_df=dxy_df,
             timeframe="1m",
@@ -337,7 +337,7 @@ class TestPipelineIntegration:
         }
 
         # Run pipeline twice
-        executions1 = run_backtest_with_entries(
+        executions1, _ = run_backtest_with_entries(
             gc_df=gc_df,
             dxy_df=dxy_df,
             timeframe="1m",
@@ -345,7 +345,7 @@ class TestPipelineIntegration:
             htf_bias_func=bullish_htf_func,
         )
 
-        executions2 = run_backtest_with_entries(
+        executions2, _ = run_backtest_with_entries(
             gc_df=gc_df,
             dxy_df=dxy_df,
             timeframe="1m",
@@ -426,7 +426,7 @@ class TestPipelineIntegration:
             "session_ok": True,
         }
 
-        executions = run_backtest_with_entries(
+        executions, _ = run_backtest_with_entries(
             gc_df=gc_df,
             dxy_df=dxy_df,
             timeframe="1m",

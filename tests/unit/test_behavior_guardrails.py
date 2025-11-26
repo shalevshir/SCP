@@ -44,6 +44,35 @@ class TestBehaviorStateTracker:
         tracker.record_trade_outcome(won=True)
         assert tracker.state.consecutive_losses == 0
 
+    def test_breakeven_trade_does_not_increment_loss_streak(self) -> None:
+        """Test that breakeven trades (pnl == 0) don't increment loss streak.
+        
+        Per SOP, only losing trades (pnl < 0) should increment the streak.
+        Breakeven trades (pnl == 0) should leave the streak unchanged.
+        This prevents premature halts when breakeven trades occur.
+        """
+        tracker = BehaviorStateTracker()
+        
+        # Start with one loss
+        tracker.record_trade_outcome(won=False)
+        assert tracker.state.consecutive_losses == 1
+        
+        # Breakeven trade should not increment or reset
+        tracker.record_trade_outcome(won=None)  # None indicates breakeven
+        assert tracker.state.consecutive_losses == 1, (
+            "Breakeven trade should not increment loss streak"
+        )
+        
+        # Another breakeven
+        tracker.record_trade_outcome(won=None)
+        assert tracker.state.consecutive_losses == 1, (
+            "Multiple breakeven trades should not increment loss streak"
+        )
+        
+        # Win should reset
+        tracker.record_trade_outcome(won=True)
+        assert tracker.state.consecutive_losses == 0
+
     def test_fatigue_and_session_extension_flags(self) -> None:
         tracker = BehaviorStateTracker()
         tracker.set_fatigue_flag(True)

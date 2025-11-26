@@ -438,11 +438,13 @@ class BacktestProcessor:
             "behavior_state": self._behavior_tracker.state,
         }
 
-    def record_trade_outcome(self, won: bool) -> None:
+    def record_trade_outcome(self, won: bool | None) -> None:
         """Record trade outcome to update behavior state.
 
         Args:
-            won: True if trade was profitable, False if loss
+            won: True if trade was profitable (pnl > 0),
+                 False if trade was a loss (pnl < 0),
+                 None if trade was breakeven (pnl == 0)
         """
         if not self.enable_validation:
             return

@@ -80,7 +80,8 @@ def run_backtest_with_entries(
     htf_bias_func: Callable[[pd.Series, dict], HTFBias],
     log_signals: bool = False,
     log_dir: str | None = None,
-) -> list[EntryExecution]:
+    processor: BacktestProcessor | None = None,
+) -> tuple[list[EntryExecution], BacktestProcessor]:
     """Run complete backtest pipeline with entry execution.
 
     This function orchestrates the full backtesting pipeline:
@@ -107,11 +108,13 @@ def run_backtest_with_entries(
             Signature: (pd.Series, dict) -> HTFBias
         log_signals: Whether to log signals to disk (default: False)
         log_dir: Directory for signal logs (required if log_signals=True)
+        processor: Optional BacktestProcessor instance to reuse (for state persistence)
 
     Returns:
-        List of EntryExecution objects, one per signal generated.
-        Includes both successful entries (executed=True) and rejected entries
-        (executed=False with rejection_reason).
+        Tuple of (list of EntryExecution objects, processor instance).
+        EntryExecution list includes both successful entries (executed=True) and
+        rejected entries (executed=False with rejection_reason).
+        Processor instance is returned to allow recording trade outcomes.
 
     Example:
         >>> def compute_htf_bias(features, context):
@@ -126,7 +129,7 @@ def run_backtest_with_entries(
         ...     "session_ok": True,
         ... }
         >>>
-        >>> executions = run_backtest_with_entries(
+        >>> executions, processor = run_backtest_with_entries(
         ...     gc_df=gc_data,
         ...     dxy_df=dxy_data,
         ...     timeframe="1m",
@@ -143,8 +146,9 @@ def run_backtest_with_entries(
         f"tier={market_state.get('tier_active')}"
     )
 
-    # Initialize processor
-    processor = BacktestProcessor(timeframe=timeframe)
+    # Initialize processor (reuse if provided)
+    if processor is None:
+        processor = BacktestProcessor(timeframe=timeframe)
 
     # Collect all entry executions
     executions: list[EntryExecution] = []
@@ -198,7 +202,7 @@ def run_backtest_with_entries(
         f"({100*executed_count/signal_count if signal_count > 0 else 0:.1f}%)"
     )
 
-    return executions
+    return executions, processor
 
 
 def get_future_candles(
@@ -238,27 +242,6 @@ def get_future_candles(
     )
 
     return future_candles
-
-
-def _align_future_features_index(
-    future_features_df: pd.DataFrame,
-    features_df: pd.DataFrame,
-    gc_slice: pd.DataFrame,
-    entry_idx: int,
-) -> pd.DataFrame:
-    """Ensure future feature slices have a timestamp index for alignment."""
-    if "ts_event" in future_features_df.columns:
-        return future_features_df.set_index("ts_event")
-
-    if isinstance(future_features_df.index, pd.DatetimeIndex):
-        return future_features_df
-
-    if len(gc_slice) > entry_idx + 1:
-        future_timestamps = gc_slice.index[entry_idx + 1 :]
-        future_features_df = future_features_df.copy()
-        future_features_df.index = future_timestamps[: len(future_features_df)]
-
-    return future_features_df
 
 
 def run_backtest_with_trades(
@@ -327,8 +310,12 @@ def run_backtest_with_trades(
         f"tier={market_state.get('tier_active')}"
     )
 
-    # Step 1: Get executed entries
-    executions = run_backtest_with_entries(
+    # Create processor upfront for state persistence across the entire backtest
+    # This ensures loss streaks and other state evolve correctly as trades close
+    processor = BacktestProcessor(timeframe=timeframe)
+
+    # Step 1: Get executed entries (reuse processor for state persistence)
+    executions, processor = run_backtest_with_entries(
         gc_df=gc_df,
         dxy_df=dxy_df,
         timeframe=timeframe,
@@ -336,6 +323,7 @@ def run_backtest_with_trades(
         htf_bias_func=htf_bias_func,
         log_signals=log_signals,
         log_dir=log_dir,
+        processor=processor,  # Pass processor to reuse state
     )
 
     # Filter to only executed entries
@@ -408,39 +396,37 @@ def run_backtest_with_trades(
 
         future_candles = get_future_candles(gc_df, entry.entry_timestamp, max_bars)
 
-        # Compute features for future candles
-        # Use BacktestProcessor to compute features (vectorized, fast)
+        # Compute features for future candles (required for invalidation checks)
+        # Without features, VWAP/HTF/DXY invalidations will be silently skipped
         future_features = None
         if not future_candles.empty:
             try:
-                # Create a processor to compute features
-                feature_processor = BacktestProcessor(timeframe=timeframe)
-                
-                # Get the slice of data up to and including future candles
-                # Find entry index
+                # Find entry index in gc_df
                 entry_idx = gc_df.index.get_loc(entry.entry_timestamp)
-                # Get data from start up to end of future candles
+                
+                # Get data slice from start up to end of future candles
                 end_idx = min(entry_idx + 1 + len(future_candles), len(gc_df))
                 gc_slice = gc_df.iloc[:end_idx]
                 dxy_slice = dxy_df.iloc[:end_idx] if len(dxy_df) >= end_idx else dxy_df
                 
-                # Compute features for the entire slice
-                features_df = feature_processor._compute_features(gc_slice, dxy_slice)
+                # Compute features for the entire slice using processor
+                # Note: This doesn't affect processor's validation state
+                features_df = processor._compute_features(gc_slice, dxy_slice)
                 
                 # Extract only features for future candles (after entry)
-                # Features are indexed by position, need to align with timestamps
                 if len(features_df) > entry_idx + 1:
                     future_features_df = features_df.iloc[entry_idx + 1 :].copy()
-
-                    # Set timestamp index to match future_candles
-                    future_features_df = _align_future_features_index(
-                        future_features_df=future_features_df,
-                        features_df=features_df,
-                        gc_slice=gc_slice,
-                        entry_idx=entry_idx,
-                    )
-
-                    # Align with future_candles timestamps (handle missing timestamps)
+                    
+                    # Set timestamp index if not already set
+                    if "ts_event" in future_features_df.columns:
+                        future_features_df = future_features_df.set_index("ts_event")
+                    elif not isinstance(future_features_df.index, pd.DatetimeIndex):
+                        # Use gc_slice timestamps for alignment
+                        if len(gc_slice) > entry_idx + 1:
+                            future_timestamps = gc_slice.index[entry_idx + 1 :]
+                            future_features_df.index = future_timestamps[: len(future_features_df)]
+                    
+                    # Align with future_candles timestamps (handle any missing timestamps)
                     future_features = future_features_df.reindex(
                         future_candles.index, method=None
                     )
@@ -452,7 +438,7 @@ def run_backtest_with_trades(
             except Exception as e:
                 logger.warning(
                     f"Failed to compute features for future candles: {e}. "
-                    "Continuing without features."
+                    "Feature-based invalidations (VWAP/HTF/DXY) will be skipped."
                 )
                 future_features = None
 
@@ -465,10 +451,34 @@ def run_backtest_with_trades(
             future_features=future_features,
         )
 
-        # Record trade outcome to update daily state (consecutive losses, daily PnL)
-        # This enables daily risk stop mechanism (loss streak detection)
-        won = closed_trade.pnl is not None and closed_trade.pnl > 0
+        # Record trade outcome to update state in two places:
+        # 1. InvalidationChecker: Updates daily_pnl, consecutive_losses for PDLL checks during trades
+        # 2. Behavior Tracker: Updates loss streak guardrails before entry
+        # 
+        # Outcome classification:
+        # - won=True: pnl > 0 (actual profit)
+        # - won=False: pnl < 0 (actual loss)
+        # - won=None: pnl == 0 (breakeven, no capital lost)
+        if closed_trade.pnl is None:
+            won = None  # No PnL available (shouldn't happen, but handle gracefully)
+        elif closed_trade.pnl > 0:
+            won = True
+        elif closed_trade.pnl < 0:
+            won = False
+        else:  # pnl == 0
+            won = None  # Breakeven: no win, no loss
+        
+        # Update InvalidationChecker daily state (for PDLL checks during trade simulation)
         invalidation_checker.record_trade_outcome(closed_trade, won=won)
+        
+        # Update behavior tracker (for loss streak guardrails before entry)
+        if processor and processor.enable_validation:
+            processor.record_trade_outcome(won)
+            logger.debug(
+                f"Recorded trade outcome: won={won}, "
+                f"daily_pnl={invalidation_checker._daily_state['daily_pnl']:.2f}, "
+                f"consecutive_losses={invalidation_checker._daily_state['consecutive_losses']}"
+            )
 
         trades.append(closed_trade)
 
