@@ -45,6 +45,11 @@ def calculate_structure_labels(
 
 Series containing structure labels indexed same as input DataFrame. Values are: "HH", "HL", "LH", "LL", or pd.NA for non-swing points.
 
+**Important**: Labels are delayed by `swing_window` bars to prevent lookahead bias:
+- First `swing_window * 2` positions: `pd.NA` (warmup period)
+- Last `swing_window` positions: `pd.NA` (not enough future confirmation)
+- Labels appear `swing_window` bars after swing point detection
+
 #### Raises
 
 - `ValueError`: If required columns are missing or swing_window < 2.
@@ -55,13 +60,20 @@ Series containing structure labels indexed same as input DataFrame. Values are: 
 
 1. **Swing High Detection**: Identifies local maxima using rolling window
    - A swing high is a point where the high price is the maximum in a window of `swing_window` periods on each side
+   - Uses `>=` comparison to match incremental StructureState behavior
 
 2. **Swing Low Detection**: Identifies local minima using rolling window
    - A swing low is a point where the low price is the minimum in a window of `swing_window` periods on each side
+   - Uses `<=` comparison to match incremental StructureState behavior
 
 3. **Labeling**: Compares each swing point to the previous swing point of the same type
    - Higher than previous → HH (highs) or HL (lows)
    - Lower than previous → LH (highs) or LL (lows)
+
+4. **Delayed Label Assignment** (CRITICAL for zero lookahead):
+   - When a swing point is detected at position `i`, its label appears at position `i + swing_window`
+   - This ensures labels only use past data (no lookahead bias)
+   - Matches the incremental StructureState behavior where labels are delayed by `swing_window` bars
 
 ---
 
@@ -105,6 +117,15 @@ print(f"Bearish structure points: {len(bearish)}")
 - **Minimum Data**: Need at least `2 * swing_window + 1` rows to identify swing points
 - **Data Quality**: High and low columns must be valid numeric values
 - **Sorted Data**: Data should be sorted chronologically for accurate swing detection
+
+## Zero Lookahead Guarantee
+
+The delayed labeling approach ensures zero lookahead bias:
+
+- **Delay Mechanism**: Labels appear `swing_window` bars after swing detection
+- **No Future Data**: When processing position `i`, labels only use data up to position `i`
+- **Matching Behavior**: Vectorized `calculate_structure_labels()` matches incremental `StructureState.update()` within tolerance
+- **Test Verification**: Comprehensive tests verify that modifying future data doesn't affect past labels
 
 ---
 

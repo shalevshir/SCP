@@ -23,16 +23,24 @@ def calculate_structure_labels(
     - LH: Lower High (swing high below previous swing high)
     - LL: Lower Low (swing low below previous swing low)
 
+    CRITICAL: Labels are delayed by swing_window bars to prevent lookahead bias.
+    When a swing point is detected at position i, its label appears at position
+    i + swing_window. This matches the incremental StructureState behavior.
+
     Args:
         df: DataFrame with OHLCV data. Must contain high and low columns.
         swing_window: Number of periods to look back/forward to identify
-                     swing points. Default is 5.
+                     swing points. Labels are delayed by this many bars.
+                     Default is 5.
         high_column: Name of the high price column. Default is "high".
         low_column: Name of the low price column. Default is "low".
 
     Returns:
         Series containing structure labels indexed same as input DataFrame.
         Values are: "HH", "HL", "LH", "LL", or pd.NA for non-swing points.
+        - First swing_window * 2 positions: pd.NA (warmup period)
+        - Last swing_window positions: pd.NA (not enough future confirmation)
+        - Labels appear swing_window bars after swing point detection
 
     Raises:
         ValueError: If required columns are missing.
@@ -44,7 +52,7 @@ def calculate_structure_labels(
         ...     'low': [99, 100, 99, 101, 100, 102]
         ... })
         >>> labels = calculate_structure_labels(df, swing_window=2)
-        >>> print(labels)
+        >>> # Swing detected at position i appears at position i + 2
     """
     # Validate inputs
     if swing_window < 2:
@@ -65,67 +73,95 @@ def calculate_structure_labels(
     if len(df) < swing_window * 2 + 1:
         return labels
 
-    # Identify swing highs: local maxima
-    # A swing high is a point where high is the maximum in the window
-    swing_highs = pd.Series(index=df.index, dtype=bool)
-    for i in range(swing_window, len(df) - swing_window):
-        idx = df.index[i]
-        window_highs = df[high_column].iloc[i - swing_window : i + swing_window + 1]
-        if df[high_column].iloc[i] == window_highs.max():
-            swing_highs.loc[idx] = True
-
-    # Identify swing lows: local minima
-    # A swing low is a point where low is the minimum in the window
-    swing_lows = pd.Series(index=df.index, dtype=bool)
-    for i in range(swing_window, len(df) - swing_window):
-        idx = df.index[i]
-        window_lows = df[low_column].iloc[i - swing_window : i + swing_window + 1]
-        if df[low_column].iloc[i] == window_lows.min():
-            swing_lows.loc[idx] = True
-
+    # Identify swing highs and lows, then delay labels by swing_window bars
+    # to prevent lookahead bias. Labels appear swing_window bars after the
+    # swing point is confirmed, matching the incremental StructureState behavior.
+    
+    # Track detected swing points and their labels (before delay)
+    # Format: (swing_detection_idx, label, value)
+    # The label will be assigned to position swing_detection_idx + swing_window
+    swing_detections: list[tuple[int, str, float]] = []
+    
     # Track previous swing high and low values
     prev_swing_high: float | None = None
     prev_swing_low: float | None = None
-
-    # Label swing points
-    # Process both highs and lows, prioritizing the one that occurs first
-    # If both occur at same index, use the more significant one
-    for i in df.index:
-        is_swing_high = swing_highs.loc[i]
-        is_swing_low = swing_lows.loc[i]
-
+    
+    # Detect swing points and determine their labels
+    # We iterate through positions where we can detect swings AND where the delayed
+    # label will not exceed the valid range (last swing_window positions must be None).
+    # For position i, we check if it's a swing point using window [i-swing_window : i+swing_window+1]
+    # The delayed label appears at position i + swing_window, which must be < len(df) - swing_window
+    # Therefore: i + swing_window < len(df) - swing_window → i < len(df) - 2*swing_window
+    for i in range(swing_window, len(df) - 2 * swing_window):
+        idx = df.index[i]
+        center_high = df.loc[idx, high_column]
+        center_low = df.loc[idx, low_column]
+        
+        # Check if center point is a swing high (local maximum)
+        # Use >= to match StructureState logic (all other values <= center)
+        window_highs = df[high_column].iloc[i - swing_window : i + swing_window + 1]
+        is_swing_high = all(
+            center_high >= window_highs.iloc[j]
+            for j in range(len(window_highs))
+            if j != swing_window
+        )
+        
+        # Check if center point is a swing low (local minimum)
+        # Use <= to match StructureState logic (all other values >= center)
+        window_lows = df[low_column].iloc[i - swing_window : i + swing_window + 1]
+        is_swing_low = all(
+            center_low <= window_lows.iloc[j]
+            for j in range(len(window_lows))
+            if j != swing_window
+        )
+        
+        label: str | None = None
+        
+        # Process swing high (takes priority over swing low)
         if is_swing_high:
-            current_high = df.loc[i, high_column]
             if prev_swing_high is not None:
-                if current_high > prev_swing_high:
-                    labels.loc[i] = "HH"
-                elif current_high < prev_swing_high:
-                    labels.loc[i] = "LH"
-                # If equal, keep previous label or use HH as default
+                if center_high > prev_swing_high:
+                    label = "HH"
+                elif center_high < prev_swing_high:
+                    label = "LH"
                 else:
-                    labels.loc[i] = "HH"
+                    label = "HH"  # Equal - default to HH
             else:
                 # First swing high - label as HH
-                labels.loc[i] = "HH"
-            prev_swing_high = current_high
-
-        if is_swing_low:
-            current_low = df.loc[i, low_column]
-            # Only label if not already labeled by swing high
-            if pd.isna(labels.loc[i]):
-                if prev_swing_low is not None:
-                    if current_low > prev_swing_low:
-                        labels.loc[i] = "HL"
-                    elif current_low < prev_swing_low:
-                        labels.loc[i] = "LL"
-                    # If equal, keep previous label or use HL as default
-                    else:
-                        labels.loc[i] = "HL"
+                label = "HH"
+            prev_swing_high = center_high
+            
+            # Store detection: will assign label at position i + swing_window
+            if label:
+                swing_detections.append((i, label, center_high))
+        
+        # Process swing low (only if not already processed as swing high)
+        elif is_swing_low:
+            if prev_swing_low is not None:
+                if center_low > prev_swing_low:
+                    label = "HL"
+                elif center_low < prev_swing_low:
+                    label = "LL"
                 else:
-                    # First swing low - label as HL
-                    labels.loc[i] = "HL"
-                # Only update prev_swing_low when swing low is actually labeled
-                prev_swing_low = current_low
+                    label = "HL"  # Equal - default to HL
+            else:
+                # First swing low - label as HL
+                label = "HL"
+            prev_swing_low = center_low
+            
+            # Store detection: will assign label at position i + swing_window
+            if label:
+                swing_detections.append((i, label, center_low))
+    
+    # Assign labels with delay: label detected at position i appears at position i + swing_window
+    # This matches StructureState behavior where update() at position i returns label for
+    # swing detected at position i - swing_window
+    for swing_idx, label, _ in swing_detections:
+        delayed_idx = swing_idx + swing_window
+        if delayed_idx < len(df):
+            # Only assign if not already assigned (swing high takes priority over swing low)
+            if pd.isna(labels.iloc[delayed_idx]):
+                labels.iloc[delayed_idx] = label
 
     return labels
 
