@@ -158,7 +158,9 @@ def calculate_structure_labels(
     # swing detected at position i - swing_window
     for swing_idx, label, _ in swing_detections:
         delayed_idx = swing_idx + swing_window
-        if delayed_idx < len(df):
+        # Ensure delayed labels don't exceed len(df) - swing_window - 1
+        # (last swing_window positions must remain None per zero-lookahead guarantee)
+        if delayed_idx < len(df) - swing_window:
             # Only assign if not already assigned (swing high takes priority over swing low)
             if pd.isna(labels.iloc[delayed_idx]):
                 labels.iloc[delayed_idx] = label
