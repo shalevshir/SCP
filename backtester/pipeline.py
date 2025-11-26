@@ -396,12 +396,59 @@ def run_backtest_with_trades(
 
         future_candles = get_future_candles(gc_df, entry.entry_timestamp, max_bars)
 
+        # Compute features for future candles (required for invalidation checks)
+        # Without features, VWAP/HTF/DXY invalidations will be silently skipped
+        future_features = None
+        if not future_candles.empty:
+            try:
+                # Find entry index in gc_df
+                entry_idx = gc_df.index.get_loc(entry.entry_timestamp)
+                
+                # Get data slice from start up to end of future candles
+                end_idx = min(entry_idx + 1 + len(future_candles), len(gc_df))
+                gc_slice = gc_df.iloc[:end_idx]
+                dxy_slice = dxy_df.iloc[:end_idx] if len(dxy_df) >= end_idx else dxy_df
+                
+                # Compute features for the entire slice using processor
+                # Note: This doesn't affect processor's validation state
+                features_df = processor._compute_features(gc_slice, dxy_slice)
+                
+                # Extract only features for future candles (after entry)
+                if len(features_df) > entry_idx + 1:
+                    future_features_df = features_df.iloc[entry_idx + 1 :].copy()
+                    
+                    # Set timestamp index if not already set
+                    if "ts_event" in future_features_df.columns:
+                        future_features_df = future_features_df.set_index("ts_event")
+                    elif not isinstance(future_features_df.index, pd.DatetimeIndex):
+                        # Use gc_slice timestamps for alignment
+                        if len(gc_slice) > entry_idx + 1:
+                            future_timestamps = gc_slice.index[entry_idx + 1 :]
+                            future_features_df.index = future_timestamps[: len(future_features_df)]
+                    
+                    # Align with future_candles timestamps (handle any missing timestamps)
+                    future_features = future_features_df.reindex(
+                        future_candles.index, method=None
+                    )
+                    
+                    logger.debug(
+                        f"Computed features for {len(future_features)} future candles "
+                        f"(aligned with {len(future_candles)} candles)"
+                    )
+            except Exception as e:
+                logger.warning(
+                    f"Failed to compute features for future candles: {e}. "
+                    "Feature-based invalidations (VWAP/HTF/DXY) will be skipped."
+                )
+                future_features = None
+
         # Simulate trade outcome
         closed_trade = simulate_trade_outcome(
             trade=trade,
             future_candles=future_candles,
             invalidation_checker=invalidation_checker,
             config=config,
+            future_features=future_features,
         )
 
         # Record trade outcome to update state in two places:
