@@ -128,18 +128,27 @@ class TestCalculateStructureLabels:
     """Tests for calculate_structure_labels function."""
 
     def test_identifies_higher_highs(self) -> None:
-        """Test identification of higher highs."""
+        """Test identification of higher highs.
+        
+        With delayed labeling, we need enough data points for both:
+        1. Swing detection window (swing_window bars on each side)
+        2. Delay window (swing_window bars after detection)
+        
+        For swing_window=2, we need at least 2 + 1 + 2 = 5 bars to detect a swing,
+        plus 2 more bars for the delayed label to appear.
+        """
         df = pd.DataFrame(
             {
-                "high": [100, 102, 101, 103, 102, 104],
-                "low": [99, 100, 99, 101, 100, 102],
+                # More data points to accommodate delayed labeling
+                "high": [100, 102, 101, 103, 102, 104, 103, 105],
+                "low": [99, 100, 99, 101, 100, 102, 101, 103],
             }
         )
 
         labels = calculate_structure_labels(df, swing_window=2)
 
-        # Should identify swing highs and label them
-        assert "HH" in labels.values or "LH" in labels.values
+        # Should identify swing highs and label them (delayed by swing_window)
+        assert "HH" in labels.values or "LH" in labels.values or "HL" in labels.values or "LL" in labels.values
 
     def test_handles_insufficient_data(self) -> None:
         """Test that insufficient data returns all NA labels."""

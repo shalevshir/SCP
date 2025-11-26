@@ -179,14 +179,10 @@ class BacktestProcessor:
             if self.enable_validation:
                 self._check_session_reset(timestamp)
 
-            # For structure labels, mask out labels that were computed using
-            # future data. Must mask BOTH structure_label AND structure_type
-            # since they contain identical swing point data.
-            max_valid_structure_idx = len(gc_aligned) - self.swing_window - 1
-            if i > max_valid_structure_idx:
-                features = features.copy()
-                features["structure_label"] = None
-                features["structure_type"] = None
+            # Structure labels are already delayed by swing_window bars in
+            # calculate_structure_labels(), so no additional masking is needed.
+            # The last swing_window bars will naturally have None labels since
+            # there isn't enough future data to confirm swings.
 
             # Build features series
             features_series = pd.Series(
@@ -283,12 +279,10 @@ class BacktestProcessor:
             if self.enable_validation:
                 self._check_session_reset(timestamp)
 
-            # Mask structure labels computed using future data
-            max_valid_structure_idx = len(gc_aligned) - self.swing_window - 1
-            if i > max_valid_structure_idx:
-                features = features.copy()
-                features["structure_label"] = None
-                features["structure_type"] = None
+            # Structure labels are already delayed by swing_window bars in
+            # calculate_structure_labels(), so no additional masking is needed.
+            # The last swing_window bars will naturally have None labels since
+            # there isn't enough future data to confirm swings.
 
             # Build features series (current bar)
             features_series = pd.Series(

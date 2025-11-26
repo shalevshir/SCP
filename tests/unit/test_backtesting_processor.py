@@ -269,12 +269,12 @@ class TestBacktestProcessor:
         speedup = inc_time / vec_time if vec_time > 0 else float('inf')
         print(f"\nPerformance: Vectorized={vec_time:.3f}s, Incremental={inc_time:.3f}s, Speedup={speedup:.1f}x")
 
-    def test_structure_labels_masked_to_prevent_lookahead_bias(self, sample_data):
-        """Test that BOTH structure_label AND structure_type are masked when they would contain future data.
+    def test_structure_labels_delayed_to_prevent_lookahead_bias(self, sample_data):
+        """Test that structure labels are delayed by swing_window bars to prevent lookahead.
         
-        This test verifies the fix for look-ahead bias where structure_type
-        was not being masked even though it contains identical data to structure_label.
-        Both fields must be None for timestamps beyond max_valid_structure_idx.
+        With the delayed labeling approach, labels appear swing_window bars after
+        swing detection. The last swing_window bars naturally have None labels
+        since there isn't enough future data to confirm swings.
         """
         gc_df, dxy_df = sample_data
         processor = BacktestProcessor(timeframe="1m", warmup_period=10)
@@ -282,36 +282,24 @@ class TestBacktestProcessor:
         # Collect all features
         features_list = [f for f, _ in processor.iterate_with_context(gc_df, dxy_df)]
         
-        # Calculate max_valid_structure_idx (same logic as in BacktestProcessor)
-        max_valid_structure_idx = len(gc_df) - processor.swing_window - 1
+        # With delayed labeling, the last swing_window bars should have None labels
+        # because there isn't enough future data to confirm swings that would be
+        # delayed beyond the end of the dataset
+        swing_window = processor.swing_window
         
-        # Check features in valid range (should have structure labels)
-        # Valid indices start at warmup_period-1
-        valid_features_idx = max_valid_structure_idx - (processor.warmup_period - 1)
-        if valid_features_idx > 0:
-            # Pick a feature in the middle of valid range
-            mid_valid_idx = valid_features_idx // 2
-            valid_feature = features_list[mid_valid_idx]
-            
-            # Structure labels should exist in valid range (may be None if no pattern detected,
-            # but the key is they're not being masked)
-            # We can't guarantee they're not None (depends on actual patterns),
-            # but we verify the masking logic below
-        
-        # Check features beyond valid range (should have None for structure labels)
-        # These are the last features where look-ahead would occur
-        invalid_start_idx = max_valid_structure_idx - (processor.warmup_period - 1) + 1
-        
-        if invalid_start_idx < len(features_list):
-            # All features beyond this point should have None for BOTH fields
-            for idx in range(invalid_start_idx, len(features_list)):
+        # Check that last swing_window features have None structure labels
+        if len(features_list) >= swing_window:
+            import pandas as pd
+            for idx in range(len(features_list) - swing_window, len(features_list)):
                 feature = features_list[idx]
-                assert feature["structure_label"] is None, (
-                    f"structure_label should be None at index {idx} "
-                    f"(beyond max_valid_structure_idx={max_valid_structure_idx})"
+                # Use pd.isna() to check for None/NaN
+                assert pd.isna(feature["structure_label"]) or feature["structure_label"] is None, (
+                    f"structure_label should be None at delay position {idx} "
+                    f"(last {swing_window} bars should have None due to delay), "
+                    f"got {feature['structure_label']}"
                 )
-                assert feature["structure_type"] is None, (
-                    f"structure_type should be None at index {idx} "
-                    f"(beyond max_valid_structure_idx={max_valid_structure_idx}) "
-                    "to prevent look-ahead bias"
+                assert pd.isna(feature["structure_type"]) or feature["structure_type"] is None, (
+                    f"structure_type should be None at delay position {idx} "
+                    f"(last {swing_window} bars should have None due to delay), "
+                    f"got {feature['structure_type']}"
                 )

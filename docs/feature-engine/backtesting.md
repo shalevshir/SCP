@@ -41,7 +41,7 @@ The processor uses two key strategies to prevent look-ahead bias:
 
 1. **Vectorized Computation**: Most indicators (VWAP, RSI, EMA, DXY correlation) use rolling windows or exponential smoothing that naturally avoid look-ahead when computed vectorized. These are computed once for the entire dataset.
 
-2. **Future Data Masking**: Structure labels require special handling because they use future data (swing_window periods ahead) in their calculation. The processor masks out **both `structure_label` and `structure_type`** (which contain identical swing point data) that were computed using data not yet available at each timestamp. This prevents look-ahead bias in HTF bias computation.
+2. **Delayed Structure Labels**: Structure labels are delayed by `swing_window` bars in `calculate_structure_labels()`, ensuring labels only use past data. When a swing point is detected at position `i`, its label appears at position `i + swing_window`. The last `swing_window` bars naturally have `None` labels since there isn't enough future data to confirm swings. This matches the incremental StructureState behavior and guarantees zero lookahead bias.
 
 ---
 
@@ -273,8 +273,9 @@ See `tests/unit/test_feature_parity.py` for comprehensive parity tests.
 
 Tests verify that:
 1. Features don't change when future data is modified
-2. **Both `structure_label` and `structure_type` are masked** when based on future data (see `test_structure_labels_masked_to_prevent_lookahead_bias`)
+2. **Structure labels are delayed** by `swing_window` bars, ensuring no future data is used (see `test_structure_labels_delayed_to_prevent_lookahead_bias`)
 3. All indicators use only historical data in their calculations
+4. Vectorized structure labels match incremental StructureState within tolerance
 
 ---
 
@@ -294,14 +295,14 @@ The processor requires aligned timestamps between GC and DXY. Missing data will 
 
 ### Structure Labels Near End
 
-Both `structure_label` and `structure_type` within `swing_window` periods of the end are masked as `None` because they would require future data. This is critical for preventing look-ahead bias since `structure_type` is used in HTF bias computation in the validation layer.
+The last `swing_window` bars naturally have `None` for `structure_label` and `structure_type` because there isn't enough future data to confirm swings that would be delayed beyond the end of the dataset. This is a natural consequence of the delayed labeling approach and ensures zero lookahead bias. The delayed labeling matches the incremental StructureState behavior, where labels appear `swing_window` bars after swing detection.
 
 ---
 
 ## Limitations
 
 1. **Memory**: Stores all features in memory. For very large datasets (>1M rows), process in batches.
-2. **Structure Labels**: Both `structure_label` and `structure_type` are masked near the end (within `swing_window` periods), meaning fewer structure labels available for HTF bias computation than incremental mode.
+2. **Structure Labels**: The last `swing_window` bars have `None` labels due to delayed labeling (not enough future data to confirm swings). This matches incremental mode behavior and ensures zero lookahead bias.
 3. **Single Iteration**: Each call to `iterate_with_context()` recomputes features. Cache results if iterating multiple times.
 
 ---
