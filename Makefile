@@ -1,7 +1,10 @@
-.PHONY: test test-unit test-verbose test-parallel test-coverage test-fast lint format check clean help
+.PHONY: test test-unit test-verbose test-parallel test-coverage test-fast lint format check clean help install
 
 help:
 	@echo "SCP Trading Bot - Development Commands"
+	@echo ""
+	@echo "Setup:"
+	@echo "  make install           Install all dependencies (including dev)"
 	@echo ""
 	@echo "Testing:"
 	@echo "  make test              Run all tests"
@@ -19,35 +22,38 @@ help:
 	@echo "Cleanup:"
 	@echo "  make clean             Remove test artifacts and caches"
 
+install:
+	poetry install
+
 test:
-	pytest
+	poetry run pytest
 
 test-unit:
-	pytest tests/unit/
+	poetry run pytest tests/unit/
 
 test-verbose:
-	pytest -vv
+	poetry run pytest -vv
 
 test-parallel:
-	pytest -n auto
+	poetry run pytest -n auto
 
 test-coverage:
-	pytest --cov=common --cov=data_layer --cov=src --cov=feature_engine --cov=backtester --cov=rule_engine --cov=validation --cov-report=html --cov-report=term
+	poetry run pytest --cov=common --cov=data_layer --cov=src --cov=feature_engine --cov=backtester --cov=rule_engine --cov=validation --cov-report=html --cov-report=term
 
 test-fast:
-	pytest -n auto -q
+	poetry run pytest -n auto -q
 
 lint:
 	@echo "Running ruff..."
-	ruff check .
+	poetry run ruff check .
 	@echo "Running mypy..."
-	mypy src/
+	poetry run mypy src/
 
 format:
 	@echo "Running black..."
-	black .
+	poetry run black .
 	@echo "Running isort..."
-	isort .
+	poetry run isort .
 
 check: lint test
 
@@ -56,4 +62,3 @@ clean:
 	rm -rf .pytest_cache .coverage htmlcov .mypy_cache .ruff_cache
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 	@echo "Clean complete."
-

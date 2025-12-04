@@ -347,3 +347,6 @@ class TestHTFVWAPCalculator:
         assert 'open' in result.columns
 
 
+
+
+
