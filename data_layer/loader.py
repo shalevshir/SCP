@@ -41,13 +41,30 @@ class HistoricalDataLoader:
         >>> dxy_df = data["DXY"]
     """
 
-    def __init__(self, data_dir: str | os.PathLike[str]) -> None:
+    # Default symbol filters for each asset
+    # GC files contain multiple contract months (GCQ5, GCV5, etc.) - use GCQ5
+    DEFAULT_SYMBOL_FILTERS: dict[str, str] = {
+        "GC": "GCQ5",  # July 2025 Gold futures
+    }
+
+    def __init__(
+        self,
+        data_dir: str | os.PathLike[str],
+        symbol_filters: dict[str, str] | None = None,
+    ) -> None:
         """Initialize the loader with data directory path.
 
         Args:
             data_dir: Path to directory containing CSV files
+            symbol_filters: Optional dict mapping symbols to CSV symbol filters.
+                           e.g., {"GC": "GCQ5"} to filter GC data to GCQ5 only.
+                           Defaults to using GCQ5 for GC.
         """
         self.data_dir = Path(data_dir)
+        # Merge defaults with provided filters (provided takes precedence)
+        self.symbol_filters = {**self.DEFAULT_SYMBOL_FILTERS}
+        if symbol_filters:
+            self.symbol_filters.update(symbol_filters)
 
     def load(
         self,
@@ -86,8 +103,11 @@ class HistoricalDataLoader:
             file_symbol = self._map_symbol_to_filename(symbol)
             file_path = self.data_dir / f"{file_symbol}_ohlcv-{timeframe}.csv"
 
+            # Get symbol filter (e.g., GC -> GCQ5)
+            csv_symbol_filter = self.symbol_filters.get(symbol)
+
             # Load data using LocalCSVClient
-            client = LocalCSVClient(file_path)
+            client = LocalCSVClient(file_path, symbol_filter=csv_symbol_filter)
             candles = client.fetch(start, end, timeframe)
 
             # Convert to DataFrame
