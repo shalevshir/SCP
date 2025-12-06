@@ -96,9 +96,13 @@ class StreamingFeatureProcessor:
         self.dxy_corr_gc_buffer: deque[tuple[datetime, float]] = deque(maxlen=dxy_window)
         self.dxy_corr_dxy_buffer: deque[tuple[datetime, float]] = deque(maxlen=dxy_window)
 
-        # Structure detection buffer (needs swing_window * 2 + lookback)
-        # Store full candle data for structure calculation
-        self.structure_buffer: deque[dict] = deque(maxlen=swing_window * 2 + 10)
+        # Structure detection buffer (needs enough bars to capture swing points)
+        # With swing_window=3, detection range is limited, so we need more bars
+        # 30 bars gives good coverage for detecting market structure
+        self.structure_buffer: deque[dict] = deque(maxlen=30)
+        
+        # Track last detected structure label (persists between bars)
+        self.last_structure_label: Optional[str] = None
 
         # VWAP cumulative state
         self.vwap_pv_sum = 0.0
@@ -240,14 +244,15 @@ class StreamingFeatureProcessor:
                 # Structure labels are delayed by swing_window bars
                 if len(labels_series) > self.swing_window:
                     # Get label from swing_window bars ago (most recent confirmed label)
-                    features["structure_label"] = labels_series.iloc[-(self.swing_window + 1)]
-                else:
-                    features["structure_label"] = None
+                    current_label = labels_series.iloc[-(self.swing_window + 1)]
+                    # Only update last_structure_label if we got a valid label (not NA/None)
+                    if current_label is not None and not pd.isna(current_label):
+                        self.last_structure_label = current_label
             except Exception as e:
                 logger.warning(f"Structure label calculation failed: {e}")
-                features["structure_label"] = None
-        else:
-            features["structure_label"] = None
+        
+        # Always return the last known structure label (persists between swing points)
+        features["structure_label"] = self.last_structure_label
 
         return pd.Series(features)
 
@@ -275,6 +280,7 @@ class StreamingFeatureProcessor:
         self.dxy_corr_gc_buffer.clear()
         self.dxy_corr_dxy_buffer.clear()
         self.structure_buffer.clear()
+        self.last_structure_label = None
         self.vwap_pv_sum = 0.0
         self.vwap_v_sum = 0.0
         self.vwap_current_session = None
