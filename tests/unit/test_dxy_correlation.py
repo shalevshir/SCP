@@ -77,8 +77,11 @@ class TestDXYCorrelation:
         """Load real GC OHLCV data from CSV."""
         data_path = PROJECT_ROOT / "data" / "gc_dx_ohlcv" / "GC_ohlcv-1m.csv"
         df = pd.read_csv(data_path, parse_dates=["ts_event"])
-        # Filter to single symbol and take first 200 rows
-        df = df[df["symbol"] == "GCZ5"].head(200).copy()
+        # Filter to single non-spread symbol and take first 200 rows
+        # Use GCQ5 (current front month) - filter out spread symbols (contain "-")
+        non_spread = df[~df["symbol"].str.contains("-", na=False)]
+        primary_symbol = non_spread["symbol"].value_counts().idxmax()
+        df = df[df["symbol"] == primary_symbol].head(200).copy()
         return df
 
     @pytest.fixture
@@ -392,7 +395,10 @@ class TestDXYCorrelation:
             pytest.skip("15m data not available, skipping 15m timeframe test")
 
         gc_df = pd.read_csv(gc_path, parse_dates=["ts_event"])
-        gc_df = gc_df[gc_df["symbol"] == "GCZ5"].head(500).copy()
+        # Filter to primary non-spread symbol
+        non_spread = gc_df[~gc_df["symbol"].str.contains("-", na=False)]
+        primary_symbol = non_spread["symbol"].value_counts().idxmax()
+        gc_df = gc_df[gc_df["symbol"] == primary_symbol].head(500).copy()
 
         dxy_df = pd.read_csv(dxy_path, parse_dates=["ts_event"])
         dxy_df = dxy_df.head(500).copy()
