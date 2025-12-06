@@ -40,10 +40,12 @@ class StreamingHTFBiasCalculator:
     def __init__(self):
         """Initialize streaming HTF bias calculator."""
         # Create streaming processors for each timeframe
-        # Use smaller swing_window for 1H (3 instead of 5) to need fewer bars
-        # 1H with swing_window=3 needs 7 bars (7 hours) instead of 11 bars (11 hours)
+        # Use smaller swing_window (3 instead of 5) to need fewer bars for structure detection
+        # swing_window=3 needs 7 bars, swing_window=5 needs 11 bars
+        # 1H with swing_window=3 needs 7 hours instead of 11 hours
+        # 15M with swing_window=3 needs 7*15min = 1.75 hours instead of 2.75 hours
         self.processor_1h = StreamingFeatureProcessor(timeframe="1h", swing_window=3)
-        self.processor_15m = StreamingFeatureProcessor(timeframe="15m", swing_window=5)
+        self.processor_15m = StreamingFeatureProcessor(timeframe="15m", swing_window=3)
 
         # Track current HTF bars being built
         self.current_1h_timestamp: Optional[datetime] = None
@@ -242,7 +244,9 @@ class StreamingHTFBiasCalculator:
         """Check if calculator has enough data for reliable HTF bias.
         
         Returns:
-            True if both processors are warmed up
+            True if we have processed at least 1 complete 1H bar and 4 15M bars
         """
-        return self.processor_1h.is_warmed_up() and self.processor_15m.is_warmed_up()
+        # Need at least 1 complete 1H bar and 4 15M bars (1 hour) for meaningful context
+        # The processor's is_warmed_up() check is too strict (requires 50 bars each)
+        return len(self.df_1h_buffer) >= 1 and len(self.df_15m_buffer) >= 4
 
