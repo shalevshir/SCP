@@ -14,9 +14,6 @@ from typing import TYPE_CHECKING
 import pandas as pd
 from common.logger import get_logger
 from rule_engine.htf.types import HTFBias
-from rule_engine.scoring import score_signal
-from rule_engine.signal_logger import log_signal
-from rule_engine.validation import validate_signal_with_sop
 
 from feature_engine.aggregator import aggregate_features
 from feature_engine.structure import calculate_structure_labels
@@ -383,10 +380,16 @@ def process_features_with_validation(
     }
 
     # Step 2: Score the signal with HTFBias
+    # Lazy import to avoid circular dependency
+    from rule_engine.scoring import score_signal
+    
     signal = score_signal(features, htf_bias, scoring_context)
 
     # Step 3: Apply full SOP validation
     # Note: session_constraints is guaranteed to be non-None here due to Step 0
+    # Lazy import to avoid circular dependency
+    from rule_engine.validation import validate_signal_with_sop
+    
     validated_signal = validate_signal_with_sop(
         signal=signal,
         features=features,
@@ -398,6 +401,9 @@ def process_features_with_validation(
 
     # Step 4: Log signal if requested
     if log_signals and log_dir:
+        # Lazy import to avoid circular dependency
+        from rule_engine.signal_logger import log_signal
+        
         log_signal(validated_signal, log_dir=log_dir)
 
     return validated_signal
