@@ -1,20 +1,7 @@
 # create-branch
 
 ## Overview
-Create a feature branch with clean commits and **automatically** open a pull request, ensuring all quality gates are met before proceeding. The command handles PR creation automatically—no manual steps or options to choose from.
-
-## Automated Workflow
-
-When you run this command, it will:
-
-1. **Validate Prerequisites** - Check all Definition of Done criteria
-2. **Create/Verify Branch** - Ensure you're on the correct branch
-3. **Generate Commits** - Guide you through creating clean commits
-4. **Push to Remote** - Push the branch automatically
-5. **Create PR Automatically** - Generate PR title/body from commits and create PR
-6. **Display Results** - Show PR URL, number, and status immediately
-
-**No manual PR creation needed** - everything is automated based on your commits.
+Create a feature branch and generate clean, logically separated commits. This command focuses on branch creation and commit management.
 
 ## Prerequisites: Definition of Done Checklist
 
@@ -78,73 +65,14 @@ git commit -m "feat: add multi-timeframe sync layer
 Closes #123"
 ```
 
-## Step 3: Push Branch and Automatically Create Pull Request
+## Step 3: Verify Your Commits
 
-1. Push the branch to remote:
-   ```bash
-   git push -u origin <branch-name>
-   ```
-
-2. **Automatically create a pull request:**
-   
-   Run the automated PR creation script:
-   ```bash
-   poetry run python scripts/create_pr_auto.py
-   ```
-   
-   The script will:
-   - Check if GitHub CLI (`gh`) is installed
-   - Generate PR title from the most recent commit message
-   - Generate PR body from commit messages and changed files
-   - Create the PR automatically and display the results
-   
-   **If GitHub CLI is not installed:**
-   - Install it: `brew install gh` (macOS) or follow [GitHub CLI installation guide](https://cli.github.com/manual/installation)
-   - Authenticate: `gh auth login`
-   - Then re-run the script
-   
-   **PR Title Generation:**
-   - Extracted from the most recent commit message
-   - Uses the commit subject line (first line)
-   - Automatically formatted for PR title
-   
-   **PR Body Generation:**
-   - Summary from commit messages
-   - List of changes from commit history
-   - Testing information from commit messages
-   - Related issues extracted from commit messages (Closes #123, Fixes #456, etc.)
-   
-   **Automatic PR Creation:**
-   ```bash
-   # The command automatically:
-   # 1. Gets current branch name
-   # 2. Extracts commit messages
-   # 3. Generates PR title and body
-   # 4. Creates PR with: gh pr create --title "<auto>" --body "<auto>" --base main
-   # 5. Displays PR URL and status
-   ```
-   
-   **Result Display:**
-   After PR creation, you'll see:
-   - PR number and URL
-   - PR title
-   - PR status (draft/open)
-   - Link to view the PR
-
-## Step 4: Verify PR Creation (Automatic)
-
-The command automatically verifies PR creation and displays:
-- ✅ PR creation status (success/failure)
-- 🔗 PR URL for viewing in browser
-- 📊 PR number and current status
-- 🔍 Link to CI/CD status (if available)
-
-**Manual Verification (if needed):**
+review your commits are ready to push:
 ```bash
-gh pr view                    # View PR details
-gh pr checks                  # Check CI/CD status
-gh pr list --head <branch>    # List PRs for current branch
+git log --oneline main..HEAD  # View commits not in main
+git status                     # Check for uncommitted changes
 ```
+
 
 ## Notes
 
