@@ -1,7 +1,20 @@
 # create-branch
 
 ## Overview
-Create a feature branch with clean commits and open a pull request, ensuring all quality gates are met before proceeding.
+Create a feature branch with clean commits and **automatically** open a pull request, ensuring all quality gates are met before proceeding. The command handles PR creation automatically—no manual steps or options to choose from.
+
+## Automated Workflow
+
+When you run this command, it will:
+
+1. **Validate Prerequisites** - Check all Definition of Done criteria
+2. **Create/Verify Branch** - Ensure you're on the correct branch
+3. **Generate Commits** - Guide you through creating clean commits
+4. **Push to Remote** - Push the branch automatically
+5. **Create PR Automatically** - Generate PR title/body from commits and create PR
+6. **Display Results** - Show PR URL, number, and status immediately
+
+**No manual PR creation needed** - everything is automated based on your commits.
 
 ## Prerequisites: Definition of Done Checklist
 
@@ -65,81 +78,68 @@ git commit -m "feat: add multi-timeframe sync layer
 Closes #123"
 ```
 
-## Step 3: Push Branch and Create Pull Request
+## Step 3: Push Branch and Automatically Create Pull Request
 
 1. Push the branch to remote:
    ```bash
    git push -u origin <branch-name>
    ```
 
-2. Create a pull request using GitHub CLI:
+2. **Automatically create a pull request:**
+   
+   The command will:
+   - Check if GitHub CLI (`gh`) is installed
+   - Generate PR title from the most recent commit message
+   - Generate PR body from commit messages and changed files
+   - Create the PR automatically and display the results
+   
+   **If GitHub CLI is not installed:**
+   - Install it: `brew install gh` (macOS) or follow [GitHub CLI installation guide](https://cli.github.com/manual/installation)
+   - Authenticate: `gh auth login`
+   - Then re-run the create-branch command
+   
+   **PR Title Generation:**
+   - Extracted from the most recent commit message
+   - Uses the commit subject line (first line)
+   - Automatically formatted for PR title
+   
+   **PR Body Generation:**
+   - Summary from commit messages
+   - List of changes from commit history
+   - Testing information from commit messages
+   - Related issues extracted from commit messages (Closes #123, Fixes #456, etc.)
+   
+   **Automatic PR Creation:**
    ```bash
-   gh pr create \
-     --title "<descriptive PR title>" \
-     --body "<detailed description of changes, context, and testing>" \
-     --base main
+   # The command automatically:
+   # 1. Gets current branch name
+   # 2. Extracts commit messages
+   # 3. Generates PR title and body
+   # 4. Creates PR with: gh pr create --title "<auto>" --body "<auto>" --base main
+   # 5. Displays PR URL and status
    ```
+   
+   **Result Display:**
+   After PR creation, you'll see:
+   - PR number and URL
+   - PR title
+   - PR status (draft/open)
+   - Link to view the PR
 
-   **PR Title Guidelines:**
-   - Use imperative mood: "Add multi-timeframe sync" not "Added multi-timeframe sync"
-   - Be specific and concise
-   - Include ticket/issue number if applicable
+## Step 4: Verify PR Creation (Automatic)
 
-   **PR Body Template:**
-   ```markdown
-   ## Summary
-   Brief description of what this PR does.
+The command automatically verifies PR creation and displays:
+- ✅ PR creation status (success/failure)
+- 🔗 PR URL for viewing in browser
+- 📊 PR number and current status
+- 🔍 Link to CI/CD status (if available)
 
-   ## Changes
-   - Change 1
-   - Change 2
-   - Change 3
-
-   ## Testing
-   - How was this tested?
-   - What test cases were added/updated?
-
-   ## Related Issues
-   Closes #123
-   ```
-
-3. **Optional PR Flags:**
-   - `--draft` - Mark PR as draft (work in progress)
-   - `--assignee @username` - Assign specific reviewers
-   - `--reviewer @username` - Request review from specific users
-   - `--label "label1,label2"` - Add labels (e.g., "enhancement", "bugfix")
-   - `--milestone "<milestone>"` - Associate with a milestone
-
-   Example with options:
-   ```bash
-   gh pr create \
-     --title "feat: add multi-timeframe sync layer" \
-     --body "$(cat <<'EOF'
-   ## Summary
-   Implements multi-timeframe synchronization for GC and DXY data alignment.
-
-   ## Changes
-   - Add MultiTimeframeSync class
-   - Integrate with backtester pipeline
-   - Add comprehensive tests
-
-   ## Testing
-   - All unit tests pass
-   - Integration tests added for sync scenarios
-   EOF
-   )" \
-     --base main \
-     --label "enhancement,backtester" \
-     --reviewer @username
-   ```
-
-## Step 4: Verify PR Creation
-
-After creating the PR:
-1. Verify the PR was created successfully: `gh pr view`
-2. Check that CI/CD pipelines are running
-3. Ensure all required checks are passing
-4. Address any review feedback promptly
+**Manual Verification (if needed):**
+```bash
+gh pr view                    # View PR details
+gh pr checks                  # Check CI/CD status
+gh pr list --head <branch>    # List PRs for current branch
+```
 
 ## Notes
 
