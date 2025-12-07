@@ -3,6 +3,11 @@
 from data_layer.aligner import TimeAligner
 from data_layer.clients import CMEGCClient, DXYIndexClient, LocalCSVClient
 from data_layer.loader import HistoricalDataLoader
+from data_layer.multi_timeframe_sync import (
+    MultiTimeframeData,
+    MultiTimeframeSyncLayer,
+    SynchronizedBar,
+)
 from data_layer.normalizer import DataNormalizer
 
 __all__ = [
@@ -12,4 +17,7 @@ __all__ = [
     "TimeAligner",
     "DataNormalizer",
     "HistoricalDataLoader",
+    "MultiTimeframeSyncLayer",
+    "MultiTimeframeData",
+    "SynchronizedBar",
 ]
