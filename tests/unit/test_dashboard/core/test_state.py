@@ -221,3 +221,109 @@ class TestDashboardState:
         assert isinstance(hash2, int)
         assert hash1 != hash2  # Different timestamps = different hashes
 
+    def test_state_equality_considers_all_fields(self):
+        """Test that equality considers all fields, not just timestamp."""
+        timestamp = datetime(2025, 1, 1, 10, 0, tzinfo=timezone.utc)
+
+        # Two states with same timestamp but different features should NOT be equal
+        state1 = DashboardState.create_empty().update(
+            timestamp=timestamp,
+            features=pd.Series({"vwap": 2650.0, "rsi": 50.0}),
+        )
+        state2 = DashboardState.create_empty().update(
+            timestamp=timestamp,
+            features=pd.Series({"vwap": 2700.0, "rsi": 70.0}),
+        )
+
+        assert state1 != state2
+        assert hash(state1) != hash(state2)
+
+        # Two states with timestamp=None but different fields should NOT be equal
+        state3 = DashboardState.create_empty().update(is_simulation_running=True)
+        state4 = DashboardState.create_empty().update(is_simulation_running=False)
+
+        assert state3 != state4
+        assert hash(state3) != hash(state4)
+
+        # Two states with all fields the same SHOULD be equal
+        state5 = DashboardState.create_empty().update(
+            timestamp=timestamp,
+            features=pd.Series({"vwap": 2650.0}),
+            is_simulation_running=True,
+        )
+        state6 = DashboardState.create_empty().update(
+            timestamp=timestamp,
+            features=pd.Series({"vwap": 2650.0}),
+            is_simulation_running=True,
+        )
+
+        assert state5 == state6
+        assert hash(state5) == hash(state6)
+
+    def test_state_equality_with_none_values(self):
+        """Test equality handling of None values in optional fields."""
+        timestamp = datetime(2025, 1, 1, 10, 0, tzinfo=timezone.utc)
+
+        # States with None HTFBias should be equal if all other fields match
+        state1 = DashboardState.create_empty().update(
+            timestamp=timestamp,
+            htf_bias=None,
+        )
+        state2 = DashboardState.create_empty().update(
+            timestamp=timestamp,
+            htf_bias=None,
+        )
+        assert state1 == state2
+        assert hash(state1) == hash(state2)
+
+        # States with None vs non-None HTFBias should not be equal
+        from rule_engine.htf.types import HTFBias
+
+        state3 = DashboardState.create_empty().update(
+            timestamp=timestamp,
+            htf_bias=HTFBias(
+                bias="bullish",
+                direction="long",
+                score=8.0,
+                confidence="high",
+            ),
+        )
+        assert state1 != state3
+        assert hash(state1) != hash(state3)
+
+        # States with None session_constraints should be equal
+        state4 = DashboardState.create_empty().update(
+            timestamp=timestamp,
+            session_constraints=None,
+        )
+        state5 = DashboardState.create_empty().update(
+            timestamp=timestamp,
+            session_constraints=None,
+        )
+        assert state4 == state5
+        assert hash(state4) == hash(state5)
+
+    def test_state_equality_with_empty_series(self):
+        """Test equality handling of empty pandas Series."""
+        timestamp = datetime(2025, 1, 1, 10, 0, tzinfo=timezone.utc)
+
+        # Empty series should be equal
+        state1 = DashboardState.create_empty().update(
+            timestamp=timestamp,
+            features=pd.Series(dtype=float),
+        )
+        state2 = DashboardState.create_empty().update(
+            timestamp=timestamp,
+            features=pd.Series(dtype=float),
+        )
+        assert state1 == state2
+        assert hash(state1) == hash(state2)
+
+        # Empty vs non-empty should not be equal
+        state3 = DashboardState.create_empty().update(
+            timestamp=timestamp,
+            features=pd.Series({"vwap": 2650.0}),
+        )
+        assert state1 != state3
+        assert hash(state1) != hash(state3)
+

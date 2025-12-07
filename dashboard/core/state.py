@@ -90,14 +90,221 @@ class DashboardState:
     max_history_size: int = 100
 
     def __hash__(self) -> int:
-        """Hash based on timestamp for basic identity."""
-        return hash(self.timestamp)
+        """Hash based on all fields for proper identity.
+
+        Converts non-hashable fields (pd.Series, dict) to hashable
+        representations to ensure correct equality semantics.
+        """
+        return hash(
+            (
+                self.timestamp,
+                self._hash_series(self.features),
+                self._hash_htf_bias(self.htf_bias),
+                self.current_signal,  # Signal is frozen, so hashable
+                self._hash_dict(self.session_constraints),
+                self.is_session_active,
+                self.is_simulation_running,
+                self.is_paused,
+                self.pause_reason,
+                self.paused_at_signal,  # Signal is frozen, so hashable
+                self.simulation_speed,
+                self.simulation_progress,
+                self.price_history_gc,
+                self.price_history_dxy,
+                self.max_history_size,
+            )
+        )
 
     def __eq__(self, other: object) -> bool:
-        """Equality based on timestamp."""
+        """Equality based on all fields.
+
+        Two states are equal only if all their fields are equal,
+        ensuring proper dataclass semantics.
+        """
         if not isinstance(other, DashboardState):
             return False
-        return self.timestamp == other.timestamp
+        return (
+            self.timestamp == other.timestamp
+            and self._eq_series(self.features, other.features)
+            and self._eq_htf_bias(self.htf_bias, other.htf_bias)
+            and self.current_signal == other.current_signal
+            and self._eq_dict(self.session_constraints, other.session_constraints)
+            and self.is_session_active == other.is_session_active
+            and self.is_simulation_running == other.is_simulation_running
+            and self.is_paused == other.is_paused
+            and self.pause_reason == other.pause_reason
+            and self.paused_at_signal == other.paused_at_signal
+            and self.simulation_speed == other.simulation_speed
+            and self.simulation_progress == other.simulation_progress
+            and self.price_history_gc == other.price_history_gc
+            and self.price_history_dxy == other.price_history_dxy
+            and self.max_history_size == other.max_history_size
+        )
+
+    @staticmethod
+    def _hash_series(series: pd.Series) -> int:
+        """Convert pd.Series to hashable representation.
+        
+        Args:
+            series: Pandas Series to hash
+            
+        Returns:
+            Hash value of the series. Empty series hash to hash(()).
+            Non-empty series are converted to sorted tuple of (index, value) pairs.
+        """
+        if series.empty:
+            return hash(())
+        # Convert to tuple of (index, value) pairs, sorted by index for consistency
+        items = tuple(sorted((idx, val) for idx, val in series.items()))
+        return hash(items)
+
+    @staticmethod
+    def _eq_series(s1: pd.Series, s2: pd.Series) -> bool:
+        """Compare two pd.Series for equality.
+        
+        Args:
+            s1: First pandas Series
+            s2: Second pandas Series
+            
+        Returns:
+            True if series are equal (same index and values), False otherwise.
+            Uses pandas' equals() method with fallback to manual comparison.
+        """
+        if s1.empty and s2.empty:
+            return True
+        if s1.empty or s2.empty:
+            return False
+        # Use pandas' built-in equality check
+        try:
+            return s1.equals(s2)
+        except Exception:
+            # Fallback to manual comparison if equals() fails
+            return len(s1) == len(s2) and all(
+                s1.index[i] == s2.index[i] and s1.iloc[i] == s2.iloc[i]
+                for i in range(len(s1))
+            )
+
+    @staticmethod
+    def _hash_htf_bias(bias: Optional[HTFBias]) -> int:
+        """Convert HTFBias to hashable representation.
+        
+        Args:
+            bias: HTFBias object or None
+            
+        Returns:
+            Hash value of the bias. None hashes to hash(None).
+            Non-None bias objects are converted to tuple of all field values.
+        """
+        if bias is None:
+            return hash(None)
+        # HTFBias is a dataclass, convert to tuple of field values
+        return hash(
+            (
+                bias.bias,
+                bias.direction,
+                bias.score,
+                bias.confidence,
+                bias.structure_1h,
+                bias.structure_15m,
+                bias.bos_detected,
+                bias.choch_detected,
+                bias.liquidity_sweep_detected,
+                bias.liquidity_sweep_type,
+                bias.vwap_1h,
+                bias.vwap_distance_1h,
+                bias.vwap_slope_1h,
+                bias.vwap_trend_confirmed,
+                bias.fvg_alignment_score,
+                bias.seasonality_period,
+                bias.seasonality_adjustment,
+                bias.dxy_corr_1h,
+                bias.dxy_corr_15m,
+                bias.dxy_chop_detected,
+                bias.dxy_alignment,
+                bias.conflict_detected,
+                bias.conflict_reason,
+            )
+        )
+
+    @staticmethod
+    def _eq_htf_bias(b1: Optional[HTFBias], b2: Optional[HTFBias]) -> bool:
+        """Compare two HTFBias objects for equality.
+        
+        Args:
+            b1: First HTFBias object or None
+            b2: Second HTFBias object or None
+            
+        Returns:
+            True if both are None or all fields are equal, False otherwise.
+        """
+        if b1 is None and b2 is None:
+            return True
+        if b1 is None or b2 is None:
+            return False
+        # Compare all fields
+        return (
+            b1.bias == b2.bias
+            and b1.direction == b2.direction
+            and b1.score == b2.score
+            and b1.confidence == b2.confidence
+            and b1.structure_1h == b2.structure_1h
+            and b1.structure_15m == b2.structure_15m
+            and b1.bos_detected == b2.bos_detected
+            and b1.choch_detected == b2.choch_detected
+            and b1.liquidity_sweep_detected == b2.liquidity_sweep_detected
+            and b1.liquidity_sweep_type == b2.liquidity_sweep_type
+            and b1.vwap_1h == b2.vwap_1h
+            and b1.vwap_distance_1h == b2.vwap_distance_1h
+            and b1.vwap_slope_1h == b2.vwap_slope_1h
+            and b1.vwap_trend_confirmed == b2.vwap_trend_confirmed
+            and b1.fvg_alignment_score == b2.fvg_alignment_score
+            and b1.seasonality_period == b2.seasonality_period
+            and b1.seasonality_adjustment == b2.seasonality_adjustment
+            and b1.dxy_corr_1h == b2.dxy_corr_1h
+            and b1.dxy_corr_15m == b2.dxy_corr_15m
+            and b1.dxy_chop_detected == b2.dxy_chop_detected
+            and b1.dxy_alignment == b2.dxy_alignment
+            and b1.conflict_detected == b2.conflict_detected
+            and b1.conflict_reason == b2.conflict_reason
+        )
+
+    @staticmethod
+    def _hash_dict(d: Optional[dict[str, object]]) -> int:
+        """Convert dict to hashable representation.
+        
+        Args:
+            d: Dictionary to hash or None
+            
+        Returns:
+            Hash value of the dict. None hashes to hash(None).
+            Attempts to use frozenset of items; falls back to string
+            representation if dict contains unhashable values.
+        """
+        if d is None:
+            return hash(None)
+        # Convert to frozenset of items for hashing
+        try:
+            return hash(frozenset(d.items()))
+        except TypeError:
+            # If dict contains unhashable values, fall back to string representation
+            return hash(str(sorted(d.items())))
+
+    @staticmethod
+    def _eq_dict(d1: Optional[dict[str, object]], d2: Optional[dict[str, object]]) -> bool:
+        """Compare two dicts for equality.
+        
+        Args:
+            d1: First dictionary or None
+            d2: Second dictionary or None
+            
+        Returns:
+            True if both are None or dicts are equal, False otherwise.
+        """
+        if d1 is None and d2 is None:
+            return True
+        if d1 is None or d2 is None:
+            return False
+        return d1 == d2
 
     @classmethod
     def create_empty(cls) -> DashboardState:
