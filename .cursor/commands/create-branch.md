@@ -87,7 +87,12 @@ Closes #123"
 
 2. **Automatically create a pull request:**
    
-   The command will:
+   Run the automated PR creation script:
+   ```bash
+   poetry run python scripts/create_pr_auto.py
+   ```
+   
+   The script will:
    - Check if GitHub CLI (`gh`) is installed
    - Generate PR title from the most recent commit message
    - Generate PR body from commit messages and changed files
@@ -96,7 +101,7 @@ Closes #123"
    **If GitHub CLI is not installed:**
    - Install it: `brew install gh` (macOS) or follow [GitHub CLI installation guide](https://cli.github.com/manual/installation)
    - Authenticate: `gh auth login`
-   - Then re-run the create-branch command
+   - Then re-run the script
    
    **PR Title Generation:**
    - Extracted from the most recent commit message
