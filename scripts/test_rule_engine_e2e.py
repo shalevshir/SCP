@@ -310,11 +310,17 @@ def main() -> None:
         if use_sync_htf:
             # Use sync layer HTF bias function
             try:
+                # Ensure row_1m has "timestamp" key (HTF bias function expects it)
+                # Features DataFrame uses "ts_event" but HTF function expects "timestamp"
+                row_1m_for_htf = row_1m.copy()
+                if "timestamp" not in row_1m_for_htf and "ts_event" in row_1m_for_htf:
+                    row_1m_for_htf["timestamp"] = row_1m_for_htf["ts_event"]
+                
                 # Build context dict for HTF bias function
                 validation_context = {
                     "session_ok": is_london_or_ny_session(ts),
                 }
-                htf_bias_obj = htf_bias_func(row_1m, validation_context)
+                htf_bias_obj = htf_bias_func(row_1m_for_htf, validation_context)
                 htf_bias = htf_bias_obj.bias
                 htf_direction = htf_bias_obj.direction
                 htf_score = htf_bias_obj.score
@@ -376,10 +382,22 @@ def main() -> None:
 
         # Build context
         session_ok = is_london_or_ny_session(ts)
+        
+        # Get DXY correlation from appropriate source
+        if use_sync_htf and htf_bias_obj:
+            # Use DXY correlation from HTF bias object when using sync layer
+            dxy_corr_1h = htf_bias_obj.dxy_corr_1h
+        elif row_1h is not None:
+            # Use DXY correlation from 1h features when available
+            dxy_corr_1h = row_1h.get("dxy_corr")
+        else:
+            # Fallback to 1m DXY correlation if no HTF data available
+            dxy_corr_1h = row_1m.get("dxy_corr")
+        
         dxy_trending_clean = (
-            row_1h.get("dxy_corr") is not None
-            and not pd.isna(row_1h.get("dxy_corr"))
-            and row_1h.get("dxy_corr") < -0.6
+            dxy_corr_1h is not None
+            and not pd.isna(dxy_corr_1h)
+            and dxy_corr_1h < -0.6
         )
 
         context = {

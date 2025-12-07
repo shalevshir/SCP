@@ -4,6 +4,8 @@ This module provides utility functions to extract and convert data from
 MultiTimeframeData objects for use in backtesting and analysis.
 """
 
+from datetime import datetime
+
 import pandas as pd
 from common.logger import get_logger
 from common.types import Candle
@@ -124,7 +126,12 @@ def extract_htf_candles_by_timeframe(
     """Extract HTF candles for a specific timeframe.
     
     Extracts all available HTF candles for the specified timeframe,
-    filtering out None values (missing data).
+    filtering out None values (missing data) and deduplicating by timestamp.
+    
+    Since multiple execution bars may reference the same HTF candle (forward-fill
+    alignment), this function deduplicates to return only unique candles based on
+    their timestamp. This ensures technical indicators are computed on correct data
+    without artificial inflation from duplicate values.
     
     Args:
         multi_tf_data: MultiTimeframeData with synchronized bars
@@ -132,11 +139,12 @@ def extract_htf_candles_by_timeframe(
         
     Returns:
         Tuple of (gc_candles, dxy_candles) for the specified timeframe.
+        Lists contain only unique candles (deduplicated by timestamp).
         Lists may be empty if no HTF data available for that timeframe.
         
     Example:
         >>> gc_15m, dxy_15m = extract_htf_candles_by_timeframe(multi_tf_data, "15m")
-        >>> print(f"Found {len(gc_15m)} 15m GC candles")
+        >>> print(f"Found {len(gc_15m)} unique 15m GC candles")
     """
     if timeframe not in multi_tf_data.htf_timeframes:
         logger.warning(
@@ -144,19 +152,32 @@ def extract_htf_candles_by_timeframe(
         )
         return [], []
     
-    gc_candles: list[Candle] = []
-    dxy_candles: list[Candle] = []
+    # Use dict keyed by timestamp to deduplicate (same timestamp = same candle)
+    gc_candles_dict: dict[datetime, Candle] = {}
+    dxy_candles_dict: dict[datetime, Candle] = {}
     
     for bar in multi_tf_data.synchronized_bars:
         if timeframe == "15m" and bar.htf_15m:
-            gc_candles.append(bar.htf_15m[0])
-            dxy_candles.append(bar.htf_15m[1])
+            gc_candle = bar.htf_15m[0]
+            dxy_candle = bar.htf_15m[1]
+            # Only add if we haven't seen this timestamp before
+            if gc_candle.timestamp not in gc_candles_dict:
+                gc_candles_dict[gc_candle.timestamp] = gc_candle
+                dxy_candles_dict[dxy_candle.timestamp] = dxy_candle
         elif timeframe == "1h" and bar.htf_1h:
-            gc_candles.append(bar.htf_1h[0])
-            dxy_candles.append(bar.htf_1h[1])
+            gc_candle = bar.htf_1h[0]
+            dxy_candle = bar.htf_1h[1]
+            # Only add if we haven't seen this timestamp before
+            if gc_candle.timestamp not in gc_candles_dict:
+                gc_candles_dict[gc_candle.timestamp] = gc_candle
+                dxy_candles_dict[dxy_candle.timestamp] = dxy_candle
+    
+    # Convert to sorted lists (by timestamp) for consistent ordering
+    gc_candles = sorted(gc_candles_dict.values(), key=lambda c: c.timestamp)
+    dxy_candles = sorted(dxy_candles_dict.values(), key=lambda c: c.timestamp)
     
     logger.debug(
-        f"Extracted {len(gc_candles)} {timeframe} candles "
+        f"Extracted {len(gc_candles)} unique {timeframe} candles "
         f"(GC: {len(gc_candles)}, DXY: {len(dxy_candles)})"
     )
     

@@ -328,6 +328,95 @@ class TestExtractHtfCandlesByTimeframe:
         assert len(gc_15m) == 0
         assert len(dxy_15m) == 0
 
+    def test_extract_deduplicates_forward_filled_candles(self) -> None:
+        """Test that extraction deduplicates HTF candles that are forward-filled.
+        
+        When multiple 1m execution bars reference the same HTF candle (forward-fill),
+        the function should return only unique candles based on timestamp.
+        """
+        # Create a single unique 15m HTF candle
+        htf_15m_gc = Candle(
+            timestamp=datetime(2025, 9, 30, 10, 0, 0, tzinfo=UTC),
+            open=1999.0,
+            high=2002.0,
+            low=1998.0,
+            close=2000.0,
+            volume=1500.0,
+            symbol="GC",
+            timeframe="15m",
+            source="CSV",
+        )
+        htf_15m_dxy = Candle(
+            timestamp=datetime(2025, 9, 30, 10, 0, 0, tzinfo=UTC),
+            open=99.8,
+            high=100.2,
+            low=99.7,
+            close=100.0,
+            volume=750.0,
+            symbol="DXY",
+            timeframe="15m",
+            source="CSV",
+        )
+        
+        # Create 15 synchronized bars (15 minutes of 1m data) all referencing the same 15m candle
+        synchronized_bars = []
+        execution_timestamps = []
+        for i in range(15):
+            exec_timestamp = datetime(2025, 9, 30, 10, i, 0, tzinfo=UTC)
+            exec_gc = Candle(
+                timestamp=exec_timestamp,
+                open=2000.0 + i * 0.1,
+                high=2001.0 + i * 0.1,
+                low=1999.0 + i * 0.1,
+                close=2000.5 + i * 0.1,
+                volume=100.0,
+                symbol="GC",
+                timeframe="1m",
+                source="CSV",
+            )
+            exec_dxy = Candle(
+                timestamp=exec_timestamp,
+                open=100.0 + i * 0.01,
+                high=100.1 + i * 0.01,
+                low=99.9 + i * 0.01,
+                close=100.05 + i * 0.01,
+                volume=50.0,
+                symbol="DXY",
+                timeframe="1m",
+                source="CSV",
+            )
+            
+            # All bars reference the same 15m HTF candle (forward-fill behavior)
+            bar = SynchronizedBar(
+                execution_timestamp=exec_timestamp,
+                execution_1m=(exec_gc, exec_dxy),
+                htf_15m=(htf_15m_gc, htf_15m_dxy),  # Same candle referenced 15 times
+                htf_1h=None,
+            )
+            synchronized_bars.append(bar)
+            execution_timestamps.append(exec_timestamp)
+        
+        multi_tf_data = MultiTimeframeData(
+            execution_timeframe="1m",
+            htf_timeframes=["15m", "1h"],
+            synchronized_bars=synchronized_bars,
+            execution_timestamps=execution_timestamps,
+        )
+        
+        # Extract should return only 1 unique candle, not 15 duplicates
+        gc_15m, dxy_15m = extract_htf_candles_by_timeframe(multi_tf_data, "15m")
+        
+        # Should have only 1 unique candle, not 15 duplicates
+        assert len(gc_15m) == 1, f"Expected 1 unique candle, got {len(gc_15m)} duplicates"
+        assert len(dxy_15m) == 1, f"Expected 1 unique candle, got {len(dxy_15m)} duplicates"
+        assert gc_15m[0] == htf_15m_gc
+        assert dxy_15m[0] == htf_15m_dxy
+        
+        # Verify DataFrame has unique timestamps (no duplicates)
+        gc_df = candles_to_dataframe(gc_15m, "15m")
+        assert len(gc_df) == 1
+        assert not gc_df.index.duplicated().any(), "DataFrame should not have duplicate timestamps"
+
 
 class TestBuildHtfDataframeFromCandles:
     """Tests for build_htf_dataframe_from_candles function."""
