@@ -68,7 +68,13 @@ class SimulationEngine:
             session_validator: Configured session validator
             auto_pause_on_a_plus: Auto-pause on A+ signals (default: True)
             speed_multiplier: Simulation speed multiplier (default: 1.0)
+
+        Raises:
+            ValueError: If speed_multiplier is not positive
         """
+        if speed_multiplier <= 0:
+            raise ValueError("Speed multiplier must be positive")
+
         self.data_stream = data_stream
         self.htf_calculator = StreamingHTFBiasCalculator()
         self.validation_engine = validation_engine

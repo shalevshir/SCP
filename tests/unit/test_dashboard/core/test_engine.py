@@ -223,6 +223,26 @@ class TestSimulationEngine:
         assert engine.speed_multiplier == 10.0
         assert engine.state.simulation_speed == 10.0
 
+    def test_init_speed_validation(
+        self, mock_data_stream, mock_validation_engine, mock_session_validator
+    ):
+        """Test that invalid speed_multiplier in __init__ raises error."""
+        with pytest.raises(ValueError, match="Speed multiplier must be positive"):
+            SimulationEngine(
+                data_stream=mock_data_stream,
+                validation_engine=mock_validation_engine,
+                session_validator=mock_session_validator,
+                speed_multiplier=0,
+            )
+
+        with pytest.raises(ValueError, match="Speed multiplier must be positive"):
+            SimulationEngine(
+                data_stream=mock_data_stream,
+                validation_engine=mock_validation_engine,
+                session_validator=mock_session_validator,
+                speed_multiplier=-1.0,
+            )
+
     def test_set_speed_validation(
         self, mock_data_stream, mock_validation_engine, mock_session_validator
     ):
@@ -233,10 +253,10 @@ class TestSimulationEngine:
             session_validator=mock_session_validator,
         )
 
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="Speed multiplier must be positive"):
             engine.set_speed(0)
 
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="Speed multiplier must be positive"):
             engine.set_speed(-1.0)
 
     def test_state_is_thread_safe(
