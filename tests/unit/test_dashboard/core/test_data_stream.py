@@ -321,3 +321,39 @@ class TestDataStream:
         assert stream.current_index == 0
         assert stream.stream_start_index == 0
 
+    def test_multi_timeframe_initialization(self, mock_loader):
+        """Test DataStream initialization with multi-timeframe enabled."""
+        stream = DataStream("/path/to/data", enable_multi_timeframe=True)
+        
+        assert stream.enable_multi_timeframe is True
+        assert stream._sync_layer is not None
+        assert stream._multi_tf_data is None  # Not loaded yet
+
+    def test_multi_timeframe_disabled_by_default(self, mock_loader):
+        """Test that multi-timeframe is disabled by default for backward compatibility."""
+        stream = DataStream("/path/to/data")
+        
+        assert stream.enable_multi_timeframe is False
+        assert stream._sync_layer is None
+
+    def test_get_synchronized_bar_returns_none_when_disabled(self, mock_loader):
+        """Test that get_synchronized_bar returns None when multi-timeframe is disabled."""
+        stream = DataStream("/path/to/data")
+        timestamp = datetime(2025, 1, 1, 10, 0, 0, tzinfo=timezone.utc)
+        
+        bar = stream.get_synchronized_bar(timestamp)
+        assert bar is None
+
+    def test_get_current_synchronized_bar_returns_none_when_no_data(self, mock_loader):
+        """Test that get_current_synchronized_bar returns None when no candles loaded."""
+        stream = DataStream("/path/to/data", enable_multi_timeframe=True)
+        
+        bar = stream.get_current_synchronized_bar()
+        assert bar is None
+
+    def test_multi_timeframe_data_property(self, mock_loader):
+        """Test that multi_timeframe_data property returns None when not loaded."""
+        stream = DataStream("/path/to/data", enable_multi_timeframe=True)
+        
+        assert stream.multi_timeframe_data is None
+

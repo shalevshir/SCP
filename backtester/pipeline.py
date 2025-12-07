@@ -16,8 +16,11 @@ from datetime import datetime
 
 import pandas as pd
 from common.logger import get_logger
+from data_layer.multi_timeframe_helpers import extract_execution_dataframes
+from data_layer.multi_timeframe_sync import MultiTimeframeData
 from feature_engine.backtesting import BacktestProcessor
 from feature_engine.integration import process_features_with_validation
+from rule_engine.htf.integration import create_htf_bias_func_with_sync_layer
 from rule_engine.htf.types import HTFBias
 
 from backtester.entry_model import EntryExecution, execute_entry_at_next_open
@@ -494,3 +497,172 @@ def run_backtest_with_trades(
     )
 
     return trades
+
+
+def run_backtest_with_entries_multi_tf(
+    multi_tf_data: MultiTimeframeData,
+    timeframe: str,
+    market_state: dict,
+    htf_approach: str = "streaming",
+    log_signals: bool = False,
+    log_dir: str | None = None,
+    processor: BacktestProcessor | None = None,
+) -> tuple[list[EntryExecution], BacktestProcessor]:
+    """Run backtest with MultiTimeframeData for efficient HTF bias computation.
+    
+    This is the new interface that accepts MultiTimeframeData and automatically
+    creates the HTF bias function with proper HTF feature computation.
+    
+    Args:
+        multi_tf_data: Synchronized multi-timeframe data
+        timeframe: Execution timeframe (e.g., "1m")
+        market_state: Market context dict containing:
+            - buffer_phase: Current capital phase ("startup", "growth", etc.)
+            - tier_active: Active enforcer tier ("Conservative", "EarlyMild", etc.)
+            - ceo_directive_active: Whether CEO directive is active (bool)
+            - news_ok: Whether trading is allowed during news events (bool)
+            - session_ok: Whether current session is valid for trading (bool)
+        htf_approach: "streaming" (incremental) or "vectorized" (pre-computed)
+                     for HTF feature computation (default: "streaming")
+        log_signals: Whether to log signals to disk (default: False)
+        log_dir: Directory for signal logs (required if log_signals=True)
+        processor: Optional BacktestProcessor instance to reuse (for state persistence)
+        
+    Returns:
+        Tuple of (list of EntryExecution objects, processor instance).
+        EntryExecution list includes both successful entries (executed=True) and
+        rejected entries (executed=False with rejection_reason).
+        Processor instance is returned to allow recording trade outcomes.
+        
+    Example:
+        >>> from data_layer.multi_timeframe_sync import MultiTimeframeSyncLayer
+        >>> sync_layer = MultiTimeframeSyncLayer("data/gc_dx_ohlcv")
+        >>> multi_tf_data = sync_layer.load(start, end)
+        >>> 
+        >>> market_state = {
+        ...     "buffer_phase": "growth",
+        ...     "tier_active": "EarlyMild",
+        ...     "ceo_directive_active": True,
+        ...     "news_ok": True,
+        ...     "session_ok": True,
+        ... }
+        >>> 
+        >>> executions, processor = run_backtest_with_entries_multi_tf(
+        ...     multi_tf_data=multi_tf_data,
+        ...     timeframe="1m",
+        ...     market_state=market_state,
+        ...     htf_approach="streaming",
+        ... )
+    """
+    logger.info(
+        f"Starting backtest with multi-timeframe sync: timeframe={timeframe}, "
+        f"htf_approach={htf_approach}, tier={market_state.get('tier_active')}"
+    )
+    
+    # Extract 1m DataFrames for BacktestProcessor
+    gc_df, dxy_df = extract_execution_dataframes(multi_tf_data)
+    
+    if len(gc_df) == 0 or len(dxy_df) == 0:
+        logger.warning("No execution data extracted from MultiTimeframeData")
+        return [], processor or BacktestProcessor(timeframe=timeframe)
+    
+    # Create HTF bias function with sync layer
+    htf_bias_func = create_htf_bias_func_with_sync_layer(
+        multi_tf_data,
+        approach=htf_approach,
+    )
+    
+    # Call existing pipeline
+    return run_backtest_with_entries(
+        gc_df=gc_df,
+        dxy_df=dxy_df,
+        timeframe=timeframe,
+        market_state=market_state,
+        htf_bias_func=htf_bias_func,
+        log_signals=log_signals,
+        log_dir=log_dir,
+        processor=processor,
+    )
+
+
+def run_backtest_with_trades_multi_tf(
+    multi_tf_data: MultiTimeframeData,
+    timeframe: str,
+    market_state: dict,
+    risk_config: dict,
+    htf_approach: str = "streaming",
+    config: dict | None = None,
+    log_signals: bool = False,
+    log_dir: str | None = None,
+) -> list[Trade]:
+    """Run complete backtest pipeline with trade simulation using MultiTimeframeData.
+    
+    This is the new interface that accepts MultiTimeframeData and automatically
+    creates the HTF bias function with proper HTF feature computation.
+    
+    Args:
+        multi_tf_data: Synchronized multi-timeframe data
+        timeframe: Execution timeframe (e.g., "1m")
+        market_state: Market context dict (buffer_phase, tier_active, etc.)
+        risk_config: Risk configuration dict containing:
+            - risk_per_trade: Dollar risk per trade
+            - buffer_phase: Current capital phase
+            - max_contracts: Maximum contracts allowed
+        htf_approach: "streaming" (incremental) or "vectorized" (pre-computed)
+                     for HTF feature computation (default: "streaming")
+        config: Optional config dict for dollar PnL calculation
+        log_signals: Whether to log signals to disk (default: False)
+        log_dir: Directory for signal logs (required if log_signals=True)
+        
+    Returns:
+        List of Trade objects (all closed with outcomes)
+        
+    Example:
+        >>> from data_layer.multi_timeframe_sync import MultiTimeframeSyncLayer
+        >>> sync_layer = MultiTimeframeSyncLayer("data/gc_dx_ohlcv")
+        >>> multi_tf_data = sync_layer.load(start, end)
+        >>> 
+        >>> risk_config = {
+        ...     "risk_per_trade": 350.0,
+        ...     "buffer_phase": "startup",
+        ...     "max_contracts": 1,
+        ... }
+        >>> 
+        >>> trades = run_backtest_with_trades_multi_tf(
+        ...     multi_tf_data=multi_tf_data,
+        ...     timeframe="1m",
+        ...     market_state=market_state,
+        ...     risk_config=risk_config,
+        ...     htf_approach="vectorized",
+        ... )
+    """
+    logger.info(
+        f"Starting backtest with trades (multi-timeframe): timeframe={timeframe}, "
+        f"htf_approach={htf_approach}, tier={market_state.get('tier_active')}"
+    )
+    
+    # Extract 1m DataFrames
+    gc_df, dxy_df = extract_execution_dataframes(multi_tf_data)
+    
+    if len(gc_df) == 0 or len(dxy_df) == 0:
+        logger.warning("No execution data extracted from MultiTimeframeData")
+        return []
+    
+    # Create HTF bias function with sync layer
+    htf_bias_func = create_htf_bias_func_with_sync_layer(
+        multi_tf_data,
+        approach=htf_approach,
+    )
+    
+    # Call existing pipeline
+    return run_backtest_with_trades(
+        gc_df=gc_df,
+        dxy_df=dxy_df,
+        timeframe=timeframe,
+        market_state=market_state,
+        htf_bias_func=htf_bias_func,
+        risk_config=risk_config,
+        config=config,
+        log_signals=log_signals,
+        log_dir=log_dir,
+    )

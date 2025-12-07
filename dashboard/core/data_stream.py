@@ -16,6 +16,11 @@ from typing import Iterator, Optional
 from common.logger import get_logger
 from common.types import Candle
 from data_layer.loader import HistoricalDataLoader
+from data_layer.multi_timeframe_sync import (
+    MultiTimeframeData,
+    MultiTimeframeSyncLayer,
+    SynchronizedBar,
+)
 
 logger = get_logger(__name__)
 
@@ -37,11 +42,13 @@ class DataStream:
         stream_bars: Number of bars from stream_start_index to end
     """
 
-    def __init__(self, data_dir: str):
+    def __init__(self, data_dir: str, enable_multi_timeframe: bool = False):
         """Initialize data stream.
 
         Args:
             data_dir: Path to directory containing OHLCV CSV files
+            enable_multi_timeframe: If True, use multi-timeframe sync layer
+                                   (default: False for backward compatibility)
         """
         self.data_dir = data_dir
         self.gc_candles: list[Candle] = []
@@ -52,8 +59,17 @@ class DataStream:
         self.stream_bars = 0
 
         self._loader = HistoricalDataLoader(data_dir)
+        self.enable_multi_timeframe = enable_multi_timeframe
+        self._sync_layer: Optional[MultiTimeframeSyncLayer] = None
+        self._multi_tf_data: Optional[MultiTimeframeData] = None
 
-        logger.info(f"DataStream initialized with data_dir: {data_dir}")
+        if enable_multi_timeframe:
+            self._sync_layer = MultiTimeframeSyncLayer(data_dir)
+
+        logger.info(
+            f"DataStream initialized with data_dir: {data_dir} | "
+            f"multi_timeframe={enable_multi_timeframe}"
+        )
 
     def load(
         self,
@@ -144,6 +160,21 @@ class DataStream:
         self.stream_bars = len(self.gc_candles)
 
         logger.info(f"Loaded {len(self.gc_candles):,} aligned candle pairs")
+        
+        # If multi-timeframe enabled, also load synchronized data
+        if self.enable_multi_timeframe and self._sync_layer:
+            try:
+                self._multi_tf_data = self._sync_layer.load(start, end)
+                logger.info(
+                    f"Multi-timeframe sync: {len(self._multi_tf_data)} synchronized bars"
+                )
+            except Exception as e:
+                logger.warning(
+                    f"Failed to load multi-timeframe data: {e}. "
+                    f"Continuing with single timeframe mode."
+                )
+                self._multi_tf_data = None
+        
         return len(self.gc_candles)
 
     def seek_to_timestamp(self, target: datetime) -> int:
@@ -278,4 +309,44 @@ class DataStream:
     def __len__(self) -> int:
         """Return total number of candles."""
         return len(self.gc_candles)
+    
+    def get_synchronized_bar(self, timestamp: datetime) -> Optional[SynchronizedBar]:
+        """Get synchronized multi-timeframe bar for specific timestamp.
+        
+        Requires multi-timeframe mode to be enabled. Returns None if:
+        - Multi-timeframe mode is disabled
+        - No synchronized data available
+        - Timestamp not found
+        
+        Args:
+            timestamp: Execution timestamp to look up
+            
+        Returns:
+            SynchronizedBar with all timeframe data, or None
+        """
+        if not self.enable_multi_timeframe or self._multi_tf_data is None:
+            return None
+        
+        return self._multi_tf_data.get_bar(timestamp)
+    
+    def get_current_synchronized_bar(self) -> Optional[SynchronizedBar]:
+        """Get synchronized bar for current index.
+        
+        Returns:
+            SynchronizedBar for current position, or None if not available
+        """
+        if not self.gc_candles or self.current_index >= len(self.gc_candles):
+            return None
+        
+        current_timestamp = self.gc_candles[self.current_index].timestamp
+        return self.get_synchronized_bar(current_timestamp)
+    
+    @property
+    def multi_timeframe_data(self) -> Optional[MultiTimeframeData]:
+        """Get multi-timeframe data if available.
+        
+        Returns:
+            MultiTimeframeData object, or None if not loaded
+        """
+        return self._multi_tf_data
 
