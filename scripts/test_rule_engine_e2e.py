@@ -16,11 +16,14 @@ import pandas as pd
 
 from common.logger import get_logger
 from data_layer.loader import HistoricalDataLoader
+from data_layer.multi_timeframe_helpers import extract_execution_dataframes
+from data_layer.multi_timeframe_sync import MultiTimeframeSyncLayer
 from feature_engine.integration import process_features
 from rule_engine.htf.calculator import (
     compute_htf_bias_multi_timeframe,
     is_london_or_ny_session,
 )
+from rule_engine.htf.integration import create_htf_bias_func_with_sync_layer
 from rule_engine.htf.types import HTFBias
 from rule_engine.scoring import score_signal
 from rule_engine.validation import validate_signal
@@ -93,6 +96,18 @@ def build_arg_parser() -> argparse.ArgumentParser:
         choices=["Conservative", "Early Mild", "Mild", "Offensive"],
         help="Enforcer tier for validation (default: Early Mild).",
     )
+    parser.add_argument(
+        "--use-sync-layer",
+        action="store_true",
+        help="Use MultiTimeframeSyncLayer for efficient data loading and alignment",
+    )
+    parser.add_argument(
+        "--htf-approach",
+        type=str,
+        choices=["streaming", "vectorized"],
+        default="streaming",
+        help="HTF feature computation approach when using sync layer (default: streaming)",
+    )
     return parser
 
 
@@ -130,84 +145,148 @@ def main() -> None:
     logger.info("=" * 80)
     logger.info("E2E RuleEngine Test: Multi-Timeframe HTF Bias")
     logger.info("=" * 80)
+    if args.use_sync_layer:
+        logger.info("Using MultiTimeframeSyncLayer for data loading")
+    logger.info("=" * 80)
 
     # === STEP 1: Load data for all timeframes ===
     logger.info(f"Loading data from {args.data_dir}")
     logger.info(f"Date range: {args.start} to {args.end}")
 
-    loader = HistoricalDataLoader(args.data_dir)
-    symbols = ["GC", "DXY"]
+    if args.use_sync_layer:
+        # New approach: Use MultiTimeframeSyncLayer
+        logger.info("\nLoading multi-timeframe data with sync layer...")
+        try:
+            sync_layer = MultiTimeframeSyncLayer(str(args.data_dir))
+            multi_tf_data = sync_layer.load(args.start, args.end)
+            
+            logger.info(
+                f"  Loaded {len(multi_tf_data)} synchronized bars "
+                f"from {multi_tf_data.execution_timestamps[0]} "
+                f"to {multi_tf_data.execution_timestamps[-1]}"
+            )
+            
+            # Extract 1m DataFrames for processing
+            data_1m_gc, data_1m_dxy = extract_execution_dataframes(multi_tf_data)
+            data_1m = {"GC": data_1m_gc, "DXY": data_1m_dxy}
+            
+            logger.info(f"  GC 1m: {len(data_1m['GC'])} candles")
+            logger.info(f"  DXY 1m: {len(data_1m['DXY'])} candles")
+            
+            # For HTF data, we'll use the sync layer's HTF bias function
+            # which handles feature computation internally
+            use_sync_htf = True
+            has_15m = True  # Assume available if sync layer loaded successfully
+            
+        except Exception as e:
+            logger.error(f"Failed to load with sync layer: {e}", exc_info=True)
+            logger.info("Falling back to manual loading...")
+            args.use_sync_layer = False
+            use_sync_htf = False
+    
+    if not args.use_sync_layer:
+        # Old approach: Manual loading (keep for comparison)
+        loader = HistoricalDataLoader(args.data_dir)
+        symbols = ["GC", "DXY"]
 
-    logger.info("\nLoading 1h data...")
-    data_1h = loader.load(symbols, "1h", args.start, args.end)
-    logger.info(f"  GC 1h: {len(data_1h['GC'])} candles")
-    logger.info(f"  DXY 1h: {len(data_1h['DXY'])} candles")
+        logger.info("\nLoading 1h data...")
+        data_1h = loader.load(symbols, "1h", args.start, args.end)
+        logger.info(f"  GC 1h: {len(data_1h['GC'])} candles")
+        logger.info(f"  DXY 1h: {len(data_1h['DXY'])} candles")
 
-    logger.info("\nLoading 15m data...")
-    try:
-        data_15m = loader.load(symbols, "15m", args.start, args.end)
-        logger.info(f"  GC 15m: {len(data_15m['GC'])} candles")
-        logger.info(f"  DXY 15m: {len(data_15m['DXY'])} candles")
-        has_15m = len(data_15m['GC']) > 0 and len(data_15m['DXY']) > 0
-    except Exception as e:
-        logger.warning(f"  Failed to load 15m data: {e}")
-        data_15m = None
-        has_15m = False
+        logger.info("\nLoading 15m data...")
+        try:
+            data_15m = loader.load(symbols, "15m", args.start, args.end)
+            logger.info(f"  GC 15m: {len(data_15m['GC'])} candles")
+            logger.info(f"  DXY 15m: {len(data_15m['DXY'])} candles")
+            has_15m = len(data_15m['GC']) > 0 and len(data_15m['DXY']) > 0
+        except Exception as e:
+            logger.warning(f"  Failed to load 15m data: {e}")
+            data_15m = None
+            has_15m = False
 
-    logger.info("\nLoading 1m data...")
-    data_1m = loader.load(symbols, "1m", args.start, args.end)
-    logger.info(f"  GC 1m: {len(data_1m['GC'])} candles")
-    logger.info(f"  DXY 1m: {len(data_1m['DXY'])} candles")
+        logger.info("\nLoading 1m data...")
+        data_1m = loader.load(symbols, "1m", args.start, args.end)
+        logger.info(f"  GC 1m: {len(data_1m['GC'])} candles")
+        logger.info(f"  DXY 1m: {len(data_1m['DXY'])} candles")
+        use_sync_htf = False
 
     # === STEP 2: Process features for each timeframe ===
     logger.info("\n" + "=" * 80)
     logger.info("Processing features for each timeframe...")
 
-    logger.info("\nProcessing 1h features...")
-    features_1h = process_features(
-        data_1h["GC"],
-        data_1h["DXY"],
-        "1h",
-    )
-    logger.info(f"  Generated {len(features_1h)} feature rows")
-
-    if has_15m:
-        logger.info("\nProcessing 15m features...")
-        try:
-            features_15m = process_features(
-                data_15m["GC"],
-                data_15m["DXY"],
-                "15m",
-            )
-            logger.info(f"  Generated {len(features_15m)} feature rows")
-        except Exception as e:
-            logger.warning(f"  Failed to process 15m features: {e}")
-            features_15m = None
-            has_15m = False
-    else:
-        logger.warning("  Skipping 15m processing (no data)")
+    if use_sync_htf:
+        # When using sync layer, HTF features are computed internally
+        # We only need to process 1m features for signal scoring
+        logger.info("\nProcessing 1m features...")
+        features_1m = process_features(
+            data_1m["GC"],
+            data_1m["DXY"],
+            "1m",
+        )
+        logger.info(f"  Generated {len(features_1m)} feature rows")
+        
+        # Create HTF bias function with sync layer
+        htf_bias_func = create_htf_bias_func_with_sync_layer(
+            multi_tf_data,
+            approach=args.htf_approach,
+        )
+        logger.info(f"  Created HTF bias function (approach: {args.htf_approach})")
+        
+        # Placeholders for compatibility with rest of script
+        features_1h = None
         features_15m = None
+    else:
+        # Old approach: Process all timeframes separately
+        logger.info("\nProcessing 1h features...")
+        features_1h = process_features(
+            data_1h["GC"],
+            data_1h["DXY"],
+            "1h",
+        )
+        logger.info(f"  Generated {len(features_1h)} feature rows")
 
-    logger.info("\nProcessing 1m features...")
-    features_1m = process_features(
-        data_1m["GC"],
-        data_1m["DXY"],
-        "1m",
-    )
-    logger.info(f"  Generated {len(features_1m)} feature rows")
+        if has_15m:
+            logger.info("\nProcessing 15m features...")
+            try:
+                features_15m = process_features(
+                    data_15m["GC"],
+                    data_15m["DXY"],
+                    "15m",
+                )
+                logger.info(f"  Generated {len(features_15m)} feature rows")
+            except Exception as e:
+                logger.warning(f"  Failed to process 15m features: {e}")
+                features_15m = None
+                has_15m = False
+        else:
+            logger.warning("  Skipping 15m processing (no data)")
+            features_15m = None
+
+        logger.info("\nProcessing 1m features...")
+        features_1m = process_features(
+            data_1m["GC"],
+            data_1m["DXY"],
+            "1m",
+        )
+        logger.info(f"  Generated {len(features_1m)} feature rows")
+        htf_bias_func = None
 
     # === STEP 3: Export feature CSVs ===
     logger.info("\n" + "=" * 80)
     logger.info("Exporting feature CSVs...")
 
-    features_1h.to_csv(args.output_dir / "e2e_features_1h.csv", index=False)
-    logger.info(f"  Saved: {args.output_dir / 'e2e_features_1h.csv'}")
+    if features_1h is not None:
+        features_1h.to_csv(args.output_dir / "e2e_features_1h.csv", index=False)
+        logger.info(f"  Saved: {args.output_dir / 'e2e_features_1h.csv'}")
+    else:
+        logger.info("  Skipped 1h export (using sync layer)")
 
     if has_15m and features_15m is not None:
         features_15m.to_csv(args.output_dir / "e2e_features_15m.csv", index=False)
         logger.info(f"  Saved: {args.output_dir / 'e2e_features_15m.csv'}")
     else:
-        logger.warning("  Skipped 15m export (no data)")
+        logger.info("  Skipped 15m export (using sync layer or no data)")
 
     features_1m.to_csv(args.output_dir / "e2e_features_1m.csv", index=False)
     logger.info(f"  Saved: {args.output_dir / 'e2e_features_1m.csv'}")
@@ -227,38 +306,73 @@ def main() -> None:
         if pd.isna(row_1m.get("vwap")) or pd.isna(row_1m.get("rsi")):
             continue
 
-        # Align with 1h candle
-        row_1h = align_htf_candle(features_1h, ts, "1H")
-        if row_1h is None:
-            skipped_no_htf += 1
-            continue
-
-        # Align with 15m candle (if available)
-        if has_15m and features_15m is not None:
-            row_15m = align_htf_candle(features_15m, ts, "15T")
-            if row_15m is None:
-                # Use 1h as fallback for 15m
-                row_15m = row_1h
+        # Compute HTF bias
+        if use_sync_htf:
+            # Use sync layer HTF bias function
+            try:
+                # Build context dict for HTF bias function
+                validation_context = {
+                    "session_ok": is_london_or_ny_session(ts),
+                }
+                htf_bias_obj = htf_bias_func(row_1m, validation_context)
+                htf_bias = htf_bias_obj.bias
+                htf_direction = htf_bias_obj.direction
+                htf_score = htf_bias_obj.score
+                
+                # For logging, extract structure info if available
+                row_1h = None  # Not used with sync layer
+                row_15m = None  # Not used with sync layer
+            except Exception as e:
+                logger.warning(f"Failed to compute HTF bias with sync layer at {ts}: {e}")
+                skipped_no_htf += 1
+                continue
         else:
-            # Use 1h for both if 15m not available
-            row_15m = row_1h
+            # Old approach: Manual alignment
+            # Align with 1h candle
+            row_1h = align_htf_candle(features_1h, ts, "1H")
+            if row_1h is None:
+                skipped_no_htf += 1
+                continue
 
-        # Compute HTF bias from 1h + 15m (or 1h + 1h if 15m unavailable)
-        htf_bias, htf_direction, htf_score = compute_htf_bias_multi_timeframe(
-            row_1h, row_15m
-        )
+            # Align with 15m candle (if available)
+            if has_15m and features_15m is not None:
+                row_15m = align_htf_candle(features_15m, ts, "15T")
+                if row_15m is None:
+                    # Use 1h as fallback for 15m
+                    row_15m = row_1h
+            else:
+                # Use 1h for both if 15m not available
+                row_15m = row_1h
+
+            # Compute HTF bias from 1h + 15m (or 1h + 1h if 15m unavailable)
+            htf_bias, htf_direction, htf_score = compute_htf_bias_multi_timeframe(
+                row_1h, row_15m
+            )
+            htf_bias_obj = None
 
         # Log HTF bias for this candle
-        htf_bias_log.append({
-            "timestamp": ts,
-            "htf_bias": htf_bias,
-            "htf_direction": htf_direction,
-            "htf_score": htf_score,
-            "structure_1h": row_1h.get("structure_label", ""),
-            "structure_15m": row_15m.get("structure_label", ""),
-            "dxy_corr_1h": row_1h.get("dxy_corr"),
-            "dxy_corr_15m": row_15m.get("dxy_corr"),
-        })
+        if use_sync_htf and htf_bias_obj:
+            htf_bias_log.append({
+                "timestamp": ts,
+                "htf_bias": htf_bias,
+                "htf_direction": htf_direction,
+                "htf_score": htf_score,
+                "structure_1h": htf_bias_obj.structure_1h or "",
+                "structure_15m": htf_bias_obj.structure_15m or "",
+                "dxy_corr_1h": htf_bias_obj.dxy_corr_1h,
+                "dxy_corr_15m": htf_bias_obj.dxy_corr_15m,
+            })
+        else:
+            htf_bias_log.append({
+                "timestamp": ts,
+                "htf_bias": htf_bias,
+                "htf_direction": htf_direction,
+                "htf_score": htf_score,
+                "structure_1h": row_1h.get("structure_label", "") if row_1h is not None else "",
+                "structure_15m": row_15m.get("structure_label", "") if row_15m is not None else "",
+                "dxy_corr_1h": row_1h.get("dxy_corr") if row_1h is not None else None,
+                "dxy_corr_15m": row_15m.get("dxy_corr") if row_15m is not None else None,
+            })
 
         # Build context
         session_ok = is_london_or_ny_session(ts)
@@ -294,7 +408,9 @@ def main() -> None:
             if "symbol" not in row_1m_for_scoring:
                 row_1m_for_scoring["symbol"] = row_1m_for_scoring.get("symbol", "GC")
             
-            htf_bias_obj = create_htf_bias_from_context(context)
+            if not use_sync_htf:
+                htf_bias_obj = create_htf_bias_from_context(context)
+            # else: htf_bias_obj already computed above
             signal = score_signal(row_1m_for_scoring, htf_bias_obj, context)
 
             # Validate signal
@@ -361,11 +477,14 @@ def main() -> None:
         logger.info("=" * 80)
 
         logger.info(f"\nCandles Processed:")
-        logger.info(f"  1h:  {len(features_1h):,} candles")
+        if features_1h is not None:
+            logger.info(f"  1h:  {len(features_1h):,} candles")
+        else:
+            logger.info(f"  1h:  N/A (using sync layer)")
         if has_15m and features_15m is not None:
             logger.info(f"  15m: {len(features_15m):,} candles")
         else:
-            logger.info(f"  15m: N/A (no data)")
+            logger.info(f"  15m: N/A (using sync layer or no data)")
         logger.info(f"  1m:  {len(features_1m):,} candles")
         logger.info(f"  Signals generated: {len(signals_df):,}")
 
