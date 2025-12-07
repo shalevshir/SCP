@@ -20,88 +20,42 @@ When you run this command, it will:
 - You must have commits ready to push
 - GitHub CLI (`gh`) must be installed and authenticated
 
-**Install GitHub CLI if needed:**
-```bash
-brew install gh              # macOS
-gh auth login                # Authenticate
+## What Happens
+
+The command automatically runs tests, linters, pushes your branch, and creates a PR. You'll see:
+
+1. **Test execution** - Full test suite runs and results are displayed
+2. **Linting checks** - Code quality and formatting are verified
+3. **Branch push** - Your branch is pushed to remote
+4. **PR creation** - PR is created with title/body generated from your commits
+5. **Results summary** - Complete status of all checks and PR information
+
+You'll see output like this:
+
 ```
-
-## Step 1: Run Quality Checks and Push
-
-The command automatically:
-
-1. **Runs Test Suite:**
-   ```bash
-   poetry run pytest --tb=short -v
-   ```
-   - Executes all unit and integration tests
-   - Shows test results and coverage
-   - Fails if any tests fail
-
-2. **Runs Linters:**
-   ```bash
-   poetry run ruff check .
-   poetry run black --check .
-   ```
-   - Checks code quality
-   - Verifies formatting
-   - Shows any issues found
-
-3. **Pushes Branch:**
-   ```bash
-   git push -u origin <branch-name>
-   ```
-   - Pushes all commits to remote
-   - Sets upstream tracking
-
-## Step 2: Generate and Create PR
-
-The command automatically:
-
-1. **Generates PR Title:**
-   - Extracted from the most recent commit message
-   - Uses commit subject line (first line)
-   - Formatted for PR title
-
-2. **Generates PR Body:**
-   - Summary from commit messages
-   - List of all commits
-   - Changed files organized by directory
-   - Test results summary
-   - Related issues (Closes #123, Fixes #456, etc.)
-
-3. **Creates PR:**
-   ```bash
-   gh pr create --title "<auto>" --body "<auto>" --base main
-   ```
-
-## Step 3: Display Results
-
-After PR creation, the command displays:
-
-### Test Results Summary
-```
+🧪 Running tests...
+[test output]
 ✅ Tests: 150 passed, 0 failed
 📊 Coverage: 85.3%
-🔍 Linting: 0 errors, 12 warnings
-✨ Formatting: All files formatted correctly
-```
 
-### PR Information
-```
-✅ PR created successfully!
+🔍 Running linters...
+[linter output]
+✅ Linting: All checks passed
+
+📤 Pushing branch...
+✅ Branch pushed successfully
+
+🔨 Creating PR...
+✅ PR CREATED SUCCESSFULLY!
 🔗 https://github.com/owner/repo/pull/123
-📊 PR #123: feat: add multi-timeframe sync layer
-📝 Status: Open
-🔍 View: gh pr view
-```
 
-### Quality Gate Status
-- ✅ All tests passing
-- ✅ Code coverage meets threshold
-- ✅ Linting passed
-- ✅ Formatting correct
-- ✅ PR created and ready for review
+📊 Summary:
+   ✅ Tests: 150 passed, 0 failed
+   📊 Coverage: 85.3%
+   🔍 Linting: 0 errors, 12 warnings
+   ✨ Formatting: ✅ OK
+📝 View PR: gh pr view
+```
 
 ## Usage
 
@@ -115,29 +69,7 @@ Or use the Cursor command:
 /create-pr
 ```
 
-## What Gets Displayed
-
-1. **Test Execution Results:**
-   - Total tests run
-   - Tests passed/failed
-   - Test failures with details
-   - Coverage percentage
-
-2. **Linting Results:**
-   - Ruff errors and warnings
-   - Black formatting status
-   - Files that need attention
-
-3. **PR Creation Results:**
-   - PR number and URL
-   - PR title
-   - PR status
-   - Link to view PR
-
-4. **Summary:**
-   - Overall status (✅ Ready / ⚠️ Issues Found)
-   - Next steps if issues found
-   - Commands to view PR details
+## Output Example
 
 ## Error Handling
 
