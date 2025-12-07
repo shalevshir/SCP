@@ -351,6 +351,10 @@ class SimulationEngine:
             Signal object or None if no signal
         """
         try:
+            # Create a copy to avoid mutating the calculator's internal state
+            # get_current_features_15m() returns a reference to self.features_15m
+            features = features.copy()
+            
             # Ensure required fields
             if "timestamp" not in features:
                 features["timestamp"] = candle.timestamp
