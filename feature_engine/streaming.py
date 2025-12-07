@@ -1,0 +1,289 @@
+"""Streaming Feature Processor for incremental indicator calculation.
+
+This module provides StreamingFeatureProcessor that maintains state and calls
+existing calculation functions to compute features incrementally as new bars arrive.
+
+Architecture: Zero code duplication - reuses existing functions from feature_engine.
+"""
+
+from collections import deque
+from datetime import datetime
+from typing import Optional
+
+import pandas as pd
+from common.logger import get_logger
+from common.types import Candle
+
+from feature_engine.dxy_correlation import calculate_dxy_correlation
+from feature_engine.rsi import calculate_rsi
+from feature_engine.structure import calculate_structure_labels
+from feature_engine.vwap import calculate_vwap_deviation
+from feature_engine.timezone_utils import get_vwap_session_id
+
+logger = get_logger(__name__)
+
+
+class StreamingFeatureProcessor:
+    """Streaming processor that incrementally computes features.
+    
+    Maintains state buffers and calls existing calculation functions to ensure
+    identical results between streaming and batch processing modes.
+    
+    Features calculated:
+    - EMA (9, 20, 50): Incremental formula
+    - VWAP: Cumulative, session-aware
+    - RSI: Window-based, calls existing function
+    - DXY Correlation: Window-based, calls existing function
+    - Structure Labels: Lookback-based, calls existing function
+    - VWAP Deviation: Calls existing function
+    
+    Attributes:
+        timeframe: Target timeframe (e.g., "1m", "15m", "1h")
+        ema_states: Dict of EMA state for each period (9, 20, 50)
+        rsi_buffer: Deque of recent close prices for RSI calculation
+        dxy_corr_gc_buffer: Deque of recent GC close prices for correlation
+        dxy_corr_dxy_buffer: Deque of recent DXY close prices for correlation
+        structure_buffer: Deque of recent OHLC data for structure detection
+        vwap_pv_sum: Cumulative price*volume sum for VWAP
+        vwap_v_sum: Cumulative volume sum for VWAP
+        vwap_current_session: Current VWAP session ID
+        rsi_avg_gain: Current average gain for RSI Wilder's smoothing
+        rsi_avg_loss: Current average loss for RSI Wilder's smoothing
+        prev_close: Previous close price for RSI delta calculation
+    """
+
+    def __init__(
+        self,
+        timeframe: str,
+        rsi_period: int = 14,
+        ema_periods: Optional[list[int]] = None,
+        dxy_window: int = 50,
+        swing_window: int = 5,
+        session_reset: bool = True,
+    ):
+        """Initialize streaming processor.
+        
+        Args:
+            timeframe: Target timeframe (e.g., "1m", "15m", "1h")
+            rsi_period: RSI calculation period (default: 14)
+            ema_periods: List of EMA periods (default: [9, 20, 50])
+            dxy_window: DXY correlation window (default: 50)
+            swing_window: Structure label swing window (default: 5)
+            session_reset: Whether to reset VWAP at session boundaries (default: True)
+        """
+        self.timeframe = timeframe
+        self.rsi_period = rsi_period
+        self.ema_periods = ema_periods if ema_periods is not None else [9, 20, 50]
+        self.dxy_window = dxy_window
+        self.swing_window = swing_window
+        self.session_reset = session_reset
+
+        # EMA state: {period: current_ema_value}
+        self.ema_states: dict[int, Optional[float]] = {
+            period: None for period in self.ema_periods
+        }
+        self.ema_alphas: dict[int, float] = {
+            period: 2.0 / (period + 1) for period in self.ema_periods
+        }
+
+        # RSI buffer and Wilder's smoothing state
+        self.rsi_buffer: deque[float] = deque(maxlen=rsi_period + 1)
+        self.rsi_avg_gain: Optional[float] = None
+        self.rsi_avg_loss: Optional[float] = None
+        self.prev_close: Optional[float] = None
+
+        # DXY correlation buffers
+        self.dxy_corr_gc_buffer: deque[tuple[datetime, float]] = deque(maxlen=dxy_window)
+        self.dxy_corr_dxy_buffer: deque[tuple[datetime, float]] = deque(maxlen=dxy_window)
+
+        # Structure detection buffer (needs enough bars to capture swing points)
+        # With swing_window=3, detection range is limited, so we need more bars
+        # 30 bars gives good coverage for detecting market structure
+        self.structure_buffer: deque[dict] = deque(maxlen=30)
+        
+        # Track last detected structure label (persists between bars)
+        self.last_structure_label: Optional[str] = None
+
+        # VWAP cumulative state
+        self.vwap_pv_sum = 0.0
+        self.vwap_v_sum = 0.0
+        self.vwap_current_session: Optional[str] = None
+
+        # Warmup tracking
+        self.bar_count = 0
+
+    def update(self, gc_bar: Candle, dxy_bar: Candle) -> pd.Series:
+        """Update state with new bar and return current features.
+        
+        Args:
+            gc_bar: New Gold candle
+            dxy_bar: New DXY candle (aligned timestamp)
+            
+        Returns:
+            Series with current feature values
+        """
+        self.bar_count += 1
+        features = {}
+
+        # Store timestamp and basic OHLCV
+        features["timestamp"] = gc_bar.timestamp
+        features["open"] = gc_bar.open
+        features["high"] = gc_bar.high
+        features["low"] = gc_bar.low
+        features["close"] = gc_bar.close
+        features["volume"] = gc_bar.volume
+
+        # === 1. EMA (incremental formula) ===
+        for period in self.ema_periods:
+            alpha = self.ema_alphas[period]
+            if self.ema_states[period] is None:
+                # Initialize with first close price
+                self.ema_states[period] = gc_bar.close
+            else:
+                # EMA = price × α + EMA_prev × (1-α)
+                self.ema_states[period] = (
+                    gc_bar.close * alpha + self.ema_states[period] * (1 - alpha)
+                )
+            features[f"ema_{period}"] = self.ema_states[period]
+
+        # === 2. VWAP (cumulative, session-aware) ===
+        # Check for session boundary
+        session_id = get_vwap_session_id(gc_bar.timestamp)
+        if self.session_reset and session_id != self.vwap_current_session:
+            # Reset VWAP at session boundary
+            self.vwap_pv_sum = 0.0
+            self.vwap_v_sum = 0.0
+            self.vwap_current_session = session_id
+            logger.debug(f"VWAP session reset at {gc_bar.timestamp} (session: {session_id})")
+
+        # Calculate typical price and update cumulative sums
+        typical_price = (gc_bar.high + gc_bar.low + gc_bar.close) / 3
+        volume = max(gc_bar.volume, 1e-10)  # Prevent division by zero
+        
+        self.vwap_pv_sum += typical_price * volume
+        self.vwap_v_sum += volume
+        
+        vwap = self.vwap_pv_sum / self.vwap_v_sum if self.vwap_v_sum > 0 else gc_bar.close
+        features["vwap"] = vwap
+
+        # === 3. VWAP Deviation ===
+        if vwap > 0:
+            features["vwap_deviation"] = abs((gc_bar.close - vwap) / vwap * 100)
+        else:
+            features["vwap_deviation"] = None
+
+        # === 4. RSI (window-based, calls existing function) ===
+        # Update RSI buffer
+        self.rsi_buffer.append(gc_bar.close)
+        
+        if len(self.rsi_buffer) >= self.rsi_period + 1:
+            # Convert buffer to DataFrame and call existing function
+            df_rsi = pd.DataFrame({
+                "close": list(self.rsi_buffer)
+            })
+            rsi_series = calculate_rsi(df_rsi, period=self.rsi_period)
+            # Extract last value (most recent RSI)
+            features["rsi"] = rsi_series.iloc[-1] if not rsi_series.empty else None
+        else:
+            features["rsi"] = None
+
+        # === 5. DXY Correlation (window-based, calls existing function) ===
+        # Update DXY correlation buffers
+        self.dxy_corr_gc_buffer.append((gc_bar.timestamp, gc_bar.close))
+        self.dxy_corr_dxy_buffer.append((dxy_bar.timestamp, dxy_bar.close))
+        
+        if len(self.dxy_corr_gc_buffer) >= self.dxy_window:
+            # Convert buffers to DataFrames
+            gc_data = list(self.dxy_corr_gc_buffer)
+            dxy_data = list(self.dxy_corr_dxy_buffer)
+            
+            df_gc = pd.DataFrame({
+                "ts_event": [item[0] for item in gc_data],
+                "close": [item[1] for item in gc_data]
+            })
+            df_dxy = pd.DataFrame({
+                "ts_event": [item[0] for item in dxy_data],
+                "close": [item[1] for item in dxy_data]
+            })
+            
+            # Call existing function
+            try:
+                corr_series = calculate_dxy_correlation(df_gc, df_dxy, window=self.dxy_window)
+                # Extract last value
+                features["dxy_corr"] = corr_series.iloc[-1] if not corr_series.empty else None
+            except Exception as e:
+                logger.warning(f"DXY correlation calculation failed: {e}")
+                features["dxy_corr"] = None
+        else:
+            features["dxy_corr"] = None
+
+        # === 6. Structure Labels (lookback-based, calls existing function) ===
+        # Update structure buffer
+        self.structure_buffer.append({
+            "timestamp": gc_bar.timestamp,
+            "high": gc_bar.high,
+            "low": gc_bar.low,
+            "close": gc_bar.close,
+        })
+        
+        # Need enough bars for structure detection
+        required_bars = self.swing_window * 2 + 1
+        if len(self.structure_buffer) >= required_bars:
+            # Convert buffer to DataFrame
+            df_structure = pd.DataFrame(list(self.structure_buffer))
+            
+            # Call existing function
+            try:
+                labels_series = calculate_structure_labels(
+                    df_structure, 
+                    swing_window=self.swing_window,
+                    high_column="high",
+                    low_column="low"
+                )
+                # Extract current label (accounting for delay)
+                # Structure labels are delayed by swing_window bars
+                if len(labels_series) > self.swing_window:
+                    # Get label from swing_window bars ago (most recent confirmed label)
+                    current_label = labels_series.iloc[-(self.swing_window + 1)]
+                    # Only update last_structure_label if we got a valid label (not NA/None)
+                    if current_label is not None and not pd.isna(current_label):
+                        self.last_structure_label = current_label
+            except Exception as e:
+                logger.warning(f"Structure label calculation failed: {e}")
+        
+        # Always return the last known structure label (persists between swing points)
+        features["structure_label"] = self.last_structure_label
+
+        return pd.Series(features)
+
+    def is_warmed_up(self) -> bool:
+        """Check if processor has enough data to produce reliable features.
+        
+        Returns:
+            True if warmup period complete
+        """
+        min_warmup = max(
+            max(self.ema_periods),
+            self.rsi_period + 1,
+            self.dxy_window,
+            self.swing_window * 2 + 1
+        )
+        return self.bar_count >= min_warmup
+
+    def reset(self) -> None:
+        """Reset all state to initial conditions."""
+        self.ema_states = {period: None for period in self.ema_periods}
+        self.rsi_buffer.clear()
+        self.rsi_avg_gain = None
+        self.rsi_avg_loss = None
+        self.prev_close = None
+        self.dxy_corr_gc_buffer.clear()
+        self.dxy_corr_dxy_buffer.clear()
+        self.structure_buffer.clear()
+        self.last_structure_label = None
+        self.vwap_pv_sum = 0.0
+        self.vwap_v_sum = 0.0
+        self.vwap_current_session = None
+        self.bar_count = 0
+        logger.info("Streaming feature processor reset")
+

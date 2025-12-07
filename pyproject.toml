@@ -11,6 +11,7 @@ packages = [
     { include = "feature_engine" },
     { include = "backtester" },
     { include = "validation" },
+    { include = "dashboard" },
 ]
 
 [tool.poetry.dependencies]
@@ -19,6 +20,10 @@ pyyaml = "^6.0.2"
 pydantic = "^2.9.0"
 pandas = "^2.0.3"
 numpy = "^1.26.0"
+databento = "^0.40.0"
+dash = "^2.14.0"
+dash-bootstrap-components = "^1.5.0"
+plotly = "^5.18.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.3.0"
@@ -75,7 +80,7 @@ strict_equality = true
 exclude = ["tests/"]
 
 [tool.coverage.run]
-source = ["common", "data_layer", "src", "feature_engine", "backtester", "rule_engine", "validation"]
+source = ["common", "data_layer", "src", "feature_engine", "backtester", "rule_engine", "validation", "dashboard"]
 omit = ["tests/*", "*/test_*.py", "*/__pycache__/*"]
 relative_files = true
 

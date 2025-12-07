@@ -41,8 +41,8 @@ def test_fetch_returns_list():
     """Test that fetch returns a list with real CSV data."""
     csv_path = Path("data/gc_dx_ohlcv/GC_ohlcv-1m.csv")
     client = LocalCSVClient(csv_path)
-    start = datetime(2025, 9, 30, 4, 20, 0, tzinfo=UTC)
-    end = datetime(2025, 9, 30, 4, 30, 0, tzinfo=UTC)
+    start = datetime(2025, 7, 1, 0, 0, 0, tzinfo=UTC)
+    end = datetime(2025, 7, 1, 0, 10, 0, tzinfo=UTC)
 
     # This date range may contain invalid data (negative values)
     # If so, DataSourceError should be raised (fail-fast behavior)
@@ -58,8 +58,8 @@ def test_fetch_returns_list_of_candles():
     """Test that fetch returns list of Candle objects."""
     csv_path = Path("data/gc_dx_ohlcv/GC_ohlcv-1m.csv")
     client = LocalCSVClient(csv_path)
-    start = datetime(2025, 9, 30, 4, 20, 0, tzinfo=UTC)
-    end = datetime(2025, 9, 30, 4, 30, 0, tzinfo=UTC)
+    start = datetime(2025, 7, 1, 0, 0, 0, tzinfo=UTC)
+    end = datetime(2025, 7, 1, 0, 10, 0, tzinfo=UTC)
 
     # This date range may contain invalid data (negative values)
     # If so, DataSourceError should be raised (fail-fast behavior)
@@ -175,8 +175,8 @@ def test_fetch_with_different_timeframes():
     """Test that fetch accepts various timeframe formats."""
     csv_path = Path("data/gc_dx_ohlcv/GC_ohlcv-1m.csv")
     client = LocalCSVClient(csv_path)
-    start = datetime(2025, 9, 30, 4, 20, 0, tzinfo=UTC)
-    end = datetime(2025, 9, 30, 4, 30, 0, tzinfo=UTC)
+    start = datetime(2025, 7, 1, 0, 0, 0, tzinfo=UTC)
+    end = datetime(2025, 7, 1, 0, 10, 0, tzinfo=UTC)
 
     timeframes = ["1m", "5m", "15m", "1h", "1d"]
 
@@ -195,8 +195,8 @@ def test_multiple_fetch_calls():
     """Test that multiple fetch calls work correctly."""
     csv_path = Path("data/gc_dx_ohlcv/GC_ohlcv-1m.csv")
     client = LocalCSVClient(csv_path)
-    start = datetime(2025, 9, 30, 4, 20, 0, tzinfo=UTC)
-    end = datetime(2025, 9, 30, 4, 30, 0, tzinfo=UTC)
+    start = datetime(2025, 7, 1, 0, 0, 0, tzinfo=UTC)
+    end = datetime(2025, 7, 1, 0, 10, 0, tzinfo=UTC)
 
     # This date range may contain invalid data (negative values)
     # If so, DataSourceError should be raised (fail-fast behavior)
@@ -234,8 +234,8 @@ def test_fetch_accepts_timezone_aware_datetimes():
     client = LocalCSVClient(csv_path)
 
     # Test with UTC
-    start_utc = datetime(2025, 9, 30, 4, 20, 0, tzinfo=UTC)
-    end_utc = datetime(2025, 9, 30, 4, 30, 0, tzinfo=UTC)
+    start_utc = datetime(2025, 7, 1, 0, 0, 0, tzinfo=UTC)
+    end_utc = datetime(2025, 7, 1, 0, 10, 0, tzinfo=UTC)
     # This date range may contain invalid data (negative values)
     # If so, DataSourceError should be raised (fail-fast behavior)
     try:
@@ -278,9 +278,9 @@ def test_fetch_loads_real_csv_data():
     csv_path = Path("data/gc_dx_ohlcv/GC_ohlcv-1m.csv")
     client = LocalCSVClient(csv_path)
     
-    # Use date range from actual data
-    start = datetime(2025, 9, 30, 4, 20, 0, tzinfo=UTC)
-    end = datetime(2025, 9, 30, 4, 30, 0, tzinfo=UTC)
+    # Use date range from actual data (2025-07-01 onwards)
+    start = datetime(2025, 7, 1, 0, 0, 0, tzinfo=UTC)
+    end = datetime(2025, 7, 1, 0, 10, 0, tzinfo=UTC)
     
     # This date range may contain invalid data (negative values)
     # If so, DataSourceError should be raised (fail-fast behavior)
@@ -305,9 +305,9 @@ def test_fetch_filters_by_date_range():
     csv_path = Path("data/gc_dx_ohlcv/GC_ohlcv-1m.csv")
     client = LocalCSVClient(csv_path)
     
-    # Narrow date range
-    start = datetime(2025, 9, 30, 4, 21, 0, tzinfo=UTC)
-    end = datetime(2025, 9, 30, 4, 23, 0, tzinfo=UTC)
+    # Narrow date range (2025-07-01 onwards)
+    start = datetime(2025, 7, 1, 0, 1, 0, tzinfo=UTC)
+    end = datetime(2025, 7, 1, 0, 3, 0, tzinfo=UTC)
     
     # This date range may contain invalid data (negative values)
     # If so, DataSourceError should be raised (fail-fast behavior)
@@ -327,8 +327,9 @@ def test_fetch_parses_timezone_aware_timestamps():
     csv_path = Path("data/gc_dx_ohlcv/GC_ohlcv-1m.csv")
     client = LocalCSVClient(csv_path)
     
-    start = datetime(2025, 9, 30, 4, 20, 0, tzinfo=UTC)
-    end = datetime(2025, 9, 30, 4, 30, 0, tzinfo=UTC)
+    # Use date range from actual data (2025-07-01 onwards)
+    start = datetime(2025, 7, 1, 0, 0, 0, tzinfo=UTC)
+    end = datetime(2025, 7, 1, 0, 10, 0, tzinfo=UTC)
     
     # This date range may contain invalid data (negative values)
     # If so, DataSourceError should be raised (fail-fast behavior)
@@ -348,8 +349,9 @@ def test_fetch_converts_to_candle_objects():
     csv_path = Path("data/gc_dx_ohlcv/GC_ohlcv-1m.csv")
     client = LocalCSVClient(csv_path)
     
-    start = datetime(2025, 9, 30, 4, 20, 0, tzinfo=UTC)
-    end = datetime(2025, 9, 30, 4, 30, 0, tzinfo=UTC)
+    # Use date range from actual data (2025-07-01 onwards)
+    start = datetime(2025, 7, 1, 0, 0, 0, tzinfo=UTC)
+    end = datetime(2025, 7, 1, 0, 10, 0, tzinfo=UTC)
     
     # This date range may contain invalid data (negative values)
     # If so, DataSourceError should be raised (fail-fast behavior)

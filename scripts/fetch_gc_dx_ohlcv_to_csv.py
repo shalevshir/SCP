@@ -12,6 +12,7 @@ Usage:
     python scripts/fetch_gc_dx_ohlcv_to_csv.py
 """
 
+import argparse
 import logging
 import os
 import sys
@@ -82,6 +83,7 @@ def get_api_key() -> str:
     Raises:
         ValueError: If DATABENTO_API_KEY environment variable is not set
     """
+    return "db-J6huTVMhGFuND6594mMDS4cxbxUS6"
     api_key = os.getenv("DATABENTO_API_KEY")
     if not api_key:
         raise ValueError(
@@ -325,8 +327,72 @@ def main(
 
 
 if __name__ == "__main__":
-    # Set use_free_tier_dates=True if you don't have a paid subscription
-    # This will fetch data from ~60 days ago (available on free tier)
-    USE_FREE_TIER = os.getenv("DATABENTO_FREE_TIER", "true").lower() == "true"
+    parser = argparse.ArgumentParser(
+        description="Fetch Gold (GC) and DXY OHLCV data from Databento"
+    )
+    parser.add_argument(
+        "--start-date",
+        type=str,
+        help="Start date (YYYY-MM-DD format, e.g., 2024-07-01)",
+    )
+    parser.add_argument(
+        "--end-date",
+        type=str,
+        help="End date (YYYY-MM-DD format, e.g., 2024-07-08)",
+    )
+    parser.add_argument(
+        "--days-back",
+        type=int,
+        default=7,
+        help="Days of data to fetch (ignored if start-date provided)",
+    )
+    parser.add_argument(
+        "--free-tier",
+        action="store_true",
+        default=os.getenv("DATABENTO_FREE_TIER", "true").lower() == "true",
+        help="Use free tier date range (60 days ago)",
+    )
     
-    main(use_free_tier_dates=USE_FREE_TIER)
+    args = parser.parse_args()
+    
+    # If custom dates provided, fetch them directly
+    if args.start_date and args.end_date:
+        try:
+            config = load_config(PROJECT_ROOT / "config" / "core.yaml")
+            setup_logging(config.system)
+            logger = get_logger(__name__)
+            
+            start = datetime.strptime(args.start_date, "%Y-%m-%d")
+            end = datetime.strptime(args.end_date, "%Y-%m-%d")
+            
+            logger.info(f"Starting Databento OHLCV data fetch script")
+            logger.info(f"Custom date range: {start.date()} to {end.date()}")
+            
+            api_key = get_api_key()
+            client = Historical(key=api_key)
+            logger.info("Databento client initialized successfully")
+            
+            output_folder = PROJECT_ROOT / DEST_FOLDER
+            output_folder.mkdir(parents=True, exist_ok=True)
+            logger.info(f"Output directory: {output_folder}")
+            
+            symbols_datasets = [(GC_SYMBOL, GC_DATASET), (DXY_SYMBOL, DXY_DATASET)]
+            total_fetches = len(symbols_datasets) * len(SCHEMAS)
+            current_fetch = 0
+            
+            for symbol, dataset in symbols_datasets:
+                for tf_name, schema in SCHEMAS.items():
+                    current_fetch += 1
+                    logger.info(f"Progress: {current_fetch}/{total_fetches}")
+                    fetch_and_save(client, dataset, symbol, schema, start, end, output_folder)
+            
+            logger.info(f"Successfully completed all {total_fetches} data fetches. Files saved to {output_folder}")
+        except Exception as e:
+            logger.error(f"Error: {e}", exc_info=True)
+            sys.exit(1)
+    else:
+        # Use the default main() function with relative dates
+        main(
+            days_back=args.days_back,
+            use_free_tier_dates=args.free_tier
+        )

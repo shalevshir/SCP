@@ -237,11 +237,17 @@ class LocalCSVClient:
         >>> # Currently returns empty list
     """
 
-    def __init__(self, file_path: str | os.PathLike[str]) -> None:
+    def __init__(
+        self,
+        file_path: str | os.PathLike[str],
+        symbol_filter: str | None = None,
+    ) -> None:
         """Initialize the Local CSV client stub.
 
         Args:
             file_path: Path to CSV file (string or Path object)
+            symbol_filter: Optional symbol to filter data (e.g., "GCQ5").
+                          If None, will use first non-spread symbol found.
 
         Raises:
             DataSourceError: If file_path is invalid or empty
@@ -264,6 +270,7 @@ class LocalCSVClient:
             )
 
         self.file_path = file_path_str
+        self.symbol_filter = symbol_filter
 
     def __repr__(self) -> str:
         """Return string representation of client."""
@@ -356,24 +363,35 @@ class LocalCSVClient:
         # Filter by date range (start <= ts_event < end)
         df = df[(df["ts_event"] >= start) & (df["ts_event"] < end)]
 
-        # Validate data quality before processing
-        # Check for spread symbols (contain "-") which have invalid prices
+        # Early return if no data in date range
+        if df.empty:
+            logger.info(f"No data in date range {start} to {end}")
+            return []
+
+        # Filter by symbol if specified or auto-detect primary symbol
         if "symbol" in df.columns:
-            spread_symbols = df[df["symbol"].str.contains("-", na=False)]
-            if not spread_symbols.empty:
-                first_spread = spread_symbols.iloc[0]
-                raise DataSourceError(
-                    "Invalid data: Spread contracts detected (symbol contains '-')",
-                    extra={
-                        "file": self.file_path,
-                        "row": {
-                            "timestamp": str(first_spread.get("ts_event", "unknown")),
-                            "symbol": str(first_spread.get("symbol", "unknown")),
-                            "row_index": spread_symbols.index[0],
-                        },
-                    },
-                    file_path=self.file_path,
-                )
+            if self.symbol_filter:
+                # Use explicit symbol filter
+                df = df[df["symbol"] == self.symbol_filter]
+                if df.empty:
+                    raise DataSourceError(
+                        f"No data found for symbol '{self.symbol_filter}'",
+                        file_path=self.file_path,
+                        symbol=self.symbol_filter,
+                    )
+                logger.info(f"Filtered to symbol: {self.symbol_filter}")
+            else:
+                # Auto-detect: filter out spreads (contain "-") and use most common symbol
+                non_spread_df = df[~df["symbol"].str.contains("-", na=False)]
+                if non_spread_df.empty:
+                    raise DataSourceError(
+                        "No non-spread symbols found in data",
+                        file_path=self.file_path,
+                    )
+                # Use the most common non-spread symbol
+                primary_symbol = non_spread_df["symbol"].value_counts().idxmax()
+                df = df[df["symbol"] == primary_symbol]
+                logger.info(f"Auto-detected primary symbol: {primary_symbol}")
 
         # Check for negative or zero prices
         for col in ["open", "high", "low", "close"]:
