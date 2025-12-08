@@ -749,12 +749,14 @@ class BacktestReplayLoop:
                         closed_trade.exit_timestamp
                         and closed_trade.exit_timestamp <= current_candle.timestamp
                     ):
+                        pnl_str = f"{closed_trade.pnl:.2f}" if closed_trade.pnl is not None else "None"
+                        r_str = f"{closed_trade.r_realized:.2f}" if closed_trade.r_realized is not None else "None"
                         logger.info(
                             f"Trade {trade_id} closed at "
                             f"{closed_trade.exit_timestamp}: "
                             f"exit_reason={closed_trade.exit_reason}, "
-                            f"PnL={closed_trade.pnl:.2f}, "
-                            f"R={closed_trade.r_realized:.2f}"
+                            f"PnL={pnl_str}, "
+                            f"R={r_str}"
                         )
 
                         # Remove from active trades
@@ -795,10 +797,13 @@ class BacktestReplayLoop:
         # Update daily PnL
         if closed_trade.pnl is not None:
             self._daily_pnl += closed_trade.pnl
+            # pnl is guaranteed to be not None here, but r_realized might be
+            pnl_str = f"{closed_trade.pnl:.2f}"
+            r_str = f"{closed_trade.r_realized:.2f}" if closed_trade.r_realized is not None else "None"
             logger.info(
                 f"Trade {closed_trade.trade_id} closed: "
-                f"PnL={closed_trade.pnl:.2f}, "
-                f"R={closed_trade.r_realized:.2f}, "
+                f"PnL={pnl_str}, "
+                f"R={r_str}, "
                 f"exit_reason={closed_trade.exit_reason}, "
                 f"daily_pnl={self._daily_pnl:.2f}"
             )
@@ -948,9 +953,11 @@ class BacktestReplayLoop:
             # Update state
             self._update_state(closed_trade)
 
+            pnl_str = f"{closed_trade.pnl:.2f}" if closed_trade.pnl is not None else "None"
+            r_str = f"{closed_trade.r_realized:.2f}" if closed_trade.r_realized is not None else "None"
             logger.info(
                 f"Trade {trade_id} closed at end of dataset: "
-                f"PnL={closed_trade.pnl:.2f}, R={closed_trade.r_realized:.2f}"
+                f"PnL={pnl_str}, R={r_str}"
             )
 
     def _calculate_results(self) -> BacktestResults:
