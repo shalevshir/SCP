@@ -357,6 +357,8 @@ def compute_htf_bias(
     # 1. BOS/CHoCH detection from 1H data
     bos_detected = False
     choch_detected = False
+    bos_series = None
+    choch_series = None
     if df_1h is not None and len(df_1h) > 0:
         try:
             swing_highs_1h, swing_lows_1h = detect_swings(df_1h, lookback=5)
@@ -447,6 +449,40 @@ def compute_htf_bias(
             dxy_corr_15m is not None and not pd.isna(dxy_corr_15m) and dxy_corr_15m < -0.6):
             dxy_alignment = True
     
+    # 6. Extract structure event candles
+    from rule_engine.htf.structure import (
+        extract_bos_candle,
+        extract_choch_candle,
+        extract_sweep_candle,
+    )
+    
+    bos_candle = None
+    choch_candle = None
+    sweep_candle = None
+    confirmation_candle = None  # Will be set by replay loop from execution timeframe
+    
+    if timestamp is not None:
+        # Extract BOS candle
+        if df_1h is not None and bos_series is not None:
+            try:
+                bos_candle = extract_bos_candle(df_1h, bos_series, timestamp)
+            except Exception as e:
+                logger.debug(f"Failed to extract BOS candle: {e}")
+        
+        # Extract CHoCH candle
+        if df_1h is not None and choch_series is not None:
+            try:
+                choch_candle = extract_choch_candle(df_1h, choch_series, timestamp)
+            except Exception as e:
+                logger.debug(f"Failed to extract CHoCH candle: {e}")
+        
+        # Extract sweep candle
+        if df_15m is not None and sweep_events_15m is not None:
+            try:
+                sweep_candle = extract_sweep_candle(df_15m, sweep_events_15m, timestamp)
+            except Exception as e:
+                logger.debug(f"Failed to extract sweep candle: {e}")
+    
     return HTFBias(
         bias=bias,
         direction=direction,
@@ -464,6 +500,10 @@ def compute_htf_bias(
         choch_detected=choch_detected,
         liquidity_sweep_detected=liquidity_sweep_detected,
         liquidity_sweep_type=liquidity_sweep_type,
+        bos_candle=bos_candle,
+        choch_candle=choch_candle,
+        sweep_candle=sweep_candle,
+        confirmation_candle=confirmation_candle,
         vwap_1h=vwap_1h,
         vwap_distance_1h=vwap_distance_1h,
         vwap_slope_1h=vwap_slope_1h,
