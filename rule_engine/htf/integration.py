@@ -269,6 +269,11 @@ def create_htf_bias_func_with_sync_layer(
         # Track previous sync bar to detect changes
         prev_sync_bar: Optional[SynchronizedBar] = None
         
+        # Buffer for 15m candles (for liquidity sweep detection)
+        # Need enough history for swing detection
+        candle_buffer_15m: list = []
+        max_buffer_size = swing_window * 3  # Keep 3x swing window for context
+        
         def htf_bias_func(features_1m: pd.Series, context: dict) -> HTFBias:
             """Compute HTF bias using streaming approach."""
             timestamp = features_1m["timestamp"]
@@ -304,14 +309,38 @@ def create_htf_bias_func_with_sync_layer(
             df_15m = None
             df_1h = None
             dxy_1h = None
+            sweep_events_15m = None
             
             if sync_bar.htf_15m:
-                # Build DataFrame from current and recent 15m candles
-                # For structure detection, we need historical context
-                # For now, use current bar (can be enhanced with buffer)
-                df_15m = build_htf_dataframe_from_candles(
-                    [sync_bar.htf_15m[0]], "15m"
-                )
+                # Update 15m candle buffer
+                current_15m_candle = sync_bar.htf_15m[0]
+                
+                # Only add if it's a new candle (different timestamp from last)
+                if not candle_buffer_15m or candle_buffer_15m[-1].timestamp != current_15m_candle.timestamp:
+                    candle_buffer_15m.append(current_15m_candle)
+                    
+                    # Keep buffer size manageable
+                    if len(candle_buffer_15m) > max_buffer_size:
+                        candle_buffer_15m.pop(0)
+                
+                # Build DataFrame from buffered candles for structure detection
+                if len(candle_buffer_15m) > swing_window * 2:  # Need enough for swing detection
+                    df_15m = build_htf_dataframe_from_candles(
+                        candle_buffer_15m, "15m"
+                    )
+                    
+                    # Detect liquidity sweeps on 15m
+                    try:
+                        from rule_engine.htf.structure import detect_swings, detect_liquidity_sweeps
+                        
+                        swing_highs_15m, swing_lows_15m = detect_swings(df_15m, lookback=swing_window)
+                        sweep_events, sweep_success = detect_liquidity_sweeps(
+                            df_15m, swing_highs_15m, swing_lows_15m
+                        )
+                        sweep_events_15m = sweep_events
+                    except Exception as e:
+                        logger.debug(f"Failed to detect liquidity sweeps in streaming mode: {e}")
+                        sweep_events_15m = None
             
             if sync_bar.htf_1h:
                 df_1h = build_htf_dataframe_from_candles([sync_bar.htf_1h[0]], "1h")
@@ -324,7 +353,7 @@ def create_htf_bias_func_with_sync_layer(
                 dxy_1h=dxy_1h,
                 df_15m=df_15m,
                 df_1h=df_1h,
-                sweep_events_15m=None,  # TODO: Add liquidity sweep detection
+                sweep_events_15m=sweep_events_15m,
                 timestamp=pd.Timestamp(timestamp_dt),
             )
         
@@ -350,6 +379,28 @@ def create_htf_bias_func_with_sync_layer(
         df_15m = build_htf_dataframe_from_candles(gc_15m, "15m") if gc_15m else None
         df_1h = build_htf_dataframe_from_candles(gc_1h, "1h") if gc_1h else None
         dxy_1h = build_htf_dataframe_from_candles(dxy_1h, "1h") if dxy_1h else None
+        
+        # Pre-compute liquidity sweeps on 15m timeframe
+        sweep_events_15m_series = None
+        if df_15m is not None and len(df_15m) > 0:
+            try:
+                from rule_engine.htf.structure import detect_swings, detect_liquidity_sweeps
+                
+                # Detect swings on 15m data
+                swing_highs_15m, swing_lows_15m = detect_swings(df_15m, lookback=swing_window)
+                
+                # Detect liquidity sweeps
+                sweep_events, sweep_success = detect_liquidity_sweeps(
+                    df_15m, swing_highs_15m, swing_lows_15m
+                )
+                sweep_events_15m_series = sweep_events
+                
+                logger.info(
+                    f"Detected {sweep_events.notna().sum()} liquidity sweeps on 15m timeframe"
+                )
+            except Exception as e:
+                logger.warning(f"Failed to detect liquidity sweeps: {e}")
+                sweep_events_15m_series = None
         
         logger.info(
             f"Pre-computed HTF features: 15m={len(features_15m_df) if features_15m_df is not None else 0} rows, "
@@ -408,6 +459,21 @@ def create_htf_bias_func_with_sync_layer(
                 )
                 return HTFBias(bias="neutral", direction="neutral", score=0.0, confidence="low")
             
+            # Extract liquidity sweep events up to current timestamp
+            sweep_events_for_timestamp = None
+            if sweep_events_15m_series is not None and sync_bar.htf_15m:
+                htf_15m_ts = pd.Timestamp(sync_bar.htf_15m[0].timestamp)
+                # Get all sweep events up to and including current HTF timestamp
+                if htf_15m_ts in sweep_events_15m_series.index:
+                    sweep_events_for_timestamp = sweep_events_15m_series.loc[:htf_15m_ts]
+                else:
+                    # Find closest timestamp (forward-fill behavior)
+                    valid_timestamps = sweep_events_15m_series.index[
+                        sweep_events_15m_series.index <= htf_15m_ts
+                    ]
+                    if len(valid_timestamps) > 0:
+                        sweep_events_for_timestamp = sweep_events_15m_series.loc[:valid_timestamps.max()]
+            
             # Compute HTF bias
             return compute_htf_bias(
                 features_1h=features_1h,
@@ -415,7 +481,7 @@ def create_htf_bias_func_with_sync_layer(
                 dxy_1h=dxy_1h,
                 df_15m=df_15m,
                 df_1h=df_1h,
-                sweep_events_15m=None,  # TODO: Add liquidity sweep detection
+                sweep_events_15m=sweep_events_for_timestamp,
                 timestamp=timestamp_ts,
             )
         
