@@ -581,9 +581,9 @@ class BacktestReplayLoop:
 
         # Guardrail 6: DXY availability check
         # Check if DXY data is missing or invalid
-        if features is not None and "dxy_rsi" in features.index:
-            dxy_rsi = features.get("dxy_rsi")
-            if dxy_rsi is None or (isinstance(dxy_rsi, float) and pd.isna(dxy_rsi)):
+        if features is not None and "dxy_corr" in features.index:
+            dxy_corr = features.get("dxy_corr")
+            if dxy_corr is None or (isinstance(dxy_corr, float) and pd.isna(dxy_corr)):
                 blocking_reasons.append("DXY data not available")
                 logger.debug(
                     f"DXY availability guardrail blocked at {current_timestamp}"
