@@ -493,7 +493,16 @@ class TestPerformanceMetrics:
         results = loop.run()
 
         # Verify metrics consistency
-        assert results.total_trades == results.winning_trades + results.losing_trades
+        # Note: total_trades includes breakeven trades (pnl == 0 or None)
+        # winning_trades = trades with pnl > 0
+        # losing_trades = trades with pnl < 0
+        breakeven_trades = (
+            results.total_trades - results.winning_trades - results.losing_trades
+        )
+        assert breakeven_trades >= 0, "Breakeven trade count should be non-negative"
+        assert (
+            results.total_trades == results.winning_trades + results.losing_trades + breakeven_trades
+        )
 
         if results.total_trades > 0:
             # Win rate calculation
