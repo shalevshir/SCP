@@ -6,9 +6,12 @@ Defines the HTFBias dataclass and related types used throughout the HTF engine.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal, Optional
+from typing import TYPE_CHECKING, Literal, Optional
 
 from rule_engine.htf.seasonality.rules import SeasonalityPeriod
+
+if TYPE_CHECKING:
+    from common.types import Candle
 
 
 @dataclass
@@ -33,6 +36,12 @@ class HTFBias:
         # Liquidity summary
         liquidity_sweep_detected: Whether liquidity sweep occurred
         liquidity_sweep_type: Type of sweep ("bullish", "bearish", None)
+        
+        # Structure event candles
+        bos_candle: Candle where BOS occurred (for SL calculation)
+        choch_candle: Candle where CHoCH occurred
+        sweep_candle: Candle where liquidity sweep occurred
+        confirmation_candle: Confirmation candle for current setup
         
         # VWAP summary
         vwap_1h: 1H VWAP value
@@ -68,6 +77,12 @@ class HTFBias:
     liquidity_sweep_detected: bool = False
     liquidity_sweep_type: Optional[Literal["bullish", "bearish"]] = None
 
+    # Structure event candles
+    bos_candle: Optional["Candle"] = None
+    choch_candle: Optional["Candle"] = None
+    sweep_candle: Optional["Candle"] = None
+    confirmation_candle: Optional["Candle"] = None
+
     # VWAP
     vwap_1h: Optional[float] = None
     vwap_distance_1h: Optional[float] = None
@@ -102,6 +117,10 @@ class HTFBias:
             "choch_detected": self.choch_detected,
             "liquidity_sweep_detected": self.liquidity_sweep_detected,
             "liquidity_sweep_type": self.liquidity_sweep_type,
+            "bos_candle_timestamp": self.bos_candle.timestamp if self.bos_candle else None,
+            "choch_candle_timestamp": self.choch_candle.timestamp if self.choch_candle else None,
+            "sweep_candle_timestamp": self.sweep_candle.timestamp if self.sweep_candle else None,
+            "confirmation_candle_timestamp": self.confirmation_candle.timestamp if self.confirmation_candle else None,
             "vwap_1h": self.vwap_1h,
             "vwap_distance_1h": self.vwap_distance_1h,
             "vwap_slope_1h": self.vwap_slope_1h,
