@@ -128,15 +128,10 @@ def adjust_score_with_htf(
             f"(period={htf_bias.seasonality_period})"
         )
     
-    # 2. Apply FVG alignment score
-    if htf_bias.fvg_alignment_score != 0.0:
-        adjusted_score += htf_bias.fvg_alignment_score
-        adjustments["fvg_alignment"] = htf_bias.fvg_alignment_score
-        logger.debug(
-            f"Applied FVG alignment: {htf_bias.fvg_alignment_score:+.2f}"
-        )
+    # Note: FVG alignment is now handled in calculate_factor_scores via calculate_fvg_alignment
+    # and is already included in base_score. Do not add it again here to avoid double-counting.
     
-    # 3. Boost for strong HTF alignment (high confidence + matching direction)
+    # 2. Boost for strong HTF alignment (high confidence + matching direction)
     # Only boost when both have clear directional alignment (not neutral)
     if (htf_bias.confidence == "high" and 
         signal_direction == htf_bias.direction and
@@ -192,17 +187,10 @@ def adjust_score_with_htf(
         adjustments["dxy_alignment"] = bonus
         logger.debug(f"Applied DXY alignment bonus: +{bonus:.2f}")
     
-    # 8. Bonus for structure events (BOS indicates continuation)
-    # Only boost when both have clear directional alignment (not neutral)
-    if (htf_bias.bos_detected and 
-        signal_direction == htf_bias.direction and
-        signal_direction != "neutral" and htf_bias.direction != "neutral"):
-        bonus = 0.3
-        adjusted_score += bonus
-        adjustments["bos_detected"] = bonus
-        logger.debug(f"Applied BOS detection bonus: +{bonus:.2f}")
+    # Note: BOS (Break of Structure) bonus is now handled in calculate_structure_alignment
+    # via the factor scoring system. Do not add it again here to avoid double-counting.
     
-    # 9. Penalty for CHoCH (indicates potential reversal)
+    # 8. Penalty for CHoCH (indicates potential reversal)
     if htf_bias.choch_detected:
         penalty = -0.3
         adjusted_score += penalty
