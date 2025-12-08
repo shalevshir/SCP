@@ -446,6 +446,7 @@ def calculate_liquidity_sweep(
 
     Awards points if sweep type matches signal direction.
     Penalty if sweep opposes direction.
+    Returns 0.0 for ambiguous cases (neutral direction or None sweep type).
 
     Args:
         features: Feature data for determining signal direction
@@ -459,11 +460,16 @@ def calculate_liquidity_sweep(
         return 0.0
 
     direction = determine_direction(features, htf_bias)
+    sweep_type = htf_bias.liquidity_sweep_type
+
+    # Ambiguous cases: can't determine alignment, return 0.0
+    if direction == "neutral" or sweep_type is None:
+        return 0.0
 
     # Aligned sweep: bullish sweep + long OR bearish sweep + short
-    if htf_bias.liquidity_sweep_type == "bullish" and direction == "long":
+    if sweep_type == "bullish" and direction == "long":
         return max_points
-    elif htf_bias.liquidity_sweep_type == "bearish" and direction == "short":
+    elif sweep_type == "bearish" and direction == "short":
         return max_points
 
     # Opposing sweep gets penalty (negative points)

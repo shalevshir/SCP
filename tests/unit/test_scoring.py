@@ -678,6 +678,61 @@ class TestCalculateLiquiditySweep:
         
         assert score == 0.0
 
+    def test_calculate_liquidity_sweep_neutral_direction(self) -> None:
+        """Test sweep with neutral direction returns 0 (ambiguous, not penalty)."""
+        from rule_engine.scoring import calculate_liquidity_sweep
+
+        # Features that produce neutral direction (equal bullish/bearish signals)
+        features = pd.Series({
+            "close": 2650.0,
+            "vwap": 2650.0,  # Equal (no clear direction)
+            "ema_9": 2650.0,
+            "ema_20": 2650.0,  # Equal (no clear direction)
+        })
+        
+        htf_bias = HTFBias(
+            bias="bullish",
+            direction="long",
+            score=8.5,
+            confidence="high",
+            liquidity_sweep_detected=True,
+            liquidity_sweep_type="bullish",
+            dxy_alignment=True,
+        )
+        
+        max_points = 0.5
+        score = calculate_liquidity_sweep(features, htf_bias, max_points)
+        
+        # Neutral direction means we can't determine alignment, should return 0.0
+        assert score == 0.0
+
+    def test_calculate_liquidity_sweep_none_type(self) -> None:
+        """Test sweep detected but type is None returns 0 (ambiguous, not penalty)."""
+        from rule_engine.scoring import calculate_liquidity_sweep
+
+        features = pd.Series({
+            "close": 2650.0,
+            "vwap": 2645.0,
+            "ema_9": 2648.0,
+            "ema_20": 2645.0,
+        })
+        
+        htf_bias = HTFBias(
+            bias="bullish",
+            direction="long",
+            score=8.5,
+            confidence="high",
+            liquidity_sweep_detected=True,
+            liquidity_sweep_type=None,  # Type not determined
+            dxy_alignment=True,
+        )
+        
+        max_points = 0.5
+        score = calculate_liquidity_sweep(features, htf_bias, max_points)
+        
+        # None type means we can't determine alignment, should return 0.0
+        assert score == 0.0
+
 
 class TestEnhancedStructureAlignment:
     """Test enhanced structure alignment with BOS/CHoCH bonuses."""
