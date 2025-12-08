@@ -435,3 +435,128 @@ class TestCheckFVGFilled:
         assert fvg_df.iloc[0]['filled'] == False
         assert pd.isna(fvg_df.iloc[0]['fill_index'])
 
+
+class TestFVGStateTracker:
+    """Test suite for FVGStateTracker incremental tracking."""
+
+    def test_tracker_updates_without_keyerror(self):
+        """Test that FVGStateTracker.update() correctly maps detect_fvg() columns.
+        
+        This test verifies the fix for the column name mismatch bug where
+        FVGStateTracker was trying to access 'timestamp', 'direction', 'top', 'bottom'
+        but detect_fvg() returns 'fvg_index', 'fvg_type', 'fvg_high', 'fvg_low'.
+        """
+        from datetime import UTC, datetime
+        from rule_engine.htf.structure.fvg import FVGStateTracker
+        
+        # Create DataFrame with DatetimeIndex and FVG
+        timestamps = pd.date_range(
+            start=datetime(2024, 7, 1, 10, 0, tzinfo=UTC),
+            periods=5,
+            freq='1h'
+        )
+        
+        df = pd.DataFrame({
+            'high': [100, 101, 105, 107, 108],
+            'low': [98, 100.5, 103, 105, 106]
+        }, index=timestamps)
+        
+        # Create tracker and update - should not raise KeyError
+        tracker = FVGStateTracker()
+        
+        # Update with current timestamp (should detect FVG at index 2)
+        current_ts = timestamps[3]  # After FVG formation
+        tracker.update(df, current_ts)
+        
+        # Verify FVG was tracked correctly
+        active_fvgs = tracker.get_active_fvgs(current_ts)
+        
+        # Should have detected the bullish FVG
+        assert len(active_fvgs) == 1
+        fvg_state = active_fvgs[0]
+        
+        # Verify correct mapping from detect_fvg() columns
+        assert fvg_state.direction == 'bullish'
+        assert fvg_state.top == 103.0  # fvg_high
+        assert fvg_state.bottom == 100.0  # fvg_low
+        assert fvg_state.timestamp == timestamps[2]  # fvg_index = 2
+        assert fvg_state.filled == False
+
+    def test_tracker_handles_multiple_fvgs(self):
+        """Test tracker handles data correctly without KeyError.
+        
+        This test verifies that FVGStateTracker can process data without
+        crashing, even if FVGs get filled or multiple updates occur.
+        """
+        from datetime import UTC, datetime
+        from rule_engine.htf.structure.fvg import FVGStateTracker
+        
+        timestamps = pd.date_range(
+            start=datetime(2024, 7, 1, 10, 0, tzinfo=UTC),
+            periods=12,
+            freq='1h'
+        )
+        
+        # Create data that may have FVGs (some may get filled)
+        df = pd.DataFrame({
+            'high': [100, 101, 105, 107, 108, 107, 103, 102, 101, 100, 99, 98],
+            'low': [98, 100.5, 103, 105, 105.5, 104, 99, 97, 96, 95, 94, 93]
+        }, index=timestamps)
+        
+        tracker = FVGStateTracker()
+        current_ts = timestamps[-1]
+        
+        # Should not raise KeyError when updating
+        tracker.update(df, current_ts)
+        
+        # Check total count (includes filled FVGs)
+        total, active = tracker.get_fvg_count()
+        
+        # Should have processed without error
+        assert total >= 0
+        assert active >= 0
+        
+        # Verify structure of any active FVGs
+        active_fvgs = tracker.get_active_fvgs(current_ts)
+        for fvg in active_fvgs:
+            assert fvg.direction in ['bullish', 'bearish']
+            assert fvg.top > fvg.bottom
+            assert isinstance(fvg.timestamp, pd.Timestamp)
+
+    def test_tracker_tracks_fills(self):
+        """Test that tracker correctly tracks FVG fills."""
+        from datetime import UTC, datetime
+        from rule_engine.htf.structure.fvg import FVGStateTracker
+        
+        timestamps = pd.date_range(
+            start=datetime(2024, 7, 1, 10, 0, tzinfo=UTC),
+            periods=7,
+            freq='1h'
+        )
+        
+        # Create FVG that gets filled
+        df = pd.DataFrame({
+            'high': [100, 101, 105, 107, 106, 102, 104],
+            'low': [98, 100.5, 103, 105, 104, 99, 102]  # Index 5 fills the gap
+        }, index=timestamps)
+        
+        tracker = FVGStateTracker()
+        
+        # Update before fill
+        tracker.update(df, timestamps[4])
+        active_before = tracker.get_active_fvgs(timestamps[4])
+        assert len(active_before) == 1
+        assert active_before[0].filled == False
+        
+        # Update after fill
+        tracker.update(df, timestamps[6])
+        active_after = tracker.get_active_fvgs(timestamps[6])
+        
+        # FVG should be marked as filled
+        assert len(active_after) == 0  # No active (unfilled) FVGs
+        
+        # Check total count
+        total, active = tracker.get_fvg_count()
+        assert total == 1
+        assert active == 0
+

@@ -272,17 +272,28 @@ class FVGStateTracker:
             
             # Add new FVGs
             for _, row in fvg_df.iterrows():
-                fvg_timestamp = row['timestamp']
+                # Get timestamp from fvg_index (the index where FVG formed)
+                fvg_index = int(row['fvg_index'])
+                if fvg_index < len(df_filtered):
+                    fvg_timestamp = df_filtered.index[fvg_index]
+                else:
+                    # Fallback: use last available timestamp
+                    fvg_timestamp = df_filtered.index[-1]
+                
+                # Map detect_fvg() columns to FVGState fields
+                direction = row['fvg_type']  # 'bullish' or 'bearish'
+                top = row['fvg_high']
+                bottom = row['fvg_low']
                 
                 # Only add FVGs that we haven't seen before
-                fvg_key = f"{fvg_timestamp}_{row['direction']}"
+                fvg_key = f"{fvg_timestamp}_{direction}"
                 if fvg_key not in self.fvgs:
                     self.fvgs[fvg_key] = FVGState(
                         fvg_id=f"fvg_{self._next_id}",
                         timestamp=fvg_timestamp,
-                        direction=row['direction'],
-                        top=row['top'],
-                        bottom=row['bottom'],
+                        direction=direction,
+                        top=top,
+                        bottom=bottom,
                         filled=False,
                     )
                     self._next_id += 1
@@ -291,8 +302,15 @@ class FVGStateTracker:
             fvg_df_filled = check_fvg_filled(df_filtered, fvg_df)
             
             for _, row in fvg_df_filled.iterrows():
-                fvg_timestamp = row['timestamp']
-                fvg_key = f"{fvg_timestamp}_{row['direction']}"
+                # Get timestamp from fvg_index
+                fvg_index = int(row['fvg_index'])
+                if fvg_index < len(df_filtered):
+                    fvg_timestamp = df_filtered.index[fvg_index]
+                else:
+                    fvg_timestamp = df_filtered.index[-1]
+                
+                direction = row['fvg_type']
+                fvg_key = f"{fvg_timestamp}_{direction}"
                 
                 if fvg_key in self.fvgs and row['filled']:
                     if not self.fvgs[fvg_key].filled:
