@@ -369,7 +369,7 @@ class BacktestReplayLoop:
 
         # Step 4: Check guardrails before generating signal
         guardrails_allowed, blocking_reasons = self._check_guardrails(
-            validation_context, current_timestamp, features
+            validation_context, current_timestamp
         )
 
         if not guardrails_allowed:
@@ -415,32 +415,38 @@ class BacktestReplayLoop:
         # Step 8: If entry executed, create trade and add to active trades
         if execution.executed and next_candle is not None:
             try:
-                # Create trade from entry
-                # For SL calculation, we use the entry candle as confirmation
-                # TODO: In future, pass actual confirmation and BOS candles
-                # from feature engine
-                entry_idx = self.gc_df.index.get_loc(execution.entry_timestamp)
-                confirmation_candle_row = self.gc_df.iloc[entry_idx]
+                # Extract structure candles from HTF bias
+                # Priority: Use HTF-provided candles, fallback to entry candle
+                bos_candle = htf_bias.bos_candle if htf_bias.bos_candle else None
+                
+                # For confirmation candle, use HTF-provided if available,
+                # otherwise use entry candle
+                if htf_bias.confirmation_candle:
+                    confirmation_candle = htf_bias.confirmation_candle
+                else:
+                    # Fallback: Use entry candle as confirmation
+                    entry_idx = self.gc_df.index.get_loc(execution.entry_timestamp)
+                    confirmation_candle_row = self.gc_df.iloc[entry_idx]
 
-                confirmation_candle = Candle(
-                    timestamp=confirmation_candle_row.name,
-                    open=confirmation_candle_row["open"],
-                    high=confirmation_candle_row["high"],
-                    low=confirmation_candle_row["low"],
-                    close=confirmation_candle_row["close"],
-                    volume=confirmation_candle_row["volume"],
-                    symbol=execution.signal.symbol,
-                    timeframe=execution.signal.timeframe,
-                    source="BACKTEST",
-                )
+                    confirmation_candle = Candle(
+                        timestamp=confirmation_candle_row.name,
+                        open=confirmation_candle_row["open"],
+                        high=confirmation_candle_row["high"],
+                        low=confirmation_candle_row["low"],
+                        close=confirmation_candle_row["close"],
+                        volume=confirmation_candle_row["volume"],
+                        symbol=execution.signal.symbol,
+                        timeframe=execution.signal.timeframe,
+                        source="BACKTEST",
+                    )
 
                 # Determine HTF alignment for R-multiple calculation
                 htf_aligned = self._is_htf_aligned(
                     execution.signal.direction, htf_bias.bias
                 )
 
-                # Determine DXY alignment (TODO: Get from features)
-                dxy_aligned = True
+                # Determine DXY alignment from HTF bias
+                dxy_aligned = htf_bias.dxy_alignment
 
                 market_context = {
                     "month": execution.entry_timestamp.month,
@@ -451,7 +457,7 @@ class BacktestReplayLoop:
                 trade = create_trade_from_entry(
                     entry_execution=execution,
                     confirmation_candle=confirmation_candle,
-                    bos_candle=None,  # TODO: Get from feature engine
+                    bos_candle=bos_candle,
                     risk_config=self.risk_config,
                     market_context=market_context,
                 )
@@ -494,10 +500,7 @@ class BacktestReplayLoop:
         )
 
     def _check_guardrails(
-        self,
-        validation_context: dict,
-        current_timestamp: datetime,
-        features: pd.Series | None = None,
+        self, validation_context: dict, current_timestamp: datetime
     ) -> tuple[bool, list[str]]:
         """Check all SOP guardrails before allowing entry.
 
@@ -514,7 +517,6 @@ class BacktestReplayLoop:
         Args:
             validation_context: Validation context from BacktestProcessor
             current_timestamp: Current candle timestamp
-            features: Feature series for current candle (optional, for DXY check)
 
         Returns:
             Tuple of (allowed, reasons) where allowed is True if all guardrails pass,
@@ -575,8 +577,8 @@ class BacktestReplayLoop:
 
         # Guardrail 6: DXY availability check
         # Check if DXY data is missing or invalid
-        if features is not None and "dxy_rsi" in features.index:
-            dxy_rsi = features.get("dxy_rsi")
+        if "dxy_rsi" in validation_context:
+            dxy_rsi = validation_context.get("dxy_rsi")
             if dxy_rsi is None or (isinstance(dxy_rsi, float) and pd.isna(dxy_rsi)):
                 blocking_reasons.append("DXY data not available")
                 logger.debug(
@@ -692,9 +694,30 @@ class BacktestReplayLoop:
                         elif not isinstance(future_features_df.index, pd.DatetimeIndex):
                             if len(gc_slice) > entry_idx + 1:
                                 future_timestamps = gc_slice.index[entry_idx + 1 :]
-                                future_features_df.index = future_timestamps[
-                                    : len(future_features_df)
-                                ]
+                                
+                                # Verify we have enough timestamps for features
+                                if len(future_timestamps) >= len(future_features_df):
+                                    # Enough timestamps available
+                                    future_features_df.index = future_timestamps[
+                                        : len(future_features_df)
+                                    ]
+                                elif len(future_timestamps) > 0:
+                                    # Not enough timestamps - truncate features to match
+                                    logger.debug(
+                                        f"Truncating future_features_df from {len(future_features_df)} "
+                                        f"to {len(future_timestamps)} rows to match available timestamps"
+                                    )
+                                    future_features_df = future_features_df.iloc[
+                                        : len(future_timestamps)
+                                    ]
+                                    future_features_df.index = future_timestamps
+                                else:
+                                    # No timestamps available - skip this
+                                    logger.warning(
+                                        f"No future timestamps available for trade {trade_id}"
+                                    )
+                                    future_features = None
+                                    continue
 
                         # Align with future_candles timestamps
                         future_features = future_features_df.reindex(

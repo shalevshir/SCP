@@ -346,27 +346,7 @@ def run_backtest_with_trades(
     )
 
     for entry in executed_entries:
-        # Create Trade object with SL/TP
-        # Note: For proper SL calculation, we'd need confirmation and BOS candles
-        # For now, we'll use entry candle as confirmation (simplified)
-        # TODO: Pass actual confirmation and BOS candles from feature engine
-        entry_idx = gc_df.index.get_loc(entry.entry_timestamp)
-        confirmation_candle_row = gc_df.iloc[entry_idx]
-
-        from common.types import Candle
-
-        confirmation_candle = Candle(
-            timestamp=confirmation_candle_row.name,
-            open=confirmation_candle_row["open"],
-            high=confirmation_candle_row["high"],
-            low=confirmation_candle_row["low"],
-            close=confirmation_candle_row["close"],
-            volume=confirmation_candle_row["volume"],
-            symbol=entry.signal.symbol,
-            timeframe=entry.signal.timeframe,
-            source="BACKTEST",
-        )
-
+        # Get HTF bias for this entry
         entry_bias_obj = entry_htf_bias_map.get(entry.entry_timestamp)
         if entry_bias_obj is None:
             entry_bias_value = entry.signal.htf_bias
@@ -377,16 +357,45 @@ def run_backtest_with_trades(
                 )
         else:
             entry_bias_value = entry_bias_obj.bias
+        
+        # Extract structure candles from HTF bias
+        bos_candle = entry_bias_obj.bos_candle if entry_bias_obj else None
+        
+        # For confirmation candle, use HTF-provided if available,
+        # otherwise use entry candle
+        if entry_bias_obj and entry_bias_obj.confirmation_candle:
+            confirmation_candle = entry_bias_obj.confirmation_candle
+        else:
+            # Fallback: Use entry candle as confirmation
+            entry_idx = gc_df.index.get_loc(entry.entry_timestamp)
+            confirmation_candle_row = gc_df.iloc[entry_idx]
+
+            from common.types import Candle
+
+            confirmation_candle = Candle(
+                timestamp=confirmation_candle_row.name,
+                open=confirmation_candle_row["open"],
+                high=confirmation_candle_row["high"],
+                low=confirmation_candle_row["low"],
+                close=confirmation_candle_row["close"],
+                volume=confirmation_candle_row["volume"],
+                symbol=entry.signal.symbol,
+                timeframe=entry.signal.timeframe,
+                source="BACKTEST",
+            )
+
+        # Get DXY alignment from HTF bias
+        dxy_aligned = entry_bias_obj.dxy_alignment if entry_bias_obj else True
 
         trade = create_trade_from_entry(
             entry_execution=entry,
             confirmation_candle=confirmation_candle,
-            bos_candle=None,  # TODO: Get from feature engine
+            bos_candle=bos_candle,
             risk_config=risk_config,
             market_context={
                 "month": entry.entry_timestamp.month,
                 "htf_aligned": _is_htf_aligned(entry.signal.direction, entry_bias_value),
-                "dxy_aligned": True,  # TODO: Get from features
+                "dxy_aligned": dxy_aligned,
             },
         )
 
