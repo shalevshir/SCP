@@ -203,3 +203,154 @@ def check_fvg_filled(
     
     return fvg_df
 
+
+# ============================================================================
+# Incremental FVG State Tracking (for backtesting)
+# ============================================================================
+
+
+from dataclasses import dataclass
+from datetime import datetime
+
+
+@dataclass
+class FVGState:
+    """State of a single FVG.
+    
+    Attributes:
+        fvg_id: Unique identifier for this FVG
+        timestamp: When the FVG was created
+        direction: "bullish" or "bearish"
+        top: Upper boundary of the gap
+        bottom: Lower boundary of the gap
+        filled: Whether this FVG has been filled
+        fill_timestamp: When the FVG was filled (if filled)
+    """
+    fvg_id: str
+    timestamp: datetime
+    direction: str
+    top: float
+    bottom: float
+    filled: bool = False
+    fill_timestamp: datetime | None = None
+
+
+class FVGStateTracker:
+    """Incremental FVG state tracker for backtesting.
+    
+    Tracks FVG creation and fill status without lookahead bias.
+    """
+    
+    def __init__(self):
+        """Initialize empty FVG tracker."""
+        self.fvgs: dict[str, FVGState] = {}
+        self._next_id = 0
+    
+    def update(self, df: pd.DataFrame, current_timestamp: pd.Timestamp | datetime) -> None:
+        """Update FVG state with new data.
+        
+        Args:
+            df: OHLC DataFrame (must include historical context for detection)
+            current_timestamp: Current timestamp (no lookahead)
+        """
+        # Convert timestamp
+        if isinstance(current_timestamp, datetime):
+            current_timestamp = pd.Timestamp(current_timestamp)
+        
+        # Only process data up to current timestamp
+        df_filtered = df[df.index <= current_timestamp]
+        
+        if len(df_filtered) < 3:
+            return  # Need at least 3 candles
+        
+        # Detect FVGs in the filtered data
+        try:
+            fvg_df = detect_fvg(df_filtered)
+            
+            if len(fvg_df) == 0:
+                return
+            
+            # Add new FVGs
+            for _, row in fvg_df.iterrows():
+                # Get timestamp from fvg_index (the index where FVG formed)
+                fvg_index = int(row['fvg_index'])
+                if fvg_index < len(df_filtered):
+                    fvg_timestamp = df_filtered.index[fvg_index]
+                else:
+                    # Fallback: use last available timestamp
+                    fvg_timestamp = df_filtered.index[-1]
+                
+                # Map detect_fvg() columns to FVGState fields
+                direction = row['fvg_type']  # 'bullish' or 'bearish'
+                top = row['fvg_high']
+                bottom = row['fvg_low']
+                
+                # Only add FVGs that we haven't seen before
+                fvg_key = f"{fvg_timestamp}_{direction}"
+                if fvg_key not in self.fvgs:
+                    self.fvgs[fvg_key] = FVGState(
+                        fvg_id=f"fvg_{self._next_id}",
+                        timestamp=fvg_timestamp,
+                        direction=direction,
+                        top=top,
+                        bottom=bottom,
+                        filled=False,
+                    )
+                    self._next_id += 1
+            
+            # Check for fills on existing unfilled FVGs
+            fvg_df_filled = check_fvg_filled(df_filtered, fvg_df)
+            
+            for _, row in fvg_df_filled.iterrows():
+                # Get timestamp from fvg_index
+                fvg_index = int(row['fvg_index'])
+                if fvg_index < len(df_filtered):
+                    fvg_timestamp = df_filtered.index[fvg_index]
+                else:
+                    fvg_timestamp = df_filtered.index[-1]
+                
+                direction = row['fvg_type']
+                fvg_key = f"{fvg_timestamp}_{direction}"
+                
+                if fvg_key in self.fvgs and row['filled']:
+                    if not self.fvgs[fvg_key].filled:
+                        self.fvgs[fvg_key].filled = True
+                        # Try to get fill timestamp from fill_index
+                        if pd.notna(row.get('fill_index')):
+                            fill_idx = int(row['fill_index'])
+                            if fill_idx < len(df_filtered):
+                                self.fvgs[fvg_key].fill_timestamp = df_filtered.index[fill_idx]
+        
+        except Exception as e:
+            logger.debug(f"Error updating FVG state: {e}")
+    
+    def get_active_fvgs(self, current_timestamp: pd.Timestamp | datetime) -> list[FVGState]:
+        """Get all unfilled FVGs at current timestamp.
+        
+        Args:
+            current_timestamp: Current timestamp
+            
+        Returns:
+            List of unfilled FVGState objects
+        """
+        if isinstance(current_timestamp, datetime):
+            current_timestamp = pd.Timestamp(current_timestamp)
+        
+        active_fvgs = []
+        for fvg in self.fvgs.values():
+            # FVG must be created before current time and not filled
+            if pd.Timestamp(fvg.timestamp) <= current_timestamp and not fvg.filled:
+                active_fvgs.append(fvg)
+        
+        return active_fvgs
+    
+    def get_fvg_count(self) -> tuple[int, int]:
+        """Get count of total and active FVGs.
+        
+        Returns:
+            Tuple of (total_fvgs, active_fvgs)
+        """
+        total = len(self.fvgs)
+        active = sum(1 for fvg in self.fvgs.values() if not fvg.filled)
+        return total, active
+

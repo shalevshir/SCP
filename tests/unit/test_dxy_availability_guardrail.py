@@ -1,7 +1,7 @@
 """Unit tests for DXY availability guardrail (Guardrail 6).
 
 This test verifies that the DXY availability guardrail properly blocks trades
-when DXY data is missing or invalid (NaN/None values in dxy_rsi).
+when DXY data is missing or invalid (NaN/None values in dxy_corr).
 """
 
 from datetime import UTC, datetime, timedelta
@@ -217,11 +217,11 @@ def create_multi_tf_data_with_missing_dxy(
 class TestDXYAvailabilityGuardrail:
     """Test DXY availability guardrail enforcement."""
 
-    def test_guardrail_blocks_when_dxy_rsi_is_none(
+    def test_guardrail_blocks_when_dxy_corr_is_none(
         self, market_state, risk_config, config_override
     ):
-        """Test that guardrail blocks trades when dxy_rsi is None."""
-        # Create a mock features series with dxy_rsi = None
+        """Test that guardrail blocks trades when dxy_corr is None."""
+        # Create a mock features series with dxy_corr = None
         features = pd.Series(
             {
                 "timestamp": datetime(2024, 7, 1, 10, 0, tzinfo=UTC),
@@ -230,7 +230,7 @@ class TestDXYAvailabilityGuardrail:
                 "low": 2649.0,
                 "close": 2650.5,
                 "volume": 1000,
-                "dxy_rsi": None,
+                "dxy_corr": None,
             }
         )
 
@@ -254,7 +254,7 @@ class TestDXYAvailabilityGuardrail:
             config=config_override,
         )
 
-        # Check guardrails with None dxy_rsi
+        # Check guardrails with None dxy_corr
         allowed, reasons = loop._check_guardrails(
             validation_context, features["timestamp"], features
         )
@@ -263,10 +263,10 @@ class TestDXYAvailabilityGuardrail:
         assert not allowed
         assert any("DXY data not available" in reason for reason in reasons)
 
-    def test_guardrail_blocks_when_dxy_rsi_is_nan(
+    def test_guardrail_blocks_when_dxy_corr_is_nan(
         self, market_state, risk_config, config_override
     ):
-        """Test that guardrail blocks trades when dxy_rsi is NaN."""
+        """Test that guardrail blocks trades when dxy_corr is NaN."""
         features = pd.Series(
             {
                 "timestamp": datetime(2024, 7, 1, 10, 0, tzinfo=UTC),
@@ -275,7 +275,7 @@ class TestDXYAvailabilityGuardrail:
                 "low": 2649.0,
                 "close": 2650.5,
                 "volume": 1000,
-                "dxy_rsi": np.nan,
+                "dxy_corr": np.nan,
             }
         )
 
@@ -298,7 +298,7 @@ class TestDXYAvailabilityGuardrail:
             config=config_override,
         )
 
-        # Check guardrails with NaN dxy_rsi
+        # Check guardrails with NaN dxy_corr
         allowed, reasons = loop._check_guardrails(
             validation_context, features["timestamp"], features
         )
@@ -307,10 +307,10 @@ class TestDXYAvailabilityGuardrail:
         assert not allowed
         assert any("DXY data not available" in reason for reason in reasons)
 
-    def test_guardrail_allows_when_dxy_rsi_is_valid(
+    def test_guardrail_allows_when_dxy_corr_is_valid(
         self, market_state, risk_config, config_override
     ):
-        """Test that guardrail allows trades when dxy_rsi is valid."""
+        """Test that guardrail allows trades when dxy_corr is valid."""
         features = pd.Series(
             {
                 "timestamp": datetime(2024, 7, 1, 10, 0, tzinfo=UTC),
@@ -319,7 +319,7 @@ class TestDXYAvailabilityGuardrail:
                 "low": 2649.0,
                 "close": 2650.5,
                 "volume": 1000,
-                "dxy_rsi": 55.0,  # Valid RSI value
+                "dxy_corr": -0.75,  # Valid correlation value
             }
         )
 
@@ -342,7 +342,7 @@ class TestDXYAvailabilityGuardrail:
             config=config_override,
         )
 
-        # Check guardrails with valid dxy_rsi
+        # Check guardrails with valid dxy_corr
         allowed, reasons = loop._check_guardrails(
             validation_context, features["timestamp"], features
         )
