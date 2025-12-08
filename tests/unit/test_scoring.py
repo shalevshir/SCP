@@ -735,7 +735,7 @@ class TestCalculateLiquiditySweep:
 
 
 class TestEnhancedStructureAlignment:
-    """Test enhanced structure alignment with BOS/CHoCH bonuses."""
+    """Test enhanced structure alignment with BOS bonus (CHoCH is penalized, not rewarded)."""
 
     def test_enhanced_structure_with_bos(self) -> None:
         """Test BOS detection adds bonus to structure score."""
@@ -766,7 +766,7 @@ class TestEnhancedStructureAlignment:
         assert abs(score - expected) < 0.01
 
     def test_enhanced_structure_with_choch(self) -> None:
-        """Test CHoCH detection adds bonus to structure score."""
+        """Test CHoCH detection does NOT add bonus to structure score (indicates reversal)."""
         from rule_engine.scoring import calculate_structure_alignment
 
         features = pd.Series({
@@ -789,12 +789,12 @@ class TestEnhancedStructureAlignment:
         max_points = 2.5
         score = calculate_structure_alignment(features, htf_bias, max_points)
         
-        # Should get base (70%) + CHoCH bonus (15%) = 85% of max
-        expected = max_points * 0.85
+        # Should get only base (70%) - CHoCH is NOT rewarded (penalized in adjust_score_with_htf)
+        expected = max_points * 0.7
         assert abs(score - expected) < 0.01
 
     def test_enhanced_structure_with_both(self) -> None:
-        """Test BOS + CHoCH both add bonuses to structure score."""
+        """Test BOS adds bonus but CHoCH does NOT (CHoCH indicates reversal)."""
         from rule_engine.scoring import calculate_structure_alignment
 
         features = pd.Series({
@@ -817,8 +817,10 @@ class TestEnhancedStructureAlignment:
         max_points = 2.5
         score = calculate_structure_alignment(features, htf_bias, max_points)
         
-        # Should get base (70%) + BOS (15%) + CHoCH (15%) = 100% of max
-        assert score == max_points
+        # Should get base (70%) + BOS (15%) = 85% of max
+        # CHoCH is NOT rewarded here (penalized in adjust_score_with_htf instead)
+        expected = max_points * 0.85
+        assert abs(score - expected) < 0.01
 
 
 class TestFullConfluenceScoring:

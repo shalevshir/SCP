@@ -288,11 +288,13 @@ def calculate_factor_scores(
 def calculate_structure_alignment(
     features: pd.Series, htf_bias: HTFBias, max_points: float
 ) -> float:
-    """Calculate structure alignment score with BOS/CHoCH bonuses.
+    """Calculate structure alignment score with BOS bonus.
 
     Base: Direction matches HTF bias (70% of max)
     Bonus: BOS detected (+15%)
-    Bonus: CHoCH detected (+15%)
+    
+    Note: CHoCH (Change of Character) indicates potential reversal and is
+    penalized in adjust_score_with_htf, not rewarded here.
 
     Args:
         features: Feature data for determining signal direction
@@ -310,13 +312,12 @@ def calculate_structure_alignment(
     else:
         return 0.0
 
-    # BOS bonus
+    # BOS bonus (indicates continuation)
     if htf_bias.bos_detected:
         score += max_points * 0.15
 
-    # CHoCH bonus
-    if htf_bias.choch_detected:
-        score += max_points * 0.15
+    # CHoCH is NOT rewarded here - it indicates potential reversal
+    # and is penalized in adjust_score_with_htf instead
 
     return min(score, max_points)
 
