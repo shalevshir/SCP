@@ -4,15 +4,14 @@ This module implements the core scoring logic that transforms feature data
 into Signal objects with SOP-compliant scoring and classification.
 """
 
-from datetime import datetime
 
 import pandas as pd
+from common.logger import get_logger
 
 from rule_engine.config_loader import load_scoring_config
-from rule_engine.signal import Signal
+from rule_engine.htf.integration import adjust_score_with_htf, validate_signal_with_htf
 from rule_engine.htf.types import HTFBias
-from rule_engine.htf.integration import validate_signal_with_htf, adjust_score_with_htf
-from common.logger import get_logger
+from rule_engine.signal import Signal
 
 logger = get_logger(__name__)
 
@@ -110,6 +109,20 @@ def score_signal(features: pd.Series, htf_bias: HTFBias, context: dict) -> Signa
     
     # Add HTF adjustments to factor scores for transparency
     factor_scores.update(htf_adjustments)
+
+    # Enhanced logging: Complete confluence breakdown
+    logger.info(
+        f"Confluence breakdown: "
+        f"structure={factor_scores.get('structure_alignment', 0):.2f}, "
+        f"vwap={factor_scores.get('vwap_relation', 0):.2f}, "
+        f"rsi={factor_scores.get('rsi_state', 0):.2f}, "
+        f"ema={factor_scores.get('ema_stack', 0):.2f}, "
+        f"dxy={factor_scores.get('dxy_corr', 0):.2f}, "
+        f"fvg={factor_scores.get('fvg_alignment', 0):.2f}, "
+        f"sweep={factor_scores.get('liquidity_sweep', 0):.2f}, "
+        f"htf_bonus={factor_scores.get('htf_bonus', 0):.2f} | "
+        f"base={base_score:.2f}, final={adjusted_score:.2f}"
+    )
 
     # Classify confidence level based on adjusted score
     confidence = classify_confidence(adjusted_score, setup_type)
@@ -236,6 +249,18 @@ def calculate_factor_scores(
             features, htf_bias, weights["htf_bonus"]
         )
 
+    # FVG alignment
+    if "fvg_alignment" in weights:
+        scores["fvg_alignment"] = calculate_fvg_alignment(
+            features, htf_bias, weights["fvg_alignment"]
+        )
+
+    # Liquidity sweep
+    if "liquidity_sweep" in weights:
+        scores["liquidity_sweep"] = calculate_liquidity_sweep(
+            features, htf_bias, weights["liquidity_sweep"]
+        )
+
     # Fade-specific factors
     if "vwap_deviation" in weights:
         scores["vwap_deviation"] = calculate_vwap_deviation(
@@ -263,16 +288,37 @@ def calculate_factor_scores(
 def calculate_structure_alignment(
     features: pd.Series, htf_bias: HTFBias, max_points: float
 ) -> float:
-    """Calculate structure alignment score.
+    """Calculate structure alignment score with BOS/CHoCH bonuses.
 
-    Awards points if direction matches HTF bias.
+    Base: Direction matches HTF bias (70% of max)
+    Bonus: BOS detected (+15%)
+    Bonus: CHoCH detected (+15%)
+
+    Args:
+        features: Feature data for determining signal direction
+        htf_bias: HTFBias object containing structure information
+        max_points: Maximum points this factor can contribute
+
+    Returns:
+        Score contribution (0 to max_points)
     """
     direction = determine_direction(features, htf_bias)
 
+    # Base alignment
     if htf_bias.direction == direction and direction != "neutral":
-        return max_points
+        score = max_points * 0.7
+    else:
+        return 0.0
 
-    return 0.0
+    # BOS bonus
+    if htf_bias.bos_detected:
+        score += max_points * 0.15
+
+    # CHoCH bonus
+    if htf_bias.choch_detected:
+        score += max_points * 0.15
+
+    return min(score, max_points)
 
 
 def calculate_vwap_relation(
@@ -363,6 +409,65 @@ def calculate_htf_bonus(
         return max_points
 
     return 0.0
+
+
+def calculate_fvg_alignment(
+    features: pd.Series, htf_bias: HTFBias, max_points: float
+) -> float:
+    """Calculate FVG alignment score.
+
+    Awards points if FVG gaps support the bias direction.
+    FVG alignment score from HTF ranges -2 to +2.
+    Only positive contributions are counted.
+
+    Args:
+        features: Feature data (unused, kept for signature consistency)
+        htf_bias: HTFBias object containing fvg_alignment_score
+        max_points: Maximum points this factor can contribute
+
+    Returns:
+        Score contribution (0 to max_points)
+    """
+    if htf_bias.fvg_alignment_score == 0.0:
+        return 0.0
+
+    # Normalize to max_points (only positive contributions)
+    # FVG score ranges from -2 to +2, normalize to -1 to +1
+    normalized = htf_bias.fvg_alignment_score / 2.0
+    
+    # Only positive contributions count
+    return max(0.0, normalized * max_points)
+
+
+def calculate_liquidity_sweep(
+    features: pd.Series, htf_bias: HTFBias, max_points: float
+) -> float:
+    """Calculate liquidity sweep alignment score.
+
+    Awards points if sweep type matches signal direction.
+    Penalty if sweep opposes direction.
+
+    Args:
+        features: Feature data for determining signal direction
+        htf_bias: HTFBias object containing sweep information
+        max_points: Maximum points this factor can contribute
+
+    Returns:
+        Score contribution (can be negative for opposing sweeps)
+    """
+    if not htf_bias.liquidity_sweep_detected:
+        return 0.0
+
+    direction = determine_direction(features, htf_bias)
+
+    # Aligned sweep: bullish sweep + long OR bearish sweep + short
+    if htf_bias.liquidity_sweep_type == "bullish" and direction == "long":
+        return max_points
+    elif htf_bias.liquidity_sweep_type == "bearish" and direction == "short":
+        return max_points
+
+    # Opposing sweep gets penalty (negative points)
+    return -max_points / 2
 
 
 def calculate_vwap_deviation(
