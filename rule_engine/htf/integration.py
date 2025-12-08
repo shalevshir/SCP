@@ -10,12 +10,13 @@ Status: Not started
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import Optional
 
 import pandas as pd
 from common.logger import get_logger
+
 from data_layer.multi_timeframe_helpers import build_htf_dataframe_from_candles
 from data_layer.multi_timeframe_sync import MultiTimeframeData, SynchronizedBar
-
 from rule_engine.htf.calculator import compute_htf_bias
 from rule_engine.htf.features import (
     StreamingHTFFeatureComputer,
@@ -226,7 +227,7 @@ def create_htf_bias_func_with_sync_layer(
     multi_tf_data: MultiTimeframeData,
     approach: str = "streaming",
     rsi_period: int = 14,
-    ema_periods: list[int] | None = None,
+    ema_periods: Optional[list[int]] = None,
     dxy_window: int = 50,
     swing_window: int = 5,
 ) -> Callable[[pd.Series, dict], HTFBias]:
@@ -266,7 +267,7 @@ def create_htf_bias_func_with_sync_layer(
         )
         
         # Track previous sync bar to detect changes
-        prev_sync_bar: SynchronizedBar | None = None
+        prev_sync_bar: Optional[SynchronizedBar] = None
         
         def htf_bias_func(features_1m: pd.Series, context: dict) -> HTFBias:
             """Compute HTF bias using streaming approach."""
@@ -289,9 +290,6 @@ def create_htf_bias_func_with_sync_layer(
             features_15m, features_1h = htf_computer.update_from_sync_bar(
                 sync_bar, prev_sync_bar
             )
-            
-            # Update prev_sync_bar for next iteration (after using it for change detection)
-            prev_sync_bar = sync_bar
             
             # Check if we have valid features
             if features_15m.empty or features_1h.empty:

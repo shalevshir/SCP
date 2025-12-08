@@ -12,14 +12,12 @@ setup_types:
   VWAP_RECLAIM:
     min_score: 8
     weights:
-      structure_alignment: 2.5  # Price action matches HTF bias (enhanced with BOS/CHoCH)
-      vwap_relation: 2          # Consistent with trend
-      rsi_state: 1.5            # Mid-reset continuation
-      ema_stack: 1.5            # 9>20>50 or reverse
-      dxy_corr: 1.5             # Inverse correlation intact (<-0.6)
-      fvg_alignment: 0.5        # FVG support for trend direction
-      liquidity_sweep: 0.5      # Liquidity sweep alignment
-      htf_bonus: 1              # HTF bias score ≥8
+      structure_alignment: 2  # Price action matches HTF bias
+      vwap_relation: 2        # Consistent with trend
+      rsi_state: 2            # Mid-reset continuation
+      ema_stack: 2            # 9>20>50 or reverse
+      dxy_corr: 2             # Inverse correlation intact (<-0.6)
+      htf_bonus: 1            # HTF bias score ≥8
 
   # VWAP Fade: Counter-trend setup at extreme deviation
   VWAP_FADE:
@@ -34,12 +32,11 @@ setup_types:
   DXY_CONTINUATION:
     min_score: 8
     weights:
-      structure_alignment: 2.5  # Price action matches HTF bias (enhanced with BOS/CHoCH)
-      dxy_corr: 3               # Strong inverse correlation (primary factor)
-      rsi_mid_reset: 1.5        # RSI in continuation zone
-      vwap_relation: 1.5        # VWAP support/resistance
-      ema_stack: 1              # EMA alignment bonus
-      fvg_alignment: 0.5        # FVG support for trend direction
+      structure_alignment: 2  # Price action matches HTF bias
+      dxy_corr: 3             # Strong inverse correlation (primary factor)
+      rsi_mid_reset: 2        # RSI in continuation zone
+      vwap_relation: 2        # VWAP support/resistance
+      ema_stack: 1            # EMA alignment bonus
 
 # Confidence thresholds (global)
 confidence:
@@ -134,28 +131,4 @@ factors:
     criteria:
       - "HTF bias score ≥ 8/10"
       - "HTF structure strongly aligned"
-  
-  fvg_alignment:
-    description: "FVG alignment with bias direction"
-    max_points: 0.5
-    criteria:
-      - "Unfilled FVGs supporting trend direction"
-      - "Positive alignment increases score"
-      - "Score range: -2 to +2 from HTF, normalized to 0 to max_points"
-    notes: |
-      FVG (Fair Value Gap) alignment is calculated by the HTF engine.
-      Only positive contributions are counted in the final score.
-      Opposing FVGs reduce the HTF bias score but don't directly penalize this factor.
-  
-  liquidity_sweep:
-    description: "Liquidity sweep alignment with signal direction"
-    max_points: 0.5
-    criteria:
-      - "Aligned sweep (bullish + long, bearish + short): +0.5 points"
-      - "Opposing sweep: -0.25 points (penalty)"
-      - "No sweep detected: 0 points"
-    notes: |
-      Liquidity sweeps indicate institutional order flow.
-      Aligned sweeps confirm the trade direction.
-      Opposing sweeps suggest caution (reduction in score).
 
