@@ -142,7 +142,8 @@ def render_equity_chart(
         return fig
 
     # Calculate drawdown from peak
-    peak = equity_series[0]
+    # Peak starts at 0.0 (starting capital level before any trades)
+    peak = 0.0
     drawdown = []
     for value in equity_series:
         if value > peak:
