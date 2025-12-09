@@ -436,8 +436,8 @@ def calculate_fvg_alignment(
     # FVG score ranges from -2 to +2, normalize to -1 to +1
     normalized = htf_bias.fvg_alignment_score / 2.0
     
-    # Only positive contributions count
-    return max(0.0, normalized * max_points)
+    # Only positive contributions count, and enforce upper bound
+    return min(max(0.0, normalized * max_points), max_points)
 
 
 def calculate_liquidity_sweep(

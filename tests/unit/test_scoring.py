@@ -569,6 +569,29 @@ class TestCalculateFVGAlignment:
         # Negative FVG scores should be clamped to 0
         assert score == 0.0
 
+    def test_calculate_fvg_alignment_upper_bound_enforced(self) -> None:
+        """Test FVG alignment with score exceeding expected range is capped at max_points."""
+        from rule_engine.scoring import calculate_fvg_alignment
+
+        features = pd.Series({"close": 2650.0, "vwap": 2645.0})
+        
+        htf_bias = HTFBias(
+            bias="bullish",
+            direction="long",
+            score=8.5,
+            confidence="high",
+            fvg_alignment_score=3.0,  # Exceeds expected range of -2 to +2
+            dxy_alignment=True,
+        )
+        
+        max_points = 0.5
+        score = calculate_fvg_alignment(features, htf_bias, max_points)
+        
+        # Should be capped at max_points even if normalized value exceeds it
+        # 3.0 / 2.0 = 1.5, * 0.5 = 0.75, but should be capped at 0.5
+        assert score == max_points
+        assert score <= max_points
+
 
 class TestCalculateLiquiditySweep:
     """Test liquidity sweep factor scoring."""
