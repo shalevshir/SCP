@@ -64,6 +64,12 @@ class HTFBias:
         dxy_chop_5m: Whether DXY is in chop on 5M (for alignment)
         dxy_alignment: Whether DXY is aligned with bias (behavior-based)
         dxy_alignment_score: HTF correlation bonus (0-0.5) when aligned
+
+        # Structure quality metrics (for strict scoring)
+        structure_clarity: 0-1 score measuring swing sequence purity
+        bars_since_bos: Bars since last BOS event (staleness)
+        bars_since_choch: Bars since last CHoCH event
+        chop_detected: True if recent labels are mixed (HH+LL within window)
     """
 
     # Core bias
@@ -110,6 +116,12 @@ class HTFBias:
     dxy_alignment: bool = False
     dxy_alignment_score: float = 0.0  # HTF correlation bonus (0-0.5) when aligned
 
+    # Structure quality metrics for strict scoring
+    structure_clarity: float = 0.0  # 0-1 score measuring swing sequence purity
+    bars_since_bos: int | None = None  # Bars since last BOS (staleness metric)
+    bars_since_choch: int | None = None  # Bars since last CHoCH
+    chop_detected: bool = False  # True if recent labels are mixed (HH+LL within window)
+
     # Conflict detection
     conflict_detected: bool = False
     conflict_reason: str | None = None
@@ -155,6 +167,10 @@ class HTFBias:
             "dxy_chop_5m": self.dxy_chop_5m,
             "dxy_alignment": self.dxy_alignment,
             "dxy_alignment_score": self.dxy_alignment_score,
+            "structure_clarity": self.structure_clarity,
+            "bars_since_bos": self.bars_since_bos,
+            "bars_since_choch": self.bars_since_choch,
+            "chop_detected": self.chop_detected,
             "conflict_detected": self.conflict_detected,
             "conflict_reason": self.conflict_reason,
         }
