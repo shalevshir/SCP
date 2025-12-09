@@ -175,6 +175,18 @@ def render_price_chart_with_markers(
                             else "#ef5350"
                         )
 
+                        # Build hovertemplate with proper None handling for pnl
+                        pnl_text = (
+                            f"{selected_trade.pnl:.2f} pts"
+                            if selected_trade.pnl is not None
+                            else "N/A"
+                        )
+                        hovertemplate = (
+                            f"Exit: {exit_price:.2f}<br>"
+                            f"Reason: {selected_trade.exit_reason}<br>"
+                            f"PnL: {pnl_text}<extra></extra>"
+                        )
+
                         fig.add_trace(
                             go.Scatter(
                                 x=[gc_df.index[closest_idx]],
@@ -187,11 +199,7 @@ def render_price_chart_with_markers(
                                     color=exit_color,
                                     line=dict(width=2, color="white"),
                                 ),
-                                hovertemplate=(
-                                    f"Exit: {exit_price:.2f}<br>"
-                                    f"Reason: {selected_trade.exit_reason}<br>"
-                                    f"PnL: {selected_trade.pnl:.2f} pts<extra></extra>"
-                                ),
+                                hovertemplate=hovertemplate,
                             )
                         )
 
@@ -237,7 +245,7 @@ def render_trade_details(trade: Trade | None) -> html.Div:
                                     html.Strong("Exit: "),
                                     (
                                         f"{trade.exit_price:.2f} @ {trade.exit_timestamp.strftime('%Y-%m-%d %H:%M:%S')}"
-                                        if trade.exit_timestamp
+                                        if trade.exit_timestamp and trade.exit_price is not None
                                         else "Open"
                                     ),
                                     html.Br(),

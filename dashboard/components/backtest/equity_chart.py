@@ -115,8 +115,32 @@ def render_equity_chart(
         equity_series = cumulative_dollars
         yaxis_title = "PnL ($)"
 
+    # Check if we have any valid PnL data
+    # This handles the case where trades exist but all have pnl=None
+    if not equity_series:
+        # Return empty chart with message
+        fig = go.Figure()
+        fig.update_layout(
+            template="plotly_dark",
+            xaxis_title="Trade #",
+            yaxis_title=yaxis_title,
+            showlegend=True,
+            annotations=[
+                dict(
+                    text="No PnL data available (all trades have None PnL)",
+                    xref="paper",
+                    yref="paper",
+                    x=0.5,
+                    y=0.5,
+                    showarrow=False,
+                    font=dict(size=16, color="gray"),
+                )
+            ],
+        )
+        return fig
+
     # Calculate drawdown from peak
-    peak = equity_series[0] if equity_series else 0.0
+    peak = equity_series[0]
     drawdown = []
     for value in equity_series:
         if value > peak:
