@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import pandas as pd
 import pytest
-
 from rule_engine.htf.structure.fvg import check_fvg_filled, detect_fvg
 
 
@@ -40,7 +39,7 @@ class TestDetectFVG:
         assert fvg_df.iloc[0]['fvg_type'] == 'bullish'
         assert fvg_df.iloc[0]['fvg_high'] == 103  # candle_3.low
         assert fvg_df.iloc[0]['fvg_low'] == 100   # candle_1.high
-        assert fvg_df.iloc[0]['filled'] == False
+        assert not fvg_df.iloc[0]['filled']
         assert pd.isna(fvg_df.iloc[0]['fill_index'])
 
     def test_detects_bearish_fvg(self):
@@ -63,7 +62,7 @@ class TestDetectFVG:
         assert fvg_df.iloc[0]['fvg_type'] == 'bearish'
         assert fvg_df.iloc[0]['fvg_high'] == 100  # candle_1.low
         assert fvg_df.iloc[0]['fvg_low'] == 97    # candle_3.high
-        assert fvg_df.iloc[0]['filled'] == False
+        assert not fvg_df.iloc[0]['filled']
         assert pd.isna(fvg_df.iloc[0]['fill_index'])
 
     def test_no_fvg_when_candle_2_fills_gap(self):
@@ -101,7 +100,10 @@ class TestDetectFVG:
         fvg_df = detect_fvg(df)
         
         assert len(fvg_df) == 0
-        assert list(fvg_df.columns) == ['fvg_index', 'fvg_type', 'fvg_high', 'fvg_low', 'filled', 'fill_index']
+        expected_cols = [
+            'fvg_index', 'fvg_type', 'fvg_high', 'fvg_low', 'filled', 'fill_index'
+        ]
+        assert list(fvg_df.columns) == expected_cols
 
     # ========================================================================
     # Edge Cases
@@ -130,7 +132,10 @@ class TestDetectFVG:
         fvg_df = detect_fvg(df)
         
         assert len(fvg_df) == 0
-        assert list(fvg_df.columns) == ['fvg_index', 'fvg_type', 'fvg_high', 'fvg_low', 'filled', 'fill_index']
+        expected_cols = [
+            'fvg_index', 'fvg_type', 'fvg_high', 'fvg_low', 'filled', 'fill_index'
+        ]
+        assert list(fvg_df.columns) == expected_cols
 
     def test_two_candles_only(self):
         """Test that exactly 2 candles returns empty result."""
@@ -323,7 +328,8 @@ class TestCheckFVGFilled:
         """Test that bullish FVG is marked as filled when price returns."""
         df = pd.DataFrame({
             'high': [100, 101, 105, 107, 106, 102, 104],
-            'low': [98, 100.5, 103, 105, 104, 99, 102]  # Index 5: low=99 < 100 (filled!)
+            # Index 5: low=99 < 100 (filled!)
+            'low': [98, 100.5, 103, 105, 104, 99, 102]
         })
         
         fvg_df = detect_fvg(df)
@@ -331,7 +337,7 @@ class TestCheckFVGFilled:
         
         fvg_df = check_fvg_filled(df, fvg_df)
         
-        assert fvg_df.iloc[0]['filled'] == True
+        assert fvg_df.iloc[0]['filled']
         assert fvg_df.iloc[0]['fill_index'] == 5
 
     def test_bearish_fvg_filled(self):
@@ -346,7 +352,7 @@ class TestCheckFVGFilled:
         
         fvg_df = check_fvg_filled(df, fvg_df)
         
-        assert fvg_df.iloc[0]['filled'] == True
+        assert fvg_df.iloc[0]['filled']
         assert fvg_df.iloc[0]['fill_index'] == 5
 
     def test_fvg_remains_unfilled(self):
@@ -361,7 +367,7 @@ class TestCheckFVGFilled:
         
         fvg_df = check_fvg_filled(df, fvg_df)
         
-        assert fvg_df.iloc[0]['filled'] == False
+        assert not fvg_df.iloc[0]['filled']
         assert pd.isna(fvg_df.iloc[0]['fill_index'])
 
     def test_partial_fill_counts_as_filled(self):
@@ -375,7 +381,7 @@ class TestCheckFVGFilled:
         fvg_df = check_fvg_filled(df, fvg_df)
         
         # Should be filled (low <= fvg_low)
-        assert fvg_df.iloc[0]['filled'] == True
+        assert fvg_df.iloc[0]['filled']
         assert fvg_df.iloc[0]['fill_index'] == 4
 
     def test_first_fill_recorded(self):
@@ -389,7 +395,7 @@ class TestCheckFVGFilled:
         fvg_df = check_fvg_filled(df, fvg_df)
         
         # Should record first fill only
-        assert fvg_df.iloc[0]['filled'] == True
+        assert fvg_df.iloc[0]['filled']
         assert fvg_df.iloc[0]['fill_index'] == 4  # First fill, not 6
 
     def test_empty_fvg_dataframe(self):
@@ -432,7 +438,7 @@ class TestCheckFVGFilled:
         fvg_df = check_fvg_filled(df, fvg_df)
         
         # Should remain unfilled (no data after formation)
-        assert fvg_df.iloc[0]['filled'] == False
+        assert not fvg_df.iloc[0]['filled']
         assert pd.isna(fvg_df.iloc[0]['fill_index'])
 
 
@@ -447,6 +453,7 @@ class TestFVGStateTracker:
         but detect_fvg() returns 'fvg_index', 'fvg_type', 'fvg_high', 'fvg_low'.
         """
         from datetime import UTC, datetime
+
         from rule_engine.htf.structure.fvg import FVGStateTracker
         
         # Create DataFrame with DatetimeIndex and FVG
@@ -480,7 +487,7 @@ class TestFVGStateTracker:
         assert fvg_state.top == 103.0  # fvg_high
         assert fvg_state.bottom == 100.0  # fvg_low
         assert fvg_state.timestamp == timestamps[2]  # fvg_index = 2
-        assert fvg_state.filled == False
+        assert not fvg_state.filled
 
     def test_tracker_handles_multiple_fvgs(self):
         """Test tracker handles data correctly without KeyError.
@@ -489,6 +496,7 @@ class TestFVGStateTracker:
         crashing, even if FVGs get filled or multiple updates occur.
         """
         from datetime import UTC, datetime
+
         from rule_engine.htf.structure.fvg import FVGStateTracker
         
         timestamps = pd.date_range(
@@ -526,6 +534,7 @@ class TestFVGStateTracker:
     def test_tracker_tracks_fills(self):
         """Test that tracker correctly tracks FVG fills."""
         from datetime import UTC, datetime
+
         from rule_engine.htf.structure.fvg import FVGStateTracker
         
         timestamps = pd.date_range(
@@ -546,7 +555,7 @@ class TestFVGStateTracker:
         tracker.update(df, timestamps[4])
         active_before = tracker.get_active_fvgs(timestamps[4])
         assert len(active_before) == 1
-        assert active_before[0].filled == False
+        assert not active_before[0].filled
         
         # Update after fill
         tracker.update(df, timestamps[6])

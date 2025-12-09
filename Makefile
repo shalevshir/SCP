@@ -1,4 +1,4 @@
-.PHONY: test test-unit test-verbose test-parallel test-coverage test-fast lint format check clean help install data-clean data-fetch data-resample
+.PHONY: test test-unit test-verbose test-parallel test-coverage test-fast lint format check clean help install data-clean data-fetch data-resample data-resample-1h
 
 help:
 	@echo "SCP Trading Bot - Development Commands"
@@ -18,6 +18,7 @@ help:
 	@echo "  make data-clean        Clean and deduplicate CSV data (remove spreads, select highest volume)"
 	@echo "  make data-fetch        Fetch historical data from Databento (requires API key)"
 	@echo "  make data-resample     Resample 1m data to 15m bars"
+	@echo "  make data-resample-1h  Resample 1m data to 1h bars"
 	@echo ""
 	@echo "Code Quality:"
 	@echo "  make lint              Run linters (ruff, mypy)"
@@ -86,3 +87,20 @@ data-resample:
 	@echo "Resampling 1m data to 15m bars..."
 	poetry run python scripts/resample_ohlcv_to_15m.py
 	@echo "Resampling complete."
+
+data-resample-1h:
+	@echo "Resampling 1m data to 1h bars..."
+	poetry run python scripts/resample_ohlcv_to_1h.py
+	@echo "Resampling complete."
+
+backtest:
+	@echo "Running backtest..."
+	poetry run python scripts/run_backtest_and_view.py \
+		--start $(START) --end $(END) \
+		--buffer-phase $(PHASE) --tier-active $(TIER) \
+		--view
+
+backtest-view:
+	@echo "Loading backtest results..."
+	poetry run python scripts/run_backtest_and_view.py \
+		--load $(RESULTS_FILE) --view

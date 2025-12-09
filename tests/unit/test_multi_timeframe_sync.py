@@ -38,7 +38,7 @@ class TestMultiTimeframeSyncLayer:
         """Test that sync layer initializes with default timeframes."""
         layer = MultiTimeframeSyncLayer(data_dir)
         assert layer.execution_timeframe == "1m"
-        assert layer.htf_timeframes == ["15m", "1h"]
+        assert layer.htf_timeframes == ["5m", "15m", "1h"]
         assert layer.data_dir == data_dir
 
     def test_initialization_with_custom_timeframes(self, data_dir: Path) -> None:
@@ -67,7 +67,7 @@ class TestMultiTimeframeSyncLayer:
             result = sync_layer.load(start, end)
             assert isinstance(result, MultiTimeframeData)
             assert result.execution_timeframe == "1m"
-            assert result.htf_timeframes == ["15m", "1h"]
+            assert result.htf_timeframes == ["5m", "15m", "1h"]
             assert len(result) > 0
         except (DataSourceError, ValueError) as e:
             # May fail if data is invalid or missing

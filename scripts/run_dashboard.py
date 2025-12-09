@@ -42,7 +42,8 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from common.logger import get_logger
+from common.config import load_config
+from common.logger import get_logger, setup_logging
 from dashboard.app import LiveDashboard
 from dashboard.core.data_stream import DataStream
 from dashboard.core.engine import SimulationEngine
@@ -148,6 +149,10 @@ def parse_datetime(datetime_str: str) -> datetime:
 
 def main() -> None:
     """Main entry point."""
+    # Initialize logging first
+    config = load_config(PROJECT_ROOT / "config" / "core.yaml")
+    setup_logging(config.system)
+    
     args = parse_args()
 
     logger.info("=" * 60)
