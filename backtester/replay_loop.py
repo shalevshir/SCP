@@ -367,7 +367,19 @@ class BacktestReplayLoop:
             )
             return None
 
-        # Step 4: Check guardrails before generating signal
+        # Step 4: Compute HTF bias FIRST (must happen every bar to accumulate HTF data)
+        # This must run BEFORE guardrails check so streaming HTF processor gets updated
+        # even outside trading hours - needed for structure detection warmup
+        try:
+            htf_bias = self._htf_bias_func(features, validation_context)
+        except Exception as e:
+            logger.warning(
+                f"Failed to compute HTF bias at {current_timestamp}: {e}",
+                exc_info=True,
+            )
+            return None
+
+        # Step 5: Check guardrails before generating signal
         guardrails_allowed, blocking_reasons = self._check_guardrails(
             validation_context, current_timestamp, features
         )
@@ -375,16 +387,6 @@ class BacktestReplayLoop:
         if not guardrails_allowed:
             logger.debug(
                 f"Guardrails blocked entry at {current_timestamp}: {blocking_reasons}"
-            )
-            return None
-
-        # Step 5: Compute HTF bias
-        try:
-            htf_bias = self._htf_bias_func(features, validation_context)
-        except Exception as e:
-            logger.warning(
-                f"Failed to compute HTF bias at {current_timestamp}: {e}",
-                exc_info=True,
             )
             return None
 

@@ -5,7 +5,7 @@ data across multiple timeframes (execution timeframe + HTF timeframes)
 to ensure all feeds are aligned to the execution timeframe timestamps.
 
 Architecture:
-- Loads data for execution timeframe (1m) and HTF timeframes (15m, 1h)
+- Loads data for execution timeframe (1m) and HTF timeframes (5m, 15m, 1h)
 - Aligns all HTF data to execution timeframe timestamps
 - Provides synchronized access to all timeframe data at each execution bar
 - Handles missing data gracefully (returns None for unavailable HTF bars)
@@ -34,14 +34,16 @@ class SynchronizedBar:
     Attributes:
         execution_timestamp: Execution timeframe timestamp
         execution_1m: Tuple of (GC, DXY) candles for 1m timeframe
+        htf_5m: Optional tuple of (GC, DXY) candles for 5m timeframe
         htf_15m: Optional tuple of (GC, DXY) candles for 15m timeframe
         htf_1h: Optional tuple of (GC, DXY) candles for 1h timeframe
     """
 
     execution_timestamp: datetime
     execution_1m: tuple[Candle, Candle]  # (GC, DXY)
-    htf_15m: tuple[Candle, Candle] | None  # (GC, DXY) or None
-    htf_1h: tuple[Candle, Candle] | None  # (GC, DXY) or None
+    htf_5m: tuple[Candle, Candle] | None = None  # (GC, DXY) or None
+    htf_15m: tuple[Candle, Candle] | None = None  # (GC, DXY) or None
+    htf_1h: tuple[Candle, Candle] | None = None  # (GC, DXY) or None
 
 
 @dataclass
@@ -84,7 +86,7 @@ class MultiTimeframeSyncLayer:
     """Synchronizes multiple timeframe data to execution timeframe.
 
     Loads GC and DXY data for execution timeframe (1m) and HTF timeframes
-    (15m, 1h), then aligns all HTF data to execution timeframe timestamps.
+    (5m, 15m, 1h), then aligns all HTF data to execution timeframe timestamps.
 
     Example:
         >>> from datetime import datetime, timezone
@@ -93,7 +95,7 @@ class MultiTimeframeSyncLayer:
         >>> end = datetime(2025, 9, 30, 13, 0, tzinfo=timezone.utc)
         >>> data = sync_layer.load(start, end)
         >>> bar = data.get_bar(start)
-        >>> print(f"1m: {bar.execution_1m}, 15m: {bar.htf_15m}, 1h: {bar.htf_1h}")
+        >>> print(f"1m: {bar.execution_1m}, 5m: {bar.htf_5m}, 15m: {bar.htf_15m}, 1h: {bar.htf_1h}")
     """
 
     def __init__(
@@ -107,7 +109,7 @@ class MultiTimeframeSyncLayer:
         Args:
             data_dir: Path to directory containing CSV files
             execution_timeframe: Execution timeframe (default: "1m")
-            htf_timeframes: List of HTF timeframes (default: ["15m", "1h"])
+            htf_timeframes: List of HTF timeframes (default: ["5m", "15m", "1h"])
 
         Raises:
             ValueError: If execution_timeframe is invalid or HTF timeframes
@@ -117,14 +119,14 @@ class MultiTimeframeSyncLayer:
             raise ValueError("Execution timeframe cannot be empty")
 
         if htf_timeframes is None:
-            htf_timeframes = ["15m", "1h"]
+            htf_timeframes = ["5m", "15m", "1h"]
 
         # Validate HTF timeframes are larger than execution timeframe
         # This is a simple check - in production, would parse and compare
-        # For now, assume execution is 1m and HTF are 15m, 1h
+        # For now, assume execution is 1m and HTF are 5m, 15m, 1h
         if execution_timeframe == "1m":
             for htf in htf_timeframes:
-                if htf not in ["15m", "1h", "4h", "1d"]:
+                if htf not in ["5m", "15m", "1h", "4h", "1d"]:
                     raise ValueError(
                         f"HTF timeframe {htf} must be larger than execution timeframe {execution_timeframe}"
                     )
@@ -299,8 +301,27 @@ class MultiTimeframeSyncLayer:
             )
 
             # Get HTF bars
+            htf_5m = None
             htf_15m = None
             htf_1h = None
+
+            if "5m" in self.htf_timeframes:
+                htf_5m_gc_series = htf_aligned["5m"]["GC"].get(ts)
+                htf_5m_dxy_series = htf_aligned["5m"]["DXY"].get(ts)
+                if (
+                    htf_5m_gc_series is not None
+                    and htf_5m_dxy_series is not None
+                    and isinstance(htf_5m_gc_series, pd.Series)
+                    and isinstance(htf_5m_dxy_series, pd.Series)
+                ):
+                    htf_5m_gc_bar = self._series_to_candle(
+                        htf_5m_gc_series, "GC", "5m"
+                    )
+                    htf_5m_dxy_bar = self._series_to_candle(
+                        htf_5m_dxy_series, "DXY", "5m"
+                    )
+                    if htf_5m_gc_bar and htf_5m_dxy_bar:
+                        htf_5m = (htf_5m_gc_bar, htf_5m_dxy_bar)
 
             if "15m" in self.htf_timeframes:
                 htf_15m_gc_series = htf_aligned["15m"]["GC"].get(ts)
@@ -339,6 +360,7 @@ class MultiTimeframeSyncLayer:
             bar = SynchronizedBar(
                 execution_timestamp=ts,
                 execution_1m=(exec_gc_bar, exec_dxy_bar),
+                htf_5m=htf_5m,
                 htf_15m=htf_15m,
                 htf_1h=htf_1h,
             )

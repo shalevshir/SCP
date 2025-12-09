@@ -195,4 +195,14 @@ def aggregate_features(
             # This will only work if indexes are already aligned
             result["dxy_corr"] = dxy_corr_series.reindex(result.index)
 
+        # Also calculate micro correlation (5-bar window for short-term alignment)
+        micro_corr_series = calculate_dxy_correlation(gc_df, dxy_df, window=5)
+
+        # Align micro correlation with GC DataFrame
+        if "ts_event" in gc_df.columns:
+            micro_corr_dict = micro_corr_series.to_dict()
+            result["dxy_corr_micro"] = result["ts_event"].map(micro_corr_dict)
+        else:
+            result["dxy_corr_micro"] = micro_corr_series.reindex(result.index)
+
     return result
