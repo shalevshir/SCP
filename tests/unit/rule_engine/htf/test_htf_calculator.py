@@ -45,7 +45,21 @@ class TestHTFCalculatorBiasConsistency:
             }
         )
 
-        # DXY in chop mode (large wicks, small bodies)
+        # Micro correlation features for behavior-based DXY alignment
+        features_1m = pd.Series(
+            {
+                "dxy_corr_micro": -0.4,  # Inverse micro correlation
+            }
+        )
+
+        features_5m = pd.Series(
+            {
+                "dxy_corr_micro": -0.45,  # Inverse micro correlation
+                "dxy_structure_label": "LL",  # Bearish DXY supports long Gold
+            }
+        )
+
+        # DXY in chop mode on 1H (large wicks, small bodies)
         dxy_1h_chop = pd.DataFrame(
             {
                 "high": [101.0, 101.5, 102.0, 102.5, 103.0],
@@ -55,11 +69,24 @@ class TestHTFCalculatorBiasConsistency:
             }
         )
 
+        # DXY on 5M not in chop (trending)
+        dxy_5m_trending = pd.DataFrame(
+            {
+                "high": [101.0, 100.9, 100.8, 100.7, 100.6],
+                "low": [100.5, 100.4, 100.3, 100.2, 100.1],
+                "open": [101.0, 100.9, 100.8, 100.7, 100.6],
+                "close": [100.5, 100.4, 100.3, 100.2, 100.1],
+            }
+        )
+
         # Execute
         htf_bias = compute_htf_bias(
             features_1h=features_1h,
             features_15m=features_15m,
+            features_1m=features_1m,
+            features_5m=features_5m,
             dxy_1h=dxy_1h_chop,
+            dxy_5m=dxy_5m_trending,
         )
 
         # Verify bias is neutralized
@@ -73,8 +100,9 @@ class TestHTFCalculatorBiasConsistency:
             "(close > vwap), not neutralized state"
         )
         assert htf_bias.dxy_alignment is True, (
-            "dxy_alignment should be True based on original bullish bias with strong "
-            "negative DXY correlation, not neutralized state"
+            "dxy_alignment should be True based on original bullish bias with "
+            "behavior-based DXY alignment (structure + no 5M chop + micro corr), "
+            "not neutralized state"
         )
 
     def test_vwap_and_dxy_alignment_use_original_bias_on_conflict(self) -> None:
@@ -83,6 +111,30 @@ class TestHTFCalculatorBiasConsistency:
         When bias is neutralized due to structure conflict, vwap_trend_confirmed
         and dxy_alignment should still reflect the underlying market structure.
         """
+        # Micro correlation features for behavior-based DXY alignment
+        features_1m = pd.Series(
+            {
+                "dxy_corr_micro": -0.4,  # Inverse micro correlation
+            }
+        )
+
+        features_5m = pd.Series(
+            {
+                "dxy_corr_micro": -0.5,  # Inverse micro correlation
+                "dxy_structure_label": "HH",  # Bullish DXY supports short Gold
+            }
+        )
+
+        # DXY on 5M not in chop (trending)
+        dxy_5m_trending = pd.DataFrame(
+            {
+                "high": [100.6, 100.7, 100.8, 100.9, 101.0],
+                "low": [100.1, 100.2, 100.3, 100.4, 100.5],
+                "open": [100.1, 100.2, 100.3, 100.4, 100.5],
+                "close": [100.6, 100.7, 100.8, 100.9, 101.0],
+            }
+        )
+
         # Setup: Bearish on 1H, Bullish on 15M = conflict
         features_1h = pd.Series(
             {
@@ -111,6 +163,9 @@ class TestHTFCalculatorBiasConsistency:
         htf_bias = compute_htf_bias(
             features_1h=features_1h,
             features_15m=features_15m,
+            features_1m=features_1m,
+            features_5m=features_5m,
+            dxy_5m=dxy_5m_trending,
         )
 
         # Verify bias is neutralized due to conflict
@@ -127,8 +182,9 @@ class TestHTFCalculatorBiasConsistency:
             "(close < vwap), not neutralized state"
         )
         assert htf_bias.dxy_alignment is True, (
-            "dxy_alignment should be True based on original bearish bias with strong "
-            "negative DXY correlation, not neutralized state"
+            "dxy_alignment should be True based on original bearish bias with "
+            "behavior-based DXY alignment (structure + no 5M chop + micro corr), "
+            "not neutralized state"
         )
 
 

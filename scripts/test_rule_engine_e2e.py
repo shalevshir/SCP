@@ -13,7 +13,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pandas as pd
-from common.logger import get_logger
+from common.config import load_config
+from common.logger import get_logger, setup_logging
 from data_layer.loader import HistoricalDataLoader
 from data_layer.multi_timeframe_helpers import extract_execution_dataframes
 from data_layer.multi_timeframe_sync import MultiTimeframeSyncLayer
@@ -137,6 +138,11 @@ def align_htf_candle(
 
 
 def main() -> None:
+    # Initialize logging first
+    project_root = Path(__file__).parent.parent
+    config = load_config(project_root / "config" / "core.yaml")
+    setup_logging(config.system)
+    
     parser = build_arg_parser()
     args = parser.parse_args()
 

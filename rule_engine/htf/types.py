@@ -55,10 +55,21 @@ class HTFBias:
         seasonality_adjustment: Score adjustment based on seasonality
 
         # DXY flags
-        dxy_corr_1h: 1H DXY correlation
-        dxy_corr_15m: 15M DXY correlation
-        dxy_chop_detected: Whether DXY is in chop/ranging mode
-        dxy_alignment: Whether DXY is aligned with bias
+        dxy_corr_1h: 1H DXY correlation (scaled window)
+        dxy_corr_15m: 15M DXY correlation (scaled window)
+        dxy_corr_1m: 1M micro correlation (5-bar window)
+        dxy_corr_5m: 5M micro correlation (5-bar window)
+        dxy_structure: DXY structure label (HH/HL/LH/LL)
+        dxy_chop_detected: Whether DXY is in chop on 1H (legacy)
+        dxy_chop_5m: Whether DXY is in chop on 5M (for alignment)
+        dxy_alignment: Whether DXY is aligned with bias (behavior-based)
+        dxy_alignment_score: HTF correlation bonus (0-0.5) when aligned
+
+        # Structure quality metrics (for strict scoring)
+        structure_clarity: 0-1 score measuring swing sequence purity
+        bars_since_bos: Bars since last BOS event (staleness)
+        bars_since_choch: Bars since last CHoCH event
+        chop_detected: True if recent labels are mixed (HH+LL within window)
     """
 
     # Core bias
@@ -97,8 +108,19 @@ class HTFBias:
     # DXY
     dxy_corr_1h: float | None = None
     dxy_corr_15m: float | None = None
-    dxy_chop_detected: bool = False
+    dxy_corr_1m: float | None = None  # Micro correlation (1M)
+    dxy_corr_5m: float | None = None  # Micro correlation (5M)
+    dxy_structure: str | None = None  # DXY structure label (HH/HL/LH/LL)
+    dxy_chop_detected: bool = False  # 1H chop (legacy)
+    dxy_chop_5m: bool = False  # 5M chop (for alignment)
     dxy_alignment: bool = False
+    dxy_alignment_score: float = 0.0  # HTF correlation bonus (0-0.5) when aligned
+
+    # Structure quality metrics for strict scoring
+    structure_clarity: float = 0.0  # 0-1 score measuring swing sequence purity
+    bars_since_bos: int | None = None  # Bars since last BOS (staleness metric)
+    bars_since_choch: int | None = None  # Bars since last CHoCH
+    chop_detected: bool = False  # True if recent labels are mixed (HH+LL within window)
 
     # Conflict detection
     conflict_detected: bool = False
@@ -138,8 +160,17 @@ class HTFBias:
             "seasonality_adjustment": self.seasonality_adjustment,
             "dxy_corr_1h": self.dxy_corr_1h,
             "dxy_corr_15m": self.dxy_corr_15m,
+            "dxy_corr_1m": self.dxy_corr_1m,
+            "dxy_corr_5m": self.dxy_corr_5m,
+            "dxy_structure": self.dxy_structure,
             "dxy_chop_detected": self.dxy_chop_detected,
+            "dxy_chop_5m": self.dxy_chop_5m,
             "dxy_alignment": self.dxy_alignment,
+            "dxy_alignment_score": self.dxy_alignment_score,
+            "structure_clarity": self.structure_clarity,
+            "bars_since_bos": self.bars_since_bos,
+            "bars_since_choch": self.bars_since_choch,
+            "chop_detected": self.chop_detected,
             "conflict_detected": self.conflict_detected,
             "conflict_reason": self.conflict_reason,
         }

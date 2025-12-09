@@ -7,7 +7,6 @@ when price stays above/below VWAP for N consecutive candles.
 import numpy as np
 import pandas as pd
 import pytest
-
 from rule_engine.htf.vwap.trend import validate_vwap_trend
 
 

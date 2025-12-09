@@ -295,7 +295,7 @@ def create_htf_bias_func_with_sync_layer(
                 )
 
             # Update HTF features incrementally
-            features_15m, features_1h = htf_computer.update_from_sync_bar(
+            features_5m, features_15m, features_1h = htf_computer.update_from_sync_bar(
                 sync_bar, prev_sync_bar
             )
 
@@ -317,6 +317,7 @@ def create_htf_bias_func_with_sync_layer(
             df_15m = None
             df_1h = None
             dxy_1h = None
+            dxy_5m = None
             sweep_events_15m = None
 
             if sync_bar.htf_15m:
@@ -336,7 +337,7 @@ def create_htf_bias_func_with_sync_layer(
 
                 # Build DataFrame from buffered candles for structure detection
                 if (
-                    len(candle_buffer_15m) > swing_window * 2
+                    len(candle_buffer_15m) >= swing_window * 2 + 1
                 ):  # Need enough for swing detection
                     df_15m = build_htf_dataframe_from_candles(candle_buffer_15m, "15m")
 
@@ -364,11 +365,17 @@ def create_htf_bias_func_with_sync_layer(
                 df_1h = build_htf_dataframe_from_candles([sync_bar.htf_1h[0]], "1h")
                 dxy_1h = build_htf_dataframe_from_candles([sync_bar.htf_1h[1]], "1h")
 
+            if sync_bar.htf_5m:
+                dxy_5m = build_htf_dataframe_from_candles([sync_bar.htf_5m[1]], "5m")
+
             # Compute HTF bias
             return compute_htf_bias(
                 features_1h=features_1h,
                 features_15m=features_15m,
                 dxy_1h=dxy_1h,
+                dxy_5m=dxy_5m,
+                features_1m=features_1m,
+                features_5m=features_5m,
                 df_15m=df_15m,
                 df_1h=df_1h,
                 sweep_events_15m=sweep_events_15m,

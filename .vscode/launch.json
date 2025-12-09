@@ -8,6 +8,7 @@
       "program": "${workspaceFolder}/scripts/run_feature_integration.py",
       "console": "integratedTerminal",
       "justMyCode": false,
+      "python": "${workspaceFolder}/.venv/bin/python",
       "args": [
         "--timeframe",
         "1m",
@@ -18,6 +19,74 @@
         "--output",
         "data/feature_integration.csv"
       ]
+    },
+    {
+      "name": "Debug Backtest Viewer (Load Results)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "scripts.run_backtest_and_view",
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "args": [
+        "--load",
+        "output/backtest_results_20251201_20251209.json",
+        "--view",
+        "--port",
+        "8051"
+      ],
+      "console": "integratedTerminal",
+      "justMyCode": true,
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}"
+      }
+    },
+    {
+      "name": "Debug Backtest (Full Run + View)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "scripts.run_backtest_and_view",
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "args": [
+        "--start",
+        "2025-11-01T10:00:00Z",
+        "--end",
+        "2025-11-30T13:00:00Z",
+        "--buffer-phase",
+        "growth",
+        "--tier-active",
+        "EarlyMild",
+        "--view"
+      ],
+      "console": "integratedTerminal",
+      "justMyCode": true,
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}"
+      }
+    },
+    {
+      "name": "Debug Backtest (Run Only, No View)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "scripts.run_backtest_and_view",
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "args": [
+        "--start",
+        "2025-12-01T10:00:00Z",
+        "--end",
+        "2025-12-08T13:00:00Z",
+        "--buffer-phase",
+        "growth",
+        "--tier-active",
+        "EarlyMild",
+        "--no-view"
+      ],
+      "console": "integratedTerminal",
+      "justMyCode": true,
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}"
+      }
     }
   ]
 }

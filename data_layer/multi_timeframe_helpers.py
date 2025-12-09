@@ -141,7 +141,7 @@ def extract_htf_candles_by_timeframe(
 
     Args:
         multi_tf_data: MultiTimeframeData with synchronized bars
-        timeframe: HTF timeframe to extract ("15m" or "1h")
+        timeframe: HTF timeframe to extract ("5m", "15m", or "1h")
 
     Returns:
         Tuple of (gc_candles, dxy_candles) for the specified timeframe.
@@ -149,8 +149,8 @@ def extract_htf_candles_by_timeframe(
         Lists may be empty if no HTF data available for that timeframe.
 
     Example:
-        >>> gc_15m, dxy_15m = extract_htf_candles_by_timeframe(multi_tf_data, "15m")
-        >>> print(f"Found {len(gc_15m)} unique 15m GC candles")
+        >>> gc_5m, dxy_5m = extract_htf_candles_by_timeframe(multi_tf_data, "5m")
+        >>> print(f"Found {len(gc_5m)} unique 5m GC candles")
     """
     if timeframe not in multi_tf_data.htf_timeframes:
         logger.warning(
@@ -163,7 +163,14 @@ def extract_htf_candles_by_timeframe(
     dxy_candles_dict: dict[datetime, Candle] = {}
 
     for bar in multi_tf_data.synchronized_bars:
-        if timeframe == "15m" and bar.htf_15m:
+        if timeframe == "5m" and bar.htf_5m:
+            gc_candle = bar.htf_5m[0]
+            dxy_candle = bar.htf_5m[1]
+            # Only add if we haven't seen this timestamp before
+            if gc_candle.timestamp not in gc_candles_dict:
+                gc_candles_dict[gc_candle.timestamp] = gc_candle
+                dxy_candles_dict[dxy_candle.timestamp] = dxy_candle
+        elif timeframe == "15m" and bar.htf_15m:
             gc_candle = bar.htf_15m[0]
             dxy_candle = bar.htf_15m[1]
             # Only add if we haven't seen this timestamp before

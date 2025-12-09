@@ -54,28 +54,49 @@ class StreamingHTFFeatureComputer:
         Args:
             rsi_period: RSI calculation period (default: 14)
             ema_periods: List of EMA periods (default: [9, 20, 50])
-            dxy_window: DXY correlation window (default: 50)
+            dxy_window: DXY correlation window for 1m (default: 50)
+                       HTF timeframes use scaled-down windows to warm up faster:
+                       - 1H: dxy_window // 2 (25 bars = ~1 day)
+                       - 15M: dxy_window // 1.5 (33 bars = ~8 hours)
+                       - 5M: dxy_window // 1.25 (40 bars = ~3 hours)
             swing_window: Structure label swing window (default: 5)
         """
+        # Scale down dxy_window for HTF to ensure faster warmup
+        # 1H: 25 bars = ~1 day of data (vs 50 hours = 2+ days)
+        # 15M: 33 bars = ~8 hours (vs 12.5 hours)
+        # 5M: 40 bars = ~3 hours (vs 4+ hours)
+        dxy_window_1h = max(20, dxy_window // 2)  # Minimum 20 bars
+        dxy_window_15m = max(25, int(dxy_window // 1.5))  # Minimum 25 bars
+        dxy_window_5m = max(30, int(dxy_window // 1.25))  # Minimum 30 bars
+        
         self.processor_1h = StreamingFeatureProcessor(
             timeframe="1h",
             rsi_period=rsi_period,
             ema_periods=ema_periods,
-            dxy_window=dxy_window,
+            dxy_window=dxy_window_1h,
             swing_window=swing_window,
         )
         self.processor_15m = StreamingFeatureProcessor(
             timeframe="15m",
             rsi_period=rsi_period,
             ema_periods=ema_periods,
-            dxy_window=dxy_window,
+            dxy_window=dxy_window_15m,
+            swing_window=swing_window,
+        )
+        self.processor_5m = StreamingFeatureProcessor(
+            timeframe="5m",
+            rsi_period=rsi_period,
+            ema_periods=ema_periods,
+            dxy_window=dxy_window_5m,
             swing_window=swing_window,
         )
 
         self.features_1h = pd.Series(dtype=object)
         self.features_15m = pd.Series(dtype=object)
+        self.features_5m = pd.Series(dtype=object)
         self.last_1h_timestamp: pd.Timestamp | None = None
         self.last_15m_timestamp: pd.Timestamp | None = None
+        self.last_5m_timestamp: pd.Timestamp | None = None
 
         logger.debug("StreamingHTFFeatureComputer initialized")
 
@@ -83,7 +104,7 @@ class StreamingHTFFeatureComputer:
         self,
         sync_bar: SynchronizedBar,
         prev_sync_bar: SynchronizedBar | None = None,
-    ) -> tuple[pd.Series, pd.Series]:
+    ) -> tuple[pd.Series, pd.Series, pd.Series]:
         """Update HTF features from synchronized bar.
 
         Only updates when HTF bars change (new bar closed). This prevents
@@ -95,8 +116,24 @@ class StreamingHTFFeatureComputer:
             prev_sync_bar: Previous synchronized bar (optional, for optimization)
 
         Returns:
-            Tuple of (features_15m, features_1h) as pd.Series
+            Tuple of (features_5m, features_15m, features_1h) as pd.Series
         """
+        # Update 5m features if bar changed
+        if sync_bar.htf_5m:
+            htf_5m_timestamp = pd.Timestamp(sync_bar.htf_5m[0].timestamp)
+            if (
+                self.last_5m_timestamp is None
+                or htf_5m_timestamp != self.last_5m_timestamp
+            ):
+                self.features_5m = self.processor_5m.update(
+                    sync_bar.htf_5m[0], sync_bar.htf_5m[1]
+                )
+                self.last_5m_timestamp = htf_5m_timestamp
+                logger.debug(
+                    f"Updated 5m features at {htf_5m_timestamp} "
+                    f"(dxy_structure: {self.features_5m.get('dxy_structure_label', 'N/A')})"
+                )
+
         # Update 15m features if bar changed
         if sync_bar.htf_15m:
             htf_15m_timestamp = pd.Timestamp(sync_bar.htf_15m[0].timestamp)
@@ -124,20 +161,27 @@ class StreamingHTFFeatureComputer:
                     sync_bar.htf_1h[0], sync_bar.htf_1h[1]
                 )
                 self.last_1h_timestamp = htf_1h_timestamp
-                logger.debug(
+                # Log at INFO level for visibility
+                structure_val = self.features_1h.get('structure_label', 'N/A')
+                buffer_size = len(self.processor_1h.structure_buffer)
+                logger.info(
                     f"Updated 1h features at {htf_1h_timestamp} "
-                    f"(structure: {self.features_1h.get('structure_label', 'N/A')})"
+                    f"(structure: {structure_val}, buffer: {buffer_size})"
                 )
 
-        return self.features_15m, self.features_1h
+        return self.features_5m, self.features_15m, self.features_1h
 
     def is_warmed_up(self) -> bool:
-        """Check if both processors have enough data.
+        """Check if all processors have enough data.
 
         Returns:
-            True if both 1h and 15m processors are warmed up
+            True if all 1h, 15m, and 5m processors are warmed up
         """
-        return self.processor_1h.is_warmed_up() and self.processor_15m.is_warmed_up()
+        return (
+            self.processor_1h.is_warmed_up()
+            and self.processor_15m.is_warmed_up()
+            and self.processor_5m.is_warmed_up()
+        )
 
 
 def compute_htf_features_vectorized(
@@ -163,7 +207,10 @@ def compute_htf_features_vectorized(
         dxy_candles_1h: List of DXY 1h candles
         rsi_period: RSI calculation period (default: 14)
         ema_periods: List of EMA periods (default: [9, 20, 50])
-        dxy_window: DXY correlation window (default: 50)
+        dxy_window: DXY correlation window for 1m (default: 50)
+                   HTF timeframes use scaled-down windows:
+                   - 1H: dxy_window // 2 (25 bars = ~1 day)
+                   - 15M: dxy_window // 1.5 (33 bars = ~8 hours)
         swing_window: Structure label swing window (default: 5)
 
     Returns:
@@ -176,6 +223,9 @@ def compute_htf_features_vectorized(
         ...     gc_15m, dxy_15m, gc_1h, dxy_1h
         ... )
     """
+    # Scale down dxy_window for HTF to ensure faster warmup (match streaming approach)
+    dxy_window_1h = max(20, dxy_window // 2)
+    dxy_window_15m = max(25, int(dxy_window // 1.5))
     # Convert candles to DataFrames
     gc_15m_df = candles_to_dataframe(gc_candles_15m, "15m") if gc_candles_15m else None
     dxy_15m_df = (
@@ -196,7 +246,7 @@ def compute_htf_features_vectorized(
         dxy_15m_work["ts_event"] = dxy_15m_work.index
         dxy_15m_work = dxy_15m_work.reset_index(drop=True)
 
-        # Compute features
+        # Compute features (use scaled-down dxy_window for 15m)
         features_15m_df = aggregate_features(
             gc_15m_work,
             dxy_15m_work,
@@ -205,7 +255,7 @@ def compute_htf_features_vectorized(
                 "vwap": {"session_reset": True},
                 "rsi": {"period": rsi_period},
                 "ema": {"periods": ema_periods or [9, 20, 50]},
-                "dxy_correlation": {"window": dxy_window},
+                "dxy_correlation": {"window": dxy_window_15m},
             },
         )
 
@@ -239,7 +289,7 @@ def compute_htf_features_vectorized(
         dxy_1h_work["ts_event"] = dxy_1h_work.index
         dxy_1h_work = dxy_1h_work.reset_index(drop=True)
 
-        # Compute features
+        # Compute features (use scaled-down dxy_window for 1h)
         features_1h_df = aggregate_features(
             gc_1h_work,
             dxy_1h_work,
@@ -248,7 +298,7 @@ def compute_htf_features_vectorized(
                 "vwap": {"session_reset": True},
                 "rsi": {"period": rsi_period},
                 "ema": {"periods": ema_periods or [9, 20, 50]},
-                "dxy_correlation": {"window": dxy_window},
+                "dxy_correlation": {"window": dxy_window_1h},
             },
         )
 
@@ -258,6 +308,13 @@ def compute_htf_features_vectorized(
         )
         features_1h_df["structure_label"] = structure_labels_1h
         features_1h_df["structure_type"] = structure_labels_1h
+        
+        # Log structure label distribution
+        valid_labels = structure_labels_1h.dropna()
+        logger.info(
+            f"1H structure labels: {len(valid_labels)} valid out of {len(structure_labels_1h)}, "
+            f"distribution: {valid_labels.value_counts().to_dict() if len(valid_labels) > 0 else 'none'}"
+        )
 
         # Add VWAP deviation
         if "vwap" in features_1h_df.columns:

@@ -23,6 +23,10 @@ from backtester.entry_model import EntryExecution
 
 logger = get_logger(__name__)
 
+# Minimum risk threshold in ticks to prevent micro-chop entries
+# Trades with risk below this threshold are rejected to avoid noise
+MIN_RISK_TICKS = 10
+
 
 @dataclass(frozen=True)
 class Trade:
@@ -280,6 +284,7 @@ def create_trade_from_entry(
     bos_candle: Candle | None,
     risk_config: dict,
     market_context: dict,
+    config: dict | None = None,
 ) -> Trade:
     """Create Trade object from executed entry.
 
@@ -325,6 +330,20 @@ def create_trade_from_entry(
     stop_loss, sl_rationale = calculate_stop_loss(
         entry_execution, direction, confirmation_candle, bos_candle
     )
+
+    # 1.5. Validate minimum risk threshold (prevent micro-chop entries)
+    if config is not None:
+        tick_size = (
+            config.get("assets", {}).get("tick_sizes", {}).get(signal.symbol, 0.1)
+        )
+        risk_distance = abs(entry_execution.entry_price - stop_loss)
+        risk_ticks = risk_distance / tick_size
+
+        if risk_ticks < MIN_RISK_TICKS:
+            raise ValueError(
+                f"Risk below minimum threshold: {risk_ticks:.1f} ticks < {MIN_RISK_TICKS} ticks "
+                f"(risk={risk_distance:.2f} points, tick_size={tick_size})"
+            )
 
     # 2. Determine R-multiple based on setup and seasonality
     month = market_context.get("month", 1)

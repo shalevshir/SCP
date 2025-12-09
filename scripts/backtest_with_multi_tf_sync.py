@@ -21,7 +21,8 @@ from backtester.pipeline import (
     run_backtest_with_entries_multi_tf,
     run_backtest_with_trades_multi_tf,
 )
-from common.logger import get_logger
+from common.config import load_config
+from common.logger import get_logger, setup_logging
 from data_layer.multi_timeframe_sync import MultiTimeframeSyncLayer
 
 logger = get_logger(__name__)
@@ -95,6 +96,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
 def main() -> None:
     """Main entry point."""
+    # Initialize logging first
+    project_root = Path(__file__).parent.parent
+    config = load_config(project_root / "config" / "core.yaml")
+    setup_logging(config.system)
+    
     parser = build_arg_parser()
     args = parser.parse_args()
 

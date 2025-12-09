@@ -1,6 +1,7 @@
 """Tests for edge cases in BacktestReplayLoop, especially around index assignment."""
 
 from datetime import UTC, datetime, timedelta
+from unittest.mock import Mock, patch
 
 import pytest
 from backtester.replay_loop import BacktestReplayLoop
@@ -210,3 +211,144 @@ class TestIndexAssignmentEdgeCases:
             if "Length mismatch" in str(e):
                 pytest.fail(f"Length mismatch not handled: {e}")
             raise
+
+
+class TestHTFBiasCallOrder:
+    """Test that HTF bias computation happens on every bar, even with active trades."""
+
+    def test_htf_bias_called_with_active_trade_present(self):
+        """Test that HTF bias is called even when an active trade exists.
+        
+        Bug: HTF bias computation was happening AFTER the active trade check,
+        which caused early return and skipped HTF data accumulation when trades
+        were active. This contradicts the comment that HTF bias must run on every bar.
+        """
+        import pandas as pd
+        
+        start_time = datetime(2024, 7, 1, 10, 0, tzinfo=UTC)
+        bars = []
+        
+        # Create minimal data
+        for i in range(5):
+            ts = start_time + timedelta(minutes=i)
+            
+            exec_gc = Candle(
+                timestamp=ts,
+                open=2650.0,
+                high=2651.0,
+                low=2649.0,
+                close=2650.5,
+                volume=1000,
+                symbol="GC",
+                timeframe="1m",
+                source="CSV",
+            )
+            
+            exec_dxy = Candle(
+                timestamp=ts,
+                open=103.0,
+                high=103.1,
+                low=102.9,
+                close=103.05,
+                volume=500,
+                symbol="DXY",
+                timeframe="1m",
+                source="CSV",
+            )
+            
+            bars.append(
+                SynchronizedBar(
+                    execution_timestamp=ts,
+                    execution_1m=(exec_gc, exec_dxy),
+                    htf_15m=None,
+                    htf_1h=None,
+                )
+            )
+        
+        multi_tf_data = MultiTimeframeData(
+            execution_timeframe="1m",
+            htf_timeframes=[],
+            synchronized_bars=bars,
+            execution_timestamps=[b.execution_timestamp for b in bars],
+        )
+        
+        market_state = {
+            "buffer_phase": "growth",
+            "tier_active": "EarlyMild",
+            "ceo_directive_active": True,
+            "news_ok": True,
+            "session_ok": True,
+        }
+        
+        risk_config = {
+            "risk_per_trade": 600.0,
+            "buffer_phase": "growth",
+            "max_contracts": 1,
+        }
+        
+        loop = BacktestReplayLoop(
+            multi_tf_data=multi_tf_data,
+            timeframe="1m",
+            market_state=market_state,
+            risk_config=risk_config,
+        )
+        
+        # Track if HTF bias is called
+        htf_bias_called = {"count": 0}
+        
+        original_htf_bias = loop._htf_bias_func
+        def tracked_htf_bias(features, validation_context):
+            htf_bias_called["count"] += 1
+            return original_htf_bias(features, validation_context)
+        
+        loop._htf_bias_func = tracked_htf_bias
+        
+        # Mock _update_active_trades to avoid trade simulation errors
+        # but still allow us to inject an active trade
+        original_update = loop._update_active_trades
+        def mock_update(current_candle, features):
+            # Don't process the mock trade, just skip
+            pass
+        
+        loop._update_active_trades = mock_update
+        
+        # Manually inject an active trade to simulate having an open position
+        mock_trade = Mock()
+        mock_trade.trade_id = "test_trade_001"
+        mock_trade.entry_timestamp = start_time
+        mock_trade.status = "ACTIVE"
+        mock_trade.direction = "LONG"
+        mock_trade.entry_price = 2650.0
+        mock_trade.stop_loss = 2645.0
+        mock_trade.take_profit = 2660.0
+        loop._active_trades["test_trade_001"] = mock_trade
+        
+        # Create mock features and validation context to test _process_candle directly
+        mock_features = pd.Series({
+            "timestamp": start_time + timedelta(minutes=1),
+            "open": 2650.0,
+            "high": 2651.0,
+            "low": 2649.0,
+            "close": 2650.5,
+            "volume": 1000,
+        })
+        
+        mock_validation_context = {
+            "tier": "EarlyMild",
+            "session": "AM",
+        }
+        
+        # Process a candle with an active trade present
+        result = loop._process_candle(
+            mock_features,
+            mock_validation_context,
+            None,  # next_candle
+            start_time + timedelta(minutes=1)
+        )
+        
+        # The key assertion: HTF bias MUST be called even with active trade
+        # Before the fix, this would be 0 because early return happens first
+        assert htf_bias_called["count"] > 0, (
+            "HTF bias must be called on every bar, even when an active trade exists. "
+            "This is required for structure detection warmup."
+        )
