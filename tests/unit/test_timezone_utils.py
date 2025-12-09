@@ -3,9 +3,7 @@
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-import pytest
-
-from feature_engine.timezone_utils import get_vwap_session_id, get_session_id_series
+from feature_engine.timezone_utils import get_session_id_series, get_vwap_session_id
 
 
 class TestVWAPSessionID:
@@ -16,7 +14,7 @@ class TestVWAPSessionID:
         # 08:00 ET on Jan 15 should belong to Jan 14 session
         ts = datetime(2025, 1, 15, 8, 0, tzinfo=ZoneInfo("America/New_York"))
         session_id = get_vwap_session_id(ts)
-        
+
         expected = datetime(2025, 1, 14).date()
         assert session_id == expected
 
@@ -25,7 +23,7 @@ class TestVWAPSessionID:
         # 08:20 ET on Jan 15 should start Jan 15 session
         ts = datetime(2025, 1, 15, 8, 20, 0, tzinfo=ZoneInfo("America/New_York"))
         session_id = get_vwap_session_id(ts)
-        
+
         expected = datetime(2025, 1, 15).date()
         assert session_id == expected
 
@@ -34,7 +32,7 @@ class TestVWAPSessionID:
         # 10:00 ET on Jan 15 should belong to Jan 15 session
         ts = datetime(2025, 1, 15, 10, 0, tzinfo=ZoneInfo("America/New_York"))
         session_id = get_vwap_session_id(ts)
-        
+
         expected = datetime(2025, 1, 15).date()
         assert session_id == expected
 
@@ -43,7 +41,7 @@ class TestVWAPSessionID:
         # 08:19:59 ET on Jan 15 should belong to Jan 14 session
         ts = datetime(2025, 1, 15, 8, 19, 59, tzinfo=ZoneInfo("America/New_York"))
         session_id = get_vwap_session_id(ts)
-        
+
         expected = datetime(2025, 1, 14).date()
         assert session_id == expected
 
@@ -52,7 +50,7 @@ class TestVWAPSessionID:
         # 08:20:01 ET on Jan 15 should start Jan 15 session
         ts = datetime(2025, 1, 15, 8, 20, 1, tzinfo=ZoneInfo("America/New_York"))
         session_id = get_vwap_session_id(ts)
-        
+
         expected = datetime(2025, 1, 15).date()
         assert session_id == expected
 
@@ -61,7 +59,7 @@ class TestVWAPSessionID:
         # 13:20 UTC = 08:20 ET (during EST)
         ts = datetime(2025, 1, 15, 13, 20, 0, tzinfo=ZoneInfo("UTC"))
         session_id = get_vwap_session_id(ts)
-        
+
         # Should start Jan 15 session
         expected = datetime(2025, 1, 15).date()
         assert session_id == expected
@@ -71,7 +69,7 @@ class TestVWAPSessionID:
         # 13:00 UTC = 08:00 ET (during EST)
         ts = datetime(2025, 1, 15, 13, 0, 0, tzinfo=ZoneInfo("UTC"))
         session_id = get_vwap_session_id(ts)
-        
+
         # Should belong to Jan 14 session
         expected = datetime(2025, 1, 14).date()
         assert session_id == expected
@@ -81,7 +79,7 @@ class TestVWAPSessionID:
         # 13:20 naive should be treated as UTC → 08:20 ET during EST
         ts = datetime(2025, 1, 15, 13, 20, 0)
         session_id = get_vwap_session_id(ts)
-        
+
         # Should start Jan 15 session
         expected = datetime(2025, 1, 15).date()
         assert session_id == expected
@@ -92,7 +90,7 @@ class TestDSTTransitions:
 
     def test_est_to_edt_spring_forward(self) -> None:
         """Test DST spring forward (EST → EDT).
-        
+
         In 2025, DST starts on March 9 at 02:00 EST → 03:00 EDT.
         08:20 ET should work correctly on both sides of transition.
         """
@@ -101,7 +99,7 @@ class TestDSTTransitions:
         before_dst = datetime(2025, 3, 8, 13, 20, 0, tzinfo=ZoneInfo("UTC"))
         session_id_before = get_vwap_session_id(before_dst)
         assert session_id_before == datetime(2025, 3, 8).date()
-        
+
         # Day after DST (March 10, 2025) - EDT (UTC-4)
         # 12:20 UTC = 08:20 EDT
         after_dst = datetime(2025, 3, 10, 12, 20, 0, tzinfo=ZoneInfo("UTC"))
@@ -110,7 +108,7 @@ class TestDSTTransitions:
 
     def test_edt_to_est_fall_back(self) -> None:
         """Test DST fall back (EDT → EST).
-        
+
         In 2025, DST ends on November 2 at 02:00 EDT → 01:00 EST.
         08:20 ET should work correctly on both sides of transition.
         """
@@ -119,7 +117,7 @@ class TestDSTTransitions:
         before_dst = datetime(2025, 11, 1, 12, 20, 0, tzinfo=ZoneInfo("UTC"))
         session_id_before = get_vwap_session_id(before_dst)
         assert session_id_before == datetime(2025, 11, 1).date()
-        
+
         # Day after DST ends (November 3, 2025) - EST (UTC-5)
         # 13:20 UTC = 08:20 EST
         after_dst = datetime(2025, 11, 3, 13, 20, 0, tzinfo=ZoneInfo("UTC"))
@@ -146,9 +144,9 @@ class TestSessionIDSeries:
             datetime(2025, 1, 15, 15, 0, tzinfo=ZoneInfo("UTC")),  # 10:00 ET
             datetime(2025, 1, 15, 16, 0, tzinfo=ZoneInfo("UTC")),  # 11:00 ET
         ]
-        
+
         session_ids = get_session_id_series(timestamps)
-        
+
         # All should belong to Jan 15 session
         expected = datetime(2025, 1, 15).date()
         assert all(sid == expected for sid in session_ids)
@@ -156,18 +154,26 @@ class TestSessionIDSeries:
     def test_series_crossing_reset_boundary(self) -> None:
         """Test series crossing 08:20 ET reset boundary."""
         timestamps = [
-            datetime(2025, 1, 15, 13, 0, tzinfo=ZoneInfo("UTC")),   # 08:00 ET - previous session
-            datetime(2025, 1, 15, 13, 10, tzinfo=ZoneInfo("UTC")),  # 08:10 ET - previous session
-            datetime(2025, 1, 15, 13, 20, tzinfo=ZoneInfo("UTC")),  # 08:20 ET - NEW session
-            datetime(2025, 1, 15, 13, 30, tzinfo=ZoneInfo("UTC")),  # 08:30 ET - new session
+            datetime(
+                2025, 1, 15, 13, 0, tzinfo=ZoneInfo("UTC")
+            ),  # 08:00 ET - previous session
+            datetime(
+                2025, 1, 15, 13, 10, tzinfo=ZoneInfo("UTC")
+            ),  # 08:10 ET - previous session
+            datetime(
+                2025, 1, 15, 13, 20, tzinfo=ZoneInfo("UTC")
+            ),  # 08:20 ET - NEW session
+            datetime(
+                2025, 1, 15, 13, 30, tzinfo=ZoneInfo("UTC")
+            ),  # 08:30 ET - new session
         ]
-        
+
         session_ids = get_session_id_series(timestamps)
-        
+
         # First two should be Jan 14 session
         assert session_ids[0] == datetime(2025, 1, 14).date()
         assert session_ids[1] == datetime(2025, 1, 14).date()
-        
+
         # Last two should be Jan 15 session
         assert session_ids[2] == datetime(2025, 1, 15).date()
         assert session_ids[3] == datetime(2025, 1, 15).date()
@@ -179,9 +185,9 @@ class TestSessionIDSeries:
             datetime(2025, 1, 16, 14, 0, tzinfo=ZoneInfo("UTC")),  # Jan 16 session
             datetime(2025, 1, 17, 14, 0, tzinfo=ZoneInfo("UTC")),  # Jan 17 session
         ]
-        
+
         session_ids = get_session_id_series(timestamps)
-        
+
         assert session_ids[0] == datetime(2025, 1, 15).date()
         assert session_ids[1] == datetime(2025, 1, 16).date()
         assert session_ids[2] == datetime(2025, 1, 17).date()
@@ -195,7 +201,7 @@ class TestEdgeCases:
         # 00:00 ET is before 08:20 ET, so belongs to previous day's session
         ts = datetime(2025, 1, 15, 0, 0, 0, tzinfo=ZoneInfo("America/New_York"))
         session_id = get_vwap_session_id(ts)
-        
+
         expected = datetime(2025, 1, 14).date()
         assert session_id == expected
 
@@ -204,7 +210,7 @@ class TestEdgeCases:
         # 23:00 ET on Jan 15 is after 08:20 ET, so belongs to Jan 15 session
         ts = datetime(2025, 1, 15, 23, 0, 0, tzinfo=ZoneInfo("America/New_York"))
         session_id = get_vwap_session_id(ts)
-        
+
         expected = datetime(2025, 1, 15).date()
         assert session_id == expected
 
@@ -213,7 +219,7 @@ class TestEdgeCases:
         # 02:00 ET on Jan 15 is before 08:20 ET, so belongs to Jan 14 session
         ts = datetime(2025, 1, 15, 2, 0, 0, tzinfo=ZoneInfo("America/New_York"))
         session_id = get_vwap_session_id(ts)
-        
+
         expected = datetime(2025, 1, 14).date()
         assert session_id == expected
 
@@ -222,7 +228,7 @@ class TestEdgeCases:
         # Saturday 10:00 ET should still compute session ID correctly
         saturday = datetime(2025, 1, 18, 10, 0, 0, tzinfo=ZoneInfo("America/New_York"))
         session_id = get_vwap_session_id(saturday)
-        
+
         # Should belong to Jan 18 session (even though markets are closed)
         expected = datetime(2025, 1, 18).date()
         assert session_id == expected
@@ -232,7 +238,6 @@ class TestEdgeCases:
         # 2024 is a leap year
         ts = datetime(2024, 2, 29, 10, 0, 0, tzinfo=ZoneInfo("America/New_York"))
         session_id = get_vwap_session_id(ts)
-        
+
         expected = datetime(2024, 2, 29).date()
         assert session_id == expected
-

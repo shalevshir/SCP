@@ -1,6 +1,5 @@
 """Shared pytest fixtures and configuration for all tests."""
 
-import tempfile
 from pathlib import Path
 from typing import Any
 

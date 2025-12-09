@@ -21,7 +21,7 @@ def create_htf_bias_from_context(context: dict) -> HTFBias:
     bias = context.get("htf_bias", "neutral")
     direction = context.get("htf_direction", "neutral")
     score = context.get("htf_score", 6.5)  # Use 6.5 for medium confidence, no HTF bonus
-    
+
     # Determine confidence from score
     if score >= 8.0:
         confidence = "high"
@@ -29,7 +29,7 @@ def create_htf_bias_from_context(context: dict) -> HTFBias:
         confidence = "medium"
     else:
         confidence = "low"
-    
+
     return HTFBias(
         bias=bias,
         direction=direction,
@@ -44,18 +44,20 @@ class TestScoreSignal:
 
     def test_score_signal_high_quality_long(self) -> None:
         """Test scoring a high-quality long setup (A+ confidence)."""
-        features = pd.Series({
-            "timestamp": datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
-            "symbol": "GC",
-            "timeframe": "1m",
-            "close": 2650.0,
-            "vwap": 2645.0,
-            "rsi": 55.0,
-            "ema_9": 2648.0,
-            "ema_20": 2645.0,
-            "ema_50": 2640.0,
-            "dxy_corr": -0.75,
-        })
+        features = pd.Series(
+            {
+                "timestamp": datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
+                "symbol": "GC",
+                "timeframe": "1m",
+                "close": 2650.0,
+                "vwap": 2645.0,
+                "rsi": 55.0,
+                "ema_9": 2648.0,
+                "ema_20": 2645.0,
+                "ema_50": 2640.0,
+                "dxy_corr": -0.75,
+            }
+        )
 
         context = {
             "htf_bias": "bullish",
@@ -75,18 +77,20 @@ class TestScoreSignal:
 
     def test_score_signal_high_quality_short(self) -> None:
         """Test scoring a high-quality short setup (A+ confidence)."""
-        features = pd.Series({
-            "timestamp": datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
-            "symbol": "GC",
-            "timeframe": "1m",
-            "close": 2640.0,
-            "vwap": 2645.0,
-            "rsi": 45.0,
-            "ema_9": 2642.0,
-            "ema_20": 2645.0,
-            "ema_50": 2650.0,
-            "dxy_corr": -0.75,
-        })
+        features = pd.Series(
+            {
+                "timestamp": datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
+                "symbol": "GC",
+                "timeframe": "1m",
+                "close": 2640.0,
+                "vwap": 2645.0,
+                "rsi": 45.0,
+                "ema_9": 2642.0,
+                "ema_20": 2645.0,
+                "ema_50": 2650.0,
+                "dxy_corr": -0.75,
+            }
+        )
 
         context = {
             "htf_bias": "bearish",
@@ -104,18 +108,20 @@ class TestScoreSignal:
 
     def test_score_signal_watchlist_quality(self) -> None:
         """Test scoring a watchlist setup (6-7 score)."""
-        features = pd.Series({
-            "timestamp": datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
-            "symbol": "GC",
-            "timeframe": "1m",
-            "close": 2650.0,
-            "vwap": 2645.0,  # Above VWAP - 2 pts
-            "rsi": 52.0,  # Mid-reset - 2 pts
-            "ema_9": 2649.0,
-            "ema_20": 2647.0,  # Partial alignment - 1 pt
-            "ema_50": 2652.0,
-            "dxy_corr": -0.55,  # Weak correlation - 0 pts
-        })
+        features = pd.Series(
+            {
+                "timestamp": datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
+                "symbol": "GC",
+                "timeframe": "1m",
+                "close": 2650.0,
+                "vwap": 2645.0,  # Above VWAP - 2 pts
+                "rsi": 52.0,  # Mid-reset - 2 pts
+                "ema_9": 2649.0,
+                "ema_20": 2647.0,  # Partial alignment - 1 pt
+                "ema_50": 2652.0,
+                "dxy_corr": -0.55,  # Weak correlation - 0 pts
+            }
+        )
 
         context = {
             "htf_bias": "bullish",
@@ -129,22 +135,27 @@ class TestScoreSignal:
 
         # Should get: structure=2, vwap=2, rsi=2, ema=1 = 7 pts base + 0.5 HTF medium alignment + 0.5 DXY alignment = 8.0
         assert 6.0 <= signal.score <= 8.5
-        assert signal.confidence in ("Watch", "A+")  # Could be Watch or A+ depending on HTF adjustments
+        assert signal.confidence in (
+            "Watch",
+            "A+",
+        )  # Could be Watch or A+ depending on HTF adjustments
 
     def test_score_signal_reject_quality(self) -> None:
         """Test scoring a rejected setup (< 6 score)."""
-        features = pd.Series({
-            "timestamp": datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
-            "symbol": "GC",
-            "timeframe": "1m",
-            "close": 2650.0,
-            "vwap": 2640.0,
-            "rsi": 75.0,  # Overbought in wrong direction
-            "ema_9": 2645.0,
-            "ema_20": 2642.0,
-            "ema_50": 2640.0,
-            "dxy_corr": -0.3,  # Poor correlation
-        })
+        features = pd.Series(
+            {
+                "timestamp": datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
+                "symbol": "GC",
+                "timeframe": "1m",
+                "close": 2650.0,
+                "vwap": 2640.0,
+                "rsi": 75.0,  # Overbought in wrong direction
+                "ema_9": 2645.0,
+                "ema_20": 2642.0,
+                "ema_50": 2640.0,
+                "dxy_corr": -0.3,  # Poor correlation
+            }
+        )
 
         context = {
             "htf_bias": "bearish",  # Mismatch
@@ -161,18 +172,20 @@ class TestScoreSignal:
 
     def test_score_signal_includes_rationale(self) -> None:
         """Test that signal includes human-readable rationale."""
-        features = pd.Series({
-            "timestamp": datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
-            "symbol": "GC",
-            "timeframe": "1m",
-            "close": 2650.0,
-            "vwap": 2645.0,
-            "rsi": 55.0,
-            "ema_9": 2648.0,
-            "ema_20": 2645.0,
-            "ema_50": 2640.0,
-            "dxy_corr": -0.75,
-        })
+        features = pd.Series(
+            {
+                "timestamp": datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
+                "symbol": "GC",
+                "timeframe": "1m",
+                "close": 2650.0,
+                "vwap": 2645.0,
+                "rsi": 55.0,
+                "ema_9": 2648.0,
+                "ema_20": 2645.0,
+                "ema_50": 2640.0,
+                "dxy_corr": -0.75,
+            }
+        )
 
         context = {
             "htf_bias": "bullish",
@@ -190,18 +203,20 @@ class TestScoreSignal:
 
     def test_score_signal_includes_factor_breakdown(self) -> None:
         """Test that signal includes detailed factor scoring."""
-        features = pd.Series({
-            "timestamp": datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
-            "symbol": "GC",
-            "timeframe": "1m",
-            "close": 2650.0,
-            "vwap": 2645.0,
-            "rsi": 55.0,
-            "ema_9": 2648.0,
-            "ema_20": 2645.0,
-            "ema_50": 2640.0,
-            "dxy_corr": -0.75,
-        })
+        features = pd.Series(
+            {
+                "timestamp": datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
+                "symbol": "GC",
+                "timeframe": "1m",
+                "close": 2650.0,
+                "vwap": 2645.0,
+                "rsi": 55.0,
+                "ema_9": 2648.0,
+                "ema_20": 2645.0,
+                "ema_50": 2640.0,
+                "dxy_corr": -0.75,
+            }
+        )
 
         context = {
             "htf_bias": "bullish",
@@ -225,12 +240,14 @@ class TestDetermineSetupType:
 
     def test_determine_vwap_reclaim_long(self) -> None:
         """Test identifying VWAP_RECLAIM setup for long."""
-        features = pd.Series({
-            "close": 2650.0,
-            "vwap": 2645.0,
-            "rsi": 55.0,
-            "dxy_corr": -0.75,
-        })
+        features = pd.Series(
+            {
+                "close": 2650.0,
+                "vwap": 2645.0,
+                "rsi": 55.0,
+                "dxy_corr": -0.75,
+            }
+        )
 
         context = {"htf_direction": "long"}
 
@@ -240,12 +257,14 @@ class TestDetermineSetupType:
 
     def test_determine_vwap_reclaim_short(self) -> None:
         """Test identifying VWAP_RECLAIM setup for short."""
-        features = pd.Series({
-            "close": 2640.0,
-            "vwap": 2645.0,
-            "rsi": 45.0,
-            "dxy_corr": -0.75,
-        })
+        features = pd.Series(
+            {
+                "close": 2640.0,
+                "vwap": 2645.0,
+                "rsi": 45.0,
+                "dxy_corr": -0.75,
+            }
+        )
 
         context = {"htf_direction": "short"}
 
@@ -255,12 +274,14 @@ class TestDetermineSetupType:
 
     def test_determine_vwap_fade_long(self) -> None:
         """Test identifying VWAP_FADE setup."""
-        features = pd.Series({
-            "close": 2600.0,
-            "vwap": 2645.0,
-            "rsi": 28.0,  # Oversold
-            "dxy_corr": -0.75,
-        })
+        features = pd.Series(
+            {
+                "close": 2600.0,
+                "vwap": 2645.0,
+                "rsi": 28.0,  # Oversold
+                "dxy_corr": -0.75,
+            }
+        )
 
         context = {"htf_direction": "long"}
 
@@ -270,12 +291,14 @@ class TestDetermineSetupType:
 
     def test_determine_dxy_continuation(self) -> None:
         """Test identifying DXY_CONTINUATION setup."""
-        features = pd.Series({
-            "close": 2650.0,
-            "vwap": 2648.0,
-            "rsi": 55.0,
-            "dxy_corr": -0.85,  # Strong correlation
-        })
+        features = pd.Series(
+            {
+                "close": 2650.0,
+                "vwap": 2648.0,
+                "rsi": 55.0,
+                "dxy_corr": -0.85,  # Strong correlation
+            }
+        )
 
         context = {"htf_direction": "long"}
 
@@ -339,18 +362,20 @@ class TestScoringScenariosFromSpec:
 
     def test_perfect_vwap_reclaim_setup(self) -> None:
         """Test perfect VWAP reclaim hitting 10/10."""
-        features = pd.Series({
-            "timestamp": datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
-            "symbol": "GC",
-            "timeframe": "1m",
-            "close": 2650.0,
-            "vwap": 2645.0,
-            "rsi": 55.0,
-            "ema_9": 2648.0,
-            "ema_20": 2645.0,
-            "ema_50": 2640.0,
-            "dxy_corr": -0.75,
-        })
+        features = pd.Series(
+            {
+                "timestamp": datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
+                "symbol": "GC",
+                "timeframe": "1m",
+                "close": 2650.0,
+                "vwap": 2645.0,
+                "rsi": 55.0,
+                "ema_9": 2648.0,
+                "ema_20": 2645.0,
+                "ema_50": 2640.0,
+                "dxy_corr": -0.75,
+            }
+        )
 
         context = {
             "htf_bias": "bullish",
@@ -370,18 +395,20 @@ class TestScoringScenariosFromSpec:
 
     def test_minimum_a_plus_continuation(self) -> None:
         """Test minimum viable A+ continuation setup (exactly 8/10)."""
-        features = pd.Series({
-            "timestamp": datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
-            "symbol": "GC",
-            "timeframe": "1m",
-            "close": 2650.0,
-            "vwap": 2645.0,
-            "rsi": 50.0,
-            "ema_9": 2648.0,
-            "ema_20": 2645.0,
-            "ema_50": 2640.0,
-            "dxy_corr": -0.65,
-        })
+        features = pd.Series(
+            {
+                "timestamp": datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
+                "symbol": "GC",
+                "timeframe": "1m",
+                "close": 2650.0,
+                "vwap": 2645.0,
+                "rsi": 50.0,
+                "ema_9": 2648.0,
+                "ema_20": 2645.0,
+                "ema_50": 2640.0,
+                "dxy_corr": -0.65,
+            }
+        )
 
         context = {
             "htf_bias": "bullish",
@@ -399,18 +426,20 @@ class TestScoringScenariosFromSpec:
 
     def test_htf_bias_mismatch_reduces_score(self) -> None:
         """Test that HTF bias mismatch reduces score significantly."""
-        features = pd.Series({
-            "timestamp": datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
-            "symbol": "GC",
-            "timeframe": "1m",
-            "close": 2650.0,
-            "vwap": 2645.0,
-            "rsi": 55.0,
-            "ema_9": 2648.0,
-            "ema_20": 2645.0,
-            "ema_50": 2640.0,
-            "dxy_corr": -0.75,
-        })
+        features = pd.Series(
+            {
+                "timestamp": datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
+                "symbol": "GC",
+                "timeframe": "1m",
+                "close": 2650.0,
+                "vwap": 2645.0,
+                "rsi": 55.0,
+                "ema_9": 2648.0,
+                "ema_20": 2645.0,
+                "ema_50": 2640.0,
+                "dxy_corr": -0.75,
+            }
+        )
 
         context = {
             "htf_bias": "bearish",  # Mismatch with bullish indicators
@@ -464,18 +493,20 @@ class TestScoringScenariosFromSpec:
 
     def test_yaml_weight_modification_impact(self) -> None:
         """Test that modifying YAML weights changes signal scores appropriately."""
-        features = pd.Series({
-            "timestamp": datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
-            "symbol": "GC",
-            "timeframe": "1m",
-            "close": 2650.0,
-            "vwap": 2645.0,
-            "rsi": 55.0,
-            "ema_9": 2648.0,
-            "ema_20": 2645.0,
-            "ema_50": 2640.0,
-            "dxy_corr": -0.75,
-        })
+        features = pd.Series(
+            {
+                "timestamp": datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
+                "symbol": "GC",
+                "timeframe": "1m",
+                "close": 2650.0,
+                "vwap": 2645.0,
+                "rsi": 55.0,
+                "ema_9": 2648.0,
+                "ema_20": 2645.0,
+                "ema_50": 2640.0,
+                "dxy_corr": -0.75,
+            }
+        )
 
         context = {
             "htf_bias": "bullish",
@@ -490,11 +521,13 @@ class TestScoringScenariosFromSpec:
         baseline_dxy_factor = signal_baseline.factors.get("dxy_corr", 0)
 
         # Verify the DXY factor is present and contributing
-        assert baseline_dxy_factor == 1.5  # Updated weight from config (reduced to make room for new factors)
+        assert (
+            baseline_dxy_factor == 1.0
+        )  # Updated weight from config (reduced to keep total at 10.0)
 
         # The score should include this factor
         assert "dxy_corr" in signal_baseline.factors
-        
+
         # Note: To truly test dynamic reweighting, we would need to modify
         # the config and reload, which is tested in the config_loader tests.
         # Here we verify that the factor weights from config are applied.
@@ -510,7 +543,7 @@ class TestCalculateFVGAlignment:
         from rule_engine.scoring import calculate_fvg_alignment
 
         features = pd.Series({"close": 2650.0, "vwap": 2645.0})
-        
+
         # Positive FVG alignment score
         htf_bias = HTFBias(
             bias="bullish",
@@ -520,10 +553,10 @@ class TestCalculateFVGAlignment:
             fvg_alignment_score=1.5,  # Positive alignment
             dxy_alignment=True,
         )
-        
+
         max_points = 0.5
         score = calculate_fvg_alignment(features, htf_bias, max_points)
-        
+
         # 1.5 / 2.0 = 0.75, * 0.5 = 0.375
         assert score > 0.0
         assert score <= max_points
@@ -533,7 +566,7 @@ class TestCalculateFVGAlignment:
         from rule_engine.scoring import calculate_fvg_alignment
 
         features = pd.Series({"close": 2650.0, "vwap": 2645.0})
-        
+
         htf_bias = HTFBias(
             bias="bullish",
             direction="long",
@@ -542,10 +575,10 @@ class TestCalculateFVGAlignment:
             fvg_alignment_score=0.0,  # No FVG alignment
             dxy_alignment=True,
         )
-        
+
         max_points = 0.5
         score = calculate_fvg_alignment(features, htf_bias, max_points)
-        
+
         assert score == 0.0
 
     def test_calculate_fvg_alignment_negative_becomes_zero(self) -> None:
@@ -553,7 +586,7 @@ class TestCalculateFVGAlignment:
         from rule_engine.scoring import calculate_fvg_alignment
 
         features = pd.Series({"close": 2650.0, "vwap": 2645.0})
-        
+
         htf_bias = HTFBias(
             bias="bullish",
             direction="long",
@@ -562,10 +595,10 @@ class TestCalculateFVGAlignment:
             fvg_alignment_score=-1.0,  # Negative alignment (opposing FVGs)
             dxy_alignment=True,
         )
-        
+
         max_points = 0.5
         score = calculate_fvg_alignment(features, htf_bias, max_points)
-        
+
         # Negative FVG scores should be clamped to 0
         assert score == 0.0
 
@@ -574,7 +607,7 @@ class TestCalculateFVGAlignment:
         from rule_engine.scoring import calculate_fvg_alignment
 
         features = pd.Series({"close": 2650.0, "vwap": 2645.0})
-        
+
         htf_bias = HTFBias(
             bias="bullish",
             direction="long",
@@ -583,10 +616,10 @@ class TestCalculateFVGAlignment:
             fvg_alignment_score=3.0,  # Exceeds expected range of -2 to +2
             dxy_alignment=True,
         )
-        
+
         max_points = 0.5
         score = calculate_fvg_alignment(features, htf_bias, max_points)
-        
+
         # Should be capped at max_points even if normalized value exceeds it
         # 3.0 / 2.0 = 1.5, * 0.5 = 0.75, but should be capped at 0.5
         assert score == max_points
@@ -600,13 +633,15 @@ class TestCalculateLiquiditySweep:
         """Test bullish sweep with long signal awards points."""
         from rule_engine.scoring import calculate_liquidity_sweep
 
-        features = pd.Series({
-            "close": 2650.0,
-            "vwap": 2645.0,
-            "ema_9": 2648.0,
-            "ema_20": 2645.0,
-        })
-        
+        features = pd.Series(
+            {
+                "close": 2650.0,
+                "vwap": 2645.0,
+                "ema_9": 2648.0,
+                "ema_20": 2645.0,
+            }
+        )
+
         htf_bias = HTFBias(
             bias="bullish",
             direction="long",
@@ -616,10 +651,10 @@ class TestCalculateLiquiditySweep:
             liquidity_sweep_type="bullish",
             dxy_alignment=True,
         )
-        
+
         max_points = 0.5
         score = calculate_liquidity_sweep(features, htf_bias, max_points)
-        
+
         # Aligned sweep should award full points
         assert score == max_points
 
@@ -627,13 +662,15 @@ class TestCalculateLiquiditySweep:
         """Test bearish sweep with short signal awards points."""
         from rule_engine.scoring import calculate_liquidity_sweep
 
-        features = pd.Series({
-            "close": 2640.0,
-            "vwap": 2645.0,
-            "ema_9": 2642.0,
-            "ema_20": 2645.0,
-        })
-        
+        features = pd.Series(
+            {
+                "close": 2640.0,
+                "vwap": 2645.0,
+                "ema_9": 2642.0,
+                "ema_20": 2645.0,
+            }
+        )
+
         htf_bias = HTFBias(
             bias="bearish",
             direction="short",
@@ -643,10 +680,10 @@ class TestCalculateLiquiditySweep:
             liquidity_sweep_type="bearish",
             dxy_alignment=True,
         )
-        
+
         max_points = 0.5
         score = calculate_liquidity_sweep(features, htf_bias, max_points)
-        
+
         # Aligned sweep should award full points
         assert score == max_points
 
@@ -654,13 +691,15 @@ class TestCalculateLiquiditySweep:
         """Test opposing sweep gives penalty."""
         from rule_engine.scoring import calculate_liquidity_sweep
 
-        features = pd.Series({
-            "close": 2650.0,
-            "vwap": 2645.0,
-            "ema_9": 2648.0,
-            "ema_20": 2645.0,
-        })
-        
+        features = pd.Series(
+            {
+                "close": 2650.0,
+                "vwap": 2645.0,
+                "ema_9": 2648.0,
+                "ema_20": 2645.0,
+            }
+        )
+
         htf_bias = HTFBias(
             bias="bullish",
             direction="long",
@@ -670,10 +709,10 @@ class TestCalculateLiquiditySweep:
             liquidity_sweep_type="bearish",  # Opposing sweep
             dxy_alignment=True,
         )
-        
+
         max_points = 0.5
         score = calculate_liquidity_sweep(features, htf_bias, max_points)
-        
+
         # Opposing sweep should give penalty
         assert score < 0.0
         assert score == -max_points / 2
@@ -682,11 +721,13 @@ class TestCalculateLiquiditySweep:
         """Test no sweep detected returns 0."""
         from rule_engine.scoring import calculate_liquidity_sweep
 
-        features = pd.Series({
-            "close": 2650.0,
-            "vwap": 2645.0,
-        })
-        
+        features = pd.Series(
+            {
+                "close": 2650.0,
+                "vwap": 2645.0,
+            }
+        )
+
         htf_bias = HTFBias(
             bias="bullish",
             direction="long",
@@ -695,10 +736,10 @@ class TestCalculateLiquiditySweep:
             liquidity_sweep_detected=False,
             dxy_alignment=True,
         )
-        
+
         max_points = 0.5
         score = calculate_liquidity_sweep(features, htf_bias, max_points)
-        
+
         assert score == 0.0
 
     def test_calculate_liquidity_sweep_neutral_direction(self) -> None:
@@ -706,13 +747,15 @@ class TestCalculateLiquiditySweep:
         from rule_engine.scoring import calculate_liquidity_sweep
 
         # Features that produce neutral direction (equal bullish/bearish signals)
-        features = pd.Series({
-            "close": 2650.0,
-            "vwap": 2650.0,  # Equal (no clear direction)
-            "ema_9": 2650.0,
-            "ema_20": 2650.0,  # Equal (no clear direction)
-        })
-        
+        features = pd.Series(
+            {
+                "close": 2650.0,
+                "vwap": 2650.0,  # Equal (no clear direction)
+                "ema_9": 2650.0,
+                "ema_20": 2650.0,  # Equal (no clear direction)
+            }
+        )
+
         htf_bias = HTFBias(
             bias="bullish",
             direction="long",
@@ -722,10 +765,10 @@ class TestCalculateLiquiditySweep:
             liquidity_sweep_type="bullish",
             dxy_alignment=True,
         )
-        
+
         max_points = 0.5
         score = calculate_liquidity_sweep(features, htf_bias, max_points)
-        
+
         # Neutral direction means we can't determine alignment, should return 0.0
         assert score == 0.0
 
@@ -733,13 +776,15 @@ class TestCalculateLiquiditySweep:
         """Test sweep detected but type is None returns 0 (ambiguous, not penalty)."""
         from rule_engine.scoring import calculate_liquidity_sweep
 
-        features = pd.Series({
-            "close": 2650.0,
-            "vwap": 2645.0,
-            "ema_9": 2648.0,
-            "ema_20": 2645.0,
-        })
-        
+        features = pd.Series(
+            {
+                "close": 2650.0,
+                "vwap": 2645.0,
+                "ema_9": 2648.0,
+                "ema_20": 2645.0,
+            }
+        )
+
         htf_bias = HTFBias(
             bias="bullish",
             direction="long",
@@ -749,10 +794,10 @@ class TestCalculateLiquiditySweep:
             liquidity_sweep_type=None,  # Type not determined
             dxy_alignment=True,
         )
-        
+
         max_points = 0.5
         score = calculate_liquidity_sweep(features, htf_bias, max_points)
-        
+
         # None type means we can't determine alignment, should return 0.0
         assert score == 0.0
 
@@ -764,13 +809,15 @@ class TestEnhancedStructureAlignment:
         """Test BOS detection adds bonus to structure score."""
         from rule_engine.scoring import calculate_structure_alignment
 
-        features = pd.Series({
-            "close": 2650.0,
-            "vwap": 2645.0,
-            "ema_9": 2648.0,
-            "ema_20": 2645.0,
-        })
-        
+        features = pd.Series(
+            {
+                "close": 2650.0,
+                "vwap": 2645.0,
+                "ema_9": 2648.0,
+                "ema_20": 2645.0,
+            }
+        )
+
         htf_bias = HTFBias(
             bias="bullish",
             direction="long",
@@ -780,10 +827,10 @@ class TestEnhancedStructureAlignment:
             choch_detected=False,
             dxy_alignment=True,
         )
-        
+
         max_points = 2.5
         score = calculate_structure_alignment(features, htf_bias, max_points)
-        
+
         # Should get base (70%) + BOS bonus (15%) = 85% of max
         expected = max_points * 0.85
         assert abs(score - expected) < 0.01
@@ -792,13 +839,15 @@ class TestEnhancedStructureAlignment:
         """Test CHoCH detection does NOT add bonus to structure score (indicates reversal)."""
         from rule_engine.scoring import calculate_structure_alignment
 
-        features = pd.Series({
-            "close": 2650.0,
-            "vwap": 2645.0,
-            "ema_9": 2648.0,
-            "ema_20": 2645.0,
-        })
-        
+        features = pd.Series(
+            {
+                "close": 2650.0,
+                "vwap": 2645.0,
+                "ema_9": 2648.0,
+                "ema_20": 2645.0,
+            }
+        )
+
         htf_bias = HTFBias(
             bias="bullish",
             direction="long",
@@ -808,10 +857,10 @@ class TestEnhancedStructureAlignment:
             choch_detected=True,
             dxy_alignment=True,
         )
-        
+
         max_points = 2.5
         score = calculate_structure_alignment(features, htf_bias, max_points)
-        
+
         # Should get only base (70%) - CHoCH is NOT rewarded (penalized in adjust_score_with_htf)
         expected = max_points * 0.7
         assert abs(score - expected) < 0.01
@@ -820,13 +869,15 @@ class TestEnhancedStructureAlignment:
         """Test BOS adds bonus but CHoCH does NOT (CHoCH indicates reversal)."""
         from rule_engine.scoring import calculate_structure_alignment
 
-        features = pd.Series({
-            "close": 2650.0,
-            "vwap": 2645.0,
-            "ema_9": 2648.0,
-            "ema_20": 2645.0,
-        })
-        
+        features = pd.Series(
+            {
+                "close": 2650.0,
+                "vwap": 2645.0,
+                "ema_9": 2648.0,
+                "ema_20": 2645.0,
+            }
+        )
+
         htf_bias = HTFBias(
             bias="bullish",
             direction="long",
@@ -836,10 +887,10 @@ class TestEnhancedStructureAlignment:
             choch_detected=True,
             dxy_alignment=True,
         )
-        
+
         max_points = 2.5
         score = calculate_structure_alignment(features, htf_bias, max_points)
-        
+
         # Should get base (70%) + BOS (15%) = 85% of max
         # CHoCH is NOT rewarded here (penalized in adjust_score_with_htf instead)
         expected = max_points * 0.85
@@ -851,19 +902,21 @@ class TestFullConfluenceScoring:
 
     def test_full_confluence_all_aligned(self) -> None:
         """Test all confluence factors aligned produces high score (≥8)."""
-        features = pd.Series({
-            "timestamp": datetime(2025, 11, 15, 10, 30, tzinfo=UTC),
-            "symbol": "GC",
-            "timeframe": "1m",
-            "close": 2650.0,
-            "vwap": 2645.0,  # Above VWAP
-            "rsi": 55.0,     # Mid-reset
-            "ema_9": 2648.0,
-            "ema_20": 2645.0,
-            "ema_50": 2640.0,  # Full EMA stack
-            "dxy_corr": -0.75,  # Strong inverse correlation
-        })
-        
+        features = pd.Series(
+            {
+                "timestamp": datetime(2025, 11, 15, 10, 30, tzinfo=UTC),
+                "symbol": "GC",
+                "timeframe": "1m",
+                "close": 2650.0,
+                "vwap": 2645.0,  # Above VWAP
+                "rsi": 55.0,  # Mid-reset
+                "ema_9": 2648.0,
+                "ema_20": 2645.0,
+                "ema_50": 2640.0,  # Full EMA stack
+                "dxy_corr": -0.75,  # Strong inverse correlation
+            }
+        )
+
         # All HTF factors aligned
         htf_bias = HTFBias(
             bias="bullish",
@@ -877,19 +930,19 @@ class TestFullConfluenceScoring:
             liquidity_sweep_type="bullish",
             dxy_alignment=True,
         )
-        
+
         context = {
             "session_ok": True,
             "enforcer_tier": "Early Mild",
         }
-        
+
         signal = score_signal(features, htf_bias, context)
-        
+
         # All factors aligned should produce A+ signal
         assert signal.score >= 8.0
         assert signal.confidence == "A+"
         assert signal.direction == "long"
-        
+
         # Verify key factors contributed
         assert signal.factors.get("structure_alignment", 0) > 0
         assert signal.factors.get("vwap_relation", 0) > 0
@@ -899,19 +952,21 @@ class TestFullConfluenceScoring:
 
     def test_full_confluence_mixed(self) -> None:
         """Test mixed confluence factors produces medium score (6-7.9)."""
-        features = pd.Series({
-            "timestamp": datetime(2025, 11, 15, 10, 30, tzinfo=UTC),
-            "symbol": "GC",
-            "timeframe": "1m",
-            "close": 2650.0,
-            "vwap": 2645.0,  # Above VWAP (positive)
-            "rsi": 52.0,     # Mid-reset (positive)
-            "ema_9": 2649.0,
-            "ema_20": 2647.0,  # Partial EMA alignment
-            "ema_50": 2652.0,
-            "dxy_corr": -0.55,  # Weak correlation (negative)
-        })
-        
+        features = pd.Series(
+            {
+                "timestamp": datetime(2025, 11, 15, 10, 30, tzinfo=UTC),
+                "symbol": "GC",
+                "timeframe": "1m",
+                "close": 2650.0,
+                "vwap": 2645.0,  # Above VWAP (positive)
+                "rsi": 52.0,  # Mid-reset (positive)
+                "ema_9": 2649.0,
+                "ema_20": 2647.0,  # Partial EMA alignment
+                "ema_50": 2652.0,
+                "dxy_corr": -0.55,  # Weak correlation (negative)
+            }
+        )
+
         # Mixed HTF factors
         htf_bias = HTFBias(
             bias="bullish",
@@ -924,33 +979,35 @@ class TestFullConfluenceScoring:
             liquidity_sweep_detected=False,
             dxy_alignment=True,
         )
-        
+
         context = {
             "session_ok": True,
             "enforcer_tier": "Early Mild",
         }
-        
+
         signal = score_signal(features, htf_bias, context)
-        
+
         # Mixed factors should produce Watch or low A+ signal
         assert 6.0 <= signal.score < 9.0
         assert signal.confidence in ("Watch", "A+")
 
     def test_full_confluence_threshold_a_plus(self) -> None:
         """Test score exactly 8.0 gets A+ confidence."""
-        features = pd.Series({
-            "timestamp": datetime(2025, 11, 15, 10, 30, tzinfo=UTC),
-            "symbol": "GC",
-            "timeframe": "1m",
-            "close": 2650.0,
-            "vwap": 2645.0,
-            "rsi": 55.0,
-            "ema_9": 2648.0,
-            "ema_20": 2645.0,
-            "ema_50": 2640.0,
-            "dxy_corr": -0.75,
-        })
-        
+        features = pd.Series(
+            {
+                "timestamp": datetime(2025, 11, 15, 10, 30, tzinfo=UTC),
+                "symbol": "GC",
+                "timeframe": "1m",
+                "close": 2650.0,
+                "vwap": 2645.0,
+                "rsi": 55.0,
+                "ema_9": 2648.0,
+                "ema_20": 2645.0,
+                "ema_50": 2640.0,
+                "dxy_corr": -0.75,
+            }
+        )
+
         htf_bias = HTFBias(
             bias="bullish",
             direction="long",
@@ -961,29 +1018,31 @@ class TestFullConfluenceScoring:
             liquidity_sweep_detected=False,
             dxy_alignment=True,
         )
-        
+
         context = {"session_ok": True, "enforcer_tier": "Early Mild"}
         signal = score_signal(features, htf_bias, context)
-        
+
         # Score at or above 8.0 should be A+
         if signal.score >= 8.0:
             assert signal.confidence == "A+"
 
     def test_full_confluence_threshold_watch(self) -> None:
         """Test score in 6-7.9 range gets Watch confidence."""
-        features = pd.Series({
-            "timestamp": datetime(2025, 11, 15, 10, 30, tzinfo=UTC),
-            "symbol": "GC",
-            "timeframe": "1m",
-            "close": 2650.0,
-            "vwap": 2645.0,
-            "rsi": 52.0,
-            "ema_9": 2649.0,
-            "ema_20": 2647.0,
-            "ema_50": 2652.0,
-            "dxy_corr": -0.55,  # Below threshold
-        })
-        
+        features = pd.Series(
+            {
+                "timestamp": datetime(2025, 11, 15, 10, 30, tzinfo=UTC),
+                "symbol": "GC",
+                "timeframe": "1m",
+                "close": 2650.0,
+                "vwap": 2645.0,
+                "rsi": 52.0,
+                "ema_9": 2649.0,
+                "ema_20": 2647.0,
+                "ema_50": 2652.0,
+                "dxy_corr": -0.55,  # Below threshold
+            }
+        )
+
         htf_bias = HTFBias(
             bias="bullish",
             direction="long",
@@ -994,29 +1053,31 @@ class TestFullConfluenceScoring:
             liquidity_sweep_detected=False,
             dxy_alignment=False,
         )
-        
+
         context = {"session_ok": True, "enforcer_tier": "Early Mild"}
         signal = score_signal(features, htf_bias, context)
-        
+
         # Score in 6-7.9 range should be Watch (unless HTF adjustments boost it)
         if 6.0 <= signal.score < 8.0:
             assert signal.confidence == "Watch"
 
     def test_full_confluence_threshold_reject(self) -> None:
         """Test score below 6.0 gets Reject confidence."""
-        features = pd.Series({
-            "timestamp": datetime(2025, 11, 15, 10, 30, tzinfo=UTC),
-            "symbol": "GC",
-            "timeframe": "1m",
-            "close": 2650.0,
-            "vwap": 2640.0,  # Wrong side of VWAP
-            "rsi": 75.0,     # Overbought (wrong for long)
-            "ema_9": 2645.0,
-            "ema_20": 2642.0,
-            "ema_50": 2640.0,
-            "dxy_corr": -0.3,  # Poor correlation
-        })
-        
+        features = pd.Series(
+            {
+                "timestamp": datetime(2025, 11, 15, 10, 30, tzinfo=UTC),
+                "symbol": "GC",
+                "timeframe": "1m",
+                "close": 2650.0,
+                "vwap": 2640.0,  # Wrong side of VWAP
+                "rsi": 75.0,  # Overbought (wrong for long)
+                "ema_9": 2645.0,
+                "ema_20": 2642.0,
+                "ema_50": 2640.0,
+                "dxy_corr": -0.3,  # Poor correlation
+            }
+        )
+
         htf_bias = HTFBias(
             bias="bearish",  # Opposing HTF bias
             direction="short",
@@ -1028,12 +1089,11 @@ class TestFullConfluenceScoring:
             liquidity_sweep_type="bearish",  # Opposing sweep
             dxy_alignment=False,
         )
-        
+
         context = {"session_ok": True, "enforcer_tier": "Early Mild"}
         signal = score_signal(features, htf_bias, context)
-        
+
         # Poor confluence should produce Reject or be rejected by HTF validation
         if signal.confidence != "Reject":
             # Signal might be rejected by HTF validation
             assert signal.setup_type == "REJECTED" or signal.score < 6.0
-

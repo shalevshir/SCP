@@ -3,11 +3,9 @@
 This module provides the signal display panel for the dashboard.
 """
 
-from typing import Optional
 
 import dash_bootstrap_components as dbc
 from dash import html
-
 from rule_engine.signal import Signal
 
 
@@ -25,7 +23,7 @@ def create_signal_panel() -> dbc.Card:
     )
 
 
-def render_signal(signal: Optional[Signal]) -> html.Div:
+def render_signal(signal: Signal | None) -> html.Div:
     """Render the signal panel content.
 
     Args:
@@ -112,7 +110,7 @@ def render_signal(signal: Optional[Signal]) -> html.Div:
     )
 
 
-def render_signal_badge(signal: Optional[Signal]) -> html.Span:
+def render_signal_badge(signal: Signal | None) -> html.Span:
     """Render a compact signal badge for header display.
 
     Args:
@@ -126,7 +124,9 @@ def render_signal_badge(signal: Optional[Signal]) -> html.Span:
 
     # Direction and confidence styling
     if signal.confidence == "A+":
-        badge_class = "badge bg-success" if signal.direction == "long" else "badge bg-danger"
+        badge_class = (
+            "badge bg-success" if signal.direction == "long" else "badge bg-danger"
+        )
     else:
         badge_class = "badge bg-warning text-dark"
 
@@ -136,4 +136,3 @@ def render_signal_badge(signal: Optional[Signal]) -> html.Span:
         f"{direction_arrow} {signal.confidence} ({signal.score:.1f})",
         className=badge_class,
     )
-

@@ -171,8 +171,7 @@ class InvalidationChecker:
         state = self._get_trade_state(trade.trade_id)
         if not state["reached_1r"]:
             reason = (
-                f"+1R not reached within {time_limit} bars "
-                f"({trade.setup_type})"
+                f"+1R not reached within {time_limit} bars " f"({trade.setup_type})"
             )
             logger.info(f"Trade {trade.trade_id} invalidated: {reason}")
             return True, reason
@@ -218,12 +217,16 @@ class InvalidationChecker:
             # Continuation setups: invalid if price moves against continuation
             if trade.direction == "long":
                 if candle.close < vwap:
-                    reason = f"VWAP invalidation: close {candle.close:.2f} < VWAP {vwap:.2f}"
+                    reason = (
+                        f"VWAP invalidation: close {candle.close:.2f} < VWAP {vwap:.2f}"
+                    )
                     logger.info(f"Trade {trade.trade_id} invalidated: {reason}")
                     return True, reason
             else:  # short
                 if candle.close > vwap:
-                    reason = f"VWAP invalidation: close {candle.close:.2f} > VWAP {vwap:.2f}"
+                    reason = (
+                        f"VWAP invalidation: close {candle.close:.2f} > VWAP {vwap:.2f}"
+                    )
                     logger.info(f"Trade {trade.trade_id} invalidated: {reason}")
                     return True, reason
         else:  # VWAP_FADE
@@ -265,11 +268,13 @@ class InvalidationChecker:
 
         # Convert candle timestamp to Israel timezone (Asia/Jerusalem)
         israel_tz = ZoneInfo("Asia/Jerusalem")
-        
+
         # Handle timezone-aware and naive timestamps
         if candle.timestamp.tzinfo is None:
             # Assume UTC if naive
-            local_dt = candle.timestamp.replace(tzinfo=ZoneInfo("UTC")).astimezone(israel_tz)
+            local_dt = candle.timestamp.replace(tzinfo=ZoneInfo("UTC")).astimezone(
+                israel_tz
+            )
         else:
             local_dt = candle.timestamp.astimezone(israel_tz)
 
@@ -309,8 +314,10 @@ class InvalidationChecker:
             return False, None
 
         # Get structure label from features
-        structure_label = features.get("structure_label") or features.get("structure_type")
-        
+        structure_label = features.get("structure_label") or features.get(
+            "structure_type"
+        )
+
         # If no structure label available, can't detect invalidation
         if structure_label is None:
             return False, None
@@ -364,13 +371,13 @@ class InvalidationChecker:
 
         # Get DXY correlation from features
         dxy_corr = _sanitize_float(features.get("dxy_corr"))
-        
+
         # For now, use a simple heuristic: if DXY correlation flips significantly
         # against the trade direction, consider it invalidated
         # This is a simplified check - can be enhanced with actual DXY structure detection
         if dxy_corr is None:
             return False, None
-        
+
         # Long trade: DXY should be negatively correlated (DXY down = GC up)
         # If correlation becomes positive or less negative, DXY may be flipping
         if trade.direction == "long":
@@ -384,7 +391,7 @@ class InvalidationChecker:
                 )
                 logger.info(f"Trade {trade.trade_id} invalidated: {reason}")
                 return True, reason
-        
+
         # Short trade: DXY should be positively correlated or less negative
         # If correlation becomes very negative, DXY may be flipping
         else:  # short
@@ -472,10 +479,10 @@ class InvalidationChecker:
         # Check loss streak (2 consecutive losses, or 1 in September)
         consecutive_losses = daily_pnl_state.get("consecutive_losses", 0)
         month = candle.timestamp.month if hasattr(candle.timestamp, "month") else 1
-        
+
         # September: 1 loss max, others: 2 losses max
         max_losses = 1 if month == 9 else 2
-        
+
         if consecutive_losses >= max_losses:
             reason = (
                 f"Daily risk stop: {consecutive_losses} consecutive losses "
@@ -487,7 +494,7 @@ class InvalidationChecker:
         # Check PDLL/PDRR if provided
         pdll = daily_pnl_state.get("pdll")
         daily_pnl = daily_pnl_state.get("daily_pnl", 0.0)
-        
+
         if pdll is not None and daily_pnl <= -abs(pdll):
             reason = (
                 f"Daily risk stop: PDLL breached "
@@ -506,7 +513,7 @@ class InvalidationChecker:
             won: True if trade was profitable (pnl > 0),
                  False if trade was a loss (pnl < 0),
                  None if trade was breakeven (pnl == 0)
-                 
+
         Note:
             Breakeven trades (won=None) do not affect the loss streak.
             Only actual losses (won=False) increment the streak.
@@ -572,7 +579,9 @@ class InvalidationChecker:
             return is_invalid, reason
 
         # Check HTF structure invalidation (priority 3 per SOP)
-        is_invalid, reason = self.check_htf_structure_invalidation(trade, candle, features)
+        is_invalid, reason = self.check_htf_structure_invalidation(
+            trade, candle, features
+        )
         if is_invalid:
             return is_invalid, reason
 
@@ -612,4 +621,3 @@ class InvalidationChecker:
     def clear_all(self) -> None:
         """Clear all trade states."""
         self._trade_states.clear()
-

@@ -3,12 +3,11 @@
 Tests the core simulation engine including warmup and auto-pause functionality.
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
 import pandas as pd
 import pytest
-
 from common.types import Candle
 from dashboard.core.data_stream import DataStream
 from dashboard.core.engine import SimulationEngine
@@ -26,7 +25,7 @@ def mock_data_stream():
     # Create sample candles
     candles = []
     for i in range(5):
-        timestamp = datetime(2025, 1, 1, 10, i, 0, tzinfo=timezone.utc)
+        timestamp = datetime(2025, 1, 1, 10, i, 0, tzinfo=UTC)
         gc = Candle(
             timestamp=timestamp,
             open=2650.0 + i,
@@ -315,7 +314,7 @@ class TestSimulationEngine:
         # Create warmup candles
         warmup_candles = []
         for i in range(5):
-            timestamp = datetime(2025, 1, 1, 10, i, 0, tzinfo=timezone.utc)
+            timestamp = datetime(2025, 1, 1, 10, i, 0, tzinfo=UTC)
             gc = Candle(
                 timestamp=timestamp,
                 open=2650.0,
@@ -351,9 +350,7 @@ class TestSimulationEngine:
 
         with patch.object(engine.htf_calculator, "update") as mock_update:
             mock_update.return_value = None
-            with patch.object(
-                engine.htf_calculator, "get_current_bias"
-            ) as mock_bias:
+            with patch.object(engine.htf_calculator, "get_current_bias") as mock_bias:
                 mock_bias.return_value = None
                 with patch.object(
                     engine.htf_calculator, "get_current_features_15m"
@@ -378,7 +375,7 @@ class TestSimulationEngine:
 
         # Create an A+ signal
         a_plus_signal = Signal(
-            timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=timezone.utc),
+            timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
             symbol="GC",
             timeframe="1m",
             direction="long",
@@ -393,9 +390,7 @@ class TestSimulationEngine:
         )
 
         # Mock generate_signal to return A+ signal
-        with patch.object(
-            engine, "_generate_signal", return_value=a_plus_signal
-        ):
+        with patch.object(engine, "_generate_signal", return_value=a_plus_signal):
             with patch.object(engine.htf_calculator, "update") as mock_update:
                 # Return a valid HTF bias so signal generation is attempted
                 mock_htf = MagicMock()
@@ -428,7 +423,7 @@ class TestSimulationEngine:
 
         # Create a Watch signal
         watch_signal = Signal(
-            timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=timezone.utc),
+            timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
             symbol="GC",
             timeframe="1m",
             direction="long",
@@ -442,9 +437,7 @@ class TestSimulationEngine:
             enforcer_tier="Early Mild",
         )
 
-        with patch.object(
-            engine, "_generate_signal", return_value=watch_signal
-        ):
+        with patch.object(engine, "_generate_signal", return_value=watch_signal):
             with patch.object(engine.htf_calculator, "update") as mock_update:
                 mock_htf = MagicMock()
                 mock_htf.bias = "bullish"
@@ -461,4 +454,3 @@ class TestSimulationEngine:
                     assert engine.state.is_paused is False
                     assert engine.state.pause_reason is None
                     assert engine.state.paused_at_signal is None
-

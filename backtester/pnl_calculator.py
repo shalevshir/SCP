@@ -215,4 +215,3 @@ def calculate_net_pnl(
         "net_pnl": net_pnl,
         "pnl_per_contract": pnl_per_contract,
     }
-

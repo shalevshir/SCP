@@ -50,7 +50,9 @@ def create_controls_panel() -> dbc.Card:
                             ),
                             dbc.Col(
                                 [
-                                    html.Div(id="status-indicator", className="text-end"),
+                                    html.Div(
+                                        id="status-indicator", className="text-end"
+                                    ),
                                 ],
                                 width=4,
                             ),
@@ -71,7 +73,10 @@ def create_controls_panel() -> dbc.Card:
                                         max=1000,
                                         step=0.5,
                                         size="sm",
-                                        style={"width": "80px", "display": "inline-block"},
+                                        style={
+                                            "width": "80px",
+                                            "display": "inline-block",
+                                        },
                                     ),
                                     html.Span("x", className="ms-1"),
                                 ],
@@ -79,7 +84,10 @@ def create_controls_panel() -> dbc.Card:
                             ),
                             dbc.Col(
                                 [
-                                    html.Div(id="pause-reason", className="text-warning small"),
+                                    html.Div(
+                                        id="pause-reason",
+                                        className="text-warning small",
+                                    ),
                                 ],
                                 width=6,
                             ),
@@ -152,7 +160,7 @@ def render_pause_reason(reason: str | None, signal) -> html.Div | str:
     if not reason:
         return ""
 
-    parts = [html.Strong(f"Paused: "), reason]
+    parts = [html.Strong("Paused: "), reason]
 
     if signal:
         parts.append(html.Br())
@@ -165,4 +173,3 @@ def render_pause_reason(reason: str | None, signal) -> html.Div | str:
         )
 
     return html.Div(parts, className="text-warning")
-

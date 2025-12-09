@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import pandas as pd
 import pytest
-
 from rule_engine.htf.structure.swings import detect_swings
 
 
@@ -14,22 +13,26 @@ class TestDetectSwings:
     def test_detects_clear_swing_high_and_low(self) -> None:
         """Test detection of clear swing high and low."""
         # Create data with obvious swing high at index 2 and swing low at index 4
-        df = pd.DataFrame({
-            "high": [100, 102, 105, 103, 101, 103],
-            "low": [98, 99, 102, 100, 98, 100],
-        })
+        df = pd.DataFrame(
+            {
+                "high": [100, 102, 105, 103, 101, 103],
+                "low": [98, 99, 102, 100, 98, 100],
+            }
+        )
 
         swing_highs, swing_lows = detect_swings(df, lookback=1)
 
         assert 2 in swing_highs  # Index 2 has highest high in window
-        assert 4 in swing_lows   # Index 4 has lowest low in window
+        assert 4 in swing_lows  # Index 4 has lowest low in window
 
     def test_returns_integer_indices(self) -> None:
         """Test that function returns lists of integer indices."""
-        df = pd.DataFrame({
-            "high": [100, 102, 105, 103, 101],
-            "low": [98, 99, 102, 100, 98],
-        })
+        df = pd.DataFrame(
+            {
+                "high": [100, 102, 105, 103, 101],
+                "low": [98, 99, 102, 100, 98],
+            }
+        )
 
         swing_highs, swing_lows = detect_swings(df, lookback=1)
 
@@ -40,10 +43,12 @@ class TestDetectSwings:
 
     def test_with_lookback_3(self) -> None:
         """Test swing detection with larger lookback window."""
-        df = pd.DataFrame({
-            "high": [100, 101, 102, 105, 103, 102, 101, 103, 102],
-            "low": [98, 99, 100, 103, 101, 100, 99, 101, 100],
-        })
+        df = pd.DataFrame(
+            {
+                "high": [100, 101, 102, 105, 103, 102, 101, 103, 102],
+                "low": [98, 99, 100, 103, 101, 100, 99, 101, 100],
+            }
+        )
 
         swing_highs, swing_lows = detect_swings(df, lookback=3)
 
@@ -55,10 +60,44 @@ class TestDetectSwings:
     def test_with_lookback_5(self) -> None:
         """Test swing detection with lookback=5."""
         # Create 15 bars with clear swing at center
-        df = pd.DataFrame({
-            "high": [100, 101, 102, 103, 104, 110, 104, 103, 102, 101, 100, 101, 102, 103, 104],
-            "low": [99, 100, 101, 102, 103, 108, 103, 102, 101, 100, 99, 100, 101, 102, 103],
-        })
+        df = pd.DataFrame(
+            {
+                "high": [
+                    100,
+                    101,
+                    102,
+                    103,
+                    104,
+                    110,
+                    104,
+                    103,
+                    102,
+                    101,
+                    100,
+                    101,
+                    102,
+                    103,
+                    104,
+                ],
+                "low": [
+                    99,
+                    100,
+                    101,
+                    102,
+                    103,
+                    108,
+                    103,
+                    102,
+                    101,
+                    100,
+                    99,
+                    100,
+                    101,
+                    102,
+                    103,
+                ],
+            }
+        )
 
         swing_highs, swing_lows = detect_swings(df, lookback=5)
 
@@ -77,10 +116,12 @@ class TestDetectSwings:
     def test_insufficient_data(self) -> None:
         """Test with insufficient data returns empty lists."""
         # Need at least 2*lookback + 1 rows
-        df = pd.DataFrame({
-            "high": [100, 101, 102],
-            "low": [98, 99, 100],
-        })
+        df = pd.DataFrame(
+            {
+                "high": [100, 101, 102],
+                "low": [98, 99, 100],
+            }
+        )
 
         swing_highs, swing_lows = detect_swings(df, lookback=2)
 
@@ -104,20 +145,24 @@ class TestDetectSwings:
 
     def test_invalid_lookback(self) -> None:
         """Test that lookback < 1 raises ValueError."""
-        df = pd.DataFrame({
-            "high": [100, 101, 102],
-            "low": [98, 99, 100],
-        })
+        df = pd.DataFrame(
+            {
+                "high": [100, 101, 102],
+                "low": [98, 99, 100],
+            }
+        )
 
         with pytest.raises(ValueError, match="lookback must be >= 1"):
             detect_swings(df, lookback=0)
 
     def test_flat_price_no_swings(self) -> None:
         """Test with flat price returns empty lists."""
-        df = pd.DataFrame({
-            "high": [100, 100, 100, 100, 100],
-            "low": [99, 99, 99, 99, 99],
-        })
+        df = pd.DataFrame(
+            {
+                "high": [100, 100, 100, 100, 100],
+                "low": [99, 99, 99, 99, 99],
+            }
+        )
 
         swing_highs, swing_lows = detect_swings(df, lookback=1)
 
@@ -130,10 +175,12 @@ class TestDetectSwings:
 
     def test_all_increasing(self) -> None:
         """Test with all increasing prices."""
-        df = pd.DataFrame({
-            "high": [100, 101, 102, 103, 104, 105],
-            "low": [99, 100, 101, 102, 103, 104],
-        })
+        df = pd.DataFrame(
+            {
+                "high": [100, 101, 102, 103, 104, 105],
+                "low": [99, 100, 101, 102, 103, 104],
+            }
+        )
 
         swing_highs, swing_lows = detect_swings(df, lookback=1)
 
@@ -145,10 +192,12 @@ class TestDetectSwings:
 
     def test_all_decreasing(self) -> None:
         """Test with all decreasing prices."""
-        df = pd.DataFrame({
-            "high": [105, 104, 103, 102, 101, 100],
-            "low": [104, 103, 102, 101, 100, 99],
-        })
+        df = pd.DataFrame(
+            {
+                "high": [105, 104, 103, 102, 101, 100],
+                "low": [104, 103, 102, 101, 100, 99],
+            }
+        )
 
         swing_highs, swing_lows = detect_swings(df, lookback=1)
 
@@ -158,10 +207,12 @@ class TestDetectSwings:
 
     def test_duplicate_highs_at_same_level(self) -> None:
         """Test with duplicate highs at same level includes all."""
-        df = pd.DataFrame({
-            "high": [100, 102, 105, 105, 105, 102, 100],
-            "low": [98, 99, 102, 102, 102, 99, 98],
-        })
+        df = pd.DataFrame(
+            {
+                "high": [100, 102, 105, 105, 105, 102, 100],
+                "low": [98, 99, 102, 102, 102, 99, 98],
+            }
+        )
 
         swing_highs, swing_lows = detect_swings(df, lookback=1)
 
@@ -172,10 +223,12 @@ class TestDetectSwings:
 
     def test_boundary_exclusion(self) -> None:
         """Test that first and last bars cannot be swings."""
-        df = pd.DataFrame({
-            "high": [110, 102, 105, 103, 101, 103, 115],
-            "low": [95, 99, 102, 100, 98, 100, 94],
-        })
+        df = pd.DataFrame(
+            {
+                "high": [110, 102, 105, 103, 101, 103, 115],
+                "low": [95, 99, 102, 100, 98, 100, 94],
+            }
+        )
 
         swing_highs, swing_lows = detect_swings(df, lookback=2)
 
@@ -187,10 +240,12 @@ class TestDetectSwings:
 
     def test_alternating_peaks_and_troughs(self) -> None:
         """Test with alternating peaks and troughs."""
-        df = pd.DataFrame({
-            "high": [100, 105, 100, 105, 100, 105, 100],
-            "low": [95, 100, 95, 100, 95, 100, 95],
-        })
+        df = pd.DataFrame(
+            {
+                "high": [100, 105, 100, 105, 100, 105, 100],
+                "low": [95, 100, 95, 100, 95, 100, 95],
+            }
+        )
 
         swing_highs, swing_lows = detect_swings(df, lookback=1)
 
@@ -221,10 +276,12 @@ class TestDetectSwings:
 
     def test_multiple_swings_in_series(self) -> None:
         """Test detection of multiple swings in longer series."""
-        df = pd.DataFrame({
-            "high": [100, 102, 105, 103, 101, 103, 106, 104, 102, 104, 107],
-            "low": [98, 99, 102, 100, 98, 100, 103, 101, 99, 101, 104],
-        })
+        df = pd.DataFrame(
+            {
+                "high": [100, 102, 105, 103, 101, 103, 106, 104, 102, 104, 107],
+                "low": [98, 99, 102, 100, 98, 100, 103, 101, 99, 101, 104],
+            }
+        )
 
         swing_highs, swing_lows = detect_swings(df, lookback=2)
 
@@ -235,13 +292,14 @@ class TestDetectSwings:
     def test_minimum_data_requirement(self) -> None:
         """Test minimum data requirement: exactly 2*lookback + 1 rows."""
         # For lookback=2, need exactly 5 rows minimum
-        df = pd.DataFrame({
-            "high": [100, 101, 105, 103, 102],
-            "low": [98, 99, 103, 101, 100],
-        })
+        df = pd.DataFrame(
+            {
+                "high": [100, 101, 105, 103, 102],
+                "low": [98, 99, 103, 101, 100],
+            }
+        )
 
         swing_highs, swing_lows = detect_swings(df, lookback=2)
 
         # Index 2 should be swing high (highest in 5-bar window)
         assert 2 in swing_highs
-

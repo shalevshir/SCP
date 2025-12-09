@@ -150,7 +150,7 @@ class TestVWAPCalculation:
                         "2025-01-15 13:30:00",  # 08:30 ET (after reset)
                         "2025-01-15 14:00:00",  # 09:00 ET (after reset)
                     ],
-                    utc=True
+                    utc=True,
                 ),
                 "open": [100.0, 101.0, 102.0, 103.0, 104.0],
                 "high": [101.0, 102.0, 103.0, 104.0, 105.0],
@@ -191,8 +191,12 @@ class TestVWAPDeviation:
         deviation = calculate_vwap_deviation(df)
 
         assert len(deviation) == 3
-        assert deviation.iloc[0] == pytest.approx(0.189, abs=0.01)  # (2650-2645)/2645*100
-        assert deviation.iloc[1] == pytest.approx(0.378, abs=0.01)  # (2655-2645)/2645*100
+        assert deviation.iloc[0] == pytest.approx(
+            0.189, abs=0.01
+        )  # (2650-2645)/2645*100
+        assert deviation.iloc[1] == pytest.approx(
+            0.378, abs=0.01
+        )  # (2655-2645)/2645*100
         assert deviation.iloc[2] == pytest.approx(0.0, abs=0.01)  # (2645-2645)/2645*100
 
     def test_raises_error_for_missing_columns(self) -> None:

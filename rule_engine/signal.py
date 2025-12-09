@@ -67,4 +67,3 @@ class Signal:
     rationale: str
     validation_flags: dict[str, bool]
     enforcer_tier: str
-

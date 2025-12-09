@@ -10,21 +10,17 @@ Tests verify that the new multi-timeframe integration works correctly:
 """
 
 from datetime import UTC, datetime
-from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 import pandas as pd
 import pytest
-from common.types import Candle
-
 from backtester.pipeline import (
     run_backtest_with_entries_multi_tf,
     run_backtest_with_trades_multi_tf,
 )
+from common.types import Candle
 from data_layer.multi_timeframe_helpers import extract_execution_dataframes
 from data_layer.multi_timeframe_sync import (
     MultiTimeframeData,
-    MultiTimeframeSyncLayer,
     SynchronizedBar,
 )
 
@@ -34,12 +30,12 @@ def sample_multi_tf_data() -> MultiTimeframeData:
     """Create sample MultiTimeframeData for testing."""
     bars = []
     timestamps = []
-    
+
     # Create 10 synchronized bars
     for i in range(10):
         ts = datetime(2025, 9, 30, 10, i, 0, tzinfo=UTC)
         timestamps.append(ts)
-        
+
         exec_gc = Candle(
             timestamp=ts,
             open=2000.0 + i * 0.1,
@@ -62,7 +58,7 @@ def sample_multi_tf_data() -> MultiTimeframeData:
             timeframe="1m",
             source="CSV",
         )
-        
+
         # Add HTF data every 15 minutes (15m bar closes)
         htf_15m = None
         if i % 15 == 14 or i == 0:  # At 15m boundaries
@@ -89,7 +85,7 @@ def sample_multi_tf_data() -> MultiTimeframeData:
                 source="CSV",
             )
             htf_15m = (htf_15m_gc, htf_15m_dxy)
-        
+
         # Add HTF data every hour (1h bar closes)
         htf_1h = None
         if i == 0:  # First bar has 1h data
@@ -116,7 +112,7 @@ def sample_multi_tf_data() -> MultiTimeframeData:
                 source="CSV",
             )
             htf_1h = (htf_1h_gc, htf_1h_dxy)
-        
+
         bars.append(
             SynchronizedBar(
                 execution_timestamp=ts,
@@ -125,7 +121,7 @@ def sample_multi_tf_data() -> MultiTimeframeData:
                 htf_1h=htf_1h,
             )
         )
-    
+
     return MultiTimeframeData(
         execution_timeframe="1m",
         htf_timeframes=["15m", "1h"],
@@ -160,7 +156,7 @@ class TestRunBacktestWithEntriesMultiTf:
                 market_state=market_state,
                 htf_approach="streaming",
             )
-            
+
             assert isinstance(executions, list)
             assert processor is not None
         except Exception as e:
@@ -179,7 +175,7 @@ class TestRunBacktestWithEntriesMultiTf:
                 market_state=market_state,
                 htf_approach="vectorized",
             )
-            
+
             assert isinstance(executions, list)
             assert processor is not None
         except Exception as e:
@@ -191,7 +187,7 @@ class TestRunBacktestWithEntriesMultiTf:
     ) -> None:
         """Test that execution DataFrames are extracted correctly."""
         gc_df, dxy_df = extract_execution_dataframes(sample_multi_tf_data)
-        
+
         assert isinstance(gc_df, pd.DataFrame)
         assert isinstance(dxy_df, pd.DataFrame)
         assert len(gc_df) == len(sample_multi_tf_data)
@@ -207,14 +203,14 @@ class TestRunBacktestWithEntriesMultiTf:
             synchronized_bars=[],
             execution_timestamps=[],
         )
-        
+
         executions, processor = run_backtest_with_entries_multi_tf(
             multi_tf_data=empty_data,
             timeframe="1m",
             market_state=market_state,
             htf_approach="streaming",
         )
-        
+
         assert isinstance(executions, list)
         assert len(executions) == 0
         assert processor is not None
@@ -247,7 +243,7 @@ class TestRunBacktestWithTradesMultiTf:
                 risk_config=risk_config,
                 htf_approach="streaming",
             )
-            
+
             assert isinstance(trades, list)
         except Exception as e:
             # May fail if data is insufficient
@@ -268,7 +264,7 @@ class TestRunBacktestWithTradesMultiTf:
                 risk_config=risk_config,
                 htf_approach="vectorized",
             )
-            
+
             assert isinstance(trades, list)
         except Exception as e:
             # May fail if data is insufficient
@@ -283,22 +279,24 @@ class TestHtfBiasFunctionCreation:
     ) -> None:
         """Test that HTF bias function can be created."""
         from rule_engine.htf.integration import create_htf_bias_func_with_sync_layer
-        
+
         htf_bias_func = create_htf_bias_func_with_sync_layer(
             sample_multi_tf_data, approach="streaming"
         )
-        
+
         assert callable(htf_bias_func)
-        
+
         # Test calling the function (may return neutral if not warmed up)
         from datetime import UTC, datetime
-        
-        features_1m = pd.Series({
-            "timestamp": datetime(2025, 9, 30, 10, 0, 0, tzinfo=UTC),
-            "close": 2000.0,
-        })
+
+        features_1m = pd.Series(
+            {
+                "timestamp": datetime(2025, 9, 30, 10, 0, 0, tzinfo=UTC),
+                "close": 2000.0,
+            }
+        )
         context = {}
-        
+
         try:
             htf_bias = htf_bias_func(features_1m, context)
             assert htf_bias is not None
@@ -311,9 +309,8 @@ class TestHtfBiasFunctionCreation:
     ) -> None:
         """Test that invalid approach raises ValueError."""
         from rule_engine.htf.integration import create_htf_bias_func_with_sync_layer
-        
+
         with pytest.raises(ValueError, match="Invalid approach"):
             create_htf_bias_func_with_sync_layer(
                 sample_multi_tf_data, approach="invalid"
             )
-

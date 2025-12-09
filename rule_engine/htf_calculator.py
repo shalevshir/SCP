@@ -38,4 +38,3 @@ __all__ = [
     "compute_htf_bias_multi_timeframe",
     "is_london_or_ny_session",
 ]
-

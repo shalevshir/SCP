@@ -36,7 +36,7 @@ Usage:
 """
 
 from dashboard.app import LiveDashboard
-from dashboard.core import DataStream, DashboardState, PriceBar, SimulationEngine
+from dashboard.core import DashboardState, DataStream, PriceBar, SimulationEngine
 
 __all__ = [
     "LiveDashboard",
@@ -45,4 +45,3 @@ __all__ = [
     "PriceBar",
     "SimulationEngine",
 ]
-

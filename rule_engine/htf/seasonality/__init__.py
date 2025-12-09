@@ -18,4 +18,3 @@ __all__ = [
     "get_seasonality_config",
     "get_seasonality_period",
 ]
-

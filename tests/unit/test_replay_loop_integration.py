@@ -501,7 +501,8 @@ class TestPerformanceMetrics:
         )
         assert breakeven_trades >= 0, "Breakeven trade count should be non-negative"
         assert (
-            results.total_trades == results.winning_trades + results.losing_trades + breakeven_trades
+            results.total_trades
+            == results.winning_trades + results.losing_trades + breakeven_trades
         )
 
         if results.total_trades > 0:

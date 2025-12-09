@@ -4,10 +4,9 @@ Tests the core Signal object structure, validation, and immutability
 according to SOP requirements.
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
-
 from rule_engine.signal import Signal
 
 
@@ -17,7 +16,7 @@ class TestSignalStructure:
     def test_signal_creation_with_all_fields(self) -> None:
         """Test creating a Signal with all required fields."""
         signal = Signal(
-            timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=timezone.utc),
+            timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
             symbol="GC",
             timeframe="1m",
             direction="long",
@@ -42,7 +41,7 @@ class TestSignalStructure:
             enforcer_tier="Early Mild",
         )
 
-        assert signal.timestamp == datetime(2025, 1, 1, 10, 0, tzinfo=timezone.utc)
+        assert signal.timestamp == datetime(2025, 1, 1, 10, 0, tzinfo=UTC)
         assert signal.symbol == "GC"
         assert signal.timeframe == "1m"
         assert signal.direction == "long"
@@ -58,7 +57,7 @@ class TestSignalStructure:
     def test_signal_is_immutable(self) -> None:
         """Test that Signal is frozen and cannot be modified."""
         signal = Signal(
-            timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=timezone.utc),
+            timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
             symbol="GC",
             timeframe="1m",
             direction="long",
@@ -78,7 +77,7 @@ class TestSignalStructure:
     def test_signal_with_short_direction(self) -> None:
         """Test Signal for short setup."""
         signal = Signal(
-            timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=timezone.utc),
+            timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
             symbol="GC",
             timeframe="1m",
             direction="short",
@@ -99,7 +98,7 @@ class TestSignalStructure:
     def test_signal_with_neutral_direction(self) -> None:
         """Test Signal with neutral direction."""
         signal = Signal(
-            timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=timezone.utc),
+            timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
             symbol="DXY",
             timeframe="5m",
             direction="neutral",
@@ -128,7 +127,7 @@ class TestSignalStructure:
         }
 
         signal = Signal(
-            timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=timezone.utc),
+            timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
             symbol="GC",
             timeframe="1m",
             direction="long",
@@ -156,7 +155,7 @@ class TestSignalStructure:
         }
 
         signal = Signal(
-            timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=timezone.utc),
+            timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
             symbol="GC",
             timeframe="1m",
             direction="long",
@@ -182,7 +181,7 @@ class TestSignalConfidenceLevels:
     def test_a_plus_confidence_threshold(self) -> None:
         """Test A+ confidence for score >= 8."""
         signal = Signal(
-            timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=timezone.utc),
+            timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
             symbol="GC",
             timeframe="1m",
             direction="long",
@@ -202,7 +201,7 @@ class TestSignalConfidenceLevels:
     def test_watch_confidence_threshold(self) -> None:
         """Test Watch confidence for score 6-7."""
         signal = Signal(
-            timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=timezone.utc),
+            timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
             symbol="GC",
             timeframe="1m",
             direction="long",
@@ -222,7 +221,7 @@ class TestSignalConfidenceLevels:
     def test_reject_confidence_threshold(self) -> None:
         """Test Reject confidence for score < 6."""
         signal = Signal(
-            timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=timezone.utc),
+            timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
             symbol="GC",
             timeframe="1m",
             direction="long",
@@ -246,7 +245,7 @@ class TestSignalSetupTypes:
     def test_vwap_reclaim_setup(self) -> None:
         """Test VWAP_RECLAIM setup type."""
         signal = Signal(
-            timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=timezone.utc),
+            timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
             symbol="GC",
             timeframe="1m",
             direction="long",
@@ -265,7 +264,7 @@ class TestSignalSetupTypes:
     def test_vwap_fade_setup(self) -> None:
         """Test VWAP_FADE setup type."""
         signal = Signal(
-            timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=timezone.utc),
+            timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
             symbol="GC",
             timeframe="1m",
             direction="short",
@@ -284,7 +283,7 @@ class TestSignalSetupTypes:
     def test_dxy_continuation_setup(self) -> None:
         """Test DXY_CONTINUATION setup type."""
         signal = Signal(
-            timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=timezone.utc),
+            timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
             symbol="GC",
             timeframe="5m",
             direction="long",
@@ -307,7 +306,7 @@ class TestSignalEnforcerTiers:
     def test_conservative_tier(self) -> None:
         """Test Conservative enforcer tier."""
         signal = Signal(
-            timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=timezone.utc),
+            timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
             symbol="GC",
             timeframe="1m",
             direction="long",
@@ -329,7 +328,7 @@ class TestSignalEnforcerTiers:
 
         for tier in valid_tiers:
             signal = Signal(
-                timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=timezone.utc),
+                timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
                 symbol="GC",
                 timeframe="1m",
                 direction="long",
@@ -344,4 +343,3 @@ class TestSignalEnforcerTiers:
             )
 
             assert signal.enforcer_tier == tier
-

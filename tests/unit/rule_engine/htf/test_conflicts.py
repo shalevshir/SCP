@@ -9,8 +9,8 @@ Tests the three conflict detection mechanisms:
 import pandas as pd
 import pytest
 from rule_engine.htf.conflicts import (
-    detect_structure_conflict,
     detect_price_chop_15m,
+    detect_structure_conflict,
     detect_sweep_against_trend,
 )
 
@@ -248,4 +248,3 @@ class TestSweepAgainstTrend:
         )
         assert is_conflict is False
         assert reason is None
-

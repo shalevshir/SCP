@@ -203,7 +203,7 @@ def calculate_multiwindow_dxy_correlation(
         - corr_30min: 30-minute rolling correlation
         - corr_60min: 60-minute rolling correlation
         - weighted_score: Weighted average of all three windows
-        
+
         Index is timestamps from aligned data.
         Values are NaN until sufficient data for each window.
 
@@ -252,8 +252,7 @@ def calculate_multiwindow_dxy_correlation(
     weight_sum = sum(weights.values())
     if not (0.99 <= weight_sum <= 1.01):  # Allow small floating point tolerance
         raise ValueError(
-            f"Weights must sum to 1.0, got {weight_sum}. "
-            f"Weights: {weights}"
+            f"Weights must sum to 1.0, got {weight_sum}. " f"Weights: {weights}"
         )
 
     # Validate required keys
@@ -314,7 +313,7 @@ def calculate_multiwindow_dxy_correlation(
     if len(corr_15min) == 0:
         return pd.DataFrame(
             columns=["corr_15min", "corr_30min", "corr_60min", "weighted_score"],
-            index=pd.DatetimeIndex([])  # Explicitly create empty DatetimeIndex
+            index=pd.DatetimeIndex([]),  # Explicitly create empty DatetimeIndex
         )
 
     # Combine into single DataFrame

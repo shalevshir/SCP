@@ -8,7 +8,6 @@ Architecture: Zero code duplication - reuses existing functions from feature_eng
 
 from collections import deque
 from datetime import datetime
-from typing import Optional
 
 import pandas as pd
 from common.logger import get_logger
@@ -17,7 +16,6 @@ from common.types import Candle
 from feature_engine.dxy_correlation import calculate_dxy_correlation
 from feature_engine.rsi import calculate_rsi
 from feature_engine.structure import calculate_structure_labels
-from feature_engine.vwap import calculate_vwap_deviation
 from feature_engine.timezone_utils import get_vwap_session_id
 
 logger = get_logger(__name__)
@@ -25,10 +23,10 @@ logger = get_logger(__name__)
 
 class StreamingFeatureProcessor:
     """Streaming processor that incrementally computes features.
-    
+
     Maintains state buffers and calls existing calculation functions to ensure
     identical results between streaming and batch processing modes.
-    
+
     Features calculated:
     - EMA (9, 20, 50): Incremental formula
     - VWAP: Cumulative, session-aware
@@ -36,7 +34,7 @@ class StreamingFeatureProcessor:
     - DXY Correlation: Window-based, calls existing function
     - Structure Labels: Lookback-based, calls existing function
     - VWAP Deviation: Calls existing function
-    
+
     Attributes:
         timeframe: Target timeframe (e.g., "1m", "15m", "1h")
         ema_states: Dict of EMA state for each period (9, 20, 50)
@@ -56,13 +54,13 @@ class StreamingFeatureProcessor:
         self,
         timeframe: str,
         rsi_period: int = 14,
-        ema_periods: Optional[list[int]] = None,
+        ema_periods: list[int] | None = None,
         dxy_window: int = 50,
         swing_window: int = 5,
         session_reset: bool = True,
     ):
         """Initialize streaming processor.
-        
+
         Args:
             timeframe: Target timeframe (e.g., "1m", "15m", "1h")
             rsi_period: RSI calculation period (default: 14)
@@ -79,7 +77,7 @@ class StreamingFeatureProcessor:
         self.session_reset = session_reset
 
         # EMA state: {period: current_ema_value}
-        self.ema_states: dict[int, Optional[float]] = {
+        self.ema_states: dict[int, float | None] = {
             period: None for period in self.ema_periods
         }
         self.ema_alphas: dict[int, float] = {
@@ -88,37 +86,41 @@ class StreamingFeatureProcessor:
 
         # RSI buffer and Wilder's smoothing state
         self.rsi_buffer: deque[float] = deque(maxlen=rsi_period + 1)
-        self.rsi_avg_gain: Optional[float] = None
-        self.rsi_avg_loss: Optional[float] = None
-        self.prev_close: Optional[float] = None
+        self.rsi_avg_gain: float | None = None
+        self.rsi_avg_loss: float | None = None
+        self.prev_close: float | None = None
 
         # DXY correlation buffers
-        self.dxy_corr_gc_buffer: deque[tuple[datetime, float]] = deque(maxlen=dxy_window)
-        self.dxy_corr_dxy_buffer: deque[tuple[datetime, float]] = deque(maxlen=dxy_window)
+        self.dxy_corr_gc_buffer: deque[tuple[datetime, float]] = deque(
+            maxlen=dxy_window
+        )
+        self.dxy_corr_dxy_buffer: deque[tuple[datetime, float]] = deque(
+            maxlen=dxy_window
+        )
 
         # Structure detection buffer (needs enough bars to capture swing points)
         # With swing_window=3, detection range is limited, so we need more bars
         # 30 bars gives good coverage for detecting market structure
         self.structure_buffer: deque[dict] = deque(maxlen=30)
-        
+
         # Track last detected structure label (persists between bars)
-        self.last_structure_label: Optional[str] = None
+        self.last_structure_label: str | None = None
 
         # VWAP cumulative state
         self.vwap_pv_sum = 0.0
         self.vwap_v_sum = 0.0
-        self.vwap_current_session: Optional[str] = None
+        self.vwap_current_session: str | None = None
 
         # Warmup tracking
         self.bar_count = 0
 
     def update(self, gc_bar: Candle, dxy_bar: Candle) -> pd.Series:
         """Update state with new bar and return current features.
-        
+
         Args:
             gc_bar: New Gold candle
             dxy_bar: New DXY candle (aligned timestamp)
-            
+
         Returns:
             Series with current feature values
         """
@@ -141,9 +143,9 @@ class StreamingFeatureProcessor:
                 self.ema_states[period] = gc_bar.close
             else:
                 # EMA = price × α + EMA_prev × (1-α)
-                self.ema_states[period] = (
-                    gc_bar.close * alpha + self.ema_states[period] * (1 - alpha)
-                )
+                self.ema_states[period] = gc_bar.close * alpha + self.ema_states[
+                    period
+                ] * (1 - alpha)
             features[f"ema_{period}"] = self.ema_states[period]
 
         # === 2. VWAP (cumulative, session-aware) ===
@@ -154,16 +156,20 @@ class StreamingFeatureProcessor:
             self.vwap_pv_sum = 0.0
             self.vwap_v_sum = 0.0
             self.vwap_current_session = session_id
-            logger.debug(f"VWAP session reset at {gc_bar.timestamp} (session: {session_id})")
+            logger.debug(
+                f"VWAP session reset at {gc_bar.timestamp} (session: {session_id})"
+            )
 
         # Calculate typical price and update cumulative sums
         typical_price = (gc_bar.high + gc_bar.low + gc_bar.close) / 3
         volume = max(gc_bar.volume, 1e-10)  # Prevent division by zero
-        
+
         self.vwap_pv_sum += typical_price * volume
         self.vwap_v_sum += volume
-        
-        vwap = self.vwap_pv_sum / self.vwap_v_sum if self.vwap_v_sum > 0 else gc_bar.close
+
+        vwap = (
+            self.vwap_pv_sum / self.vwap_v_sum if self.vwap_v_sum > 0 else gc_bar.close
+        )
         features["vwap"] = vwap
 
         # === 3. VWAP Deviation ===
@@ -175,12 +181,10 @@ class StreamingFeatureProcessor:
         # === 4. RSI (window-based, calls existing function) ===
         # Update RSI buffer
         self.rsi_buffer.append(gc_bar.close)
-        
+
         if len(self.rsi_buffer) >= self.rsi_period + 1:
             # Convert buffer to DataFrame and call existing function
-            df_rsi = pd.DataFrame({
-                "close": list(self.rsi_buffer)
-            })
+            df_rsi = pd.DataFrame({"close": list(self.rsi_buffer)})
             rsi_series = calculate_rsi(df_rsi, period=self.rsi_period)
             # Extract last value (most recent RSI)
             features["rsi"] = rsi_series.iloc[-1] if not rsi_series.empty else None
@@ -191,26 +195,34 @@ class StreamingFeatureProcessor:
         # Update DXY correlation buffers
         self.dxy_corr_gc_buffer.append((gc_bar.timestamp, gc_bar.close))
         self.dxy_corr_dxy_buffer.append((dxy_bar.timestamp, dxy_bar.close))
-        
+
         if len(self.dxy_corr_gc_buffer) >= self.dxy_window:
             # Convert buffers to DataFrames
             gc_data = list(self.dxy_corr_gc_buffer)
             dxy_data = list(self.dxy_corr_dxy_buffer)
-            
-            df_gc = pd.DataFrame({
-                "ts_event": [item[0] for item in gc_data],
-                "close": [item[1] for item in gc_data]
-            })
-            df_dxy = pd.DataFrame({
-                "ts_event": [item[0] for item in dxy_data],
-                "close": [item[1] for item in dxy_data]
-            })
-            
+
+            df_gc = pd.DataFrame(
+                {
+                    "ts_event": [item[0] for item in gc_data],
+                    "close": [item[1] for item in gc_data],
+                }
+            )
+            df_dxy = pd.DataFrame(
+                {
+                    "ts_event": [item[0] for item in dxy_data],
+                    "close": [item[1] for item in dxy_data],
+                }
+            )
+
             # Call existing function
             try:
-                corr_series = calculate_dxy_correlation(df_gc, df_dxy, window=self.dxy_window)
+                corr_series = calculate_dxy_correlation(
+                    df_gc, df_dxy, window=self.dxy_window
+                )
                 # Extract last value
-                features["dxy_corr"] = corr_series.iloc[-1] if not corr_series.empty else None
+                features["dxy_corr"] = (
+                    corr_series.iloc[-1] if not corr_series.empty else None
+                )
             except Exception as e:
                 logger.warning(f"DXY correlation calculation failed: {e}")
                 features["dxy_corr"] = None
@@ -219,26 +231,28 @@ class StreamingFeatureProcessor:
 
         # === 6. Structure Labels (lookback-based, calls existing function) ===
         # Update structure buffer
-        self.structure_buffer.append({
-            "timestamp": gc_bar.timestamp,
-            "high": gc_bar.high,
-            "low": gc_bar.low,
-            "close": gc_bar.close,
-        })
-        
+        self.structure_buffer.append(
+            {
+                "timestamp": gc_bar.timestamp,
+                "high": gc_bar.high,
+                "low": gc_bar.low,
+                "close": gc_bar.close,
+            }
+        )
+
         # Need enough bars for structure detection
         required_bars = self.swing_window * 2 + 1
         if len(self.structure_buffer) >= required_bars:
             # Convert buffer to DataFrame
             df_structure = pd.DataFrame(list(self.structure_buffer))
-            
+
             # Call existing function
             try:
                 labels_series = calculate_structure_labels(
-                    df_structure, 
+                    df_structure,
                     swing_window=self.swing_window,
                     high_column="high",
-                    low_column="low"
+                    low_column="low",
                 )
                 # Extract current label (accounting for delay)
                 # Structure labels are delayed by swing_window bars
@@ -250,7 +264,7 @@ class StreamingFeatureProcessor:
                         self.last_structure_label = current_label
             except Exception as e:
                 logger.warning(f"Structure label calculation failed: {e}")
-        
+
         # Always return the last known structure label (persists between swing points)
         features["structure_label"] = self.last_structure_label
 
@@ -258,7 +272,7 @@ class StreamingFeatureProcessor:
 
     def is_warmed_up(self) -> bool:
         """Check if processor has enough data to produce reliable features.
-        
+
         Returns:
             True if warmup period complete
         """
@@ -266,7 +280,7 @@ class StreamingFeatureProcessor:
             max(self.ema_periods),
             self.rsi_period + 1,
             self.dxy_window,
-            self.swing_window * 2 + 1
+            self.swing_window * 2 + 1,
         )
         return self.bar_count >= min_warmup
 
@@ -286,4 +300,3 @@ class StreamingFeatureProcessor:
         self.vwap_current_session = None
         self.bar_count = 0
         logger.info("Streaming feature processor reset")
-

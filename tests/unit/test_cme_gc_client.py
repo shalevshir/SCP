@@ -1,9 +1,8 @@
 """Tests for CMEGCClient stub."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
-
 from common.exceptions import DataSourceError
 from common.types import Candle
 from data_layer.clients import CMEGCClient
@@ -26,8 +25,8 @@ def test_client_has_fetch_method():
 def test_fetch_returns_list():
     """Test that fetch returns a list."""
     client = CMEGCClient()
-    start = datetime(2025, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
-    end = datetime(2025, 1, 1, 23, 59, 59, tzinfo=timezone.utc)
+    start = datetime(2025, 1, 1, 0, 0, 0, tzinfo=UTC)
+    end = datetime(2025, 1, 1, 23, 59, 59, tzinfo=UTC)
 
     result = client.fetch(start, end, "1m")
 
@@ -37,8 +36,8 @@ def test_fetch_returns_list():
 def test_fetch_returns_list_of_candles():
     """Test that fetch returns list of Candle objects."""
     client = CMEGCClient()
-    start = datetime(2025, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
-    end = datetime(2025, 1, 1, 23, 59, 59, tzinfo=timezone.utc)
+    start = datetime(2025, 1, 1, 0, 0, 0, tzinfo=UTC)
+    end = datetime(2025, 1, 1, 23, 59, 59, tzinfo=UTC)
 
     result = client.fetch(start, end, "1m")
 
@@ -52,8 +51,8 @@ def test_fetch_returns_list_of_candles():
 def test_fetch_with_different_timeframes():
     """Test fetch with various timeframes."""
     client = CMEGCClient()
-    start = datetime(2025, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
-    end = datetime(2025, 1, 1, 23, 59, 59, tzinfo=timezone.utc)
+    start = datetime(2025, 1, 1, 0, 0, 0, tzinfo=UTC)
+    end = datetime(2025, 1, 1, 23, 59, 59, tzinfo=UTC)
 
     for timeframe in ["1m", "5m", "15m"]:
         result = client.fetch(start, end, timeframe)
@@ -63,8 +62,8 @@ def test_fetch_with_different_timeframes():
 def test_fetch_with_valid_date_range():
     """Test fetch with valid date range."""
     client = CMEGCClient()
-    start = datetime(2025, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
-    end = datetime(2025, 1, 2, 0, 0, 0, tzinfo=timezone.utc)
+    start = datetime(2025, 1, 1, 0, 0, 0, tzinfo=UTC)
+    end = datetime(2025, 1, 2, 0, 0, 0, tzinfo=UTC)
 
     result = client.fetch(start, end, "1m")
 
@@ -74,8 +73,8 @@ def test_fetch_with_valid_date_range():
 def test_fetch_with_start_after_end_raises_error():
     """Test that start >= end raises DataSourceError."""
     client = CMEGCClient()
-    start = datetime(2025, 1, 2, 0, 0, 0, tzinfo=timezone.utc)
-    end = datetime(2025, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+    start = datetime(2025, 1, 2, 0, 0, 0, tzinfo=UTC)
+    end = datetime(2025, 1, 1, 0, 0, 0, tzinfo=UTC)
 
     with pytest.raises(DataSourceError) as exc_info:
         client.fetch(start, end, "1m")
@@ -87,7 +86,7 @@ def test_fetch_with_start_after_end_raises_error():
 def test_fetch_with_same_start_and_end_raises_error():
     """Test that start == end raises DataSourceError."""
     client = CMEGCClient()
-    timestamp = datetime(2025, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+    timestamp = datetime(2025, 1, 1, 0, 0, 0, tzinfo=UTC)
 
     with pytest.raises(DataSourceError) as exc_info:
         client.fetch(timestamp, timestamp, "1m")
@@ -99,7 +98,7 @@ def test_fetch_with_naive_start_datetime_raises_error():
     """Test that naive start datetime raises DataSourceError."""
     client = CMEGCClient()
     start = datetime(2025, 1, 1, 0, 0, 0)  # No timezone
-    end = datetime(2025, 1, 2, 0, 0, 0, tzinfo=timezone.utc)
+    end = datetime(2025, 1, 2, 0, 0, 0, tzinfo=UTC)
 
     with pytest.raises(DataSourceError) as exc_info:
         client.fetch(start, end, "1m")
@@ -113,7 +112,7 @@ def test_fetch_with_naive_start_datetime_raises_error():
 def test_fetch_with_naive_end_datetime_raises_error():
     """Test that naive end datetime raises DataSourceError."""
     client = CMEGCClient()
-    start = datetime(2025, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+    start = datetime(2025, 1, 1, 0, 0, 0, tzinfo=UTC)
     end = datetime(2025, 1, 2, 0, 0, 0)  # No timezone
 
     with pytest.raises(DataSourceError) as exc_info:
@@ -128,8 +127,8 @@ def test_fetch_with_naive_end_datetime_raises_error():
 def test_fetch_with_empty_timeframe_raises_error():
     """Test that empty timeframe raises DataSourceError."""
     client = CMEGCClient()
-    start = datetime(2025, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
-    end = datetime(2025, 1, 2, 0, 0, 0, tzinfo=timezone.utc)
+    start = datetime(2025, 1, 1, 0, 0, 0, tzinfo=UTC)
+    end = datetime(2025, 1, 2, 0, 0, 0, tzinfo=UTC)
 
     with pytest.raises(DataSourceError) as exc_info:
         client.fetch(start, end, "")
@@ -141,8 +140,8 @@ def test_fetch_with_empty_timeframe_raises_error():
 def test_fetch_with_whitespace_only_timeframe_raises_error():
     """Test that whitespace-only timeframe raises DataSourceError."""
     client = CMEGCClient()
-    start = datetime(2025, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
-    end = datetime(2025, 1, 2, 0, 0, 0, tzinfo=timezone.utc)
+    start = datetime(2025, 1, 1, 0, 0, 0, tzinfo=UTC)
+    end = datetime(2025, 1, 2, 0, 0, 0, tzinfo=UTC)
 
     with pytest.raises(DataSourceError) as exc_info:
         client.fetch(start, end, "   ")
@@ -153,8 +152,8 @@ def test_fetch_with_whitespace_only_timeframe_raises_error():
 def test_fetch_stub_behavior():
     """Test that stub returns empty list (Phase 1 behavior)."""
     client = CMEGCClient()
-    start = datetime(2025, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
-    end = datetime(2025, 1, 2, 0, 0, 0, tzinfo=timezone.utc)
+    start = datetime(2025, 1, 1, 0, 0, 0, tzinfo=UTC)
+    end = datetime(2025, 1, 2, 0, 0, 0, tzinfo=UTC)
 
     result = client.fetch(start, end, "1m")
 
@@ -182,8 +181,8 @@ def test_fetch_method_signature():
 def test_multiple_fetch_calls():
     """Test that client can handle multiple fetch calls."""
     client = CMEGCClient()
-    start = datetime(2025, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
-    end = datetime(2025, 1, 2, 0, 0, 0, tzinfo=timezone.utc)
+    start = datetime(2025, 1, 1, 0, 0, 0, tzinfo=UTC)
+    end = datetime(2025, 1, 2, 0, 0, 0, tzinfo=UTC)
 
     # Multiple calls should all work
     result1 = client.fetch(start, end, "1m")

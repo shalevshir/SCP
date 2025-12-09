@@ -12,6 +12,7 @@ from enum import Enum
 from typing import TYPE_CHECKING
 
 from common.logger import get_logger
+
 from validation.schema import HTFBias, ValidationContext
 
 if TYPE_CHECKING:

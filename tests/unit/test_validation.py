@@ -4,9 +4,7 @@ Tests SOP compliance validation including session checks, tier restrictions,
 DXY alignment, and HTF bias validation.
 """
 
-from datetime import datetime, timezone
-
-import pytest
+from datetime import UTC, datetime
 
 from rule_engine.htf.types import HTFBias
 from rule_engine.signal import Signal
@@ -18,14 +16,14 @@ def create_htf_bias_from_context(context: dict) -> HTFBias:
     bias = context.get("htf_bias", "neutral")
     direction = context.get("htf_direction", "neutral")
     score = context.get("htf_score", 6.5)
-    
+
     if score >= 8.0:
         confidence = "high"
     elif score >= 6.0:
         confidence = "medium"
     else:
         confidence = "low"
-    
+
     return HTFBias(
         bias=bias,
         direction=direction,
@@ -41,7 +39,7 @@ class TestValidateSignal:
     def test_validate_all_checks_pass(self) -> None:
         """Test signal with all validation checks passing."""
         signal = Signal(
-            timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=timezone.utc),
+            timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
             symbol="GC",
             timeframe="1m",
             direction="long",
@@ -76,7 +74,7 @@ class TestValidateSignal:
     def test_validate_invalid_session_downgrades_to_reject(self) -> None:
         """Test that invalid session downgrades confidence to Reject."""
         signal = Signal(
-            timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=timezone.utc),
+            timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
             symbol="GC",
             timeframe="1m",
             direction="long",
@@ -110,7 +108,7 @@ class TestValidateSignal:
     def test_validate_htf_bias_mismatch_downgrades_to_reject(self) -> None:
         """Test that HTF bias mismatch downgrades confidence to Reject."""
         signal = Signal(
-            timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=timezone.utc),
+            timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
             symbol="GC",
             timeframe="1m",
             direction="long",
@@ -145,7 +143,7 @@ class TestValidateSignal:
         """Test DXY correlation alignment validation."""
         # Signal with poor DXY correlation
         signal = Signal(
-            timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=timezone.utc),
+            timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
             symbol="GC",
             timeframe="1m",
             direction="long",
@@ -180,7 +178,7 @@ class TestValidateSignal:
         """Test that tier restrictions are enforced."""
         # VWAP_FADE setup with Conservative tier (not allowed)
         signal = Signal(
-            timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=timezone.utc),
+            timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
             symbol="GC",
             timeframe="1m",
             direction="short",
@@ -219,7 +217,7 @@ class TestValidationFlags:
     def test_session_ok_flag_updates(self) -> None:
         """Test session_ok flag is updated correctly."""
         signal = Signal(
-            timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=timezone.utc),
+            timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
             symbol="GC",
             timeframe="1m",
             direction="long",
@@ -252,7 +250,7 @@ class TestValidationFlags:
     def test_tier_ok_flag_updates(self) -> None:
         """Test tier_ok flag is updated based on allowed setups."""
         signal = Signal(
-            timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=timezone.utc),
+            timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
             symbol="GC",
             timeframe="1m",
             direction="short",
@@ -285,7 +283,7 @@ class TestValidationFlags:
     def test_htf_bias_ok_flag_updates(self) -> None:
         """Test htf_bias_ok flag is updated on mismatch."""
         signal = Signal(
-            timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=timezone.utc),
+            timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
             symbol="GC",
             timeframe="1m",
             direction="long",
@@ -325,7 +323,7 @@ class TestValidationEnforcerTiers:
 
         for setup_type in allowed_setups:
             signal = Signal(
-                timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=timezone.utc),
+                timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
                 symbol="GC",
                 timeframe="1m",
                 direction="long",
@@ -356,7 +354,7 @@ class TestValidationEnforcerTiers:
 
         for setup_type in forbidden_setups:
             signal = Signal(
-                timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=timezone.utc),
+                timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
                 symbol="GC",
                 timeframe="1m",
                 direction="short",
@@ -391,7 +389,7 @@ class TestValidationEnforcerTiers:
 
         for setup_type in all_setups:
             signal = Signal(
-                timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=timezone.utc),
+                timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
                 symbol="GC",
                 timeframe="1m",
                 direction="long",
@@ -419,4 +417,3 @@ class TestValidationEnforcerTiers:
             htf_bias = create_htf_bias_from_context(context)
             validated = validate_signal(signal, htf_bias, context)
             assert validated.validation_flags["tier_ok"] is True
-

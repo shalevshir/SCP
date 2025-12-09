@@ -5,10 +5,8 @@ This module provides SOP-compliant validation status for dashboard indicators.
 Architecture: Zero code duplication - calls existing validation from rule_engine.
 """
 
-from typing import Optional
 
 import pandas as pd
-
 from common.logger import get_logger
 from rule_engine.config_loader import load_scoring_config
 from rule_engine.htf.types import HTFBias
@@ -16,7 +14,7 @@ from rule_engine.htf.types import HTFBias
 logger = get_logger(__name__)
 
 # Cached scoring config
-_config: Optional[dict] = None
+_config: dict | None = None
 
 
 def _get_config() -> dict:
@@ -27,7 +25,7 @@ def _get_config() -> dict:
     return _config
 
 
-def validate_rsi(rsi_value: Optional[float], htf_bias: Optional[HTFBias]) -> str:
+def validate_rsi(rsi_value: float | None, htf_bias: HTFBias | None) -> str:
     """Validate RSI according to SOP rules.
 
     Args:
@@ -52,7 +50,7 @@ def validate_rsi(rsi_value: Optional[float], htf_bias: Optional[HTFBias]) -> str
     return "WEAK"
 
 
-def validate_dxy_corr(corr_value: Optional[float]) -> str:
+def validate_dxy_corr(corr_value: float | None) -> str:
     """Validate DXY correlation according to SOP rules.
 
     Args:
@@ -77,9 +75,9 @@ def validate_dxy_corr(corr_value: Optional[float]) -> str:
 
 
 def validate_vwap_relation(
-    close: Optional[float],
-    vwap: Optional[float],
-    htf_bias: Optional[HTFBias],
+    close: float | None,
+    vwap: float | None,
+    htf_bias: HTFBias | None,
 ) -> str:
     """Validate VWAP relation according to SOP rules.
 
@@ -126,10 +124,10 @@ def validate_vwap_relation(
 
 
 def validate_ema_stack(
-    ema_9: Optional[float],
-    ema_20: Optional[float],
-    ema_50: Optional[float],
-    htf_bias: Optional[HTFBias],
+    ema_9: float | None,
+    ema_20: float | None,
+    ema_50: float | None,
+    htf_bias: HTFBias | None,
 ) -> str:
     """Validate EMA stack according to SOP rules.
 
@@ -176,8 +174,8 @@ def validate_ema_stack(
 
 
 def validate_structure(
-    structure_value: Optional[str],
-    htf_bias: Optional[HTFBias],
+    structure_value: str | None,
+    htf_bias: HTFBias | None,
 ) -> str:
     """Validate structure label according to SOP rules.
 
@@ -225,7 +223,7 @@ def validate_structure(
 
 def get_all_indicator_validations(
     features: pd.Series,
-    htf_bias: Optional[HTFBias],
+    htf_bias: HTFBias | None,
 ) -> dict[str, str]:
     """Get validation status for all indicators.
 
@@ -282,7 +280,7 @@ def get_validation_badge_class(status: str) -> str:
 def get_validation_tooltip(
     indicator: str,
     status: str,
-    value: Optional[float],
+    value: float | None,
 ) -> str:
     """Get tooltip text explaining validation status.
 
@@ -307,11 +305,23 @@ def get_validation_tooltip(
 
     if indicator == "dxy_corr":
         if status == "VALID":
-            return f"Strong inverse correlation ({value:.3f} < -0.6)" if value else "Strong inverse correlation"
+            return (
+                f"Strong inverse correlation ({value:.3f} < -0.6)"
+                if value
+                else "Strong inverse correlation"
+            )
         elif status == "WEAK":
-            return f"Moderate correlation ({value:.3f})" if value else "Moderate correlation"
+            return (
+                f"Moderate correlation ({value:.3f})"
+                if value
+                else "Moderate correlation"
+            )
         else:
-            return f"Weak/positive correlation ({value:.3f} > -0.4)" if value else "Weak/positive correlation"
+            return (
+                f"Weak/positive correlation ({value:.3f} > -0.4)"
+                if value
+                else "Weak/positive correlation"
+            )
 
     if indicator == "vwap":
         if status == "VALID":
@@ -338,4 +348,3 @@ def get_validation_tooltip(
             return "No swing point detected"
 
     return f"{indicator}: {status}"
-

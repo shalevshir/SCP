@@ -79,24 +79,26 @@ def validate_signal(signal: Signal, htf_bias: HTFBias, context: dict) -> Signal:
     # Check HTF bias alignment
     htf_bias_ok = signal.direction == htf_bias.direction
     validation_flags["htf_bias_ok"] = htf_bias_ok
-    
+
     # Check HTF validity (no conflicts or chop)
     htf_valid = not htf_bias.conflict_detected and not htf_bias.dxy_chop_detected
     validation_flags["htf_valid"] = htf_valid
 
     # Determine if any validation failed
-    any_failed = not all([
-        validation_flags["session_ok"],
-        validation_flags["tier_ok"],
-        validation_flags["htf_bias_ok"],
-        validation_flags["htf_valid"],
-    ])
+    any_failed = not all(
+        [
+            validation_flags["session_ok"],
+            validation_flags["tier_ok"],
+            validation_flags["htf_bias_ok"],
+            validation_flags["htf_valid"],
+        ]
+    )
 
     # Downgrade confidence if validation failed
     confidence = signal.confidence
     if any_failed:
         confidence = "Reject"
-        
+
         # Build rejection reason
         rejection_reasons = []
         if not validation_flags["session_ok"]:
@@ -104,13 +106,15 @@ def validate_signal(signal: Signal, htf_bias: HTFBias, context: dict) -> Signal:
         if not validation_flags["tier_ok"]:
             rejection_reasons.append(f"Setup not allowed for tier {enforcer_tier}")
         if not validation_flags["htf_bias_ok"]:
-            rejection_reasons.append(f"Signal direction conflicts with HTF {htf_bias.direction}")
+            rejection_reasons.append(
+                f"Signal direction conflicts with HTF {htf_bias.direction}"
+            )
         if not validation_flags["htf_valid"]:
             if htf_bias.conflict_detected:
                 rejection_reasons.append(f"HTF conflict: {htf_bias.conflict_reason}")
             if htf_bias.dxy_chop_detected:
                 rejection_reasons.append("DXY in chop mode")
-        
+
         logger.info(f"Signal validation failed: {'; '.join(rejection_reasons)}")
 
     # Create and return new Signal with updated validation
@@ -195,12 +199,8 @@ def validate_signal_with_sop(
             name="Default",
             window_start=time(0, 0),
             window_end=time(23, 59),
-            allowed_tiers=frozenset(
-                ["Conservative", "EarlyMild", "Mild", "Offensive"]
-            ),
-            allowed_setups=frozenset(
-                ["VWAP_RECLAIM", "DXY_CONTINUATION", "VWAP_FADE"]
-            ),
+            allowed_tiers=frozenset(["Conservative", "EarlyMild", "Mild", "Offensive"]),
+            allowed_setups=frozenset(["VWAP_RECLAIM", "DXY_CONTINUATION", "VWAP_FADE"]),
             min_score=0.0,  # Permissive: allow all scores
             max_losses=999,  # Permissive: no loss limit
             dxy_correlation_max=1.0,  # Permissive: allow any correlation
@@ -250,7 +250,7 @@ def validate_signal_with_sop(
 
     # Check if score meets minimum for season
     score_meets_minimum = signal.score >= session_constraints.min_score
-    
+
     logger.debug(
         f"Score validation: signal.score={signal.score:.2f}, "
         f"min_score={session_constraints.min_score}, "
@@ -263,12 +263,16 @@ def validate_signal_with_sop(
     # Update validation flags
     validation_flags = dict(signal.validation_flags)
     validation_flags["session_ok"] = validation_context.session_ok
-    validation_flags["tier_ok"] = validation_context.tier_active.value in session_constraints.allowed_tiers
+    validation_flags["tier_ok"] = (
+        validation_context.tier_active.value in session_constraints.allowed_tiers
+    )
     validation_flags["dxy_alignment_ok"] = dxy_allowed
-    validation_flags["htf_bias_ok"] = signal.htf_bias == validation_context.htf_bias.value
+    validation_flags["htf_bias_ok"] = (
+        signal.htf_bias == validation_context.htf_bias.value
+    )
     validation_flags["score_meets_minimum"] = score_meets_minimum
     validation_flags["setup_allowed_in_season"] = setup_allowed_in_season
-    
+
     # Check HTF validity (no conflicts or chop) if HTFBias provided
     if htf_bias is not None:
         htf_valid = not htf_bias.conflict_detected and not htf_bias.dxy_chop_detected
@@ -299,7 +303,7 @@ def validate_signal_with_sop(
         rejection_reasons.append(
             f"Setup {signal.setup_type} not allowed in {session_constraints.name} season"
         )
-    
+
     # Check HTF conflicts and DXY chop
     if htf_bias is not None:
         if htf_bias.conflict_detected:
@@ -333,4 +337,3 @@ def validate_signal_with_sop(
         rationale=enhanced_rationale,
         enforcer_tier=validation_result.enforced_tier,
     )
-

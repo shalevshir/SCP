@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import pandas as pd
 import pytest
-
 from rule_engine.htf.structure.choch import detect_choch
 
 
@@ -14,11 +13,13 @@ class TestDetectCHoCH:
     def test_detects_bullish_choch(self) -> None:
         """Test detection of bullish CHoCH when bearish trend breaks prior swing high."""
         # Strategy: Establish bearish trend first, then break opposite direction
-        df = pd.DataFrame({
-            "high": [100, 98, 96, 94, 92, 90, 88, 86, 84, 102],
-            "low": [98, 96, 94, 92, 90, 88, 86, 84, 82, 99],
-            "close": [99, 97, 95, 93, 91, 89, 87, 85, 83, 101],
-        })
+        df = pd.DataFrame(
+            {
+                "high": [100, 98, 96, 94, 92, 90, 88, 86, 84, 102],
+                "low": [98, 96, 94, 92, 90, 88, 86, 84, 82, 99],
+                "close": [99, 97, 95, 93, 91, 89, 87, 85, 83, 101],
+            }
+        )
         # Swing high at 0 (high=100)
         # Swing low at 1 (low=96) - will be broken to establish bearish trend
         # Swing low at 8 (low=82)
@@ -33,11 +34,13 @@ class TestDetectCHoCH:
 
     def test_detects_bearish_choch(self) -> None:
         """Test detection of bearish CHoCH when bullish trend breaks prior swing low."""
-        df = pd.DataFrame({
-            "high": [100, 102, 104, 106, 108, 110, 112, 114, 108],
-            "low": [98, 100, 102, 104, 106, 108, 110, 112, 95],
-            "close": [99, 101, 103, 105, 107, 109, 111, 113, 97],
-        })
+        df = pd.DataFrame(
+            {
+                "high": [100, 102, 104, 106, 108, 110, 112, 114, 108],
+                "low": [98, 100, 102, 104, 106, 108, 110, 112, 95],
+                "close": [99, 101, 103, 105, 107, 109, 111, 113, 97],
+            }
+        )
         # Swing low at 0 (low=98), swing high at 7 (high=114)
         swing_highs = [7]  # high: 114
         swing_lows = [0]  # low: 98
@@ -50,11 +53,13 @@ class TestDetectCHoCH:
         # Index 8: close=97 < 98, breaks swing low while in bullish → CHoCH
 
         # Better test: establish bullish trend first
-        df = pd.DataFrame({
-            "high": [100, 102, 105, 103, 101, 103, 106, 104, 97],
-            "low": [98, 99, 102, 100, 98, 100, 103, 101, 94],
-            "close": [99, 101, 104, 102, 100, 102, 105, 103, 95],
-        })
+        df = pd.DataFrame(
+            {
+                "high": [100, 102, 105, 103, 101, 103, 106, 104, 97],
+                "low": [98, 99, 102, 100, 98, 100, 103, 101, 94],
+                "close": [99, 101, 104, 102, 100, 102, 105, 103, 95],
+            }
+        )
         swing_highs = [2]  # high: 105
         swing_lows = [4]  # low: 98
 
@@ -66,11 +71,13 @@ class TestDetectCHoCH:
 
         # Need to ensure bullish trend is established first
         # Let me add a swing high that gets broken early
-        df = pd.DataFrame({
-            "high": [90, 92, 105, 103, 101, 103, 108, 106, 97],
-            "low": [88, 89, 102, 100, 98, 100, 105, 103, 94],
-            "close": [89, 91, 104, 102, 100, 102, 107, 105, 95],
-        })
+        df = pd.DataFrame(
+            {
+                "high": [90, 92, 105, 103, 101, 103, 108, 106, 97],
+                "low": [88, 89, 102, 100, 98, 100, 105, 103, 94],
+                "close": [89, 91, 104, 102, 100, 102, 107, 105, 95],
+            }
+        )
         swing_highs = [2]  # high: 105
         swing_lows = [4]  # low: 98
 
@@ -82,11 +89,13 @@ class TestDetectCHoCH:
 
     def test_no_choch_when_continues_same_direction(self) -> None:
         """Test that continuing to break same direction doesn't trigger CHoCH (it's BOS)."""
-        df = pd.DataFrame({
-            "high": [100, 102, 105, 103, 101, 103, 108, 106, 111],
-            "low": [98, 99, 102, 100, 98, 100, 105, 103, 108],
-            "close": [99, 101, 104, 102, 100, 102, 107, 105, 110],
-        })
+        df = pd.DataFrame(
+            {
+                "high": [100, 102, 105, 103, 101, 103, 108, 106, 111],
+                "low": [98, 99, 102, 100, 98, 100, 105, 103, 108],
+                "close": [99, 101, 104, 102, 100, 102, 107, 105, 110],
+            }
+        )
         # Swing highs at 2 and 6
         swing_highs = [2, 6]  # highs: 105, 108
         swing_lows = []
@@ -100,11 +109,13 @@ class TestDetectCHoCH:
 
     def test_multiple_choch_events(self) -> None:
         """Test detection of multiple CHoCH events (trend reversals)."""
-        df = pd.DataFrame({
-            "high": [100, 102, 105, 103, 101, 99, 97, 95, 102, 100, 98],
-            "low": [98, 99, 102, 100, 98, 96, 94, 92, 99, 97, 85],
-            "close": [99, 101, 104, 102, 100, 98, 96, 94, 101, 99, 87],
-        })
+        df = pd.DataFrame(
+            {
+                "high": [100, 102, 105, 103, 101, 99, 97, 95, 102, 100, 98],
+                "low": [98, 99, 102, 100, 98, 96, 94, 92, 99, 97, 85],
+                "close": [99, 101, 104, 102, 100, 98, 96, 94, 101, 99, 87],
+            }
+        )
         # Swing high at 2 (105), swing low at 7 (92)
         swing_highs = [2]
         swing_lows = [7, 9]
@@ -116,11 +127,13 @@ class TestDetectCHoCH:
         # Actually close=101 < 105, doesn't break high
 
         # Better data for multiple CHoCH
-        df = pd.DataFrame({
-            "high": [100, 98, 96, 94, 92, 102, 100, 98, 88],
-            "low": [98, 96, 94, 92, 90, 99, 97, 95, 85],
-            "close": [99, 97, 95, 93, 91, 101, 99, 97, 87],
-        })
+        df = pd.DataFrame(
+            {
+                "high": [100, 98, 96, 94, 92, 102, 100, 98, 88],
+                "low": [98, 96, 94, 92, 90, 99, 97, 95, 85],
+                "close": [99, 97, 95, 93, 91, 101, 99, 97, 87],
+            }
+        )
         swing_highs = [0]  # high: 100
         swing_lows = [4]  # low: 90
 
@@ -131,8 +144,12 @@ class TestDetectCHoCH:
         # Index 8: close=87 < 90, breaks low (CHoCH from bullish to bearish)
 
         # Expect CHoCH at indices where trend flips
-        bullish_choch_indices = [i for i, val in enumerate(choch) if val == "bullish_choch"]
-        bearish_choch_indices = [i for i, val in enumerate(choch) if val == "bearish_choch"]
+        bullish_choch_indices = [
+            i for i, val in enumerate(choch) if val == "bullish_choch"
+        ]
+        bearish_choch_indices = [
+            i for i, val in enumerate(choch) if val == "bearish_choch"
+        ]
 
         # Should have at least one CHoCH event
         assert len(bullish_choch_indices) + len(bearish_choch_indices) > 0
@@ -140,11 +157,13 @@ class TestDetectCHoCH:
     def test_ambiguous_case_no_label(self) -> None:
         """Test that breaking both swing high and low returns None (ambiguous)."""
         # This is similar to BOS - if close breaks both directions, it's ambiguous
-        df = pd.DataFrame({
-            "high": [100, 102, 104, 102, 100, 102, 105],
-            "low": [98, 99, 101, 99, 98, 99, 102],
-            "close": [99, 101, 103, 101, 99, 101, 103],
-        })
+        df = pd.DataFrame(
+            {
+                "high": [100, 102, 104, 102, 100, 102, 105],
+                "low": [98, 99, 101, 99, 98, 99, 102],
+                "close": [99, 101, 103, 101, 99, 101, 103],
+            }
+        )
         # Set up swings that could create ambiguous case
         swing_highs = [2]  # high: 104
         swing_lows = [4]  # low: 98
@@ -159,11 +178,13 @@ class TestDetectCHoCH:
 
     def test_equality_does_not_trigger_choch_high(self) -> None:
         """Test that close == swing high does NOT trigger CHoCH (strict inequality)."""
-        df = pd.DataFrame({
-            "high": [100, 98, 96, 94, 92, 90, 100],
-            "low": [98, 96, 94, 92, 90, 88, 97],
-            "close": [99, 97, 95, 93, 91, 89, 100],
-        })
+        df = pd.DataFrame(
+            {
+                "high": [100, 98, 96, 94, 92, 90, 100],
+                "low": [98, 96, 94, 92, 90, 88, 97],
+                "close": [99, 97, 95, 93, 91, 89, 100],
+            }
+        )
         swing_highs = [0]  # high: 100
         swing_lows = [5]  # low: 88
 
@@ -174,11 +195,13 @@ class TestDetectCHoCH:
 
     def test_equality_does_not_trigger_choch_low(self) -> None:
         """Test that close == swing low does NOT trigger CHoCH (strict inequality)."""
-        df = pd.DataFrame({
-            "high": [100, 102, 104, 106, 108, 110, 103],
-            "low": [98, 100, 102, 104, 106, 108, 100],
-            "close": [99, 101, 103, 105, 107, 109, 100],
-        })
+        df = pd.DataFrame(
+            {
+                "high": [100, 102, 104, 106, 108, 110, 103],
+                "low": [98, 100, 102, 104, 106, 108, 100],
+                "close": [99, 101, 103, 105, 107, 109, 100],
+            }
+        )
         swing_highs = [5]  # high: 110
         swing_lows = [0]  # low: 98
 
@@ -189,11 +212,13 @@ class TestDetectCHoCH:
         # Actually low at index 0 is 98, close=100 > 98
         # Let me fix this test
 
-        df = pd.DataFrame({
-            "high": [100, 102, 105, 103, 101, 103, 108, 106, 103],
-            "low": [98, 99, 102, 100, 98, 100, 105, 103, 100],
-            "close": [99, 101, 104, 102, 100, 102, 107, 105, 100],
-        })
+        df = pd.DataFrame(
+            {
+                "high": [100, 102, 105, 103, 101, 103, 108, 106, 103],
+                "low": [98, 99, 102, 100, 98, 100, 105, 103, 100],
+                "close": [99, 101, 104, 102, 100, 102, 107, 105, 100],
+            }
+        )
         swing_highs = [2]  # high: 105
         swing_lows = [4]  # low: 98
 
@@ -212,11 +237,13 @@ class TestDetectCHoCH:
 
     def test_first_break_establishes_trend_not_choch(self) -> None:
         """Test that first structural break establishes trend, not CHoCH."""
-        df = pd.DataFrame({
-            "high": [100, 102, 105, 103, 101],
-            "low": [98, 99, 102, 100, 98],
-            "close": [99, 101, 104, 102, 100],
-        })
+        df = pd.DataFrame(
+            {
+                "high": [100, 102, 105, 103, 101],
+                "low": [98, 99, 102, 100, 98],
+                "close": [99, 101, 104, 102, 100],
+            }
+        )
         # Swing high at 2
         swing_highs = [2]  # high: 105
         swing_lows = []
@@ -230,11 +257,13 @@ class TestDetectCHoCH:
 
     def test_neutral_trend_establishes_direction(self) -> None:
         """Test that breaking from neutral establishes initial trend direction."""
-        df = pd.DataFrame({
-            "high": [100, 102, 105, 103, 108],
-            "low": [98, 99, 102, 100, 105],
-            "close": [99, 101, 104, 102, 107],
-        })
+        df = pd.DataFrame(
+            {
+                "high": [100, 102, 105, 103, 108],
+                "low": [98, 99, 102, 100, 105],
+                "close": [99, 101, 104, 102, 107],
+            }
+        )
         swing_highs = [2]  # high: 105
         swing_lows = []
 
@@ -246,11 +275,13 @@ class TestDetectCHoCH:
 
     def test_empty_swing_lists(self) -> None:
         """Test that empty swing lists return all None."""
-        df = pd.DataFrame({
-            "high": [100, 102, 105, 103, 101],
-            "low": [98, 99, 102, 100, 98],
-            "close": [99, 101, 104, 102, 100],
-        })
+        df = pd.DataFrame(
+            {
+                "high": [100, 102, 105, 103, 101],
+                "low": [98, 99, 102, 100, 98],
+                "close": [99, 101, 104, 102, 100],
+            }
+        )
         swing_highs = []
         swing_lows = []
 
@@ -272,10 +303,12 @@ class TestDetectCHoCH:
 
     def test_missing_close_column(self) -> None:
         """Test that missing 'close' column raises ValueError."""
-        df = pd.DataFrame({
-            "high": [100, 102, 105],
-            "low": [98, 99, 102],
-        })
+        df = pd.DataFrame(
+            {
+                "high": [100, 102, 105],
+                "low": [98, 99, 102],
+            }
+        )
         swing_highs = [1]
         swing_lows = []
 
@@ -284,10 +317,12 @@ class TestDetectCHoCH:
 
     def test_missing_high_column(self) -> None:
         """Test that missing 'high' column raises ValueError."""
-        df = pd.DataFrame({
-            "low": [98, 99, 102],
-            "close": [99, 101, 104],
-        })
+        df = pd.DataFrame(
+            {
+                "low": [98, 99, 102],
+                "close": [99, 101, 104],
+            }
+        )
         swing_highs = [1]
         swing_lows = []
 
@@ -296,10 +331,12 @@ class TestDetectCHoCH:
 
     def test_missing_low_column(self) -> None:
         """Test that missing 'low' column raises ValueError."""
-        df = pd.DataFrame({
-            "high": [100, 102, 105],
-            "close": [99, 101, 104],
-        })
+        df = pd.DataFrame(
+            {
+                "high": [100, 102, 105],
+                "close": [99, 101, 104],
+            }
+        )
         swing_highs = []
         swing_lows = [1]
 
@@ -329,11 +366,13 @@ class TestDetectCHoCH:
         """Test integration with real swing detection output."""
         from rule_engine.htf.structure.swings import detect_swings
 
-        df = pd.DataFrame({
-            "high": [100, 102, 105, 103, 101, 99, 97, 95, 102, 100],
-            "low": [98, 99, 102, 100, 98, 96, 94, 92, 99, 97],
-            "close": [99, 101, 104, 102, 100, 98, 96, 94, 101, 99],
-        })
+        df = pd.DataFrame(
+            {
+                "high": [100, 102, 105, 103, 101, 99, 97, 95, 102, 100],
+                "low": [98, 99, 102, 100, 98, 96, 94, 92, 99, 97],
+                "close": [99, 101, 104, 102, 100, 98, 96, 94, 101, 99],
+            }
+        )
 
         # Use detect_swings to get swing indices
         swing_highs, swing_lows = detect_swings(df, lookback=2)
@@ -377,14 +416,17 @@ class TestDetectCHoCH:
         high_prices = close_prices + np.abs(np.random.randn(n) * 0.2)
         low_prices = close_prices - np.abs(np.random.randn(n) * 0.2)
 
-        df = pd.DataFrame({
-            "high": high_prices,
-            "low": low_prices,
-            "close": close_prices,
-        })
+        df = pd.DataFrame(
+            {
+                "high": high_prices,
+                "low": low_prices,
+                "close": close_prices,
+            }
+        )
 
         # Detect swings
         from rule_engine.htf.structure.swings import detect_swings
+
         swing_highs, swing_lows = detect_swings(df, lookback=5)
 
         # Should complete quickly (< 1 second for 1000 bars)
@@ -398,11 +440,13 @@ class TestDetectCHoCH:
         """Test that CHoCH produces different output than BOS (complementary logic)."""
         from rule_engine.htf.structure.bos import detect_bos
 
-        df = pd.DataFrame({
-            "high": [100, 98, 96, 94, 92, 102, 100, 98, 88],
-            "low": [98, 96, 94, 92, 90, 99, 97, 95, 85],
-            "close": [99, 97, 95, 93, 91, 101, 99, 97, 87],
-        })
+        df = pd.DataFrame(
+            {
+                "high": [100, 98, 96, 94, 92, 102, 100, 98, 88],
+                "low": [98, 96, 94, 92, 90, 99, 97, 95, 85],
+                "close": [99, 97, 95, 93, 91, 101, 99, 97, 87],
+            }
+        )
         swing_highs = [0, 5]  # highs: 100, 102
         swing_lows = [4, 8]  # lows: 90, 85
 
@@ -422,4 +466,3 @@ class TestDetectCHoCH:
         # Verify they can have different values at same indices
         # (though in some cases they might both be None)
         # This test mainly ensures both can run on same data
-

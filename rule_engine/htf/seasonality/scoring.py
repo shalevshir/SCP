@@ -9,8 +9,9 @@ Status: Not started
 
 from __future__ import annotations
 
-from rule_engine.htf.seasonality.rules import SeasonalityPeriod
 from common.logger import get_logger
+
+from rule_engine.htf.seasonality.rules import SeasonalityPeriod
 
 logger = get_logger(__name__)
 
@@ -41,10 +42,10 @@ def apply_seasonality_adjustment(
         - Full integration verified via unit tests
     """
     from rule_engine.htf.seasonality.rules import get_seasonality_config
-    
+
     config = get_seasonality_config(period)
     adjustment = 0.0
-    
+
     # DXY correlation bonus/penalty based on seasonal threshold
     if dxy_corr is not None:
         dxy_threshold = config["dxy_corr_threshold"]
@@ -55,33 +56,29 @@ def apply_seasonality_adjustment(
             logger.debug(
                 "DXY correlation bonus: dxy_corr=%.2f < threshold=%.2f | +0.5",
                 dxy_corr,
-                dxy_threshold
+                dxy_threshold,
             )
-    
+
     # Trend season (November-December) bonus for strong scores
     if period == "november_december" and base_score >= 8.0:
         adjustment += 0.3
         logger.debug("Trend season bonus applied: +0.3")
-    
+
     # September defensive mode - penalty if below September threshold
     if period == "september" and base_score < 8.5:
         adjustment -= 0.5
-        logger.debug(
-            "September penalty: score %.1f < 8.5 threshold | -0.5",
-            base_score
-        )
-    
+        logger.debug("September penalty: score %.1f < 8.5 threshold | -0.5", base_score)
+
     # Calculate adjusted score and clamp to [0, 10] range
     adjusted_score = base_score + adjustment
     adjusted_score = max(0.0, min(10.0, adjusted_score))
-    
+
     logger.debug(
         "Seasonality adjustment applied: period=%s | base=%.2f | adj=%.2f | final=%.2f",
         period,
         base_score,
         adjustment,
-        adjusted_score
+        adjusted_score,
     )
-    
-    return adjusted_score, adjustment
 
+    return adjusted_score, adjustment

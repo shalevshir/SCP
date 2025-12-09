@@ -1,10 +1,9 @@
 """Tests for FeatureEngine Integration Layer."""
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC
 
 import pandas as pd
 import pytest
-
 from feature_engine.integration import (
     align_dataframes,
     prepare_for_aggregation,
@@ -70,7 +69,7 @@ class TestAlignDataframes:
     def test_aligns_dataframes_with_timestamp_index(self) -> None:
         """Test alignment of DataFrames with timestamp index."""
         # Create overlapping timestamps
-        common_times = pd.date_range("2025-01-01 09:00", periods=5, freq="1min", tz=UTC)
+        pd.date_range("2025-01-01 09:00", periods=5, freq="1min", tz=UTC)
         gc_times = pd.date_range("2025-01-01 08:59", periods=7, freq="1min", tz=UTC)
         dxy_times = pd.date_range("2025-01-01 09:01", periods=7, freq="1min", tz=UTC)
 
@@ -129,11 +128,11 @@ class TestCalculateStructureLabels:
 
     def test_identifies_higher_highs(self) -> None:
         """Test identification of higher highs.
-        
+
         With delayed labeling, we need enough data points for both:
         1. Swing detection window (swing_window bars on each side)
         2. Delay window (swing_window bars after detection)
-        
+
         For swing_window=2, we need at least 2 + 1 + 2 = 5 bars to detect a swing,
         plus 2 more bars for the delayed label to appear.
         """
@@ -148,7 +147,12 @@ class TestCalculateStructureLabels:
         labels = calculate_structure_labels(df, swing_window=2)
 
         # Should identify swing highs and label them (delayed by swing_window)
-        assert "HH" in labels.values or "LH" in labels.values or "HL" in labels.values or "LL" in labels.values
+        assert (
+            "HH" in labels.values
+            or "LH" in labels.values
+            or "HL" in labels.values
+            or "LL" in labels.values
+        )
 
     def test_handles_insufficient_data(self) -> None:
         """Test that insufficient data returns all NA labels."""
@@ -182,8 +186,12 @@ class TestCalculateVwapDeviation:
         deviation = calculate_vwap_deviation(df)
 
         assert len(deviation) == 3
-        assert deviation.iloc[0] == pytest.approx(0.189, abs=0.01)  # (2650-2645)/2645*100
-        assert deviation.iloc[1] == pytest.approx(0.378, abs=0.01)  # (2655-2645)/2645*100
+        assert deviation.iloc[0] == pytest.approx(
+            0.189, abs=0.01
+        )  # (2650-2645)/2645*100
+        assert deviation.iloc[1] == pytest.approx(
+            0.378, abs=0.01
+        )  # (2655-2645)/2645*100
         assert deviation.iloc[2] == pytest.approx(0.0, abs=0.01)  # (2645-2645)/2645*100
 
     def test_raises_error_for_missing_columns(self) -> None:
@@ -240,9 +248,7 @@ class TestProcessFeatures:
         self, sample_gc_data: pd.DataFrame, sample_dxy_data: pd.DataFrame
     ) -> None:
         """Test feature processing with handcrafted mini dataset."""
-        features = process_features(
-            sample_gc_data, sample_dxy_data, "1m", context=None
-        )
+        features = process_features(sample_gc_data, sample_dxy_data, "1m", context=None)
 
         # Check that all expected columns are present
         assert "vwap" in features.columns
@@ -259,9 +265,7 @@ class TestProcessFeatures:
         self, sample_gc_data: pd.DataFrame, sample_dxy_data: pd.DataFrame
     ) -> None:
         """Test that no NaNs exist past initialization window."""
-        features = process_features(
-            sample_gc_data, sample_dxy_data, "1m", context=None
-        )
+        features = process_features(sample_gc_data, sample_dxy_data, "1m", context=None)
 
         # Check feature columns past initialization window (50 periods)
         max_init_window = 50
@@ -272,7 +276,9 @@ class TestProcessFeatures:
                     nan_count = features[col].iloc[max_init_window:].isna().sum()
                     # Some NaNs might be acceptable in dxy_corr due to correlation window
                     if col != "dxy_corr":
-                        assert nan_count == 0, f"Found {nan_count} NaNs in {col} past initialization"
+                        assert (
+                            nan_count == 0
+                        ), f"Found {nan_count} NaNs in {col} past initialization"
 
     def test_handles_different_timeframes(
         self, sample_gc_data: pd.DataFrame, sample_dxy_data: pd.DataFrame
@@ -330,4 +336,3 @@ class TestProcessFeatures:
         # Validation status column should be added if session_validator is used
         # For now, we just check that processing completes
         assert len(features) > 0
-

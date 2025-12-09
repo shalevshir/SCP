@@ -4,7 +4,6 @@ This module implements the core scoring logic that transforms feature data
 into Signal objects with SOP-compliant scoring and classification.
 """
 
-
 import pandas as pd
 from common.logger import get_logger
 
@@ -64,10 +63,10 @@ def score_signal(features: pd.Series, htf_bias: HTFBias, context: dict) -> Signa
     """
     # Determine signal direction from features
     signal_direction = determine_direction(features, htf_bias)
-    
+
     # Validate signal against HTF bias
     is_valid, rejection_reason = validate_signal_with_htf(signal_direction, htf_bias)
-    
+
     if not is_valid:
         # Return rejected signal with reason
         logger.warning(f"Signal rejected: {rejection_reason}")
@@ -85,7 +84,7 @@ def score_signal(features: pd.Series, htf_bias: HTFBias, context: dict) -> Signa
             validation_flags={"htf_valid": False},
             enforcer_tier=context.get("enforcer_tier", "Conservative"),
         )
-    
+
     # Load scoring configuration
     config = load_scoring_config()
 
@@ -101,12 +100,12 @@ def score_signal(features: pd.Series, htf_bias: HTFBias, context: dict) -> Signa
 
     # Calculate base score (sum of all factors, capped at 10)
     base_score = min(sum(factor_scores.values()), 10.0)
-    
+
     # Apply HTF-based score adjustments
     adjusted_score, htf_adjustments = adjust_score_with_htf(
         base_score, htf_bias, signal_direction
     )
-    
+
     # Add HTF adjustments to factor scores for transparency
     factor_scores.update(htf_adjustments)
 
@@ -131,7 +130,7 @@ def score_signal(features: pd.Series, htf_bias: HTFBias, context: dict) -> Signa
     rationale = build_rationale(features, htf_bias, factor_scores, setup_type)
 
     # Create validation flags
-    dxy_corr_value = features.get("dxy_corr")
+    features.get("dxy_corr")
     validation_flags = {
         "session_ok": context.get("session_ok", True),
         "tier_ok": True,
@@ -292,7 +291,7 @@ def calculate_structure_alignment(
 
     Base: Direction matches HTF bias (70% of max)
     Bonus: BOS detected (+15%)
-    
+
     Note: CHoCH (Change of Character) indicates potential reversal and is
     penalized in adjust_score_with_htf, not rewarded here.
 
@@ -435,7 +434,7 @@ def calculate_fvg_alignment(
     # Normalize to max_points (only positive contributions)
     # FVG score ranges from -2 to +2, normalize to -1 to +1
     normalized = htf_bias.fvg_alignment_score / 2.0
-    
+
     # Only positive contributions count, and enforce upper bound
     return min(max(0.0, normalized * max_points), max_points)
 
@@ -617,7 +616,9 @@ def build_rationale(
     parts.append(f"{setup_type} setup")
 
     # HTF bias
-    parts.append(f"HTF {htf_bias.bias} ({htf_bias.confidence} confidence, score={htf_bias.score:.1f})")
+    parts.append(
+        f"HTF {htf_bias.bias} ({htf_bias.confidence} confidence, score={htf_bias.score:.1f})"
+    )
 
     # VWAP position
     close = features.get("close", 0)
@@ -637,17 +638,23 @@ def build_rationale(
         parts.append(f"RSI mid-reset ({rsi:.1f})")
 
     # DXY alignment
-    if htf_bias.dxy_alignment and htf_bias.dxy_corr_1h is not None and htf_bias.dxy_corr_15m is not None:
-        parts.append(f"DXY aligned (1H:{htf_bias.dxy_corr_1h:.2f}, 15M:{htf_bias.dxy_corr_15m:.2f})")
+    if (
+        htf_bias.dxy_alignment
+        and htf_bias.dxy_corr_1h is not None
+        and htf_bias.dxy_corr_15m is not None
+    ):
+        parts.append(
+            f"DXY aligned (1H:{htf_bias.dxy_corr_1h:.2f}, 15M:{htf_bias.dxy_corr_15m:.2f})"
+        )
 
     # EMA alignment
     if factor_scores.get("ema_stack", 0) > 0:
         parts.append("EMA alignment confirmed")
-    
+
     # VWAP trend confirmation
     if htf_bias.vwap_trend_confirmed:
         parts.append("VWAP trend confirmed")
-    
+
     # Structure events
     if htf_bias.bos_detected:
         parts.append("BOS detected")
@@ -655,4 +662,3 @@ def build_rationale(
         parts.append("CHoCH detected")
 
     return ", ".join(parts)
-

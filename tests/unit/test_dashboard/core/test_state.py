@@ -3,11 +3,10 @@
 Tests the immutable state container and its update methods.
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pandas as pd
 import pytest
-
 from dashboard.core.state import DashboardState, PriceBar
 
 
@@ -16,7 +15,7 @@ class TestPriceBar:
 
     def test_create_price_bar(self):
         """Test creating a PriceBar."""
-        timestamp = datetime(2025, 1, 1, 10, 0, 0, tzinfo=timezone.utc)
+        timestamp = datetime(2025, 1, 1, 10, 0, 0, tzinfo=UTC)
         bar = PriceBar(
             timestamp=timestamp,
             open=2650.0,
@@ -36,7 +35,7 @@ class TestPriceBar:
     def test_price_bar_is_immutable(self):
         """Test that PriceBar is immutable (frozen)."""
         bar = PriceBar(
-            timestamp=datetime(2025, 1, 1, tzinfo=timezone.utc),
+            timestamp=datetime(2025, 1, 1, tzinfo=UTC),
             open=100.0,
             high=110.0,
             low=90.0,
@@ -67,7 +66,7 @@ class TestDashboardState:
     def test_update_returns_new_state(self):
         """Test that update() returns a new state without modifying original."""
         original = DashboardState.create_empty()
-        timestamp = datetime(2025, 1, 1, 10, 0, tzinfo=timezone.utc)
+        timestamp = datetime(2025, 1, 1, 10, 0, tzinfo=UTC)
 
         updated = original.update(
             timestamp=timestamp,
@@ -89,7 +88,7 @@ class TestDashboardState:
         """Test adding price bars to history."""
         state = DashboardState.create_empty()
 
-        timestamp = datetime(2025, 1, 1, 10, 0, tzinfo=timezone.utc)
+        timestamp = datetime(2025, 1, 1, 10, 0, tzinfo=UTC)
         gc_bar = PriceBar(
             timestamp=timestamp,
             open=2650.0,
@@ -126,7 +125,7 @@ class TestDashboardState:
 
         # Add more bars than max
         for i in range(10):
-            timestamp = datetime(2025, 1, 1, 10, i, tzinfo=timezone.utc)
+            timestamp = datetime(2025, 1, 1, 10, i, tzinfo=UTC)
             gc_bar = PriceBar(
                 timestamp=timestamp,
                 open=2650.0 + i,
@@ -156,7 +155,7 @@ class TestDashboardState:
 
         # Add some bars
         for i in range(3):
-            timestamp = datetime(2025, 1, 1, 10, i, tzinfo=timezone.utc)
+            timestamp = datetime(2025, 1, 1, 10, i, tzinfo=UTC)
             gc_bar = PriceBar(
                 timestamp=timestamp,
                 open=2650.0 + i,
@@ -187,7 +186,7 @@ class TestDashboardState:
     def test_to_dict(self):
         """Test serializing state to dict."""
         state = DashboardState.create_empty()
-        timestamp = datetime(2025, 1, 1, 10, 0, tzinfo=timezone.utc)
+        timestamp = datetime(2025, 1, 1, 10, 0, tzinfo=UTC)
 
         state = state.update(
             timestamp=timestamp,
@@ -210,7 +209,7 @@ class TestDashboardState:
     def test_state_is_hashable(self):
         """Test that state is hashable (can be used in sets/dicts)."""
         state1 = DashboardState.create_empty()
-        timestamp = datetime(2025, 1, 1, 10, 0, tzinfo=timezone.utc)
+        timestamp = datetime(2025, 1, 1, 10, 0, tzinfo=UTC)
         state2 = state1.update(timestamp=timestamp)
 
         # Should be hashable
@@ -223,7 +222,7 @@ class TestDashboardState:
 
     def test_state_equality_considers_all_fields(self):
         """Test that equality considers all fields, not just timestamp."""
-        timestamp = datetime(2025, 1, 1, 10, 0, tzinfo=timezone.utc)
+        timestamp = datetime(2025, 1, 1, 10, 0, tzinfo=UTC)
 
         # Two states with same timestamp but different features should NOT be equal
         state1 = DashboardState.create_empty().update(
@@ -262,7 +261,7 @@ class TestDashboardState:
 
     def test_state_equality_with_none_values(self):
         """Test equality handling of None values in optional fields."""
-        timestamp = datetime(2025, 1, 1, 10, 0, tzinfo=timezone.utc)
+        timestamp = datetime(2025, 1, 1, 10, 0, tzinfo=UTC)
 
         # States with None HTFBias should be equal if all other fields match
         state1 = DashboardState.create_empty().update(
@@ -305,7 +304,7 @@ class TestDashboardState:
 
     def test_state_equality_with_empty_series(self):
         """Test equality handling of empty pandas Series."""
-        timestamp = datetime(2025, 1, 1, 10, 0, tzinfo=timezone.utc)
+        timestamp = datetime(2025, 1, 1, 10, 0, tzinfo=UTC)
 
         # Empty series should be equal
         state1 = DashboardState.create_empty().update(
@@ -326,4 +325,3 @@ class TestDashboardState:
         )
         assert state1 != state3
         assert hash(state1) != hash(state3)
-

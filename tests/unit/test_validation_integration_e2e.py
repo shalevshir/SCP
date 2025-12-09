@@ -4,19 +4,15 @@ Tests the complete pipeline: raw candle → features → validation → scoring 
 """
 
 import json
-from datetime import datetime, time, timezone
+from datetime import UTC, datetime, time
 from pathlib import Path
 
 import pandas as pd
-import pytest
-
 from feature_engine.integration import process_features_with_validation
 from rule_engine.htf.types import HTFBias
-from rule_engine.signal_logger import log_signal, signal_to_dict
-from validation.config_loader import load_session_config
+from rule_engine.signal_logger import log_signal
 from validation.guardrails import BehaviorGuardrails, BehaviorStateTracker
-from validation.schema import BufferPhase, EnforcerTier
-from validation.session_validator import SessionConstraints, SessionValidator
+from validation.session_validator import SessionConstraints
 
 
 def create_htf_bias_from_market_state(market_state: dict) -> HTFBias:
@@ -24,16 +20,24 @@ def create_htf_bias_from_market_state(market_state: dict) -> HTFBias:
     bias = market_state.get("htf_bias", "neutral")
     direction = market_state.get("htf_direction", "neutral")
     score = market_state.get("htf_score", 6.5)
-    
+
     if score >= 8.0:
         confidence = "high"
     elif score >= 6.0:
         confidence = "medium"
     else:
         confidence = "low"
-    
+
     return HTFBias(
-        bias=bias if bias else ("bullish" if direction == "long" else "bearish" if direction == "short" else "neutral"),
+        bias=(
+            bias
+            if bias
+            else (
+                "bullish"
+                if direction == "long"
+                else "bearish" if direction == "short" else "neutral"
+            )
+        ),
         direction=direction,
         score=score,
         confidence=confidence,
@@ -47,19 +51,21 @@ class TestE2EValidationPipeline:
     def test_full_pipeline_accepted_signal(self, tmp_path: Path) -> None:
         """Test full pipeline with signal that passes validation."""
         # Step 1: Create feature data
-        features = pd.Series({
-            "timestamp": datetime(2024, 11, 15, 10, 30, tzinfo=timezone.utc),
-            "symbol": "GC",
-            "timeframe": "1m",
-            "close": 2650.0,
-            "vwap": 2645.0,
-            "rsi": 55.0,
-            "ema_9": 2648.0,
-            "ema_20": 2645.0,
-            "ema_50": 2640.0,
-            "dxy_corr": -0.75,
-            "structure_type": "HH",
-        })
+        features = pd.Series(
+            {
+                "timestamp": datetime(2024, 11, 15, 10, 30, tzinfo=UTC),
+                "symbol": "GC",
+                "timeframe": "1m",
+                "close": 2650.0,
+                "vwap": 2645.0,
+                "rsi": 55.0,
+                "ema_9": 2648.0,
+                "ema_20": 2645.0,
+                "ema_50": 2640.0,
+                "dxy_corr": -0.75,
+                "structure_type": "HH",
+            }
+        )
 
         # Step 2: Build market state
         market_state = {
@@ -108,7 +114,7 @@ class TestE2EValidationPipeline:
         log_file = tmp_path / "signals" / "2024-11-15.jsonl"
         assert log_file.exists()
 
-        with open(log_file, "r") as f:
+        with open(log_file) as f:
             logged_signal = json.loads(f.read().strip())
             assert logged_signal["confidence"] == "A+"
             assert logged_signal["symbol"] == "GC"
@@ -116,19 +122,21 @@ class TestE2EValidationPipeline:
     def test_full_pipeline_rejected_signal_low_score(self, tmp_path: Path) -> None:
         """Test full pipeline with signal rejected for low score in September."""
         # Step 1: Create feature data with weak signals (will score < 9.0)
-        features = pd.Series({
-            "timestamp": datetime(2024, 9, 15, 10, 30, tzinfo=timezone.utc),
-            "symbol": "GC",
-            "timeframe": "1m",
-            "close": 2640.0,  # Below VWAP (weak for long)
-            "vwap": 2645.0,
-            "rsi": 35.0,  # Oversold (weak for long continuation)
-            "ema_9": 2642.0,  # Flat/mixed EMAs (no clear trend)
-            "ema_20": 2643.0,
-            "ema_50": 2641.0,
-            "dxy_corr": -0.65,  # Weak correlation
-            "structure_type": "LL",  # Bearish structure (wrong for long)
-        })
+        features = pd.Series(
+            {
+                "timestamp": datetime(2024, 9, 15, 10, 30, tzinfo=UTC),
+                "symbol": "GC",
+                "timeframe": "1m",
+                "close": 2640.0,  # Below VWAP (weak for long)
+                "vwap": 2645.0,
+                "rsi": 35.0,  # Oversold (weak for long continuation)
+                "ema_9": 2642.0,  # Flat/mixed EMAs (no clear trend)
+                "ema_20": 2643.0,
+                "ema_50": 2641.0,
+                "dxy_corr": -0.65,  # Weak correlation
+                "structure_type": "LL",  # Bearish structure (wrong for long)
+            }
+        )
 
         # Step 2: Build market state
         market_state = {
@@ -173,29 +181,31 @@ class TestE2EValidationPipeline:
         log_file = tmp_path / "signals" / "2024-09-15.jsonl"
         assert log_file.exists()
 
-        with open(log_file, "r") as f:
+        with open(log_file) as f:
             logged_signal = json.loads(f.read().strip())
             assert logged_signal["confidence"] == "Reject"
             assert "REJECTED" in logged_signal["rationale"]
 
     def test_full_pipeline_rejected_signal_loss_streak(self, tmp_path: Path) -> None:
         """Test full pipeline with signal rejected for loss streak."""
-        from validation.guardrails import BehaviorGuardrails, BehaviorState
+        from validation.guardrails import BehaviorState
 
         # Step 1: Create feature data
-        features = pd.Series({
-            "timestamp": datetime(2024, 9, 15, 10, 30, tzinfo=timezone.utc),
-            "symbol": "GC",
-            "timeframe": "1m",
-            "close": 2650.0,
-            "vwap": 2645.0,
-            "rsi": 55.0,
-            "ema_9": 2648.0,
-            "ema_20": 2645.0,
-            "ema_50": 2640.0,
-            "dxy_corr": -0.75,
-            "structure_type": "HH",
-        })
+        features = pd.Series(
+            {
+                "timestamp": datetime(2024, 9, 15, 10, 30, tzinfo=UTC),
+                "symbol": "GC",
+                "timeframe": "1m",
+                "close": 2650.0,
+                "vwap": 2645.0,
+                "rsi": 55.0,
+                "ema_9": 2648.0,
+                "ema_20": 2645.0,
+                "ema_50": 2640.0,
+                "dxy_corr": -0.75,
+                "structure_type": "HH",
+            }
+        )
 
         # Step 2: Build market state
         market_state = {
@@ -243,19 +253,21 @@ class TestE2EValidationPipeline:
     def test_full_pipeline_dxy_unavailable_handling(self, tmp_path: Path) -> None:
         """Test full pipeline with DXY data unavailable."""
         # Step 1: Create feature data WITHOUT DXY
-        features = pd.Series({
-            "timestamp": datetime(2024, 11, 15, 10, 30, tzinfo=timezone.utc),
-            "symbol": "GC",
-            "timeframe": "1m",
-            "close": 2650.0,
-            "vwap": 2645.0,
-            "rsi": 55.0,
-            "ema_9": 2648.0,
-            "ema_20": 2645.0,
-            "ema_50": 2640.0,
-            "dxy_corr": None,  # DXY unavailable
-            "structure_type": "HH",
-        })
+        features = pd.Series(
+            {
+                "timestamp": datetime(2024, 11, 15, 10, 30, tzinfo=UTC),
+                "symbol": "GC",
+                "timeframe": "1m",
+                "close": 2650.0,
+                "vwap": 2645.0,
+                "rsi": 55.0,
+                "ema_9": 2648.0,
+                "ema_20": 2645.0,
+                "ema_50": 2640.0,
+                "dxy_corr": None,  # DXY unavailable
+                "structure_type": "HH",
+            }
+        )
 
         # Step 2: Build market state
         market_state = {
@@ -298,23 +310,25 @@ class TestE2EValidationPipeline:
 
     def test_logging_includes_validation_details(self, tmp_path: Path) -> None:
         """Test that logged signals include full validation context."""
-        from validation.engine import ValidationEngine, ValidationResult
+        from validation.engine import ValidationResult
         from validation.guardrails import BehaviorState
 
         # Create signal
-        features = pd.Series({
-            "timestamp": datetime(2024, 11, 15, 10, 30, tzinfo=timezone.utc),
-            "symbol": "GC",
-            "timeframe": "1m",
-            "close": 2650.0,
-            "vwap": 2645.0,
-            "rsi": 55.0,
-            "ema_9": 2648.0,
-            "ema_20": 2645.0,
-            "ema_50": 2640.0,
-            "dxy_corr": -0.75,
-            "structure_type": "HH",
-        })
+        features = pd.Series(
+            {
+                "timestamp": datetime(2024, 11, 15, 10, 30, tzinfo=UTC),
+                "symbol": "GC",
+                "timeframe": "1m",
+                "close": 2650.0,
+                "vwap": 2645.0,
+                "rsi": 55.0,
+                "ema_9": 2648.0,
+                "ema_20": 2645.0,
+                "ema_50": 2640.0,
+                "dxy_corr": -0.75,
+                "structure_type": "HH",
+            }
+        )
 
         market_state = {
             "buffer_phase": "0-5k",
@@ -374,7 +388,7 @@ class TestE2EValidationPipeline:
         log_file = tmp_path / "signals" / "2024-11-15.jsonl"
         assert log_file.exists()
 
-        with open(log_file, "r") as f:
+        with open(log_file) as f:
             logged_data = json.loads(f.read().strip())
 
             # Check validation_result
@@ -384,7 +398,10 @@ class TestE2EValidationPipeline:
 
             # Check session_constraints
             assert "session_constraints" in logged_data
-            assert logged_data["session_constraints"]["name"] == "November-December Trend Window"
+            assert (
+                logged_data["session_constraints"]["name"]
+                == "November-December Trend Window"
+            )
             assert logged_data["session_constraints"]["min_score"] == 8.0
             assert logged_data["session_constraints"]["max_losses"] == 2
 
@@ -395,7 +412,6 @@ class TestE2EValidationPipeline:
 
     def test_state_persistence_across_candles(self) -> None:
         """Test behavior state persistence across multiple candles."""
-        from validation.guardrails import BehaviorStateTracker
 
         tracker = BehaviorStateTracker()
 
@@ -413,7 +429,6 @@ class TestE2EValidationPipeline:
 
     def test_session_reset_behavior(self) -> None:
         """Test that behavior state resets at session start."""
-        from validation.guardrails import BehaviorStateTracker
 
         tracker = BehaviorStateTracker()
 
@@ -423,7 +438,6 @@ class TestE2EValidationPipeline:
         assert tracker.state.consecutive_losses == 2
 
         # Reset for new session
-        tracker.reset_for_session(datetime(2024, 11, 16, 10, 0, tzinfo=timezone.utc))
+        tracker.reset_for_session(datetime(2024, 11, 16, 10, 0, tzinfo=UTC))
         assert tracker.state.consecutive_losses == 0
         assert tracker.state.last_reset is not None
-

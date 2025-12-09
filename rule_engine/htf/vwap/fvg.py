@@ -10,7 +10,6 @@ Status: In Progress
 from __future__ import annotations
 
 import pandas as pd
-
 from common.logger import get_logger
 
 logger = get_logger(__name__)
@@ -68,23 +67,23 @@ def score_fvg_alignment(
         return 0.0
 
     # Filter unfilled FVGs only (filled ones no longer relevant)
-    unfilled_fvgs = fvg_df[~fvg_df['filled']]
+    unfilled_fvgs = fvg_df[~fvg_df["filled"]]
 
     if len(unfilled_fvgs) == 0:
         logger.debug("All FVGs filled: returning 0.0 score adjustment")
         return 0.0
 
     # Count by type
-    bullish_count = len(unfilled_fvgs[unfilled_fvgs['fvg_type'] == 'bullish'])
-    bearish_count = len(unfilled_fvgs[unfilled_fvgs['fvg_type'] == 'bearish'])
+    bullish_count = len(unfilled_fvgs[unfilled_fvgs["fvg_type"] == "bullish"])
+    bearish_count = len(unfilled_fvgs[unfilled_fvgs["fvg_type"] == "bearish"])
 
     # Calculate score based on alignment with current bias
     if current_bias == "bullish":
-        aligned = bullish_count      # Bullish FVGs support bullish bias
-        opposing = bearish_count     # Bearish FVGs oppose bullish bias
+        aligned = bullish_count  # Bullish FVGs support bullish bias
+        opposing = bearish_count  # Bearish FVGs oppose bullish bias
     else:  # bearish
-        aligned = bearish_count      # Bearish FVGs support bearish bias
-        opposing = bullish_count     # Bullish FVGs oppose bearish bias
+        aligned = bearish_count  # Bearish FVGs support bearish bias
+        opposing = bullish_count  # Bullish FVGs oppose bearish bias
 
     # Each aligned FVG adds +0.5, each opposing subtracts -0.5
     score_adjustment = (aligned * 0.5) - (opposing * 0.5)

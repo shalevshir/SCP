@@ -9,8 +9,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import pandas as pd
-
 from common.logger import get_logger
+
 from validation.schema import (
     BufferPhase,
     EnforcerTier,
@@ -98,7 +98,6 @@ class ValidationContextBuilder:
         fatigue_flag = market_state.get("fatigue_flag", False)
         if guardrail_result:
             # Guardrail fatigue takes precedence
-            from validation.guardrails import BehaviorState
 
             if hasattr(guardrail_result, "__dict__"):
                 # If we have access to state, check fatigue
@@ -207,11 +206,11 @@ class ValidationContextBuilder:
 
         # Get DXY correlation - now safe since availability check passed
         dxy_corr = features.get("dxy_corr")
-        
+
         # Double-check for None/NaN (defensive)
         if dxy_corr is None or pd.isna(dxy_corr):
             return False
-        
+
         # Check DXY correlation strength
         if abs(dxy_corr) < 0.6:
             # Weak correlation = unclear trend
@@ -280,7 +279,9 @@ class ValidationContextBuilder:
         return tier_map.get(tier_str, EnforcerTier.CONSERVATIVE)
 
 
-def check_dxy_handling_for_setup(setup_type: str, dxy_available: bool) -> tuple[bool, str | None]:
+def check_dxy_handling_for_setup(
+    setup_type: str, dxy_available: bool
+) -> tuple[bool, str | None]:
     """Check if setup is allowed when DXY data is unavailable.
 
     Per SOP:
@@ -300,10 +301,15 @@ def check_dxy_handling_for_setup(setup_type: str, dxy_available: bool) -> tuple[
 
     # DXY unavailable - check setup type
     if setup_type in ("VWAP_RECLAIM", "DXY_CONTINUATION"):
-        return False, f"{setup_type} requires DXY data - rejecting due to unavailability"
+        return (
+            False,
+            f"{setup_type} requires DXY data - rejecting due to unavailability",
+        )
     elif setup_type == "VWAP_FADE":
         return True, f"{setup_type} proceeding without DXY data (allowed with warning)"
     else:
         # Unknown setup type - default to reject
-        return False, f"Unknown setup type {setup_type} - rejecting due to DXY unavailability"
-
+        return (
+            False,
+            f"Unknown setup type {setup_type} - rejecting due to DXY unavailability",
+        )

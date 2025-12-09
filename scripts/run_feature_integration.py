@@ -9,7 +9,7 @@ summary to stdout and can optionally write the full dataset to CSV.
 from __future__ import annotations
 
 import argparse
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from data_layer.loader import HistoricalDataLoader
@@ -20,7 +20,7 @@ def parse_iso_datetime(value: str) -> datetime:
     """Parse ISO-8601 datetime strings, defaulting to UTC when tzinfo missing."""
     dt = datetime.fromisoformat(value)
     if dt.tzinfo is None:
-        return dt.replace(tzinfo=timezone.utc)
+        return dt.replace(tzinfo=UTC)
     return dt
 
 
@@ -44,13 +44,13 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--start",
         type=parse_iso_datetime,
-        default=datetime(2025, 1, 1, 9, 0, tzinfo=timezone.utc),
+        default=datetime(2025, 1, 1, 9, 0, tzinfo=UTC),
         help="Start datetime (ISO-8601, default: 2025-01-01T09:00:00+00:00).",
     )
     parser.add_argument(
         "--end",
         type=parse_iso_datetime,
-        default=datetime(2025, 1, 1, 13, 0, tzinfo=timezone.utc),
+        default=datetime(2025, 1, 1, 13, 0, tzinfo=UTC),
         help="End datetime (ISO-8601, default: 2025-01-01T13:00:00+00:00).",
     )
     parser.add_argument(
@@ -92,4 +92,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

@@ -63,12 +63,16 @@ def detect_structure_conflict(
 
     # Check for conflicts
     if is_1h_bullish and is_15m_bearish:
-        reason = f"1H bullish ({structure_1h}) conflicts with 15M bearish ({structure_15m})"
+        reason = (
+            f"1H bullish ({structure_1h}) conflicts with 15M bearish ({structure_15m})"
+        )
         logger.debug(f"Structure conflict detected: {reason}")
         return True, reason
 
     if is_1h_bearish and is_15m_bullish:
-        reason = f"1H bearish ({structure_1h}) conflicts with 15M bullish ({structure_15m})"
+        reason = (
+            f"1H bearish ({structure_1h}) conflicts with 15M bullish ({structure_15m})"
+        )
         logger.debug(f"Structure conflict detected: {reason}")
         return True, reason
 
@@ -146,9 +150,8 @@ def detect_price_chop_15m(
     # Calculate normal ratio for non-zero bodies
     non_zero_mask = ~zero_body_mask
     wick_ratio[non_zero_mask] = (
-        (upper_wick[non_zero_mask] + lower_wick[non_zero_mask])
-        / body_size[non_zero_mask]
-    )
+        upper_wick[non_zero_mask] + lower_wick[non_zero_mask]
+    ) / body_size[non_zero_mask]
 
     # Identify individual chop candles
     is_chop_candle = wick_ratio >= wick_threshold
@@ -233,15 +236,14 @@ def detect_sweep_against_trend(
 
     # Check for conflicts
     if bias == "bullish" and most_recent_sweep == "sweep_low":
-        reason = f"Bullish bias with successful sweep_low (reversal signal)"
+        reason = "Bullish bias with successful sweep_low (reversal signal)"
         logger.debug(f"Sweep conflict detected: {reason}")
         return True, reason
 
     if bias == "bearish" and most_recent_sweep == "sweep_high":
-        reason = f"Bearish bias with successful sweep_high (reversal signal)"
+        reason = "Bearish bias with successful sweep_high (reversal signal)"
         logger.debug(f"Sweep conflict detected: {reason}")
         return True, reason
 
     # No conflict (sweep aligns with trend)
     return False, None
-

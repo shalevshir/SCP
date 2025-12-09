@@ -1,9 +1,8 @@
 """Tests for TimeAligner stub."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
-
 from common.exceptions import DataSourceError
 from common.types import Candle
 from data_layer.aligner import TimeAligner
@@ -54,7 +53,7 @@ def test_stub_returns_empty_list():
 
     # With candles (stub still returns empty)
     gc_candle = Candle(
-        timestamp=datetime(2025, 1, 1, 12, 0, tzinfo=timezone.utc),
+        timestamp=datetime(2025, 1, 1, 12, 0, tzinfo=UTC),
         open=2050.0,
         high=2055.0,
         low=2048.0,
@@ -65,7 +64,7 @@ def test_stub_returns_empty_list():
         source="CME",
     )
     dxy_candle = Candle(
-        timestamp=datetime(2025, 1, 1, 12, 0, tzinfo=timezone.utc),
+        timestamp=datetime(2025, 1, 1, 12, 0, tzinfo=UTC),
         open=105.0,
         high=105.5,
         low=104.8,
@@ -85,7 +84,7 @@ def test_align_with_empty_gc_candles():
     aligner = TimeAligner()
 
     dxy_candle = Candle(
-        timestamp=datetime(2025, 1, 1, 12, 0, tzinfo=timezone.utc),
+        timestamp=datetime(2025, 1, 1, 12, 0, tzinfo=UTC),
         open=105.0,
         high=105.5,
         low=104.8,
@@ -108,7 +107,7 @@ def test_align_with_empty_dxy_candles():
     aligner = TimeAligner()
 
     gc_candle = Candle(
-        timestamp=datetime(2025, 1, 1, 12, 0, tzinfo=timezone.utc),
+        timestamp=datetime(2025, 1, 1, 12, 0, tzinfo=UTC),
         open=2050.0,
         high=2055.0,
         low=2048.0,
@@ -168,7 +167,7 @@ def test_align_with_multiple_candles():
     # Create multiple GC candles
     gc_candles = [
         Candle(
-            timestamp=datetime(2025, 1, 1, 12, 0, tzinfo=timezone.utc),
+            timestamp=datetime(2025, 1, 1, 12, 0, tzinfo=UTC),
             open=2050.0,
             high=2055.0,
             low=2048.0,
@@ -179,7 +178,7 @@ def test_align_with_multiple_candles():
             source="CME",
         ),
         Candle(
-            timestamp=datetime(2025, 1, 1, 12, 5, tzinfo=timezone.utc),
+            timestamp=datetime(2025, 1, 1, 12, 5, tzinfo=UTC),
             open=2052.0,
             high=2057.0,
             low=2050.0,
@@ -194,7 +193,7 @@ def test_align_with_multiple_candles():
     # Create multiple DXY candles
     dxy_candles = [
         Candle(
-            timestamp=datetime(2025, 1, 1, 12, 0, tzinfo=timezone.utc),
+            timestamp=datetime(2025, 1, 1, 12, 0, tzinfo=UTC),
             open=105.0,
             high=105.5,
             low=104.8,
@@ -205,7 +204,7 @@ def test_align_with_multiple_candles():
             source="ICE",
         ),
         Candle(
-            timestamp=datetime(2025, 1, 1, 12, 5, tzinfo=timezone.utc),
+            timestamp=datetime(2025, 1, 1, 12, 5, tzinfo=UTC),
             open=105.2,
             high=105.7,
             low=105.0,
@@ -229,7 +228,7 @@ def test_align_signature_matches_expected():
     aligner = TimeAligner()
 
     # Get the align method
-    align_method = getattr(aligner, "align")
+    align_method = aligner.align
 
     # Check it accepts the expected parameters
     import inspect
@@ -262,7 +261,6 @@ def test_align_return_type_annotation():
     """Test that align method has correct return type annotation."""
     aligner = TimeAligner()
 
-    import inspect
     from typing import get_type_hints
 
     # Get type hints

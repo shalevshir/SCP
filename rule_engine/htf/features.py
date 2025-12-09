@@ -7,21 +7,18 @@ Streaming approach: Maintains state and updates incrementally as new HTF bars ar
 Vectorized approach: Pre-computes all HTF features at once for efficiency.
 """
 
-from typing import Optional
 
 import pandas as pd
 from common.logger import get_logger
 from common.types import Candle
-
 from data_layer.multi_timeframe_helpers import (
-    build_htf_dataframe_from_candles,
     candles_to_dataframe,
     extract_htf_candles_by_timeframe,
 )
 from data_layer.multi_timeframe_sync import MultiTimeframeData, SynchronizedBar
 from feature_engine.aggregator import aggregate_features
-from feature_engine.structure import calculate_structure_labels
 from feature_engine.streaming import StreamingFeatureProcessor
+from feature_engine.structure import calculate_structure_labels
 from feature_engine.vwap import calculate_vwap_deviation
 
 logger = get_logger(__name__)
@@ -29,13 +26,13 @@ logger = get_logger(__name__)
 
 class StreamingHTFFeatureComputer:
     """Maintains state for incremental HTF feature computation.
-    
+
     Uses StreamingFeatureProcessor internally for 1h and 15m timeframes.
     Updates features as new HTF bars arrive from MultiTimeframeData.
-    
+
     This approach is efficient for live trading where HTF bars arrive
     incrementally and we want to maintain state between updates.
-    
+
     Attributes:
         processor_1h: Streaming feature processor for 1H timeframe
         processor_15m: Streaming feature processor for 15M timeframe
@@ -44,16 +41,16 @@ class StreamingHTFFeatureComputer:
         last_1h_timestamp: Last 1H bar timestamp processed
         last_15m_timestamp: Last 15M bar timestamp processed
     """
-    
+
     def __init__(
         self,
         rsi_period: int = 14,
-        ema_periods: Optional[list[int]] = None,
+        ema_periods: list[int] | None = None,
         dxy_window: int = 50,
         swing_window: int = 5,
     ) -> None:
         """Initialize streaming HTF feature computer.
-        
+
         Args:
             rsi_period: RSI calculation period (default: 14)
             ema_periods: List of EMA periods (default: [9, 20, 50])
@@ -74,29 +71,29 @@ class StreamingHTFFeatureComputer:
             dxy_window=dxy_window,
             swing_window=swing_window,
         )
-        
+
         self.features_1h = pd.Series(dtype=object)
         self.features_15m = pd.Series(dtype=object)
-        self.last_1h_timestamp: Optional[pd.Timestamp] = None
-        self.last_15m_timestamp: Optional[pd.Timestamp] = None
-        
+        self.last_1h_timestamp: pd.Timestamp | None = None
+        self.last_15m_timestamp: pd.Timestamp | None = None
+
         logger.debug("StreamingHTFFeatureComputer initialized")
-    
+
     def update_from_sync_bar(
         self,
         sync_bar: SynchronizedBar,
-        prev_sync_bar: Optional[SynchronizedBar] = None,
+        prev_sync_bar: SynchronizedBar | None = None,
     ) -> tuple[pd.Series, pd.Series]:
         """Update HTF features from synchronized bar.
-        
+
         Only updates when HTF bars change (new bar closed). This prevents
         redundant computation when the same HTF bar is used for multiple
         execution timestamps.
-        
+
         Args:
             sync_bar: Current synchronized bar
             prev_sync_bar: Previous synchronized bar (optional, for optimization)
-            
+
         Returns:
             Tuple of (features_15m, features_1h) as pd.Series
         """
@@ -115,7 +112,7 @@ class StreamingHTFFeatureComputer:
                     f"Updated 15m features at {htf_15m_timestamp} "
                     f"(structure: {self.features_15m.get('structure_label', 'N/A')})"
                 )
-        
+
         # Update 1h features if bar changed
         if sync_bar.htf_1h:
             htf_1h_timestamp = pd.Timestamp(sync_bar.htf_1h[0].timestamp)
@@ -131,19 +128,16 @@ class StreamingHTFFeatureComputer:
                     f"Updated 1h features at {htf_1h_timestamp} "
                     f"(structure: {self.features_1h.get('structure_label', 'N/A')})"
                 )
-        
+
         return self.features_15m, self.features_1h
-    
+
     def is_warmed_up(self) -> bool:
         """Check if both processors have enough data.
-        
+
         Returns:
             True if both 1h and 15m processors are warmed up
         """
-        return (
-            self.processor_1h.is_warmed_up()
-            and self.processor_15m.is_warmed_up()
-        )
+        return self.processor_1h.is_warmed_up() and self.processor_15m.is_warmed_up()
 
 
 def compute_htf_features_vectorized(
@@ -152,16 +146,16 @@ def compute_htf_features_vectorized(
     gc_candles_1h: list[Candle],
     dxy_candles_1h: list[Candle],
     rsi_period: int = 14,
-    ema_periods: Optional[list[int]] = None,
+    ema_periods: list[int] | None = None,
     dxy_window: int = 50,
     swing_window: int = 5,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Batch compute HTF features for all candles.
-    
+
     This approach pre-computes all HTF features at once using vectorized
     pandas operations. More efficient for backtesting where all data is
     available upfront.
-    
+
     Args:
         gc_candles_15m: List of GC 15m candles
         dxy_candles_15m: List of DXY 15m candles
@@ -171,10 +165,10 @@ def compute_htf_features_vectorized(
         ema_periods: List of EMA periods (default: [9, 20, 50])
         dxy_window: DXY correlation window (default: 50)
         swing_window: Structure label swing window (default: 5)
-        
+
     Returns:
         Tuple of (features_15m_df, features_1h_df) with all computed features
-        
+
     Example:
         >>> gc_15m, dxy_15m = extract_htf_candles_by_timeframe(multi_tf_data, "15m")
         >>> gc_1h, dxy_1h = extract_htf_candles_by_timeframe(multi_tf_data, "1h")
@@ -184,10 +178,12 @@ def compute_htf_features_vectorized(
     """
     # Convert candles to DataFrames
     gc_15m_df = candles_to_dataframe(gc_candles_15m, "15m") if gc_candles_15m else None
-    dxy_15m_df = candles_to_dataframe(dxy_candles_15m, "15m") if dxy_candles_15m else None
+    dxy_15m_df = (
+        candles_to_dataframe(dxy_candles_15m, "15m") if dxy_candles_15m else None
+    )
     gc_1h_df = candles_to_dataframe(gc_candles_1h, "1h") if gc_candles_1h else None
     dxy_1h_df = candles_to_dataframe(dxy_candles_1h, "1h") if dxy_candles_1h else None
-    
+
     # Compute 15m features
     features_15m_df = None
     if gc_15m_df is not None and dxy_15m_df is not None and len(gc_15m_df) > 0:
@@ -195,11 +191,11 @@ def compute_htf_features_vectorized(
         gc_15m_work = gc_15m_df.copy()
         gc_15m_work["ts_event"] = gc_15m_work.index
         gc_15m_work = gc_15m_work.reset_index(drop=True)
-        
+
         dxy_15m_work = dxy_15m_df.copy()
         dxy_15m_work["ts_event"] = dxy_15m_work.index
         dxy_15m_work = dxy_15m_work.reset_index(drop=True)
-        
+
         # Compute features
         features_15m_df = aggregate_features(
             gc_15m_work,
@@ -212,25 +208,25 @@ def compute_htf_features_vectorized(
                 "dxy_correlation": {"window": dxy_window},
             },
         )
-        
+
         # Add structure labels
         structure_labels_15m = calculate_structure_labels(
             features_15m_df, swing_window=swing_window
         )
         features_15m_df["structure_label"] = structure_labels_15m
         features_15m_df["structure_type"] = structure_labels_15m
-        
+
         # Add VWAP deviation
         if "vwap" in features_15m_df.columns:
             vwap_deviation_15m = calculate_vwap_deviation(features_15m_df)
             features_15m_df["vwap_deviation"] = vwap_deviation_15m
-        
+
         # Set timestamp index
         if "ts_event" in features_15m_df.columns:
             features_15m_df = features_15m_df.set_index("ts_event")
-        
+
         logger.debug(f"Computed 15m features: {len(features_15m_df)} rows")
-    
+
     # Compute 1h features
     features_1h_df = None
     if gc_1h_df is not None and dxy_1h_df is not None and len(gc_1h_df) > 0:
@@ -238,11 +234,11 @@ def compute_htf_features_vectorized(
         gc_1h_work = gc_1h_df.copy()
         gc_1h_work["ts_event"] = gc_1h_work.index
         gc_1h_work = gc_1h_work.reset_index(drop=True)
-        
+
         dxy_1h_work = dxy_1h_df.copy()
         dxy_1h_work["ts_event"] = dxy_1h_work.index
         dxy_1h_work = dxy_1h_work.reset_index(drop=True)
-        
+
         # Compute features
         features_1h_df = aggregate_features(
             gc_1h_work,
@@ -255,53 +251,53 @@ def compute_htf_features_vectorized(
                 "dxy_correlation": {"window": dxy_window},
             },
         )
-        
+
         # Add structure labels
         structure_labels_1h = calculate_structure_labels(
             features_1h_df, swing_window=swing_window
         )
         features_1h_df["structure_label"] = structure_labels_1h
         features_1h_df["structure_type"] = structure_labels_1h
-        
+
         # Add VWAP deviation
         if "vwap" in features_1h_df.columns:
             vwap_deviation_1h = calculate_vwap_deviation(features_1h_df)
             features_1h_df["vwap_deviation"] = vwap_deviation_1h
-        
+
         # Set timestamp index
         if "ts_event" in features_1h_df.columns:
             features_1h_df = features_1h_df.set_index("ts_event")
-        
+
         logger.debug(f"Computed 1h features: {len(features_1h_df)} rows")
-    
+
     return features_15m_df, features_1h_df
 
 
 def _precompute_htf_features(
     multi_tf_data: MultiTimeframeData,
     rsi_period: int = 14,
-    ema_periods: Optional[list[int]] = None,
+    ema_periods: list[int] | None = None,
     dxy_window: int = 50,
     swing_window: int = 5,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Pre-compute all HTF features from MultiTimeframeData.
-    
+
     Helper function that extracts HTF candles and computes features vectorized.
-    
+
     Args:
         multi_tf_data: MultiTimeframeData with synchronized bars
         rsi_period: RSI calculation period
         ema_periods: List of EMA periods
         dxy_window: DXY correlation window
         swing_window: Structure label swing window
-        
+
     Returns:
         Tuple of (features_15m_df, features_1h_df)
     """
     # Extract HTF candles
     gc_15m, dxy_15m = extract_htf_candles_by_timeframe(multi_tf_data, "15m")
     gc_1h, dxy_1h = extract_htf_candles_by_timeframe(multi_tf_data, "1h")
-    
+
     # Compute features
     return compute_htf_features_vectorized(
         gc_15m,
@@ -313,4 +309,3 @@ def _precompute_htf_features(
         dxy_window=dxy_window,
         swing_window=swing_window,
     )
-

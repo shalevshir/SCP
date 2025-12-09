@@ -9,7 +9,6 @@ Epic: Full HTF Bias Engine Upgrade
 from __future__ import annotations
 
 import pandas as pd
-
 from common.logger import get_logger
 from feature_engine.vwap import calculate_vwap
 
@@ -80,4 +79,3 @@ def calculate_htf_vwap(df: pd.DataFrame) -> pd.DataFrame:
     result["vwap_slope"] = result["vwap"].diff()
 
     return result
-

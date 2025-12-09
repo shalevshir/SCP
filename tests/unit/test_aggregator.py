@@ -147,9 +147,7 @@ class TestAggregatorTimeframeValidation:
         ["5m", "30m", "4h", "1d", "invalid", ""],
         ids=["5m", "30m", "4h", "1d", "invalid", "empty"],
     )
-    def test_aggregate_rejects_invalid_timeframes(
-        self, invalid_timeframe: str
-    ) -> None:
+    def test_aggregate_rejects_invalid_timeframes(self, invalid_timeframe: str) -> None:
         """Test that aggregator rejects invalid timeframes."""
         gc_data = {
             "ts_event": pd.date_range("2025-01-01 09:00", periods=50, freq="1min"),
@@ -171,9 +169,10 @@ class TestAggregatorTimeframeValidation:
             aggregate_features(gc_df, dxy_df, timeframe=invalid_timeframe)
 
         assert "timeframe" in str(exc_info.value).lower()
-        assert "allowed" in str(exc_info.value).lower() or "valid" in str(
-            exc_info.value
-        ).lower()
+        assert (
+            "allowed" in str(exc_info.value).lower()
+            or "valid" in str(exc_info.value).lower()
+        )
 
 
 class TestAggregatorModularSelection:
@@ -743,4 +742,3 @@ class TestAggregatorRealData:
         assert "vwap" in result.columns
         assert "rsi" in result.columns
         assert "dxy_corr" in result.columns
-

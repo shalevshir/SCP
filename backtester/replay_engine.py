@@ -13,13 +13,12 @@ Key Features:
 - Integration with existing validation components
 """
 
-from collections.abc import Callable, Iterator
+from collections.abc import Iterator
 from datetime import datetime
 
 import pandas as pd
 from common.logger import get_logger
 from feature_engine.backtesting import BacktestProcessor
-from rule_engine.htf.types import HTFBias
 from validation.guardrails import BehaviorStateTracker
 
 logger = get_logger(__name__)
@@ -114,18 +113,16 @@ class ReplayEngine:
             ...     print(f"Loss streak: {context.get('behavior_state').consecutive_losses}")
         """
         logger.info(
-            f"Starting replay: {len(gc_df)} candles, "
-            f"timeframe={self.timeframe}"
+            f"Starting replay: {len(gc_df)} candles, " f"timeframe={self.timeframe}"
         )
 
         # Use BacktestProcessor's iterate_with_context which already handles:
         # - Incremental feature computation (no lookahead)
         # - Session resets
         # - Validation context building
-        for features, validation_context in self._processor.iterate_with_context(
+        yield from self._processor.iterate_with_context(
             gc_df, dxy_df
-        ):
-            yield features, validation_context
+        )
 
         logger.info("Replay complete")
 
@@ -215,4 +212,3 @@ class ReplayEngine:
                 return context
 
         return None
-

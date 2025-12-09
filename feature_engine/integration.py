@@ -45,9 +45,7 @@ def prepare_for_aggregation(df: pd.DataFrame) -> pd.DataFrame:
         ValueError: If DataFrame doesn't have a DatetimeIndex.
     """
     if not isinstance(df.index, pd.DatetimeIndex):
-        raise ValueError(
-            f"Expected DataFrame with DatetimeIndex, got {type(df.index)}"
-        )
+        raise ValueError(f"Expected DataFrame with DatetimeIndex, got {type(df.index)}")
 
     # Create a copy to avoid modifying the original
     result = df.copy()
@@ -105,7 +103,9 @@ def align_dataframes(
     common_timestamps = gc_timestamps.intersection(dxy_timestamps)
 
     if len(common_timestamps) == 0:
-        raise ValueError("No overlapping timestamps found between GC and DXY DataFrames")
+        raise ValueError(
+            "No overlapping timestamps found between GC and DXY DataFrames"
+        )
 
     # Filter to common timestamps
     gc_result = gc_work[gc_work["ts_event"].isin(common_timestamps)].copy()
@@ -115,9 +115,7 @@ def align_dataframes(
     gc_result = gc_result.sort_values("ts_event").reset_index(drop=True)
     dxy_result = dxy_result.sort_values("ts_event").reset_index(drop=True)
 
-    logger.info(
-        f"Aligned GC and DXY DataFrames: {len(gc_result)} matching timestamps"
-    )
+    logger.info(f"Aligned GC and DXY DataFrames: {len(gc_result)} matching timestamps")
 
     return gc_result, dxy_result
 
@@ -193,9 +191,7 @@ def process_features(
     required_gc_cols = ["open", "high", "low", "close", "volume"]
     missing_cols = [col for col in required_gc_cols if col not in gc_df.columns]
     if missing_cols:
-        raise ValueError(
-            f"GC DataFrame missing required columns: {missing_cols}"
-        )
+        raise ValueError(f"GC DataFrame missing required columns: {missing_cols}")
 
     # Align DataFrames by timestamp (returns DataFrames with ts_event column)
     gc_for_agg, dxy_for_agg = align_dataframes(gc_df, dxy_df)
@@ -362,12 +358,8 @@ def process_features_with_validation(
             name="Default",
             window_start=time(0, 0),
             window_end=time(23, 59),
-            allowed_tiers=frozenset(
-                ["Conservative", "EarlyMild", "Mild", "Offensive"]
-            ),
-            allowed_setups=frozenset(
-                ["VWAP_RECLAIM", "DXY_CONTINUATION", "VWAP_FADE"]
-            ),
+            allowed_tiers=frozenset(["Conservative", "EarlyMild", "Mild", "Offensive"]),
+            allowed_setups=frozenset(["VWAP_RECLAIM", "DXY_CONTINUATION", "VWAP_FADE"]),
             min_score=0.0,  # Permissive: allow all scores
             max_losses=999,  # Permissive: no loss limit
             dxy_correlation_max=1.0,  # Permissive: allow any correlation
@@ -382,14 +374,14 @@ def process_features_with_validation(
     # Step 2: Score the signal with HTFBias
     # Lazy import to avoid circular dependency
     from rule_engine.scoring import score_signal
-    
+
     signal = score_signal(features, htf_bias, scoring_context)
 
     # Step 3: Apply full SOP validation
     # Note: session_constraints is guaranteed to be non-None here due to Step 0
     # Lazy import to avoid circular dependency
     from rule_engine.validation import validate_signal_with_sop
-    
+
     validated_signal = validate_signal_with_sop(
         signal=signal,
         features=features,
@@ -403,8 +395,7 @@ def process_features_with_validation(
     if log_signals and log_dir:
         # Lazy import to avoid circular dependency
         from rule_engine.signal_logger import log_signal
-        
+
         log_signal(validated_signal, log_dir=log_dir)
 
     return validated_signal
-

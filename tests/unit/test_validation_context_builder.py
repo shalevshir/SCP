@@ -3,19 +3,15 @@
 Tests HTF bias computation, DXY handling, and ValidationContext building.
 """
 
-from datetime import datetime, timezone
 
 import pandas as pd
-import pytest
-
 from validation.context_builder import (
     ValidationContextBuilder,
     check_dxy_handling_for_setup,
 )
-from validation.guardrails import BehaviorState, GuardrailResult
+from validation.guardrails import GuardrailResult
 from validation.schema import BufferPhase, EnforcerTier, HTFBias
 from validation.session_validator import (
-    SeasonRule,
     SessionConstraints,
     SessionResult,
 )
@@ -28,15 +24,17 @@ class TestValidationContextBuilder:
         """Test basic context building with minimal inputs."""
         builder = ValidationContextBuilder()
 
-        features = pd.Series({
-            "close": 2650.0,
-            "vwap": 2645.0,
-            "ema_9": 2648.0,
-            "ema_20": 2645.0,
-            "ema_50": 2640.0,
-            "dxy_corr": -0.75,
-            "structure_type": "HH",
-        })
+        features = pd.Series(
+            {
+                "close": 2650.0,
+                "vwap": 2645.0,
+                "ema_9": 2648.0,
+                "ema_20": 2645.0,
+                "ema_50": 2640.0,
+                "dxy_corr": -0.75,
+                "structure_type": "HH",
+            }
+        )
 
         market_state = {
             "buffer_phase": "0-5k",
@@ -62,15 +60,17 @@ class TestValidationContextBuilder:
         """Test HTF bias computation for bullish setup."""
         builder = ValidationContextBuilder()
 
-        features = pd.Series({
-            "structure_type": "HH",  # Bullish structure
-            "ema_9": 2650.0,
-            "ema_20": 2645.0,
-            "ema_50": 2640.0,  # Bullish EMA stack
-            "close": 2655.0,
-            "vwap": 2645.0,  # Price above VWAP
-            "dxy_corr": -0.75,
-        })
+        features = pd.Series(
+            {
+                "structure_type": "HH",  # Bullish structure
+                "ema_9": 2650.0,
+                "ema_20": 2645.0,
+                "ema_50": 2640.0,  # Bullish EMA stack
+                "close": 2655.0,
+                "vwap": 2645.0,  # Price above VWAP
+                "dxy_corr": -0.75,
+            }
+        )
 
         bias = builder._compute_htf_bias(features)
         assert bias == HTFBias.BULLISH
@@ -79,15 +79,17 @@ class TestValidationContextBuilder:
         """Test HTF bias computation for bearish setup."""
         builder = ValidationContextBuilder()
 
-        features = pd.Series({
-            "structure_type": "LL",  # Bearish structure
-            "ema_9": 2640.0,
-            "ema_20": 2645.0,
-            "ema_50": 2650.0,  # Bearish EMA stack
-            "close": 2635.0,
-            "vwap": 2645.0,  # Price below VWAP
-            "dxy_corr": -0.75,
-        })
+        features = pd.Series(
+            {
+                "structure_type": "LL",  # Bearish structure
+                "ema_9": 2640.0,
+                "ema_20": 2645.0,
+                "ema_50": 2650.0,  # Bearish EMA stack
+                "close": 2635.0,
+                "vwap": 2645.0,  # Price below VWAP
+                "dxy_corr": -0.75,
+            }
+        )
 
         bias = builder._compute_htf_bias(features)
         assert bias == HTFBias.BEARISH
@@ -96,15 +98,17 @@ class TestValidationContextBuilder:
         """Test HTF bias computation for neutral/mixed signals."""
         builder = ValidationContextBuilder()
 
-        features = pd.Series({
-            "structure_type": "HL",  # Neutral structure
-            "ema_9": 2645.0,
-            "ema_20": 2645.0,
-            "ema_50": 2645.0,  # Flat EMAs
-            "close": 2645.0,
-            "vwap": 2645.0,  # Price at VWAP
-            "dxy_corr": -0.5,
-        })
+        features = pd.Series(
+            {
+                "structure_type": "HL",  # Neutral structure
+                "ema_9": 2645.0,
+                "ema_20": 2645.0,
+                "ema_50": 2645.0,  # Flat EMAs
+                "close": 2645.0,
+                "vwap": 2645.0,  # Price at VWAP
+                "dxy_corr": -0.5,
+            }
+        )
 
         bias = builder._compute_htf_bias(features)
         assert bias == HTFBias.NEUTRAL
@@ -113,9 +117,11 @@ class TestValidationContextBuilder:
         """Test DXY trending status with strong correlation."""
         builder = ValidationContextBuilder()
 
-        features = pd.Series({
-            "dxy_corr": -0.75,  # Strong inverse correlation
-        })
+        features = pd.Series(
+            {
+                "dxy_corr": -0.75,  # Strong inverse correlation
+            }
+        )
 
         assert builder._is_dxy_trending_clean(features) is True
 
@@ -123,9 +129,11 @@ class TestValidationContextBuilder:
         """Test DXY trending status with weak correlation."""
         builder = ValidationContextBuilder()
 
-        features = pd.Series({
-            "dxy_corr": -0.4,  # Weak correlation
-        })
+        features = pd.Series(
+            {
+                "dxy_corr": -0.4,  # Weak correlation
+            }
+        )
 
         assert builder._is_dxy_trending_clean(features) is False
 
@@ -133,9 +141,11 @@ class TestValidationContextBuilder:
         """Test DXY trending status with missing data."""
         builder = ValidationContextBuilder()
 
-        features = pd.Series({
-            "dxy_corr": None,  # Missing DXY data
-        })
+        features = pd.Series(
+            {
+                "dxy_corr": None,  # Missing DXY data
+            }
+        )
 
         assert builder._is_dxy_trending_clean(features) is False
 
@@ -143,9 +153,11 @@ class TestValidationContextBuilder:
         """Test DXY availability check with valid data."""
         builder = ValidationContextBuilder()
 
-        features = pd.Series({
-            "dxy_corr": -0.75,
-        })
+        features = pd.Series(
+            {
+                "dxy_corr": -0.75,
+            }
+        )
 
         assert builder._check_dxy_availability(features) is True
 
@@ -153,9 +165,11 @@ class TestValidationContextBuilder:
         """Test DXY availability check with None."""
         builder = ValidationContextBuilder()
 
-        features = pd.Series({
-            "dxy_corr": None,
-        })
+        features = pd.Series(
+            {
+                "dxy_corr": None,
+            }
+        )
 
         assert builder._check_dxy_availability(features) is False
 
@@ -163,9 +177,11 @@ class TestValidationContextBuilder:
         """Test DXY availability check with NaN."""
         builder = ValidationContextBuilder()
 
-        features = pd.Series({
-            "dxy_corr": float("nan"),
-        })
+        features = pd.Series(
+            {
+                "dxy_corr": float("nan"),
+            }
+        )
 
         assert builder._check_dxy_availability(features) is False
 
@@ -192,15 +208,17 @@ class TestValidationContextBuilder:
         """Test context building with guardrail result."""
         builder = ValidationContextBuilder()
 
-        features = pd.Series({
-            "close": 2650.0,
-            "vwap": 2645.0,
-            "ema_9": 2648.0,
-            "ema_20": 2645.0,
-            "ema_50": 2640.0,
-            "dxy_corr": -0.75,
-            "structure_type": "HH",
-        })
+        features = pd.Series(
+            {
+                "close": 2650.0,
+                "vwap": 2645.0,
+                "ema_9": 2648.0,
+                "ema_20": 2645.0,
+                "ema_50": 2640.0,
+                "dxy_corr": -0.75,
+                "structure_type": "HH",
+            }
+        )
 
         market_state = {
             "buffer_phase": "0-5k",
@@ -231,15 +249,17 @@ class TestValidationContextBuilder:
         """Test context building with fatigue flag set."""
         builder = ValidationContextBuilder()
 
-        features = pd.Series({
-            "close": 2650.0,
-            "vwap": 2645.0,
-            "ema_9": 2648.0,
-            "ema_20": 2645.0,
-            "ema_50": 2640.0,
-            "dxy_corr": -0.75,
-            "structure_type": "HH",
-        })
+        features = pd.Series(
+            {
+                "close": 2650.0,
+                "vwap": 2645.0,
+                "ema_9": 2648.0,
+                "ema_20": 2645.0,
+                "ema_50": 2640.0,
+                "dxy_corr": -0.75,
+                "structure_type": "HH",
+            }
+        )
 
         market_state = {
             "buffer_phase": "0-5k",
@@ -311,4 +331,3 @@ class TestDXYHandling:
 
         assert allowed is False
         assert "Unknown setup type" in warning
-

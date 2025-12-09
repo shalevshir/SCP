@@ -13,23 +13,21 @@ Usage:
 """
 
 import argparse
-import logging
 import os
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Optional
 
 import pandas as pd
-from databento import Historical, DBNStore
+from databento import DBNStore, Historical
 
 # Add project root to path for imports
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
+from common.config import load_config
 from common.exceptions import DataSourceError
 from common.logger import get_logger, setup_logging
-from common.config import load_config
 
 # Initialize logging
 logger = get_logger(__name__)
@@ -49,15 +47,15 @@ DXY_DATASET = "IFUS.IMPACT"  # ICE Futures US (IMPACT protocol)
 # Available OHLCV schemas: ohlcv-1s, ohlcv-1m, ohlcv-1h, ohlcv-1d, ohlcv-eod
 # Note: ohlcv-15m is NOT available from Databento
 SCHEMAS: dict[str, str] = {
-    "1s": "ohlcv-1s",    # 1-second bars
-    "1m": "ohlcv-1m",    # 1-minute bars
-    "1h": "ohlcv-1h",    # 1-hour bars (replaces 15m)
+    "1s": "ohlcv-1s",  # 1-second bars
+    "1m": "ohlcv-1m",  # 1-minute bars
+    "1h": "ohlcv-1h",  # 1-hour bars (replaces 15m)
 }
 
 
 def check_dataset_info(client: Historical, dataset: str) -> None:
     """Check and log dataset availability information.
-    
+
     Args:
         client: Databento Historical client
         dataset: Dataset to check (e.g., 'GLBX.MDP3')
@@ -65,8 +63,10 @@ def check_dataset_info(client: Historical, dataset: str) -> None:
     try:
         # Get dataset date range
         date_range = client.metadata.get_dataset_range(dataset=dataset)
-        logger.info(f"Dataset {dataset} available from {date_range['start_date']} to {date_range['end_date']}")
-        
+        logger.info(
+            f"Dataset {dataset} available from {date_range['start_date']} to {date_range['end_date']}"
+        )
+
         # List available schemas
         schemas = client.metadata.list_schemas(dataset=dataset)
         logger.info(f"Available schemas: {', '.join(schemas)}")
@@ -127,7 +127,7 @@ def fetch_and_save(
             f"Query parameters: dataset={dataset}, symbol={symbol}, "
             f"schema={schema}, start={start}, end={end}"
         )
-        
+
         dbn_data: DBNStore = client.timeseries.get_range(
             dataset=dataset,
             symbols=symbol,
@@ -140,7 +140,7 @@ def fetch_and_save(
 
         # Convert DBNStore to DataFrame
         df = dbn_data.to_df()
-        
+
         logger.info(f"Received {len(df)} records from Databento")
 
         if df.empty:
@@ -153,12 +153,16 @@ def fetch_and_save(
 
         # Log DataFrame info for debugging
         logger.debug(f"DataFrame columns: {df.columns.tolist()}")
-        logger.debug(f"DataFrame index: {df.index.name if hasattr(df.index, 'name') else 'unnamed'}")
+        logger.debug(
+            f"DataFrame index: {df.index.name if hasattr(df.index, 'name') else 'unnamed'}"
+        )
         logger.debug(f"DataFrame shape: {df.shape}")
         logger.debug(f"First few rows:\n{df.head(2)}")
 
         # Handle timestamp - check if it's already in the index or in columns
-        if df.index.name in ["ts_event", "timestamp", "ts_recv"] or isinstance(df.index, pd.DatetimeIndex):
+        if df.index.name in ["ts_event", "timestamp", "ts_recv"] or isinstance(
+            df.index, pd.DatetimeIndex
+        ):
             # Timestamp is already in the index
             logger.debug(f"Timestamp already in index: {df.index.name}")
             if not isinstance(df.index, pd.DatetimeIndex):
@@ -171,7 +175,7 @@ def fetch_and_save(
                 if col in df.columns:
                     timestamp_col = col
                     break
-            
+
             if timestamp_col is None:
                 # For OHLCV data, timestamp might not be present - index might be numeric
                 # Try to use the existing index and see if it's a timestamp
@@ -189,11 +193,13 @@ def fetch_and_save(
                     raise DataSourceError(
                         f"No timestamp found and could not convert index for {symbol}",
                         available_columns=df.columns.tolist(),
-                        index_type=type(df.index).__name__
+                        index_type=type(df.index).__name__,
                     ) from e
             else:
                 logger.debug(f"Using timestamp column: {timestamp_col}")
-                df[timestamp_col] = pd.to_datetime(df[timestamp_col], unit="ns", utc=True)
+                df[timestamp_col] = pd.to_datetime(
+                    df[timestamp_col], unit="ns", utc=True
+                )
                 df = df.set_index(timestamp_col)
 
         # Build filename and save
@@ -203,9 +209,7 @@ def fetch_and_save(
         output_path = output_folder / filename
         df.to_csv(output_path)
 
-        logger.info(
-            f"Saved {len(df)} records for {symbol} {schema} to {output_path}"
-        )
+        logger.info(f"Saved {len(df)} records for {symbol} {schema} to {output_path}")
 
     except Exception as e:
         error_msg = f"Failed to fetch/save {schema} data for {symbol}: {e}"
@@ -215,7 +219,7 @@ def fetch_and_save(
 
 def main(
     days_back: int = 7,
-    output_folder: Optional[Path] = None,
+    output_folder: Path | None = None,
     data_delay_hours: int = 4,
     use_free_tier_dates: bool = False,
 ) -> None:
@@ -230,11 +234,11 @@ def main(
     Raises:
         ValueError: If API key is not configured
         DataSourceError: If data fetch fails
-        
+
     Note:
         Historical market data typically has a 2-4 hour delay. The `data_delay_hours`
         parameter ensures we don't request data that isn't available yet.
-        
+
         For free tier users: Recent data (last ~30 days) requires a paid subscription.
         Set `use_free_tier_dates=True` to fetch older data available on the free tier.
     """
@@ -251,7 +255,7 @@ def main(
         # Initialize Databento client
         client = Historical(key=api_key)
         logger.info("Databento client initialized successfully")
-        
+
         # Check dataset availability (helpful for debugging)
         logger.info("Checking dataset availability...")
         check_dataset_info(client, GC_DATASET)
@@ -296,7 +300,7 @@ def main(
         current_fetch = 0
 
         for symbol, dataset in symbols_datasets:
-            for tf_name, schema in SCHEMAS.items():
+            for _tf_name, schema in SCHEMAS.items():
                 current_fetch += 1
                 logger.info(f"Progress: {current_fetch}/{total_fetches}")
 
@@ -352,47 +356,48 @@ if __name__ == "__main__":
         default=os.getenv("DATABENTO_FREE_TIER", "true").lower() == "true",
         help="Use free tier date range (60 days ago)",
     )
-    
+
     args = parser.parse_args()
-    
+
     # If custom dates provided, fetch them directly
     if args.start_date and args.end_date:
         try:
             config = load_config(PROJECT_ROOT / "config" / "core.yaml")
             setup_logging(config.system)
             logger = get_logger(__name__)
-            
+
             start = datetime.strptime(args.start_date, "%Y-%m-%d")
             end = datetime.strptime(args.end_date, "%Y-%m-%d")
-            
-            logger.info(f"Starting Databento OHLCV data fetch script")
+
+            logger.info("Starting Databento OHLCV data fetch script")
             logger.info(f"Custom date range: {start.date()} to {end.date()}")
-            
+
             api_key = get_api_key()
             client = Historical(key=api_key)
             logger.info("Databento client initialized successfully")
-            
+
             output_folder = PROJECT_ROOT / DEST_FOLDER
             output_folder.mkdir(parents=True, exist_ok=True)
             logger.info(f"Output directory: {output_folder}")
-            
+
             symbols_datasets = [(GC_SYMBOL, GC_DATASET), (DXY_SYMBOL, DXY_DATASET)]
             total_fetches = len(symbols_datasets) * len(SCHEMAS)
             current_fetch = 0
-            
+
             for symbol, dataset in symbols_datasets:
-                for tf_name, schema in SCHEMAS.items():
+                for _tf_name, schema in SCHEMAS.items():
                     current_fetch += 1
                     logger.info(f"Progress: {current_fetch}/{total_fetches}")
-                    fetch_and_save(client, dataset, symbol, schema, start, end, output_folder)
-            
-            logger.info(f"Successfully completed all {total_fetches} data fetches. Files saved to {output_folder}")
+                    fetch_and_save(
+                        client, dataset, symbol, schema, start, end, output_folder
+                    )
+
+            logger.info(
+                f"Successfully completed all {total_fetches} data fetches. Files saved to {output_folder}"
+            )
         except Exception as e:
             logger.error(f"Error: {e}", exc_info=True)
             sys.exit(1)
     else:
         # Use the default main() function with relative dates
-        main(
-            days_back=args.days_back,
-            use_free_tier_dates=args.free_tier
-        )
+        main(days_back=args.days_back, use_free_tier_dates=args.free_tier)

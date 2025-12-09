@@ -400,10 +400,10 @@ class LocalCSVClient:
                 # Note: pd.to_numeric with errors='coerce' handles mixed types gracefully,
                 # converting non-numeric values to NaN. We then check for NaN explicitly.
                 # Any TypeError here is a real bug that should surface, not be hidden.
-                
+
                 # Convert to numeric, coercing non-numeric values to NaN
-                numeric_col = pd.to_numeric(df[col], errors='coerce')
-                
+                numeric_col = pd.to_numeric(df[col], errors="coerce")
+
                 # Check if we have NaN values after conversion (indicates non-numeric)
                 non_numeric_mask = numeric_col.isna() & df[col].notna()
                 if non_numeric_mask.any():
@@ -420,7 +420,7 @@ class LocalCSVClient:
                         extra={"file": self.file_path, "row": row_info},
                         file_path=self.file_path,
                     )
-                
+
                 # Check for ANY remaining NaN values (including those already in CSV)
                 # Note: NaN <= 0 evaluates to False in pandas, so we must check explicitly
                 nan_mask = numeric_col.isna()
@@ -442,7 +442,7 @@ class LocalCSVClient:
                         extra={"file": self.file_path, "row": row_info},
                         file_path=self.file_path,
                     )
-                
+
                 # Now check for negative or zero prices using the converted numeric column
                 # IMPORTANT: Use numeric_col here, not df[col], to ensure we're validating
                 # the converted numeric values, not the original column

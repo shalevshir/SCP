@@ -25,14 +25,13 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-
 from common.exceptions import DataSourceError
 from data_layer.clients import LocalCSVClient
 
 
 def test_validation_detects_negative_values_correctly():
     """Test that negative price validation works correctly.
-    
+
     This test verifies that after removing the try-except block,
     validation still correctly detects negative values.
     """
@@ -53,7 +52,7 @@ def test_validation_detects_negative_values_correctly():
 
         error_msg = str(exc_info.value).lower()
         assert "positive" in error_msg or "open" in error_msg
-        
+
     finally:
         Path(csv_path).unlink()
 
@@ -77,14 +76,14 @@ def test_validation_detects_zero_values_correctly():
 
         error_msg = str(exc_info.value).lower()
         assert "positive" in error_msg or "close" in error_msg
-        
+
     finally:
         Path(csv_path).unlink()
 
 
 def test_numeric_conversion_handles_mixed_types_gracefully():
     """Test that pd.to_numeric with errors='coerce' handles mixed types correctly.
-    
+
     This verifies that we don't need a try-except for mixed types since
     pd.to_numeric(..., errors='coerce') already handles them gracefully.
     """
@@ -105,7 +104,7 @@ def test_numeric_conversion_handles_mixed_types_gracefully():
 
         error_msg = str(exc_info.value).lower()
         assert "non-numeric" in error_msg or "invalid" in error_msg
-        
+
     finally:
         Path(csv_path).unlink()
 
@@ -129,7 +128,6 @@ def test_validation_with_all_valid_numeric_types():
         assert len(candles) == 2
         assert candles[0].open == 100.0
         assert candles[1].high == 107.0
-        
+
     finally:
         Path(csv_path).unlink()
-

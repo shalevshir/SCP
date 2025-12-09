@@ -68,17 +68,16 @@ def detect_dxy_chop(
     # Calculate wick ratio
     # For doji candles (zero body), treat as infinite ratio (always chop)
     wick_ratio = pd.Series(index=dxy_df.index, dtype=float)
-    
+
     # Handle zero body (doji) - treat as chop
     zero_body_mask = body_size == 0
     wick_ratio[zero_body_mask] = float("inf")
-    
+
     # Calculate normal ratio for non-zero bodies
     non_zero_mask = ~zero_body_mask
     wick_ratio[non_zero_mask] = (
-        (upper_wick[non_zero_mask] + lower_wick[non_zero_mask])
-        / body_size[non_zero_mask]
-    )
+        upper_wick[non_zero_mask] + lower_wick[non_zero_mask]
+    ) / body_size[non_zero_mask]
 
     # Identify individual chop candles
     is_chop_candle = wick_ratio >= wick_threshold
@@ -89,7 +88,7 @@ def detect_dxy_chop(
     # Count consecutive chop candles
     consecutive_count = pd.Series(0, index=dxy_df.index, dtype=int)
     count = 0
-    
+
     for i in range(len(dxy_df)):
         if is_chop_candle.iloc[i]:
             count += 1
@@ -106,4 +105,3 @@ def detect_dxy_chop(
     )
 
     return dxy_chop.rename("dxy_chop")
-

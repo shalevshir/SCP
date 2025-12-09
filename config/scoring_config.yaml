@@ -16,10 +16,10 @@ setup_types:
       vwap_relation: 2          # Consistent with trend
       rsi_state: 1.5            # Mid-reset continuation
       ema_stack: 1.5            # 9>20>50 or reverse
-      dxy_corr: 1.5             # Inverse correlation intact (<-0.6)
+      dxy_corr: 1.0             # Inverse correlation intact (<-0.6)
       fvg_alignment: 0.5        # FVG support for trend direction
       liquidity_sweep: 0.5      # Liquidity sweep alignment
-      htf_bonus: 1              # HTF bias score ≥8
+      htf_bonus: 0.5            # HTF bias score ≥8
 
   # VWAP Fade: Counter-trend setup at extreme deviation
   VWAP_FADE:

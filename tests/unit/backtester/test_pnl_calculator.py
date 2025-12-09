@@ -285,7 +285,7 @@ class TestCalculateNetPnL:
 
     def test_long_trade_win_with_costs(self):
         """Test net PnL for winning long trade with all costs.
-        
+
         As per plan validation:
         Entry: 2650.0, Exit: 2665.0 (TP)
         Gross: +$1,500 (15 points × $10/point × 1 contract)
@@ -321,7 +321,7 @@ class TestCalculateNetPnL:
 
     def test_short_trade_win_with_costs(self):
         """Test net PnL for winning short trade with all costs.
-        
+
         As per plan validation:
         Entry: 2650.0, Exit: 2645.0 (TP)
         Gross: +$500 (5 points × $10/point × 1 contract)
@@ -512,4 +512,3 @@ class TestCalculateNetPnL:
         assert "commission_cost" in pnl_breakdown
         assert "net_pnl" in pnl_breakdown
         assert "pnl_per_contract" in pnl_breakdown
-

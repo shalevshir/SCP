@@ -1,9 +1,8 @@
 """Tests for DXYIndexClient stub."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
-
 from common.exceptions import DataSourceError
 from common.types import Candle
 from data_layer.clients import DXYIndexClient
@@ -26,8 +25,8 @@ def test_client_has_fetch_method():
 def test_fetch_returns_list():
     """Test that fetch returns a list."""
     client = DXYIndexClient()
-    start = datetime(2025, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
-    end = datetime(2025, 1, 1, 23, 59, 59, tzinfo=timezone.utc)
+    start = datetime(2025, 1, 1, 0, 0, 0, tzinfo=UTC)
+    end = datetime(2025, 1, 1, 23, 59, 59, tzinfo=UTC)
 
     result = client.fetch(start, end, "1m")
 
@@ -37,8 +36,8 @@ def test_fetch_returns_list():
 def test_fetch_returns_list_of_candles():
     """Test that fetch returns list of Candle objects."""
     client = DXYIndexClient()
-    start = datetime(2025, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
-    end = datetime(2025, 1, 1, 23, 59, 59, tzinfo=timezone.utc)
+    start = datetime(2025, 1, 1, 0, 0, 0, tzinfo=UTC)
+    end = datetime(2025, 1, 1, 23, 59, 59, tzinfo=UTC)
 
     result = client.fetch(start, end, "1m")
 
@@ -52,8 +51,8 @@ def test_fetch_returns_list_of_candles():
 def test_stub_returns_empty_list():
     """Test that stub implementation returns empty list."""
     client = DXYIndexClient()
-    start = datetime(2025, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
-    end = datetime(2025, 1, 1, 23, 59, 59, tzinfo=timezone.utc)
+    start = datetime(2025, 1, 1, 0, 0, 0, tzinfo=UTC)
+    end = datetime(2025, 1, 1, 23, 59, 59, tzinfo=UTC)
 
     result = client.fetch(start, end, "1m")
 
@@ -66,7 +65,7 @@ def test_fetch_with_naive_start_datetime_raises_error():
     client = DXYIndexClient()
     # Naive datetime (no timezone)
     start = datetime(2025, 1, 1, 0, 0, 0)
-    end = datetime(2025, 1, 1, 23, 59, 59, tzinfo=timezone.utc)
+    end = datetime(2025, 1, 1, 23, 59, 59, tzinfo=UTC)
 
     with pytest.raises(DataSourceError) as exc_info:
         client.fetch(start, end, "1m")
@@ -79,7 +78,7 @@ def test_fetch_with_naive_start_datetime_raises_error():
 def test_fetch_with_naive_end_datetime_raises_error():
     """Test that fetch raises DataSourceError for naive end datetime."""
     client = DXYIndexClient()
-    start = datetime(2025, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+    start = datetime(2025, 1, 1, 0, 0, 0, tzinfo=UTC)
     # Naive datetime (no timezone)
     end = datetime(2025, 1, 1, 23, 59, 59)
 
@@ -94,8 +93,8 @@ def test_fetch_with_naive_end_datetime_raises_error():
 def test_fetch_with_start_after_end_raises_error():
     """Test that fetch raises DataSourceError when start >= end."""
     client = DXYIndexClient()
-    start = datetime(2025, 1, 2, 0, 0, 0, tzinfo=timezone.utc)
-    end = datetime(2025, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+    start = datetime(2025, 1, 2, 0, 0, 0, tzinfo=UTC)
+    end = datetime(2025, 1, 1, 0, 0, 0, tzinfo=UTC)
 
     with pytest.raises(DataSourceError) as exc_info:
         client.fetch(start, end, "1m")
@@ -108,8 +107,8 @@ def test_fetch_with_start_after_end_raises_error():
 def test_fetch_with_start_equal_to_end_raises_error():
     """Test that fetch raises DataSourceError when start == end."""
     client = DXYIndexClient()
-    start = datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
-    end = datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+    start = datetime(2025, 1, 1, 12, 0, 0, tzinfo=UTC)
+    end = datetime(2025, 1, 1, 12, 0, 0, tzinfo=UTC)
 
     with pytest.raises(DataSourceError) as exc_info:
         client.fetch(start, end, "1m")
@@ -120,8 +119,8 @@ def test_fetch_with_start_equal_to_end_raises_error():
 def test_fetch_with_empty_timeframe_raises_error():
     """Test that fetch raises DataSourceError for empty timeframe."""
     client = DXYIndexClient()
-    start = datetime(2025, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
-    end = datetime(2025, 1, 1, 23, 59, 59, tzinfo=timezone.utc)
+    start = datetime(2025, 1, 1, 0, 0, 0, tzinfo=UTC)
+    end = datetime(2025, 1, 1, 23, 59, 59, tzinfo=UTC)
 
     with pytest.raises(DataSourceError) as exc_info:
         client.fetch(start, end, "")
@@ -135,8 +134,8 @@ def test_fetch_with_empty_timeframe_raises_error():
 def test_fetch_with_whitespace_timeframe_raises_error():
     """Test that fetch raises DataSourceError for whitespace-only timeframe."""
     client = DXYIndexClient()
-    start = datetime(2025, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
-    end = datetime(2025, 1, 1, 23, 59, 59, tzinfo=timezone.utc)
+    start = datetime(2025, 1, 1, 0, 0, 0, tzinfo=UTC)
+    end = datetime(2025, 1, 1, 23, 59, 59, tzinfo=UTC)
 
     with pytest.raises(DataSourceError) as exc_info:
         client.fetch(start, end, "   ")
@@ -148,8 +147,8 @@ def test_fetch_with_whitespace_timeframe_raises_error():
 def test_fetch_with_different_timeframes():
     """Test that fetch works with various valid timeframes."""
     client = DXYIndexClient()
-    start = datetime(2025, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
-    end = datetime(2025, 1, 1, 23, 59, 59, tzinfo=timezone.utc)
+    start = datetime(2025, 1, 1, 0, 0, 0, tzinfo=UTC)
+    end = datetime(2025, 1, 1, 23, 59, 59, tzinfo=UTC)
 
     timeframes = ["1m", "5m", "15m", "1h", "1d"]
 
@@ -163,8 +162,8 @@ def test_fetch_with_different_timeframes():
 def test_multiple_fetch_calls():
     """Test that multiple fetch calls work correctly."""
     client = DXYIndexClient()
-    start = datetime(2025, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
-    end = datetime(2025, 1, 1, 23, 59, 59, tzinfo=timezone.utc)
+    start = datetime(2025, 1, 1, 0, 0, 0, tzinfo=UTC)
+    end = datetime(2025, 1, 1, 23, 59, 59, tzinfo=UTC)
 
     # First call
     result1 = client.fetch(start, end, "1m")
@@ -183,7 +182,7 @@ def test_fetch_signature_matches_expected():
     client = DXYIndexClient()
 
     # Get the fetch method
-    fetch_method = getattr(client, "fetch")
+    fetch_method = client.fetch
 
     # Check it accepts the expected parameters
     import inspect

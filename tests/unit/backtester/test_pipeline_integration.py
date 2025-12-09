@@ -359,7 +359,9 @@ class TestPipelineIntegration:
             assert e1.entry_price == e2.entry_price
             assert e1.executed == e2.executed
 
-    def test_pipeline_handles_missing_session_constraints(self, minimal_data, monkeypatch):
+    def test_pipeline_handles_missing_session_constraints(
+        self, minimal_data, monkeypatch
+    ):
         """Pipeline should still run when validation context lacks session constraints."""
         gc_df, dxy_df = minimal_data
 

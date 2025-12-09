@@ -4,10 +4,8 @@ Tests JSON logging of signals to files for auditability and analysis.
 """
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-
-import pytest
 
 from rule_engine.signal import Signal
 from rule_engine.signal_logger import log_signal, signal_to_dict
@@ -19,7 +17,7 @@ class TestSignalToDict:
     def test_signal_to_dict_structure(self) -> None:
         """Test that signal converts to proper dict structure."""
         signal = Signal(
-            timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=timezone.utc),
+            timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
             symbol="GC",
             timeframe="1m",
             direction="long",
@@ -48,7 +46,7 @@ class TestSignalToDict:
     def test_signal_to_dict_timestamp_serialization(self) -> None:
         """Test that timestamp is serialized to ISO format string."""
         signal = Signal(
-            timestamp=datetime(2025, 1, 1, 10, 30, 45, tzinfo=timezone.utc),
+            timestamp=datetime(2025, 1, 1, 10, 30, 45, tzinfo=UTC),
             symbol="GC",
             timeframe="1m",
             direction="long",
@@ -71,7 +69,7 @@ class TestSignalToDict:
     def test_signal_to_dict_json_serializable(self) -> None:
         """Test that resulting dict is JSON serializable."""
         signal = Signal(
-            timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=timezone.utc),
+            timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
             symbol="GC",
             timeframe="1m",
             direction="long",
@@ -98,7 +96,7 @@ class TestLogSignal:
     def test_log_signal_creates_file(self, tmp_path: Path) -> None:
         """Test that log_signal creates the log file."""
         signal = Signal(
-            timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=timezone.utc),
+            timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
             symbol="GC",
             timeframe="1m",
             direction="long",
@@ -123,7 +121,7 @@ class TestLogSignal:
         """Test that signals are written in JSONL format (one JSON per line)."""
         signals = [
             Signal(
-                timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=timezone.utc),
+                timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
                 symbol="GC",
                 timeframe="1m",
                 direction="long",
@@ -137,7 +135,7 @@ class TestLogSignal:
                 enforcer_tier="Early Mild",
             ),
             Signal(
-                timestamp=datetime(2025, 1, 1, 11, 0, tzinfo=timezone.utc),
+                timestamp=datetime(2025, 1, 1, 11, 0, tzinfo=UTC),
                 symbol="GC",
                 timeframe="1m",
                 direction="short",
@@ -158,7 +156,7 @@ class TestLogSignal:
 
         # Read file and verify JSONL format
         log_file = log_dir / "2025-01-01.jsonl"
-        with open(log_file, "r") as f:
+        with open(log_file) as f:
             lines = f.readlines()
 
         assert len(lines) == 2
@@ -172,7 +170,7 @@ class TestLogSignal:
     def test_log_signal_appends_to_existing_file(self, tmp_path: Path) -> None:
         """Test that logging appends to existing file instead of overwriting."""
         signal1 = Signal(
-            timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=timezone.utc),
+            timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
             symbol="GC",
             timeframe="1m",
             direction="long",
@@ -187,7 +185,7 @@ class TestLogSignal:
         )
 
         signal2 = Signal(
-            timestamp=datetime(2025, 1, 1, 11, 0, tzinfo=timezone.utc),
+            timestamp=datetime(2025, 1, 1, 11, 0, tzinfo=UTC),
             symbol="GC",
             timeframe="1m",
             direction="short",
@@ -208,7 +206,7 @@ class TestLogSignal:
 
         # Check both signals are in the file
         log_file = log_dir / "2025-01-01.jsonl"
-        with open(log_file, "r") as f:
+        with open(log_file) as f:
             lines = f.readlines()
 
         assert len(lines) == 2
@@ -216,7 +214,7 @@ class TestLogSignal:
     def test_log_signal_creates_separate_files_per_day(self, tmp_path: Path) -> None:
         """Test that signals from different days go to separate files."""
         signal1 = Signal(
-            timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=timezone.utc),
+            timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
             symbol="GC",
             timeframe="1m",
             direction="long",
@@ -231,7 +229,7 @@ class TestLogSignal:
         )
 
         signal2 = Signal(
-            timestamp=datetime(2025, 1, 2, 10, 0, tzinfo=timezone.utc),
+            timestamp=datetime(2025, 1, 2, 10, 0, tzinfo=UTC),
             symbol="GC",
             timeframe="1m",
             direction="long",
@@ -258,16 +256,16 @@ class TestLogSignal:
         assert file2.exists()
 
         # Each file should have one signal
-        with open(file1, "r") as f:
+        with open(file1) as f:
             assert len(f.readlines()) == 1
 
-        with open(file2, "r") as f:
+        with open(file2) as f:
             assert len(f.readlines()) == 1
 
     def test_log_signal_preserves_all_data(self, tmp_path: Path) -> None:
         """Test that all signal data is preserved in the log."""
         signal = Signal(
-            timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=timezone.utc),
+            timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
             symbol="GC",
             timeframe="1m",
             direction="long",
@@ -286,7 +284,7 @@ class TestLogSignal:
 
         # Read back and verify all data
         log_file = log_dir / "2025-01-01.jsonl"
-        with open(log_file, "r") as f:
+        with open(log_file) as f:
             logged_data = json.loads(f.read())
 
         assert logged_data["symbol"] == "GC"
@@ -296,4 +294,3 @@ class TestLogSignal:
         assert logged_data["rationale"] == "Complete signal test"
         assert "structure_alignment" in logged_data["factors"]
         assert "session_ok" in logged_data["validation_flags"]
-

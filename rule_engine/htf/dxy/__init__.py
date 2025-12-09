@@ -8,4 +8,3 @@ This package handles:
 from rule_engine.htf.dxy.chop import detect_dxy_chop
 
 __all__ = ["detect_dxy_chop"]
-

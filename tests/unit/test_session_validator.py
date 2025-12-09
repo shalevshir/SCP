@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime, time, timezone
+from datetime import UTC, date, datetime, time
 from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
 import pytest
-
 from validation.session_validator import (
     SeasonRule,
     SessionConfig,
@@ -85,7 +84,7 @@ def session_config(base_rules: tuple[SeasonRule, list[SeasonRule]]) -> SessionCo
 def _utc(year: int, month: int, day: int, hour: int, minute: int) -> datetime:
     """Helper to create a UTC datetime."""
 
-    return datetime(year, month, day, hour, minute, tzinfo=timezone.utc)
+    return datetime(year, month, day, hour, minute, tzinfo=UTC)
 
 
 class TestSessionValidator:

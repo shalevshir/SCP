@@ -4,21 +4,16 @@ Tests 20+ scenarios covering seasonality, session windows, loss streaks,
 tier restrictions, DXY handling, HTF bias, CEO directives, and more.
 """
 
-from datetime import date, datetime, time, timezone
+from datetime import UTC, datetime, time
 
 import pandas as pd
 import pytest
-
 from rule_engine.signal import Signal
 from rule_engine.validation import validate_signal_with_sop
 from validation.context_builder import ValidationContextBuilder
 from validation.guardrails import BehaviorGuardrails, BehaviorState
-from validation.schema import BufferPhase, EnforcerTier, HTFBias, ValidationContext
 from validation.session_validator import (
-    SeasonRule,
-    SessionConfig,
     SessionConstraints,
-    SessionValidator,
 )
 
 
@@ -34,7 +29,7 @@ class BaseValidationTest:
     ) -> Signal:
         """Create test signal."""
         return Signal(
-            timestamp=datetime(2024, 9, 15, 10, 30, tzinfo=timezone.utc),
+            timestamp=datetime(2024, 9, 15, 10, 30, tzinfo=UTC),
             symbol="GC",
             timeframe="1m",
             direction=direction,
@@ -55,15 +50,17 @@ class BaseValidationTest:
 
     def _create_default_context(self) -> tuple[pd.Series, dict, SessionConstraints]:
         """Create default test context."""
-        features = pd.Series({
-            "close": 2650.0,
-            "vwap": 2645.0,
-            "ema_9": 2648.0,
-            "ema_20": 2645.0,
-            "ema_50": 2640.0,
-            "dxy_corr": -0.75,
-            "structure_type": "HH",
-        })
+        features = pd.Series(
+            {
+                "close": 2650.0,
+                "vwap": 2645.0,
+                "ema_9": 2648.0,
+                "ema_20": 2645.0,
+                "ema_50": 2640.0,
+                "dxy_corr": -0.75,
+                "structure_type": "HH",
+            }
+        )
 
         market_state = {
             "buffer_phase": "0-5k",
@@ -248,20 +245,22 @@ class TestSessionWindowEnforcement(BaseValidationTest):
 
     def test_session_ok_flag_independent_of_other_validations(self) -> None:
         """session_ok flag should reflect session time validity, not other validation failures.
-        
+
         Regression test for bug where session_ok was incorrectly set to False
         when other validations failed (DXY structure, HTF bias, etc.) even though
         the actual trading session time was valid.
         """
-        signal = self._create_test_signal(score=9.0, confidence="A+", setup_type="VWAP_RECLAIM")
+        signal = self._create_test_signal(
+            score=9.0, confidence="A+", setup_type="VWAP_RECLAIM"
+        )
         features, market_state, constraints = self._create_default_context()
 
         # Session time is valid
         market_state["session_ok"] = True
-        
+
         # But DXY structure is not clean (will fail validation)
         features["dxy_corr"] = -0.3  # Not clean enough for continuation setup
-        
+
         # And HTF bias doesn't match
         market_state["htf_bias"] = "bearish"  # Mismatched with signal's bullish bias
 
@@ -271,8 +270,11 @@ class TestSessionWindowEnforcement(BaseValidationTest):
 
         # Signal should be rejected due to DXY and HTF mismatch
         assert validated.confidence == "Reject"
-        assert "DXY structure" in validated.rationale or "correlation" in validated.rationale.lower()
-        
+        assert (
+            "DXY structure" in validated.rationale
+            or "correlation" in validated.rationale.lower()
+        )
+
         # But session_ok flag should still be True because session time was valid
         assert validated.validation_flags["session_ok"] is True, (
             "session_ok flag should only reflect session time validity, "
@@ -285,7 +287,9 @@ class TestLossStreakHalts(BaseValidationTest):
 
     def test_september_halts_after_1_loss(self) -> None:
         """September halts after 1 consecutive loss."""
-        from validation.guardrails import BehaviorState, BehaviorGuardrails, GuardrailResult
+        from validation.guardrails import (
+            BehaviorGuardrails,
+        )
 
         signal = self._create_test_signal(score=9.0, confidence="A+")
         features, market_state, constraints = self._create_september_context()
@@ -303,7 +307,7 @@ class TestLossStreakHalts(BaseValidationTest):
 
     def test_october_allows_1_loss_but_halts_at_2(self) -> None:
         """October halts after 2 consecutive losses."""
-        from validation.guardrails import BehaviorState, BehaviorGuardrails
+        from validation.guardrails import BehaviorGuardrails
 
         signal = self._create_test_signal(score=9.0, confidence="A+")
         features, market_state, constraints = self._create_october_context()
@@ -374,9 +378,7 @@ class TestTierRestrictions(BaseValidationTest):
             window_start=time(10, 0),
             window_end=time(13, 0),
             allowed_tiers=frozenset(["Offensive"]),
-            allowed_setups=frozenset(
-                ["VWAP_RECLAIM", "DXY_CONTINUATION", "VWAP_FADE"]
-            ),
+            allowed_setups=frozenset(["VWAP_RECLAIM", "DXY_CONTINUATION", "VWAP_FADE"]),
             min_score=8.0,
             max_losses=2,
             dxy_correlation_max=-0.6,
@@ -483,20 +485,19 @@ class TestCEODirective(BaseValidationTest):
 
     def test_early_mild_requires_directive(self) -> None:
         """Early Mild tier requires active CEO directive."""
-        signal = self._create_test_signal(score=9.0, confidence="A+")
+        self._create_test_signal(score=9.0, confidence="A+")
         features, market_state, constraints = self._create_default_context()
 
         market_state["tier_active"] = "EarlyMild"
         market_state["ceo_directive_active"] = False
 
         # This should raise ValueError when building ValidationContext
-        with pytest.raises(ValueError, match="EarlyMild tier requires active CEO directive"):
+        with pytest.raises(
+            ValueError, match="EarlyMild tier requires active CEO directive"
+        ):
             builder = ValidationContextBuilder()
             builder.build_context(
-                features,
-                market_state,
-                self._create_session_result(constraints),
-                None
+                features, market_state, self._create_session_result(constraints), None
             )
 
     def test_early_mild_allowed_with_directive(self) -> None:
@@ -519,7 +520,7 @@ class TestFatigueFlag(BaseValidationTest):
 
     def test_fatigue_flag_blocks_all_trading(self) -> None:
         """Fatigue flag blocks all trading."""
-        from validation.guardrails import BehaviorState, BehaviorGuardrails
+        from validation.guardrails import BehaviorState
 
         signal = self._create_test_signal(score=9.0, confidence="A+")
         features, market_state, constraints = self._create_default_context()
@@ -553,4 +554,3 @@ class TestUSHolidays(BaseValidationTest):
 
         assert validated.confidence == "Reject"
         assert validated.validation_flags["session_ok"] is False
-

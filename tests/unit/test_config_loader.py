@@ -7,7 +7,6 @@ from pathlib import Path
 
 import pytest
 import yaml
-
 from common.exceptions import ConfigError
 from rule_engine.config_loader import (
     ScoringConfig,
@@ -84,7 +83,7 @@ class TestScoringConfigStructure:
 
         for setup_name, setup_config in config.setup_types.items():
             assert "min_score" in setup_config, f"{setup_name} missing min_score"
-            assert isinstance(setup_config["min_score"], (int, float))
+            assert isinstance(setup_config["min_score"], int | float)
 
     def test_setup_type_has_weights(self) -> None:
         """Test that each setup type has weights dict."""
@@ -179,7 +178,9 @@ class TestValidationConfig:
         config = load_scoring_config()
 
         for tier_name, tier_config in config.validation["tiers"].items():
-            assert "allowed_setups" in tier_config, f"{tier_name} missing allowed_setups"
+            assert (
+                "allowed_setups" in tier_config
+            ), f"{tier_name} missing allowed_setups"
             assert isinstance(tier_config["allowed_setups"], list)
 
 
@@ -236,9 +237,7 @@ class TestValidateScoringConfig:
     def test_validate_invalid_min_score_type_raises_error(self) -> None:
         """Test that non-numeric min_score raises ConfigError."""
         config_data = {
-            "setup_types": {
-                "VWAP_RECLAIM": {"min_score": "eight", "weights": {}}
-            },
+            "setup_types": {"VWAP_RECLAIM": {"min_score": "eight", "weights": {}}},
             "confidence": {"a_plus": 8.0, "watch": 6.0, "reject": 0.0},
             "validation": {"dxy_corr_threshold": -0.6},
             "factors": {},
@@ -250,9 +249,7 @@ class TestValidateScoringConfig:
     def test_validate_negative_min_score_raises_error(self) -> None:
         """Test that negative min_score raises ConfigError."""
         config_data = {
-            "setup_types": {
-                "VWAP_RECLAIM": {"min_score": -5, "weights": {}}
-            },
+            "setup_types": {"VWAP_RECLAIM": {"min_score": -5, "weights": {}}},
             "confidence": {"a_plus": 8.0, "watch": 6.0, "reject": 0.0},
             "validation": {"dxy_corr_threshold": -0.6},
             "factors": {},
@@ -286,5 +283,4 @@ class TestFactorsConfig:
 
         for factor_name, factor_config in config.factors.items():
             assert "max_points" in factor_config, f"{factor_name} missing max_points"
-            assert isinstance(factor_config["max_points"], (int, float))
-
+            assert isinstance(factor_config["max_points"], int | float)

@@ -91,4 +91,3 @@ def get_session_id_series(timestamps: list[datetime] | pd.Series) -> list[date]:
         >>> session_ids = get_session_id_series(timestamps)
     """
     return [get_vwap_session_id(ts) for ts in timestamps]
-
