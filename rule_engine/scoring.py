@@ -287,36 +287,75 @@ def calculate_factor_scores(
 def calculate_structure_alignment(
     features: pd.Series, htf_bias: HTFBias, max_points: float
 ) -> float:
-    """Calculate structure alignment score with BOS bonus.
+    """Calculate structure alignment score with strict quality requirements.
 
-    Base: Direction matches HTF bias (70% of max)
-    Bonus: BOS detected (+15%)
+    Strict structure scoring that requires:
+    1. Direction matches HTF bias (base requirement)
+    2. Clean swing sequence - structure_clarity >= 0.7 (40% of max)
+    3. Recent structure event - BOS within threshold bars (30% of max)
+    4. No chop detected (30% of max)
 
-    Note: CHoCH (Change of Character) indicates potential reversal and is
-    penalized in adjust_score_with_htf, not rewarded here.
+    This prevents micro-chop entries from scoring high on structure alone.
 
     Args:
         features: Feature data for determining signal direction
-        htf_bias: HTFBias object containing structure information
+        htf_bias: HTFBias object containing structure quality metrics
         max_points: Maximum points this factor can contribute
 
     Returns:
         Score contribution (0 to max_points)
+
+    Example:
+        >>> # Genuine A+ structure: clean, recent BOS, no chop
+        >>> htf_bias = HTFBias(
+        ...     direction="long", structure_clarity=0.9,
+        ...     bars_since_bos=10, chop_detected=False
+        ... )
+        >>> calculate_structure_alignment(features, htf_bias, 2.5)
+        2.5  # Full points
+
+        >>> # Micro-chop: mixed structure, stale BOS
+        >>> htf_bias = HTFBias(
+        ...     direction="long", structure_clarity=0.3,
+        ...     bars_since_bos=40, chop_detected=True
+        ... )
+        >>> calculate_structure_alignment(features, htf_bias, 2.5)
+        0.0  # Zero points - fails all quality checks
     """
     direction = determine_direction(features, htf_bias)
 
-    # Base alignment
-    if htf_bias.direction == direction and direction != "neutral":
-        score = max_points * 0.7
-    else:
+    # Base requirement: direction must match
+    if htf_bias.direction != direction or direction == "neutral":
         return 0.0
 
-    # BOS bonus (indicates continuation)
-    if htf_bias.bos_detected:
-        score += max_points * 0.15
+    score = 0.0
 
-    # CHoCH is NOT rewarded here - it indicates potential reversal
-    # and is penalized in adjust_score_with_htf instead
+    # Factor 1: Clean swing structure (40% of max)
+    # Requires structure_clarity >= 0.7 for full credit
+    if htf_bias.structure_clarity >= 0.7:
+        score += max_points * 0.4
+    elif htf_bias.structure_clarity >= 0.4:
+        # Partial credit for moderate clarity
+        score += max_points * 0.2
+
+    # Factor 2: Recent structure event (30% of max)
+    # BOS within 15 bars gets full credit, 30 bars gets half
+    if htf_bias.bars_since_bos is not None:
+        if htf_bias.bars_since_bos <= 15:
+            score += max_points * 0.3
+        elif htf_bias.bars_since_bos <= 30:
+            score += max_points * 0.15
+        # No credit if BOS is stale (>30 bars ago)
+
+    # Factor 3: No chop detected (30% of max)
+    if not htf_bias.chop_detected:
+        score += max_points * 0.3
+
+    logger.debug(
+        f"Structure alignment breakdown: clarity={htf_bias.structure_clarity:.2f}, "
+        f"bars_since_bos={htf_bias.bars_since_bos}, chop={htf_bias.chop_detected}, "
+        f"score={score:.2f}/{max_points}"
+    )
 
     return min(score, max_points)
 
@@ -512,11 +551,16 @@ def calculate_rejection_candle(
 ) -> float:
     """Calculate rejection candle score for fade setups.
 
-    Simplified: Awards points if conditions suggest rejection.
+    TODO: Implement proper wick analysis:
+    - Wick > 2x body size
+    - Rejection in correct direction (upper wick for short, lower wick for long)
+    - Close near opposite end of wick
+
+    Returns 0 until properly implemented to prevent inflated scores.
     """
-    # Placeholder: In real implementation, would analyze candle pattern
-    # For now, award partial points
-    return max_points / 2
+    # Return 0 until properly implemented
+    # Previously gave free 50% points which inflated fade setup scores
+    return 0.0
 
 
 def calculate_volume_spike(
@@ -524,11 +568,16 @@ def calculate_volume_spike(
 ) -> float:
     """Calculate volume spike score for fade setups.
 
-    Simplified: Awards points if volume conditions met.
+    TODO: Implement proper volume analysis:
+    - Compare current volume to 20-bar average
+    - Require volume > 1.5x average for full points
+    - Partial credit for 1.2-1.5x average
+
+    Returns 0 until properly implemented to prevent inflated scores.
     """
-    # Placeholder: In real implementation, would compare volume to average
-    # For now, award partial points
-    return max_points / 2
+    # Return 0 until properly implemented
+    # Previously gave free 50% points which inflated fade setup scores
+    return 0.0
 
 
 def determine_direction(features: pd.Series, htf_bias: HTFBias) -> str:
