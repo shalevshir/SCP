@@ -115,27 +115,44 @@ def render_trade_table(
                 "Exit": f"{trade.exit_price:.2f}" if trade.exit_price else "N/A",
                 "SL": f"{trade.stop_loss:.2f}",
                 "TP": f"{trade.take_profit:.2f}",
-                "PnL (pts)": f"{trade.pnl:.2f}" if trade.pnl is not None else "N/A",
-                "PnL ($)": (
-                    f"${trade.pnl_net:.2f}" if trade.pnl_net is not None else "N/A"
-                ),
-                "R": f"{trade.r_realized:.2f}" if trade.r_realized is not None else "N/A",
+                # Keep raw numeric for conditional styling; use None for N/A
+                "PnL (pts)": trade.pnl if trade.pnl is not None else None,
+                "PnL ($)": trade.pnl_net if trade.pnl_net is not None else None,
+                "R": trade.r_realized if trade.r_realized is not None else None,
                 "Duration": f"{trade.duration_bars} bars" if trade.duration_bars else "N/A",
                 "Exit Reason": trade.exit_reason or "N/A",
-                "Score": f"{signal.score:.1f}",
+                "Score": signal.score,
                 "Confidence": signal.confidence,
             }
         )
 
     df = pd.DataFrame(rows)
 
+    # Define columns with formatting for numeric types
+    columns = []
+    for col in df.columns:
+        col_def = {"name": col, "id": col, "sortable": True, "selectable": False}
+
+        # Apply number formatting for specific columns
+        if col == "PnL (pts)":
+            col_def["type"] = "numeric"
+            col_def["format"] = {"specifier": ".2f"}
+        elif col == "PnL ($)":
+            col_def["type"] = "numeric"
+            col_def["format"] = {"specifier": "$,.2f"}
+        elif col == "R":
+            col_def["type"] = "numeric"
+            col_def["format"] = {"specifier": ".2f"}
+        elif col == "Score":
+            col_def["type"] = "numeric"
+            col_def["format"] = {"specifier": ".1f"}
+
+        columns.append(col_def)
+
     # Create DataTable
     table = dash_table.DataTable(
         id="trade-table",
-        columns=[
-            {"name": col, "id": col, "sortable": True, "selectable": False}
-            for col in df.columns
-        ],
+        columns=columns,
         data=df.to_dict("records"),
         sort_action="native",
         filter_action="native",
@@ -157,14 +174,60 @@ def render_trade_table(
             "color": "white",
         },
         style_data_conditional=[
+            # Color losing trades red (PnL < 0, excluding None/N/A)
             {
-                "if": {"filter_query": '{PnL (pts)} < 0'},
+                "if": {
+                    "filter_query": "{PnL (pts)} < 0",
+                    "column_id": "PnL (pts)",
+                },
                 "backgroundColor": "rgba(239, 83, 80, 0.2)",
                 "color": "#ef5350",
             },
             {
-                "if": {"filter_query": '{PnL (pts)} > 0'},
+                "if": {"filter_query": "{PnL (pts)} < 0"},
+                "backgroundColor": "rgba(239, 83, 80, 0.2)",
+            },
+            # Color winning trades green (PnL > 0)
+            {
+                "if": {
+                    "filter_query": "{PnL (pts)} > 0",
+                    "column_id": "PnL (pts)",
+                },
                 "backgroundColor": "rgba(38, 166, 154, 0.2)",
+                "color": "#26a69a",
+            },
+            {
+                "if": {"filter_query": "{PnL (pts)} > 0"},
+                "backgroundColor": "rgba(38, 166, 154, 0.2)",
+            },
+            # Style PnL ($) column based on its own value
+            {
+                "if": {
+                    "filter_query": "{PnL ($)} < 0",
+                    "column_id": "PnL ($)",
+                },
+                "color": "#ef5350",
+            },
+            {
+                "if": {
+                    "filter_query": "{PnL ($)} > 0",
+                    "column_id": "PnL ($)",
+                },
+                "color": "#26a69a",
+            },
+            # Style R column based on its own value
+            {
+                "if": {
+                    "filter_query": "{R} < 0",
+                    "column_id": "R",
+                },
+                "color": "#ef5350",
+            },
+            {
+                "if": {
+                    "filter_query": "{R} > 0",
+                    "column_id": "R",
+                },
                 "color": "#26a69a",
             },
         ],
