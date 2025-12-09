@@ -631,3 +631,146 @@ def is_london_or_ny_session(timestamp: pd.Timestamp) -> bool:
         return True
 
     return False
+
+
+def detect_structure_chop(labels: list[str | None], lookback: int) -> bool:
+    """Detect if structure labels indicate chop (mixed bullish/bearish).
+
+    Chop is detected when both bullish (HH/HL) and bearish (LH/LL) labels
+    are present in the lookback window. None values are filtered out.
+
+    Args:
+        labels: List of structure labels (HH, HL, LH, LL, or None)
+        lookback: Number of recent labels to consider
+
+    Returns:
+        True if chop detected (mixed bullish/bearish), False otherwise
+
+    Example:
+        >>> detect_structure_chop(["HH", "HL", "LH", "LL", "HH"], lookback=5)
+        True
+        >>> detect_structure_chop(["HH", "HL", "HH", "HL", "HH"], lookback=5)
+        False
+    """
+    if not labels:
+        return False
+
+    # Take last N labels (respecting lookback window)
+    recent_labels = labels[-lookback:] if len(labels) > lookback else labels
+
+    # Filter out None values
+    valid_labels = [label for label in recent_labels if label is not None]
+
+    # Need at least 2 valid labels to detect chop
+    if len(valid_labels) < 2:
+        return False
+
+    # Check for both bullish and bearish labels
+    has_bullish = any(label in ("HH", "HL") for label in valid_labels)
+    has_bearish = any(label in ("LH", "LL") for label in valid_labels)
+
+    # Chop = mixed signals
+    return has_bullish and has_bearish
+
+
+def calculate_structure_clarity(labels: list[str | None], lookback: int) -> float:
+    """Calculate structure clarity based on label consistency.
+
+    Clarity is the absolute difference between bullish and bearish label ratios.
+    - 1.0 = perfect clarity (100% bullish or 100% bearish)
+    - 0.0 = no clarity (50/50 mix)
+    - Values in between reflect the dominance of one direction
+
+    Args:
+        labels: List of structure labels (HH, HL, LH, LL, or None)
+        lookback: Number of recent labels to consider
+
+    Returns:
+        Float 0.0-1.0 indicating structure clarity
+
+    Example:
+        >>> calculate_structure_clarity(["HH", "HL", "HH", "HL", "HH"], lookback=5)
+        1.0
+        >>> calculate_structure_clarity(["HH", "HL", "HH", "LH", "LL", "LH"], lookback=10)
+        0.0
+    """
+    if not labels:
+        return 0.0
+
+    # Take last N labels (respecting lookback window)
+    recent_labels = labels[-lookback:] if len(labels) > lookback else labels
+
+    # Filter out None values
+    valid_labels = [label for label in recent_labels if label is not None]
+
+    if not valid_labels:
+        return 0.0
+
+    # Count bullish vs bearish
+    bullish_count = sum(1 for label in valid_labels if label in ("HH", "HL"))
+    bearish_count = sum(1 for label in valid_labels if label in ("LH", "LL"))
+
+    total = len(valid_labels)
+    bullish_ratio = bullish_count / total
+    bearish_ratio = bearish_count / total
+
+    # Clarity = absolute difference between ratios
+    clarity = abs(bullish_ratio - bearish_ratio)
+
+    return float(clarity)
+
+
+def calculate_bars_since_event(
+    events: pd.Series | None, current_ts: pd.Timestamp
+) -> int | None:
+    """Calculate number of bars since the most recent event.
+
+    Searches backwards from current_ts to find the most recent non-None event
+    and returns the number of bars between that event and current_ts.
+
+    Args:
+        events: Series with event labels (indexed by timestamp)
+        current_ts: Current timestamp to measure from
+
+    Returns:
+        Number of bars since most recent event, or None if no events found
+
+    Example:
+        >>> events = pd.Series([None, None, "BOS", None, None])
+        >>> events.index = pd.date_range("2025-01-01", periods=5, freq="1h")
+        >>> calculate_bars_since_event(events, events.index[-1])
+        2
+    """
+    if events is None:
+        return None
+
+    if len(events) == 0:
+        return None
+
+    # Find the most recent non-None event up to and including current_ts
+    # Filter to events at or before current_ts
+    valid_events = events[events.index <= current_ts]
+
+    if len(valid_events) == 0:
+        return None
+
+    # Find the last non-None event
+    non_none_events = valid_events[valid_events.notna() & (valid_events != "")]
+
+    if len(non_none_events) == 0:
+        return None
+
+    # Get the index of the most recent event
+    last_event_ts = non_none_events.index[-1]
+
+    # Find position of current_ts and last_event_ts in the original series
+    # Count bars between them
+    try:
+        current_idx = events.index.get_loc(current_ts)
+        event_idx = events.index.get_loc(last_event_ts)
+        bars_since = current_idx - event_idx
+        return int(bars_since)
+    except (KeyError, IndexError):
+        # If timestamps don't match exactly, try to find closest
+        # For simplicity, return None if we can't match
+        return None
