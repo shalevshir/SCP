@@ -5,7 +5,6 @@ from datetime import UTC, datetime, timedelta
 import pandas as pd
 import pytest
 from backtester.replay_engine import ReplayEngine
-from validation.guardrails import BehaviorState
 
 
 class TestReplayEngine:
@@ -63,7 +62,7 @@ class TestReplayEngine:
         results = list(engine.replay(gc_df, dxy_df))
 
         # Check that validation context contains expected keys
-        for features, context in results:
+        for _features, context in results:
             # Should have session validation
             assert "session_ok" in context or "session_result" in context
             # Should have guardrail result if validation enabled
@@ -148,9 +147,7 @@ class TestReplayEngine:
         engine = ReplayEngine(timeframe="1m")
 
         nonexistent = datetime(2025, 12, 31, 23, 59, tzinfo=UTC)
-        context = engine.get_validation_context_at_timestamp(
-            gc_df, dxy_df, nonexistent
-        )
+        context = engine.get_validation_context_at_timestamp(gc_df, dxy_df, nonexistent)
 
         assert context is None
 
@@ -160,7 +157,7 @@ class TestReplayEngine:
         engine = ReplayEngine(timeframe="1m", enable_validation=True)
 
         # Replay and record outcomes
-        results = list(engine.replay(gc_df, dxy_df))
+        list(engine.replay(gc_df, dxy_df))
 
         # Record some trade outcomes
         engine.record_trade_outcome(won=False)
@@ -282,4 +279,3 @@ class TestReplayEngineStateEvolution:
                 # January should have max_losses=2
                 if features["timestamp"].month == 1:
                     assert constraints.max_losses == 2
-

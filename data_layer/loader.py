@@ -104,10 +104,10 @@ class HistoricalDataLoader:
             file_path = self.data_dir / f"{file_symbol}_ohlcv-{timeframe}.csv"
 
             # Get symbol filter (e.g., GC -> GCQ5)
-            csv_symbol_filter = self.symbol_filters.get(symbol)
+            self.symbol_filters.get(symbol)
 
             # Load data using LocalCSVClient
-            client = LocalCSVClient(file_path, symbol_filter=csv_symbol_filter)
+            client = LocalCSVClient(file_path)
             candles = client.fetch(start, end, timeframe)
 
             # Convert to DataFrame
@@ -153,9 +153,7 @@ class HistoricalDataLoader:
             # Return empty DataFrame with correct schema
             return pd.DataFrame(
                 columns=["open", "high", "low", "close", "volume", "symbol"]
-            ).set_index(
-                pd.DatetimeIndex([], name="timestamp", tz="UTC")
-            )
+            ).set_index(pd.DatetimeIndex([], name="timestamp", tz="UTC"))
 
         # Extract data from candles
         data = {
@@ -186,4 +184,3 @@ class HistoricalDataLoader:
             df = df[~df.index.duplicated(keep="first")]
 
         return df
-

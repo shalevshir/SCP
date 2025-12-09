@@ -10,7 +10,6 @@ Status: Not started
 from __future__ import annotations
 
 import pandas as pd
-
 from common.logger import get_logger
 
 logger = get_logger(__name__)
@@ -76,12 +75,8 @@ def validate_vwap_trend(
 
     # Count consecutive candles in same position using rolling window
     # The sum will equal min_candles only if ALL candles in window are on same side
-    above_streak = above_vwap.rolling(
-        window=min_candles, min_periods=min_candles
-    ).sum()
-    below_streak = below_vwap.rolling(
-        window=min_candles, min_periods=min_candles
-    ).sum()
+    above_streak = above_vwap.rolling(window=min_candles, min_periods=min_candles).sum()
+    below_streak = below_vwap.rolling(window=min_candles, min_periods=min_candles).sum()
 
     # Trend confirmed if all N candles are on same side
     # For bullish: above_streak == min_candles means all N candles are above
@@ -98,4 +93,3 @@ def validate_vwap_trend(
     trend_confirmed = trend_confirmed.fillna(False)
 
     return trend_confirmed
-

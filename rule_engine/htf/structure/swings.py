@@ -11,7 +11,6 @@ Status: In Progress
 from __future__ import annotations
 
 import pandas as pd
-
 from common.logger import get_logger
 
 logger = get_logger(__name__)
@@ -71,7 +70,7 @@ def detect_swings(
     for i in range(lookback, len(df) - lookback):
         # Extract window around current position
         window_highs = df["high"].iloc[i - lookback : i + lookback + 1]
-        
+
         # Check if current position is maximum in window
         if df["high"].iloc[i] == window_highs.max():
             swing_highs.append(i)
@@ -80,7 +79,7 @@ def detect_swings(
     for i in range(lookback, len(df) - lookback):
         # Extract window around current position
         window_lows = df["low"].iloc[i - lookback : i + lookback + 1]
-        
+
         # Check if current position is minimum in window
         if df["low"].iloc[i] == window_lows.min():
             swing_lows.append(i)
@@ -91,4 +90,3 @@ def detect_swings(
     )
 
     return swing_highs, swing_lows
-

@@ -6,6 +6,7 @@ from dataclasses import dataclass, field, replace
 from datetime import datetime
 
 from common.logger import get_logger
+
 from validation.session_validator import SessionConstraints
 
 logger = get_logger(__name__)
@@ -54,7 +55,7 @@ class BehaviorStateTracker:
             won: True if trade was profitable (pnl > 0),
                  False if trade was a loss (pnl < 0),
                  None if trade was breakeven (pnl == 0).
-                 
+
         Note:
             Breakeven trades (won=None) do not affect the loss streak.
             Only actual losses (won=False) increment the streak.

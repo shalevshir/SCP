@@ -277,11 +277,11 @@ def test_fetch_loads_real_csv_data():
     """Test that fetch loads actual data from CSV file or fails on invalid data."""
     csv_path = Path("data/gc_dx_ohlcv/GC_ohlcv-1m.csv")
     client = LocalCSVClient(csv_path)
-    
+
     # Use date range from actual data (2025-07-01 onwards)
     start = datetime(2025, 7, 1, 0, 0, 0, tzinfo=UTC)
     end = datetime(2025, 7, 1, 0, 10, 0, tzinfo=UTC)
-    
+
     # This date range may contain invalid data (negative values)
     # If so, DataSourceError should be raised (fail-fast behavior)
     try:
@@ -304,11 +304,11 @@ def test_fetch_filters_by_date_range():
     """Test that fetch correctly filters data by date range or fails on invalid data."""
     csv_path = Path("data/gc_dx_ohlcv/GC_ohlcv-1m.csv")
     client = LocalCSVClient(csv_path)
-    
+
     # Narrow date range (2025-07-01 onwards)
     start = datetime(2025, 7, 1, 0, 1, 0, tzinfo=UTC)
     end = datetime(2025, 7, 1, 0, 3, 0, tzinfo=UTC)
-    
+
     # This date range may contain invalid data (negative values)
     # If so, DataSourceError should be raised (fail-fast behavior)
     try:
@@ -326,11 +326,11 @@ def test_fetch_parses_timezone_aware_timestamps():
     """Test that fetch parses timestamps as timezone-aware UTC or fails on invalid data."""
     csv_path = Path("data/gc_dx_ohlcv/GC_ohlcv-1m.csv")
     client = LocalCSVClient(csv_path)
-    
+
     # Use date range from actual data (2025-07-01 onwards)
     start = datetime(2025, 7, 1, 0, 0, 0, tzinfo=UTC)
     end = datetime(2025, 7, 1, 0, 10, 0, tzinfo=UTC)
-    
+
     # This date range may contain invalid data (negative values)
     # If so, DataSourceError should be raised (fail-fast behavior)
     try:
@@ -348,11 +348,11 @@ def test_fetch_converts_to_candle_objects():
     """Test that fetch converts CSV rows to valid Candle objects or fails on invalid data."""
     csv_path = Path("data/gc_dx_ohlcv/GC_ohlcv-1m.csv")
     client = LocalCSVClient(csv_path)
-    
+
     # Use date range from actual data (2025-07-01 onwards)
     start = datetime(2025, 7, 1, 0, 0, 0, tzinfo=UTC)
     end = datetime(2025, 7, 1, 0, 10, 0, tzinfo=UTC)
-    
+
     # This date range may contain invalid data (negative values)
     # If so, DataSourceError should be raised (fail-fast behavior)
     try:
@@ -378,13 +378,13 @@ def test_fetch_converts_to_candle_objects():
 def test_fetch_raises_error_for_missing_file():
     """Test that fetch raises DataSourceError for missing file."""
     client = LocalCSVClient("nonexistent_file.csv")
-    
+
     start = datetime(2025, 1, 1, 0, 0, 0, tzinfo=UTC)
     end = datetime(2025, 1, 2, 0, 0, 0, tzinfo=UTC)
-    
+
     with pytest.raises(DataSourceError) as exc_info:
         client.fetch(start, end, "1m")
-    
+
     error_msg = str(exc_info.value).lower()
     assert "file" in error_msg or "not found" in error_msg
 
@@ -393,12 +393,12 @@ def test_fetch_handles_empty_date_range():
     """Test that fetch returns empty list when no data in date range."""
     csv_path = Path("data/gc_dx_ohlcv/GC_ohlcv-1m.csv")
     client = LocalCSVClient(csv_path)
-    
+
     # Date range with no data
     start = datetime(2020, 1, 1, 0, 0, 0, tzinfo=UTC)
     end = datetime(2020, 1, 2, 0, 0, 0, tzinfo=UTC)
-    
+
     result = client.fetch(start, end, "1m")
-    
+
     assert isinstance(result, list)
     assert len(result) == 0

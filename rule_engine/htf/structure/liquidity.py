@@ -11,7 +11,6 @@ Status: Not started
 from __future__ import annotations
 
 import pandas as pd
-
 from common.logger import get_logger
 
 logger = get_logger(__name__)
@@ -153,10 +152,13 @@ def detect_liquidity_sweeps(
                     prior_swing_high_val = None
                     for sh_idx in swing_highs:
                         if sh_idx < i:
-                            if prior_swing_high_idx is None or sh_idx > prior_swing_high_idx:
+                            if (
+                                prior_swing_high_idx is None
+                                or sh_idx > prior_swing_high_idx
+                            ):
                                 prior_swing_high_idx = sh_idx
                                 prior_swing_high_val = df["high"].iloc[sh_idx]
-                    
+
                     if prior_swing_high_val is not None:
                         # Success if next close continues beyond swept high
                         if next_close > prior_swing_high_val:
@@ -171,10 +173,13 @@ def detect_liquidity_sweeps(
                     prior_swing_low_val = None
                     for sl_idx in swing_lows:
                         if sl_idx < i:
-                            if prior_swing_low_idx is None or sl_idx > prior_swing_low_idx:
+                            if (
+                                prior_swing_low_idx is None
+                                or sl_idx > prior_swing_low_idx
+                            ):
                                 prior_swing_low_idx = sl_idx
                                 prior_swing_low_val = df["low"].iloc[sl_idx]
-                    
+
                     if prior_swing_low_val is not None:
                         # Success if next close continues beyond swept low
                         if next_close < prior_swing_low_val:
@@ -192,4 +197,3 @@ def detect_liquidity_sweeps(
     )
 
     return sweep_events, sweep_success
-

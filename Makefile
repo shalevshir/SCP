@@ -1,4 +1,4 @@
-.PHONY: test test-unit test-verbose test-parallel test-coverage test-fast lint format check clean help install
+.PHONY: test test-unit test-verbose test-parallel test-coverage test-fast lint format check clean help install data-clean data-fetch data-resample
 
 help:
 	@echo "SCP Trading Bot - Development Commands"
@@ -13,6 +13,11 @@ help:
 	@echo "  make test-parallel     Run tests in parallel"
 	@echo "  make test-coverage     Run tests with coverage report"
 	@echo "  make test-fast         Run tests in parallel with minimal output"
+	@echo ""
+	@echo "Data Management:"
+	@echo "  make data-clean        Clean and deduplicate CSV data (remove spreads, select highest volume)"
+	@echo "  make data-fetch        Fetch historical data from Databento (requires API key)"
+	@echo "  make data-resample     Resample 1m data to 15m bars"
 	@echo ""
 	@echo "Code Quality:"
 	@echo "  make lint              Run linters (ruff, mypy)"
@@ -62,3 +67,22 @@ clean:
 	rm -rf .pytest_cache .coverage htmlcov .mypy_cache .ruff_cache
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 	@echo "Clean complete."
+
+data-clean:
+	@echo "Cleaning and deduplicating CSV data..."
+	./scripts/clean_all_csv_data.sh
+	@echo "Data cleaning complete."
+
+data-fetch:
+	@echo "Fetching historical data from Databento..."
+	@if [ -z "$$DATABENTO_API_KEY" ]; then \
+		echo "Error: DATABENTO_API_KEY not set. Please export your API key."; \
+		exit 1; \
+	fi
+	poetry run python scripts/fetch_gc_dx_ohlcv_to_csv.py
+	@echo "Data fetch complete."
+
+data-resample:
+	@echo "Resampling 1m data to 15m bars..."
+	poetry run python scripts/resample_ohlcv_to_15m.py
+	@echo "Resampling complete."

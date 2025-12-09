@@ -3,12 +3,10 @@
 Tests the complete workflow from features to validated and logged signals.
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pandas as pd
-import pytest
-
 from rule_engine import (
     Signal,
     log_signal,
@@ -23,14 +21,14 @@ def create_htf_bias_from_context(context: dict) -> HTFBias:
     bias = context.get("htf_bias", "neutral")
     direction = context.get("htf_direction", "neutral")
     score = context.get("htf_score", 6.5)
-    
+
     if score >= 8.0:
         confidence = "high"
     elif score >= 6.0:
         confidence = "medium"
     else:
         confidence = "low"
-    
+
     return HTFBias(
         bias=bias,
         direction=direction,
@@ -46,18 +44,20 @@ class TestRuleEngineIntegration:
     def test_complete_signal_workflow(self, tmp_path: Path) -> None:
         """Test full workflow: features -> score -> validate -> log."""
         # Step 1: Create feature data
-        features = pd.Series({
-            "timestamp": datetime(2025, 1, 1, 10, 0, tzinfo=timezone.utc),
-            "symbol": "GC",
-            "timeframe": "1m",
-            "close": 2650.0,
-            "vwap": 2645.0,
-            "rsi": 55.0,
-            "ema_9": 2648.0,
-            "ema_20": 2645.0,
-            "ema_50": 2640.0,
-            "dxy_corr": -0.75,
-        })
+        features = pd.Series(
+            {
+                "timestamp": datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
+                "symbol": "GC",
+                "timeframe": "1m",
+                "close": 2650.0,
+                "vwap": 2645.0,
+                "rsi": 55.0,
+                "ema_9": 2648.0,
+                "ema_20": 2645.0,
+                "ema_50": 2640.0,
+                "dxy_corr": -0.75,
+            }
+        )
 
         context = {
             "htf_bias": "bullish",
@@ -97,18 +97,20 @@ class TestRuleEngineIntegration:
     def test_rejected_signal_workflow(self) -> None:
         """Test workflow with signal that gets rejected by validation."""
         # Features indicating a potential trade
-        features = pd.Series({
-            "timestamp": datetime(2025, 1, 1, 10, 0, tzinfo=timezone.utc),
-            "symbol": "GC",
-            "timeframe": "1m",
-            "close": 2650.0,
-            "vwap": 2645.0,
-            "rsi": 55.0,
-            "ema_9": 2648.0,
-            "ema_20": 2645.0,
-            "ema_50": 2640.0,
-            "dxy_corr": -0.75,
-        })
+        features = pd.Series(
+            {
+                "timestamp": datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
+                "symbol": "GC",
+                "timeframe": "1m",
+                "close": 2650.0,
+                "vwap": 2645.0,
+                "rsi": 55.0,
+                "ema_9": 2648.0,
+                "ema_20": 2645.0,
+                "ema_50": 2640.0,
+                "dxy_corr": -0.75,
+            }
+        )
 
         context = {
             "htf_bias": "bullish",
@@ -134,18 +136,20 @@ class TestRuleEngineIntegration:
         signals = []
 
         for hour in range(10, 13):
-            features = pd.Series({
-                "timestamp": datetime(2025, 1, 1, hour, 0, tzinfo=timezone.utc),
-                "symbol": "GC",
-                "timeframe": "1m",
-                "close": 2650.0,
-                "vwap": 2645.0,
-                "rsi": 55.0,
-                "ema_9": 2648.0,
-                "ema_20": 2645.0,
-                "ema_50": 2640.0,
-                "dxy_corr": -0.75,
-            })
+            features = pd.Series(
+                {
+                    "timestamp": datetime(2025, 1, 1, hour, 0, tzinfo=UTC),
+                    "symbol": "GC",
+                    "timeframe": "1m",
+                    "close": 2650.0,
+                    "vwap": 2645.0,
+                    "rsi": 55.0,
+                    "ema_9": 2648.0,
+                    "ema_20": 2645.0,
+                    "ema_50": 2640.0,
+                    "dxy_corr": -0.75,
+                }
+            )
 
             context = {
                 "htf_bias": "bullish",
@@ -166,7 +170,7 @@ class TestRuleEngineIntegration:
 
         # Verify all logged to same file
         log_file = log_dir / "2025-01-01.jsonl"
-        with open(log_file, "r") as f:
+        with open(log_file) as f:
             lines = f.readlines()
 
         assert len(lines) == 3
@@ -174,18 +178,20 @@ class TestRuleEngineIntegration:
     def test_different_setup_types(self) -> None:
         """Test scoring different setup types."""
         # VWAP_RECLAIM setup
-        features_reclaim = pd.Series({
-            "timestamp": datetime(2025, 1, 1, 10, 0, tzinfo=timezone.utc),
-            "symbol": "GC",
-            "timeframe": "1m",
-            "close": 2650.0,
-            "vwap": 2645.0,
-            "rsi": 55.0,
-            "ema_9": 2648.0,
-            "ema_20": 2645.0,
-            "ema_50": 2640.0,
-            "dxy_corr": -0.75,
-        })
+        features_reclaim = pd.Series(
+            {
+                "timestamp": datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
+                "symbol": "GC",
+                "timeframe": "1m",
+                "close": 2650.0,
+                "vwap": 2645.0,
+                "rsi": 55.0,
+                "ema_9": 2648.0,
+                "ema_20": 2645.0,
+                "ema_50": 2640.0,
+                "dxy_corr": -0.75,
+            }
+        )
 
         context = {
             "htf_bias": "bullish",
@@ -199,36 +205,39 @@ class TestRuleEngineIntegration:
         assert signal_reclaim.setup_type == "VWAP_RECLAIM"
 
         # VWAP_FADE setup
-        features_fade = pd.Series({
-            "timestamp": datetime(2025, 1, 1, 11, 0, tzinfo=timezone.utc),
-            "symbol": "GC",
-            "timeframe": "1m",
-            "close": 2600.0,  # Far from VWAP
-            "vwap": 2645.0,
-            "rsi": 28.0,  # Oversold
-            "ema_9": 2610.0,
-            "ema_20": 2615.0,
-            "ema_50": 2620.0,
-            "dxy_corr": -0.75,
-        })
+        features_fade = pd.Series(
+            {
+                "timestamp": datetime(2025, 1, 1, 11, 0, tzinfo=UTC),
+                "symbol": "GC",
+                "timeframe": "1m",
+                "close": 2600.0,  # Far from VWAP
+                "vwap": 2645.0,
+                "rsi": 28.0,  # Oversold
+                "ema_9": 2610.0,
+                "ema_20": 2615.0,
+                "ema_50": 2620.0,
+                "dxy_corr": -0.75,
+            }
+        )
 
         signal_fade = score_signal(features_fade, htf_bias, context)
         assert signal_fade.setup_type == "VWAP_FADE"
 
         # DXY_CONTINUATION setup
-        features_dxy = pd.Series({
-            "timestamp": datetime(2025, 1, 1, 12, 0, tzinfo=timezone.utc),
-            "symbol": "GC",
-            "timeframe": "1m",
-            "close": 2650.0,
-            "vwap": 2648.0,
-            "rsi": 55.0,
-            "ema_9": 2649.0,
-            "ema_20": 2647.0,
-            "ema_50": 2645.0,
-            "dxy_corr": -0.85,  # Very strong correlation
-        })
+        features_dxy = pd.Series(
+            {
+                "timestamp": datetime(2025, 1, 1, 12, 0, tzinfo=UTC),
+                "symbol": "GC",
+                "timeframe": "1m",
+                "close": 2650.0,
+                "vwap": 2648.0,
+                "rsi": 55.0,
+                "ema_9": 2649.0,
+                "ema_20": 2647.0,
+                "ema_50": 2645.0,
+                "dxy_corr": -0.85,  # Very strong correlation
+            }
+        )
 
         signal_dxy = score_signal(features_dxy, htf_bias, context)
         assert signal_dxy.setup_type == "DXY_CONTINUATION"
-

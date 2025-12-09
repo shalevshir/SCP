@@ -7,15 +7,15 @@ without look-ahead bias. Designed for realistic backtesting and live trading.
 
 from __future__ import annotations
 
-import math
-import numpy as np
-import pandas as pd
 from collections import deque
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import TYPE_CHECKING
 
+import numpy as np
+import pandas as pd
 from common.logger import get_logger
+
 from feature_engine.timezone_utils import get_vwap_session_id
 
 if TYPE_CHECKING:
@@ -246,7 +246,7 @@ class DXYCorrelationState:
 @dataclass
 class StructureState:
     """State tracker for structure label calculation (HH/HL/LH/LL).
-    
+
     CRITICAL: This implementation avoids look-ahead bias by only using
     past data from the buffer. Swing points are identified when we have
     enough historical context to confirm them.
@@ -340,7 +340,7 @@ class StructureState:
 
 class FeatureState:
     """Incremental feature calculator with full trading environment state.
-    
+
     Processes GC and DXY candles one at a time, maintaining all indicator state
     without look-ahead bias. Supports asynchronous instrument updates.
     """
@@ -423,7 +423,10 @@ class FeatureState:
         # Update DXY state if provided
         if dxy_candle is not None:
             # Check for out-of-order updates
-            if self._last_dxy_ts is not None and dxy_candle.timestamp < self._last_dxy_ts:
+            if (
+                self._last_dxy_ts is not None
+                and dxy_candle.timestamp < self._last_dxy_ts
+            ):
                 logger.warning(
                     f"Out-of-order DXY candle: {dxy_candle.timestamp} < {self._last_dxy_ts}"
                 )
@@ -449,7 +452,9 @@ class FeatureState:
 
         # DXY Correlation (requires both GC and DXY)
         gc_price = gc.close if gc_candle is not None else None
-        dxy_price = self._last_dxy_candle.close if self._last_dxy_candle is not None else None
+        dxy_price = (
+            self._last_dxy_candle.close if self._last_dxy_candle is not None else None
+        )
         timestamp = gc.timestamp
         dxy_corr = self._dxy_corr_state.update(gc_price, dxy_price, timestamp)
 
@@ -533,11 +538,18 @@ class FeatureState:
         gc = self._last_gc_candle
 
         # Get current values (may be None/NaN if not ready)
-        vwap = self._vwap_state.cum_pv / self._vwap_state.cum_volume if self._vwap_state.cum_volume > 0 else None
-        
+        vwap = (
+            self._vwap_state.cum_pv / self._vwap_state.cum_volume
+            if self._vwap_state.cum_volume > 0
+            else None
+        )
+
         # RSI - calculate current value if ready
         rsi = None
-        if self._rsi_state.avg_gain is not None and self._rsi_state.avg_loss is not None:
+        if (
+            self._rsi_state.avg_gain is not None
+            and self._rsi_state.avg_loss is not None
+        ):
             if self._rsi_state.avg_loss == 0:
                 rsi = 100.0 if self._rsi_state.avg_gain > 0 else 50.0
             else:
@@ -590,4 +602,3 @@ class FeatureState:
                 "vwap_deviation": vwap_deviation,
             }
         )
-

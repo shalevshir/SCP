@@ -4,7 +4,6 @@ import tempfile
 from pathlib import Path
 
 import pytest
-
 from common.config import load_config
 from common.exceptions import ConfigError
 

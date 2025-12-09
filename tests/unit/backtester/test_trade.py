@@ -712,7 +712,9 @@ class TestCalculateTakeProfit:
         risk_distance = entry_price - stop_loss
         expected_tp = entry_price + (risk_distance * 3.0)
         assert tp == pytest.approx(expected_tp)
-        assert "3R" in rationale and ("nov-dec" in rationale.lower() or "trend" in rationale.lower())
+        assert "3R" in rationale and (
+            "nov-dec" in rationale.lower() or "trend" in rationale.lower()
+        )
 
 
 class TestCreateTradeFromEntry:
@@ -1572,9 +1574,7 @@ class TestCloseTrade:
 
         # pnl_percent should be 200%, not 400%
         assert closed_trade.pnl_percent == pytest.approx(200.0)
-        assert closed_trade.pnl_percent == pytest.approx(
-            closed_trade.r_realized * 100
-        )
+        assert closed_trade.pnl_percent == pytest.approx(closed_trade.r_realized * 100)
 
 
 class TestJSONSerialization:
@@ -1752,4 +1752,3 @@ class TestJSONSerialization:
         assert trade_dict["exit_timestamp"] is None
         assert trade_dict["exit_price"] is None
         assert trade_dict["pnl"] is None
-

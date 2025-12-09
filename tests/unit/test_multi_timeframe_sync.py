@@ -11,7 +11,6 @@ Tests cover:
 from datetime import UTC, datetime
 from pathlib import Path
 
-import pandas as pd
 import pytest
 from common.exceptions import DataSourceError
 from common.types import Candle
@@ -42,9 +41,7 @@ class TestMultiTimeframeSyncLayer:
         assert layer.htf_timeframes == ["15m", "1h"]
         assert layer.data_dir == data_dir
 
-    def test_initialization_with_custom_timeframes(
-        self, data_dir: Path
-    ) -> None:
+    def test_initialization_with_custom_timeframes(self, data_dir: Path) -> None:
         """Test that sync layer accepts custom timeframes."""
         layer = MultiTimeframeSyncLayer(
             data_dir, execution_timeframe="1m", htf_timeframes=["15m", "1h"]
@@ -103,9 +100,7 @@ class TestMultiTimeframeSyncLayer:
             # Skip if data unavailable
             pytest.skip("Test data not available")
 
-    def test_htf_bars_are_optional(
-        self, sync_layer: MultiTimeframeSyncLayer
-    ) -> None:
+    def test_htf_bars_are_optional(self, sync_layer: MultiTimeframeSyncLayer) -> None:
         """Test that HTF bars can be None if data not available."""
         start = datetime(2025, 9, 30, 10, 0, 0, tzinfo=UTC)
         end = datetime(2025, 9, 30, 10, 5, 0, tzinfo=UTC)  # Very short range
@@ -165,9 +160,7 @@ class TestMultiTimeframeSyncLayer:
         with pytest.raises(ValueError, match="No synchronized bars"):
             sync_layer.load(start, end)
 
-    def test_load_raises_error_on_missing_files(
-        self, tmp_path: Path
-    ) -> None:
+    def test_load_raises_error_on_missing_files(self, tmp_path: Path) -> None:
         """Test that load() raises error when no synchronized bars can be created."""
         layer = MultiTimeframeSyncLayer(tmp_path)
         start = datetime(2025, 9, 30, 10, 0, 0, tzinfo=UTC)
@@ -468,4 +461,3 @@ class TestMultiTimeframeData:
         data.synchronized_bars.append(bar)
         data.execution_timestamps.append(timestamp)
         assert len(data) == 1
-

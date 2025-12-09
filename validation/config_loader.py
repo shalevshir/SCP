@@ -8,8 +8,8 @@ from datetime import date, time
 from pathlib import Path
 
 import yaml
-
 from common.logger import get_logger
+
 from validation.session_validator import SeasonRule, SessionConfig
 
 logger = get_logger(__name__)
@@ -44,7 +44,7 @@ def load_session_config(config_path: str | None = None) -> SessionConfig:
 
     logger.info(f"Loading validation config from {config_path}")
 
-    with open(config_path, "r") as f:
+    with open(config_path) as f:
         config_data = yaml.safe_load(f)
 
     # Parse timezone
@@ -52,7 +52,9 @@ def load_session_config(config_path: str | None = None) -> SessionConfig:
 
     # Parse default session rule
     default_session_data = config_data.get("default_session", {})
-    default_rule = _parse_season_rule(default_session_data, "Default", months=list(range(1, 13)))
+    default_rule = _parse_season_rule(
+        default_session_data, "Default", months=list(range(1, 13))
+    )
 
     # Parse season-specific rules
     seasons_data = config_data.get("seasons", [])
@@ -75,7 +77,9 @@ def load_session_config(config_path: str | None = None) -> SessionConfig:
     )
 
 
-def _parse_season_rule(rule_data: dict, name: str | None = None, months: list[int] | None = None) -> SeasonRule:
+def _parse_season_rule(
+    rule_data: dict, name: str | None = None, months: list[int] | None = None
+) -> SeasonRule:
     """Parse a season rule from config data.
 
     Args:
@@ -179,7 +183,7 @@ def load_dxy_handling_config(config_path: str | None = None) -> dict:
     else:
         config_path = Path(config_path)
 
-    with open(config_path, "r") as f:
+    with open(config_path) as f:
         config_data = yaml.safe_load(f)
 
     dxy_handling = config_data.get("dxy_handling", {})
@@ -202,7 +206,7 @@ def load_ceo_directive_config(config_path: str | None = None) -> dict:
     else:
         config_path = Path(config_path)
 
-    with open(config_path, "r") as f:
+    with open(config_path) as f:
         config_data = yaml.safe_load(f)
 
     ceo_directive = config_data.get("ceo_directive", {})
@@ -212,4 +216,3 @@ def load_ceo_directive_config(config_path: str | None = None) -> dict:
         "early_mild_enabled": ceo_directive.get("early_mild_enabled", False),
         "daily_reset": ceo_directive.get("daily_reset", True),
     }
-

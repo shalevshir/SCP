@@ -418,7 +418,7 @@ class BacktestReplayLoop:
                 # Extract structure candles from HTF bias
                 # Priority: Use HTF-provided candles, fallback to entry candle
                 bos_candle = htf_bias.bos_candle if htf_bias.bos_candle else None
-                
+
                 # For confirmation candle, use HTF-provided if available,
                 # otherwise use entry candle
                 if htf_bias.confirmation_candle:
@@ -698,7 +698,7 @@ class BacktestReplayLoop:
                         elif not isinstance(future_features_df.index, pd.DatetimeIndex):
                             if len(gc_slice) > entry_idx + 1:
                                 future_timestamps = gc_slice.index[entry_idx + 1 :]
-                                
+
                                 # Verify we have enough timestamps for features
                                 if len(future_timestamps) >= len(future_features_df):
                                     # Enough timestamps available
@@ -749,8 +749,16 @@ class BacktestReplayLoop:
                         closed_trade.exit_timestamp
                         and closed_trade.exit_timestamp <= current_candle.timestamp
                     ):
-                        pnl_str = f"{closed_trade.pnl:.2f}" if closed_trade.pnl is not None else "None"
-                        r_str = f"{closed_trade.r_realized:.2f}" if closed_trade.r_realized is not None else "None"
+                        pnl_str = (
+                            f"{closed_trade.pnl:.2f}"
+                            if closed_trade.pnl is not None
+                            else "None"
+                        )
+                        r_str = (
+                            f"{closed_trade.r_realized:.2f}"
+                            if closed_trade.r_realized is not None
+                            else "None"
+                        )
                         logger.info(
                             f"Trade {trade_id} closed at "
                             f"{closed_trade.exit_timestamp}: "
@@ -799,7 +807,11 @@ class BacktestReplayLoop:
             self._daily_pnl += closed_trade.pnl
             # pnl is guaranteed to be not None here, but r_realized might be
             pnl_str = f"{closed_trade.pnl:.2f}"
-            r_str = f"{closed_trade.r_realized:.2f}" if closed_trade.r_realized is not None else "None"
+            r_str = (
+                f"{closed_trade.r_realized:.2f}"
+                if closed_trade.r_realized is not None
+                else "None"
+            )
             logger.info(
                 f"Trade {closed_trade.trade_id} closed: "
                 f"PnL={pnl_str}, "
@@ -953,8 +965,14 @@ class BacktestReplayLoop:
             # Update state
             self._update_state(closed_trade)
 
-            pnl_str = f"{closed_trade.pnl:.2f}" if closed_trade.pnl is not None else "None"
-            r_str = f"{closed_trade.r_realized:.2f}" if closed_trade.r_realized is not None else "None"
+            pnl_str = (
+                f"{closed_trade.pnl:.2f}" if closed_trade.pnl is not None else "None"
+            )
+            r_str = (
+                f"{closed_trade.r_realized:.2f}"
+                if closed_trade.r_realized is not None
+                else "None"
+            )
             logger.info(
                 f"Trade {trade_id} closed at end of dataset: "
                 f"PnL={pnl_str}, R={r_str}"

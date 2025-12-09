@@ -4,9 +4,6 @@ import logging
 import os
 import tempfile
 from pathlib import Path
-from unittest.mock import patch
-
-import pytest
 
 from common.config import SystemConfig, load_config
 from common.logger import get_logger, setup_logging

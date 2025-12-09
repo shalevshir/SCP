@@ -3,7 +3,6 @@
 This module provides the price chart panel for the dashboard.
 """
 
-from typing import Optional
 
 import dash_bootstrap_components as dbc
 import pandas as pd
@@ -37,7 +36,7 @@ def create_price_chart() -> dbc.Card:
 def render_price_chart(
     gc_df: pd.DataFrame,
     dxy_df: pd.DataFrame,
-    vwap_value: Optional[float] = None,
+    vwap_value: float | None = None,
 ) -> go.Figure:
     """Render the price chart figure.
 
@@ -143,8 +142,8 @@ def render_price_chart(
 def render_chart_with_signals(
     gc_df: pd.DataFrame,
     dxy_df: pd.DataFrame,
-    vwap_value: Optional[float] = None,
-    signals: Optional[list] = None,
+    vwap_value: float | None = None,
+    signals: list | None = None,
 ) -> go.Figure:
     """Render price chart with signal markers.
 
@@ -190,4 +189,3 @@ def render_chart_with_signals(
             )
 
     return fig
-

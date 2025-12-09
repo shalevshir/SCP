@@ -9,11 +9,10 @@ exports comprehensive results to CSV for manual inspection.
 from __future__ import annotations
 
 import argparse
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pandas as pd
-
 from common.logger import get_logger
 from data_layer.loader import HistoricalDataLoader
 from data_layer.multi_timeframe_helpers import extract_execution_dataframes
@@ -36,14 +35,14 @@ def create_htf_bias_from_context(context: dict) -> HTFBias:
     bias = context.get("htf_bias", "neutral")
     direction = context.get("htf_direction", "neutral")
     score = context.get("htf_score", 6.5)
-    
+
     if score >= 8.0:
         confidence = "high"
     elif score >= 6.0:
         confidence = "medium"
     else:
         confidence = "low"
-    
+
     return HTFBias(
         bias=bias,
         direction=direction,
@@ -57,7 +56,7 @@ def parse_iso_datetime(value: str) -> datetime:
     """Parse ISO-8601 datetime strings, defaulting to UTC when tzinfo missing."""
     dt = datetime.fromisoformat(value)
     if dt.tzinfo is None:
-        return dt.replace(tzinfo=timezone.utc)
+        return dt.replace(tzinfo=UTC)
     return dt
 
 
@@ -74,13 +73,13 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--start",
         type=parse_iso_datetime,
-        default=datetime(2025, 9, 30, 7, 0, tzinfo=timezone.utc),
+        default=datetime(2025, 9, 30, 7, 0, tzinfo=UTC),
         help="Start datetime (ISO-8601, default: 2025-09-30T07:00:00+00:00).",
     )
     parser.add_argument(
         "--end",
         type=parse_iso_datetime,
-        default=datetime(2025, 10, 1, 16, 0, tzinfo=timezone.utc),
+        default=datetime(2025, 10, 1, 16, 0, tzinfo=UTC),
         help="End datetime (ISO-8601, default: 2025-10-01T16:00:00+00:00).",
     )
     parser.add_argument(
@@ -111,7 +110,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def align_htf_candle(features_df: pd.DataFrame, timestamp: pd.Timestamp, freq: str) -> pd.Series | None:
+def align_htf_candle(
+    features_df: pd.DataFrame, timestamp: pd.Timestamp, freq: str
+) -> pd.Series | None:
     """Find HTF candle that contains the given timestamp.
 
     Args:
@@ -159,31 +160,31 @@ def main() -> None:
         try:
             sync_layer = MultiTimeframeSyncLayer(str(args.data_dir))
             multi_tf_data = sync_layer.load(args.start, args.end)
-            
+
             logger.info(
                 f"  Loaded {len(multi_tf_data)} synchronized bars "
                 f"from {multi_tf_data.execution_timestamps[0]} "
                 f"to {multi_tf_data.execution_timestamps[-1]}"
             )
-            
+
             # Extract 1m DataFrames for processing
             data_1m_gc, data_1m_dxy = extract_execution_dataframes(multi_tf_data)
             data_1m = {"GC": data_1m_gc, "DXY": data_1m_dxy}
-            
+
             logger.info(f"  GC 1m: {len(data_1m['GC'])} candles")
             logger.info(f"  DXY 1m: {len(data_1m['DXY'])} candles")
-            
+
             # For HTF data, we'll use the sync layer's HTF bias function
             # which handles feature computation internally
             use_sync_htf = True
             has_15m = True  # Assume available if sync layer loaded successfully
-            
+
         except Exception as e:
             logger.error(f"Failed to load with sync layer: {e}", exc_info=True)
             logger.info("Falling back to manual loading...")
             args.use_sync_layer = False
             use_sync_htf = False
-    
+
     if not args.use_sync_layer:
         # Old approach: Manual loading (keep for comparison)
         loader = HistoricalDataLoader(args.data_dir)
@@ -199,7 +200,7 @@ def main() -> None:
             data_15m = loader.load(symbols, "15m", args.start, args.end)
             logger.info(f"  GC 15m: {len(data_15m['GC'])} candles")
             logger.info(f"  DXY 15m: {len(data_15m['DXY'])} candles")
-            has_15m = len(data_15m['GC']) > 0 and len(data_15m['DXY']) > 0
+            has_15m = len(data_15m["GC"]) > 0 and len(data_15m["DXY"]) > 0
         except Exception as e:
             logger.warning(f"  Failed to load 15m data: {e}")
             data_15m = None
@@ -225,14 +226,14 @@ def main() -> None:
             "1m",
         )
         logger.info(f"  Generated {len(features_1m)} feature rows")
-        
+
         # Create HTF bias function with sync layer
         htf_bias_func = create_htf_bias_func_with_sync_layer(
             multi_tf_data,
             approach=args.htf_approach,
         )
         logger.info(f"  Created HTF bias function (approach: {args.htf_approach})")
-        
+
         # Placeholders for compatibility with rest of script
         features_1h = None
         features_15m = None
@@ -299,7 +300,7 @@ def main() -> None:
     htf_bias_log = []
     skipped_no_htf = 0
 
-    for idx, row_1m in features_1m.iterrows():
+    for _idx, row_1m in features_1m.iterrows():
         ts = row_1m["ts_event"]
 
         # Skip if essential features are missing
@@ -315,7 +316,7 @@ def main() -> None:
                 row_1m_for_htf = row_1m.copy()
                 if "timestamp" not in row_1m_for_htf and "ts_event" in row_1m_for_htf:
                     row_1m_for_htf["timestamp"] = row_1m_for_htf["ts_event"]
-                
+
                 # Build context dict for HTF bias function
                 validation_context = {
                     "session_ok": is_london_or_ny_session(ts),
@@ -324,12 +325,14 @@ def main() -> None:
                 htf_bias = htf_bias_obj.bias
                 htf_direction = htf_bias_obj.direction
                 htf_score = htf_bias_obj.score
-                
+
                 # For logging, extract structure info if available
                 row_1h = None  # Not used with sync layer
                 row_15m = None  # Not used with sync layer
             except Exception as e:
-                logger.warning(f"Failed to compute HTF bias with sync layer at {ts}: {e}")
+                logger.warning(
+                    f"Failed to compute HTF bias with sync layer at {ts}: {e}"
+                )
                 skipped_no_htf += 1
                 continue
         else:
@@ -358,31 +361,45 @@ def main() -> None:
 
         # Log HTF bias for this candle
         if use_sync_htf and htf_bias_obj:
-            htf_bias_log.append({
-                "timestamp": ts,
-                "htf_bias": htf_bias,
-                "htf_direction": htf_direction,
-                "htf_score": htf_score,
-                "structure_1h": htf_bias_obj.structure_1h or "",
-                "structure_15m": htf_bias_obj.structure_15m or "",
-                "dxy_corr_1h": htf_bias_obj.dxy_corr_1h,
-                "dxy_corr_15m": htf_bias_obj.dxy_corr_15m,
-            })
+            htf_bias_log.append(
+                {
+                    "timestamp": ts,
+                    "htf_bias": htf_bias,
+                    "htf_direction": htf_direction,
+                    "htf_score": htf_score,
+                    "structure_1h": htf_bias_obj.structure_1h or "",
+                    "structure_15m": htf_bias_obj.structure_15m or "",
+                    "dxy_corr_1h": htf_bias_obj.dxy_corr_1h,
+                    "dxy_corr_15m": htf_bias_obj.dxy_corr_15m,
+                }
+            )
         else:
-            htf_bias_log.append({
-                "timestamp": ts,
-                "htf_bias": htf_bias,
-                "htf_direction": htf_direction,
-                "htf_score": htf_score,
-                "structure_1h": row_1h.get("structure_label", "") if row_1h is not None else "",
-                "structure_15m": row_15m.get("structure_label", "") if row_15m is not None else "",
-                "dxy_corr_1h": row_1h.get("dxy_corr") if row_1h is not None else None,
-                "dxy_corr_15m": row_15m.get("dxy_corr") if row_15m is not None else None,
-            })
+            htf_bias_log.append(
+                {
+                    "timestamp": ts,
+                    "htf_bias": htf_bias,
+                    "htf_direction": htf_direction,
+                    "htf_score": htf_score,
+                    "structure_1h": (
+                        row_1h.get("structure_label", "") if row_1h is not None else ""
+                    ),
+                    "structure_15m": (
+                        row_15m.get("structure_label", "")
+                        if row_15m is not None
+                        else ""
+                    ),
+                    "dxy_corr_1h": (
+                        row_1h.get("dxy_corr") if row_1h is not None else None
+                    ),
+                    "dxy_corr_15m": (
+                        row_15m.get("dxy_corr") if row_15m is not None else None
+                    ),
+                }
+            )
 
         # Build context
         session_ok = is_london_or_ny_session(ts)
-        
+
         # Get DXY correlation from appropriate source
         if use_sync_htf and htf_bias_obj:
             # Use DXY correlation from HTF bias object when using sync layer
@@ -393,11 +410,9 @@ def main() -> None:
         else:
             # Fallback to 1m DXY correlation if no HTF data available
             dxy_corr_1h = row_1m.get("dxy_corr")
-        
+
         dxy_trending_clean = (
-            dxy_corr_1h is not None
-            and not pd.isna(dxy_corr_1h)
-            and dxy_corr_1h < -0.6
+            dxy_corr_1h is not None and not pd.isna(dxy_corr_1h) and dxy_corr_1h < -0.6
         )
 
         context = {
@@ -419,13 +434,16 @@ def main() -> None:
         try:
             # Ensure required fields exist for signal
             row_1m_for_scoring = row_1m.copy()
-            if "timestamp" not in row_1m_for_scoring and "ts_event" in row_1m_for_scoring:
+            if (
+                "timestamp" not in row_1m_for_scoring
+                and "ts_event" in row_1m_for_scoring
+            ):
                 row_1m_for_scoring["timestamp"] = row_1m_for_scoring["ts_event"]
             if "timeframe" not in row_1m_for_scoring:
                 row_1m_for_scoring["timeframe"] = "1m"
             if "symbol" not in row_1m_for_scoring:
                 row_1m_for_scoring["symbol"] = row_1m_for_scoring.get("symbol", "GC")
-            
+
             if not use_sync_htf:
                 htf_bias_obj = create_htf_bias_from_context(context)
             # else: htf_bias_obj already computed above
@@ -435,31 +453,33 @@ def main() -> None:
             validated = validate_signal(signal, htf_bias_obj, context)
 
             # Collect signal data (use validated signal, not original)
-            signals_data.append({
-                "timestamp": ts,
-                "symbol": validated.symbol,
-                "timeframe": validated.timeframe,
-                "direction": validated.direction,
-                "setup_type": validated.setup_type,
-                "score": validated.score,
-                "confidence": validated.confidence,
-                "htf_bias": htf_bias,
-                "htf_direction": htf_direction,
-                "htf_score": htf_score,
-                "session_ok": session_ok,
-                "enforcer_tier": validated.enforcer_tier,
-                # Factor scores
-                **validated.factors,
-                # Validation flags
-                **{f"valid_{k}": v for k, v in validated.validation_flags.items()},
-                # Market data
-                "close": row_1m["close"],
-                "vwap": row_1m["vwap"],
-                "rsi": row_1m.get("rsi"),
-                "dxy_corr": row_1m.get("dxy_corr"),
-                # Rationale
-                "rationale": validated.rationale,
-            })
+            signals_data.append(
+                {
+                    "timestamp": ts,
+                    "symbol": validated.symbol,
+                    "timeframe": validated.timeframe,
+                    "direction": validated.direction,
+                    "setup_type": validated.setup_type,
+                    "score": validated.score,
+                    "confidence": validated.confidence,
+                    "htf_bias": htf_bias,
+                    "htf_direction": htf_direction,
+                    "htf_score": htf_score,
+                    "session_ok": session_ok,
+                    "enforcer_tier": validated.enforcer_tier,
+                    # Factor scores
+                    **validated.factors,
+                    # Validation flags
+                    **{f"valid_{k}": v for k, v in validated.validation_flags.items()},
+                    # Market data
+                    "close": row_1m["close"],
+                    "vwap": row_1m["vwap"],
+                    "rsi": row_1m.get("rsi"),
+                    "dxy_corr": row_1m.get("dxy_corr"),
+                    # Rationale
+                    "rationale": validated.rationale,
+                }
+            )
 
         except Exception as e:
             logger.warning(f"Failed to score signal at {ts}: {e}")
@@ -482,7 +502,9 @@ def main() -> None:
         # Export A+ signals only
         aplus_df = signals_df[signals_df["confidence"] == "A+"]
         aplus_df.to_csv(args.output_dir / "e2e_signals_aplus.csv", index=False)
-        logger.info(f"  Saved: {args.output_dir / 'e2e_signals_aplus.csv'} ({len(aplus_df)} A+ signals)")
+        logger.info(
+            f"  Saved: {args.output_dir / 'e2e_signals_aplus.csv'} ({len(aplus_df)} A+ signals)"
+        )
 
         # Export HTF bias log
         htf_bias_df = pd.DataFrame(htf_bias_log)
@@ -494,20 +516,20 @@ def main() -> None:
         logger.info("SUMMARY STATISTICS")
         logger.info("=" * 80)
 
-        logger.info(f"\nCandles Processed:")
+        logger.info("\nCandles Processed:")
         if features_1h is not None:
             logger.info(f"  1h:  {len(features_1h):,} candles")
         else:
-            logger.info(f"  1h:  N/A (using sync layer)")
+            logger.info("  1h:  N/A (using sync layer)")
         if has_15m and features_15m is not None:
             logger.info(f"  15m: {len(features_15m):,} candles")
         else:
-            logger.info(f"  15m: N/A (using sync layer or no data)")
+            logger.info("  15m: N/A (using sync layer or no data)")
         logger.info(f"  1m:  {len(features_1m):,} candles")
         logger.info(f"  Signals generated: {len(signals_df):,}")
 
         # HTF Bias Distribution
-        logger.info(f"\nHTF Bias Distribution:")
+        logger.info("\nHTF Bias Distribution:")
         bias_counts = htf_bias_df["htf_bias"].value_counts()
         total = len(htf_bias_df)
         for bias, count in bias_counts.items():
@@ -515,33 +537,33 @@ def main() -> None:
             logger.info(f"  {bias:8s}: {count:4d} ({pct:5.1f}%)")
 
         # Signal Confidence Distribution
-        logger.info(f"\nSignal Confidence Distribution:")
+        logger.info("\nSignal Confidence Distribution:")
         conf_counts = signals_df["confidence"].value_counts()
         for conf, count in conf_counts.items():
             pct = (count / len(signals_df)) * 100
             logger.info(f"  {conf:7s}: {count:4d} ({pct:5.1f}%)")
 
         # Setup Type Distribution
-        logger.info(f"\nSetup Type Distribution:")
+        logger.info("\nSetup Type Distribution:")
         setup_counts = signals_df["setup_type"].value_counts()
         for setup, count in setup_counts.items():
             pct = (count / len(signals_df)) * 100
             logger.info(f"  {setup:20s}: {count:4d} ({pct:5.1f}%)")
 
         # Average Score by Setup Type
-        logger.info(f"\nAverage Score by Setup Type:")
+        logger.info("\nAverage Score by Setup Type:")
         avg_scores = signals_df.groupby("setup_type")["score"].mean()
         for setup, avg_score in avg_scores.items():
             logger.info(f"  {setup:20s}: {avg_score:5.2f}")
 
         # Average Score by Confidence
-        logger.info(f"\nAverage Score by Confidence:")
+        logger.info("\nAverage Score by Confidence:")
         avg_by_conf = signals_df.groupby("confidence")["score"].mean()
         for conf, avg_score in avg_by_conf.items():
             logger.info(f"  {conf:7s}: {avg_score:5.2f}")
 
         # Top 10 Highest Scoring Signals
-        logger.info(f"\nTop 10 Highest Scoring Signals:")
+        logger.info("\nTop 10 Highest Scoring Signals:")
         top_signals = signals_df.nlargest(10, "score")[
             ["timestamp", "setup_type", "score", "confidence", "htf_bias", "htf_score"]
         ]
@@ -562,4 +584,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

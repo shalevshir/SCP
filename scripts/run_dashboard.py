@@ -35,7 +35,7 @@ Examples:
 
 import argparse
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 # Add project root to path
@@ -137,13 +137,13 @@ def parse_args() -> argparse.Namespace:
 def parse_date(date_str: str) -> datetime:
     """Parse date string to timezone-aware datetime."""
     dt = datetime.strptime(date_str, "%Y-%m-%d")
-    return dt.replace(tzinfo=timezone.utc)
+    return dt.replace(tzinfo=UTC)
 
 
 def parse_datetime(datetime_str: str) -> datetime:
     """Parse datetime string to timezone-aware datetime."""
     dt = datetime.strptime(datetime_str, "%Y-%m-%d %H:%M:%S")
-    return dt.replace(tzinfo=timezone.utc)
+    return dt.replace(tzinfo=UTC)
 
 
 def main() -> None:
@@ -205,9 +205,7 @@ def main() -> None:
     # Log warmup info
     warmup_bars = data_stream.warmup_bars
     warmup_hours = warmup_bars / 60
-    logger.info(
-        f"Warmup context: {warmup_bars:,} bars ({warmup_hours:.1f} hours)"
-    )
+    logger.info(f"Warmup context: {warmup_bars:,} bars ({warmup_hours:.1f} hours)")
 
     if warmup_hours < 1.0:
         logger.warning(

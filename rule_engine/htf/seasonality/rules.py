@@ -41,7 +41,7 @@ def get_seasonality_period(timestamp: datetime) -> SeasonalityPeriod:
         - Seasonality attribute included in HTF output
     """
     month = timestamp.month
-    
+
     if month == 9:
         period: SeasonalityPeriod = "september"
     elif month == 10:
@@ -50,14 +50,14 @@ def get_seasonality_period(timestamp: datetime) -> SeasonalityPeriod:
         period = "november_december"
     else:
         period = "other"
-    
+
     logger.debug(
         "Seasonality period detected: %s | month=%d | timestamp=%s",
         period,
         month,
-        timestamp.isoformat()
+        timestamp.isoformat(),
     )
-    
+
     return period
 
 
@@ -104,16 +104,15 @@ def get_seasonality_config(period: SeasonalityPeriod) -> dict:
             "description": "Standard months - Baseline thresholds",
         },
     }
-    
+
     config = configs[period]
-    
+
     logger.debug(
         "Seasonality config retrieved: %s | min_score=%.1f | dxy_corr=%.2f | max_losses=%d",
         period,
         config["min_score_threshold"],
         config["dxy_corr_threshold"],
-        config["max_losses"]
+        config["max_losses"],
     )
-    
-    return config
 
+    return config

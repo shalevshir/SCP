@@ -1,11 +1,9 @@
 """Tests for DataNormalizer."""
 
-from datetime import datetime, timezone
-from unittest.mock import Mock, patch
+from datetime import UTC, datetime
+from unittest.mock import patch
 
 import pytest
-
-from common.exceptions import NormalizationError
 from common.types import Candle
 from data_layer.normalizer import DataNormalizer
 
@@ -20,7 +18,7 @@ def normalizer():
 def valid_candle_1():
     """Create a valid candle for testing."""
     return Candle(
-        timestamp=datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc),
+        timestamp=datetime(2025, 1, 1, 12, 0, 0, tzinfo=UTC),
         open=100.0,
         high=105.0,
         low=95.0,
@@ -36,7 +34,7 @@ def valid_candle_1():
 def valid_candle_2():
     """Create another valid candle for testing (later timestamp)."""
     return Candle(
-        timestamp=datetime(2025, 1, 1, 12, 5, 0, tzinfo=timezone.utc),
+        timestamp=datetime(2025, 1, 1, 12, 5, 0, tzinfo=UTC),
         open=102.0,
         high=107.0,
         low=100.0,
@@ -52,7 +50,7 @@ def valid_candle_2():
 def valid_candle_3():
     """Create a third valid candle for testing (earliest timestamp)."""
     return Candle(
-        timestamp=datetime(2025, 1, 1, 11, 55, 0, tzinfo=timezone.utc),
+        timestamp=datetime(2025, 1, 1, 11, 55, 0, tzinfo=UTC),
         open=98.0,
         high=103.0,
         low=97.0,
@@ -153,7 +151,7 @@ def test_normalize_does_not_log_for_sorted_input(
 def test_normalize_detects_duplicate_timestamps(normalizer):
     """Test that normalizer detects and logs duplicate timestamps for same symbol."""
     duplicate_candle_1 = Candle(
-        timestamp=datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc),
+        timestamp=datetime(2025, 1, 1, 12, 0, 0, tzinfo=UTC),
         open=100.0,
         high=105.0,
         low=95.0,
@@ -164,7 +162,7 @@ def test_normalize_detects_duplicate_timestamps(normalizer):
         source="CME",
     )
     duplicate_candle_2 = Candle(
-        timestamp=datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc),
+        timestamp=datetime(2025, 1, 1, 12, 0, 0, tzinfo=UTC),
         open=101.0,
         high=106.0,
         low=96.0,
@@ -190,7 +188,7 @@ def test_normalize_detects_duplicate_timestamps(normalizer):
 def test_normalize_allows_same_timestamp_different_symbols(normalizer):
     """Test that same timestamp is allowed for different symbols."""
     gc_candle = Candle(
-        timestamp=datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc),
+        timestamp=datetime(2025, 1, 1, 12, 0, 0, tzinfo=UTC),
         open=100.0,
         high=105.0,
         low=95.0,
@@ -201,7 +199,7 @@ def test_normalize_allows_same_timestamp_different_symbols(normalizer):
         source="CME",
     )
     dxy_candle = Candle(
-        timestamp=datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc),
+        timestamp=datetime(2025, 1, 1, 12, 0, 0, tzinfo=UTC),
         open=105.0,
         high=106.0,
         low=104.0,
@@ -228,7 +226,7 @@ def test_normalize_preserves_candle_immutability(normalizer, valid_candle_1):
     original_timestamp = valid_candle_1.timestamp
     original_open = valid_candle_1.open
 
-    result = normalizer.normalize([valid_candle_1])
+    normalizer.normalize([valid_candle_1])
 
     # Original candle should be unchanged
     assert valid_candle_1.timestamp == original_timestamp
@@ -254,7 +252,7 @@ def test_normalize_does_not_modify_input_list(
 def test_normalize_handles_multiple_duplicates(normalizer):
     """Test that normalizer handles multiple sets of duplicates."""
     candle_1a = Candle(
-        timestamp=datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc),
+        timestamp=datetime(2025, 1, 1, 12, 0, 0, tzinfo=UTC),
         open=100.0,
         high=105.0,
         low=95.0,
@@ -265,7 +263,7 @@ def test_normalize_handles_multiple_duplicates(normalizer):
         source="CME",
     )
     candle_1b = Candle(
-        timestamp=datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc),
+        timestamp=datetime(2025, 1, 1, 12, 0, 0, tzinfo=UTC),
         open=101.0,
         high=106.0,
         low=96.0,
@@ -276,7 +274,7 @@ def test_normalize_handles_multiple_duplicates(normalizer):
         source="CME",
     )
     candle_2a = Candle(
-        timestamp=datetime(2025, 1, 1, 12, 5, 0, tzinfo=timezone.utc),
+        timestamp=datetime(2025, 1, 1, 12, 5, 0, tzinfo=UTC),
         open=102.0,
         high=107.0,
         low=100.0,
@@ -287,7 +285,7 @@ def test_normalize_handles_multiple_duplicates(normalizer):
         source="CME",
     )
     candle_2b = Candle(
-        timestamp=datetime(2025, 1, 1, 12, 5, 0, tzinfo=timezone.utc),
+        timestamp=datetime(2025, 1, 1, 12, 5, 0, tzinfo=UTC),
         open=103.0,
         high=108.0,
         low=101.0,
@@ -312,7 +310,7 @@ def test_normalize_handles_multiple_duplicates(normalizer):
 def test_normalize_with_mixed_symbols_sorted(normalizer):
     """Test normalization with multiple symbols maintains sort order."""
     gc_early = Candle(
-        timestamp=datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc),
+        timestamp=datetime(2025, 1, 1, 12, 0, 0, tzinfo=UTC),
         open=100.0,
         high=105.0,
         low=95.0,
@@ -323,7 +321,7 @@ def test_normalize_with_mixed_symbols_sorted(normalizer):
         source="CME",
     )
     dxy_middle = Candle(
-        timestamp=datetime(2025, 1, 1, 12, 5, 0, tzinfo=timezone.utc),
+        timestamp=datetime(2025, 1, 1, 12, 5, 0, tzinfo=UTC),
         open=105.0,
         high=106.0,
         low=104.0,
@@ -334,7 +332,7 @@ def test_normalize_with_mixed_symbols_sorted(normalizer):
         source="ICE",
     )
     gc_late = Candle(
-        timestamp=datetime(2025, 1, 1, 12, 10, 0, tzinfo=timezone.utc),
+        timestamp=datetime(2025, 1, 1, 12, 10, 0, tzinfo=UTC),
         open=102.0,
         high=107.0,
         low=100.0,
@@ -359,7 +357,7 @@ def test_normalize_with_mixed_symbols_sorted(normalizer):
 def test_normalize_does_not_modify_candle_fields(normalizer):
     """Test that normalize does not modify any candle fields."""
     original = Candle(
-        timestamp=datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc),
+        timestamp=datetime(2025, 1, 1, 12, 0, 0, tzinfo=UTC),
         open=100.0,
         high=105.0,
         low=95.0,

@@ -14,52 +14,58 @@ class TestHTFCalculatorBiasConsistency:
 
     def test_vwap_and_dxy_alignment_use_original_bias_when_neutralized(self) -> None:
         """Test that vwap_trend_confirmed and dxy_alignment use original_bias.
-        
+
         When bias is neutralized due to DXY chop or conflicts, vwap_trend_confirmed
         and dxy_alignment should still reflect the underlying market structure by
         using original_bias, not the neutralized bias value.
-        
+
         This ensures consistency with fvg_alignment_score which already uses original_bias.
         """
         # Setup: Strong bullish market structure with DXY alignment
-        features_1h = pd.Series({
-            "structure_label": "HH",
-            "ema_9": 2100.0,
-            "ema_20": 2090.0,
-            "ema_50": 2080.0,
-            "close": 2110.0,
-            "vwap": 2100.0,  # Close above VWAP = bullish
-            "vwap_slope": 0.5,
-            "dxy_corr": -0.75,  # Strong negative correlation
-        })
-        
-        features_15m = pd.Series({
-            "structure_label": "HL",
-            "ema_9": 2105.0,
-            "ema_20": 2095.0,
-            "ema_50": 2085.0,
-            "dxy_corr": -0.70,  # Strong negative correlation
-        })
-        
+        features_1h = pd.Series(
+            {
+                "structure_label": "HH",
+                "ema_9": 2100.0,
+                "ema_20": 2090.0,
+                "ema_50": 2080.0,
+                "close": 2110.0,
+                "vwap": 2100.0,  # Close above VWAP = bullish
+                "vwap_slope": 0.5,
+                "dxy_corr": -0.75,  # Strong negative correlation
+            }
+        )
+
+        features_15m = pd.Series(
+            {
+                "structure_label": "HL",
+                "ema_9": 2105.0,
+                "ema_20": 2095.0,
+                "ema_50": 2085.0,
+                "dxy_corr": -0.70,  # Strong negative correlation
+            }
+        )
+
         # DXY in chop mode (large wicks, small bodies)
-        dxy_1h_chop = pd.DataFrame({
-            "high": [101.0, 101.5, 102.0, 102.5, 103.0],
-            "low": [99.0, 99.5, 100.0, 100.5, 101.0],
-            "open": [100.0, 100.5, 101.0, 101.5, 102.0],
-            "close": [100.2, 100.7, 101.2, 101.7, 102.2],
-        })
-        
+        dxy_1h_chop = pd.DataFrame(
+            {
+                "high": [101.0, 101.5, 102.0, 102.5, 103.0],
+                "low": [99.0, 99.5, 100.0, 100.5, 101.0],
+                "open": [100.0, 100.5, 101.0, 101.5, 102.0],
+                "close": [100.2, 100.7, 101.2, 101.7, 102.2],
+            }
+        )
+
         # Execute
         htf_bias = compute_htf_bias(
             features_1h=features_1h,
             features_15m=features_15m,
             dxy_1h=dxy_1h_chop,
         )
-        
+
         # Verify bias is neutralized
         assert htf_bias.bias == "neutral", "Bias should be neutralized due to DXY chop"
         assert htf_bias.dxy_chop_detected is True
-        
+
         # BUG FIX VERIFICATION: These should use original_bias (bullish), not neutralized
         # The underlying market structure is bullish with VWAP and DXY alignment
         assert htf_bias.vwap_trend_confirmed is True, (
@@ -73,40 +79,46 @@ class TestHTFCalculatorBiasConsistency:
 
     def test_vwap_and_dxy_alignment_use_original_bias_on_conflict(self) -> None:
         """Test that vwap_trend_confirmed and dxy_alignment use original_bias on conflict.
-        
+
         When bias is neutralized due to structure conflict, vwap_trend_confirmed
         and dxy_alignment should still reflect the underlying market structure.
         """
         # Setup: Bearish on 1H, Bullish on 15M = conflict
-        features_1h = pd.Series({
-            "structure_label": "LL",  # Bearish
-            "ema_9": 2080.0,
-            "ema_20": 2090.0,
-            "ema_50": 2100.0,
-            "close": 2085.0,
-            "vwap": 2095.0,  # Close below VWAP = bearish
-            "vwap_slope": -0.5,
-            "dxy_corr": -0.75,
-        })
-        
-        features_15m = pd.Series({
-            "structure_label": "HH",  # Bullish = conflict!
-            "ema_9": 2105.0,
-            "ema_20": 2095.0,
-            "ema_50": 2085.0,
-            "dxy_corr": -0.70,
-        })
-        
+        features_1h = pd.Series(
+            {
+                "structure_label": "LL",  # Bearish
+                "ema_9": 2080.0,
+                "ema_20": 2090.0,
+                "ema_50": 2100.0,
+                "close": 2085.0,
+                "vwap": 2095.0,  # Close below VWAP = bearish
+                "vwap_slope": -0.5,
+                "dxy_corr": -0.75,
+            }
+        )
+
+        features_15m = pd.Series(
+            {
+                "structure_label": "HH",  # Bullish = conflict!
+                "ema_9": 2105.0,
+                "ema_20": 2095.0,
+                "ema_50": 2085.0,
+                "dxy_corr": -0.70,
+            }
+        )
+
         # Execute
         htf_bias = compute_htf_bias(
             features_1h=features_1h,
             features_15m=features_15m,
         )
-        
+
         # Verify bias is neutralized due to conflict
-        assert htf_bias.bias == "neutral", "Bias should be neutralized due to structure conflict"
+        assert (
+            htf_bias.bias == "neutral"
+        ), "Bias should be neutralized due to structure conflict"
         assert htf_bias.conflict_detected is True
-        
+
         # BUG FIX VERIFICATION: These should use original_bias (bearish from 1H multi-timeframe logic)
         # Note: The original_bias reflects the multi-timeframe computation result
         # Since 1H is bearish (LL, EMAs declining, close < VWAP), original_bias should be bearish
@@ -184,7 +196,7 @@ class TestHTFCalculatorDXYChop:
         # Should return normal bullish bias
         assert result.bias == "bullish"
         assert result.direction == "long"
-        assert result.dxy_chop_detected == False
+        assert result.dxy_chop_detected is False
         assert result.score > 0
 
     def test_htf_bias_with_dxy_chop_forces_neutral(
@@ -201,7 +213,7 @@ class TestHTFCalculatorDXYChop:
         # Chop should force neutral bias
         assert result.bias == "neutral"
         assert result.direction == "neutral"
-        assert result.dxy_chop_detected == True
+        assert result.dxy_chop_detected is True
         # Score should be capped at 5.0
         assert result.score <= 5.0
 
@@ -219,7 +231,7 @@ class TestHTFCalculatorDXYChop:
         # Should return normal bullish bias (no chop)
         assert result.bias == "bullish"
         assert result.direction == "long"
-        assert result.dxy_chop_detected == False
+        assert result.dxy_chop_detected is False
         assert result.score > 5.0  # Not capped
 
     def test_htf_bias_dxy_chop_detected_field(
@@ -236,8 +248,8 @@ class TestHTFCalculatorDXYChop:
             features_1h_bullish, features_15m_bullish, dxy_1h=None
         )
 
-        assert result_with_chop.dxy_chop_detected == True
-        assert result_without_chop.dxy_chop_detected == False
+        assert result_with_chop.dxy_chop_detected is True
+        assert result_without_chop.dxy_chop_detected is False
 
     def test_htf_bias_empty_dxy_data(
         self, features_1h_bullish: pd.Series, features_15m_bullish: pd.Series
@@ -250,14 +262,14 @@ class TestHTFCalculatorDXYChop:
 
         # Should not trigger chop with empty data
         assert result.bias == "bullish"
-        assert result.dxy_chop_detected == False
+        assert result.dxy_chop_detected is False
 
     def test_htf_bias_invalid_dxy_data_graceful_fallback(
         self, features_1h_bullish: pd.Series, features_15m_bullish: pd.Series
     ) -> None:
         """Test that invalid DXY data doesn't crash, falls back gracefully."""
         invalid_dxy = pd.DataFrame({"invalid": [1, 2, 3]})
-        
+
         # Should handle gracefully (log error but continue)
         result = compute_htf_bias(
             features_1h_bullish, features_15m_bullish, dxy_1h=invalid_dxy
@@ -265,10 +277,13 @@ class TestHTFCalculatorDXYChop:
 
         # Should return normal bias (error handled gracefully)
         assert result.bias == "bullish"
-        assert result.dxy_chop_detected == False
+        assert result.dxy_chop_detected is False
 
     def test_htf_bias_chop_overrides_strong_signals(
-        self, features_1h_bullish: pd.Series, features_15m_bullish: pd.Series, dxy_chop_data: pd.DataFrame
+        self,
+        features_1h_bullish: pd.Series,
+        features_15m_bullish: pd.Series,
+        dxy_chop_data: pd.DataFrame,
     ) -> None:
         """Test that chop overrides even strong bullish/bearish signals."""
         # Strong bullish setup
@@ -296,7 +311,7 @@ class TestHTFCalculatorDXYChop:
         # Even strong signals should be overridden by chop
         assert result.bias == "neutral"
         assert result.direction == "neutral"
-        assert result.dxy_chop_detected == True
+        assert result.dxy_chop_detected is True
 
     def test_dxy_chop_score_stays_capped_after_seasonality(
         self,
@@ -499,8 +514,8 @@ class TestHTFCalculatorConflictRules:
         sweep_low_events: pd.Series,
     ) -> None:
         """Test that sweep conflict is detected even if DXY chop already detected.
-        
-        Bug: If DXY chop neutralizes bias first, sweep detection receives 
+
+        Bug: If DXY chop neutralizes bias first, sweep detection receives
         neutral bias and returns early, missing the sweep conflict.
         """
         # Create DXY chop data
@@ -535,13 +550,15 @@ class TestHTFCalculatorConflictRules:
         features_15m_bearish: pd.Series,
     ) -> None:
         """Test that conflict-detected score stays <= 5.0 even after seasonality adjustment.
-        
+
         Bug: Conflict detection caps score at 5.0, but seasonality adjustments
         applied afterward can increase it above 5.0. Only DXY chop has a re-cap
         after seasonality, but conflict detection does not.
         """
         # Use a timestamp in London session (positive seasonality adjustment)
-        timestamp = pd.Timestamp("2024-01-15 08:00:00", tz="UTC")  # Monday, London session
+        timestamp = pd.Timestamp(
+            "2024-01-15 08:00:00", tz="UTC"
+        )  # Monday, London session
 
         result = compute_htf_bias(
             features_1h_bullish,
@@ -552,10 +569,10 @@ class TestHTFCalculatorConflictRules:
         # Conflict should be detected
         assert result.conflict_detected is True
         assert result.bias == "neutral"
-        
+
         # Seasonality adjustment should be positive
         assert result.seasonality_adjustment > 0
-        
+
         # CRITICAL: Score must remain <= 5.0 despite positive seasonality
         # This is the bug - currently fails without re-cap
         assert result.score <= 5.0, (

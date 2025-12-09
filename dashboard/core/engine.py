@@ -12,20 +12,18 @@ Architecture:
 
 import threading
 import time
-from datetime import datetime
-from typing import Optional
 
 import pandas as pd
-
 from common.logger import get_logger
 from common.types import Candle
-from dashboard.core.data_stream import DataStream
-from dashboard.core.state import DashboardState, PriceBar
 from rule_engine.htf.streaming import StreamingHTFBiasCalculator
 from rule_engine.scoring import score_signal
 from rule_engine.signal import Signal
 from validation.engine import ValidationEngine
 from validation.session_validator import SessionValidator
+
+from dashboard.core.data_stream import DataStream
+from dashboard.core.state import DashboardState, PriceBar
 
 logger = get_logger(__name__)
 
@@ -86,7 +84,7 @@ class SimulationEngine:
 
         # Threading
         self._running = False
-        self._thread: Optional[threading.Thread] = None
+        self._thread: threading.Thread | None = None
         self._lock = threading.RLock()
 
         # State (immutable, replaced atomically)
@@ -134,7 +132,9 @@ class SimulationEngine:
         m15_boundaries = 0
         log_interval = max(100, warmup_count // 10)
 
-        for i, (gc_candle, dxy_candle) in enumerate(self.data_stream.get_warmup_candles()):
+        for i, (gc_candle, dxy_candle) in enumerate(
+            self.data_stream.get_warmup_candles()
+        ):
             # Track boundaries
             if gc_candle.timestamp.minute == 59:
                 h1_boundaries += 1
@@ -147,7 +147,9 @@ class SimulationEngine:
             # Log progress
             if (i + 1) % log_interval == 0:
                 progress_pct = ((i + 1) / warmup_count) * 100
-                logger.info(f"Warmup progress: {progress_pct:.0f}% ({i + 1:,}/{warmup_count:,} bars)")
+                logger.info(
+                    f"Warmup progress: {progress_pct:.0f}% ({i + 1:,}/{warmup_count:,} bars)"
+                )
 
         logger.info(
             f"Warmup complete | "
@@ -183,7 +185,7 @@ class SimulationEngine:
 
     def start(self) -> None:
         """Start simulation in background thread."""
-        if self._running:
+        if self._running and self._thread and self._thread.is_alive():
             logger.warning("Engine already running")
             return
 
@@ -208,13 +210,24 @@ class SimulationEngine:
     def _run_loop(self) -> None:
         """Main simulation loop (runs in background thread)."""
         base_delay = 60.0  # 1 minute candles
+        pause_logged = False
 
         try:
             while self._running and self.data_stream.has_more():
                 # Check if paused
                 if self.state.is_paused:
+                    if not pause_logged:
+                        logger.info(
+                            "Run loop entered paused state - waiting for resume"
+                        )
+                        pause_logged = True
                     time.sleep(0.1)
                     continue
+
+                # Exited pause (if we were paused)
+                if pause_logged:
+                    logger.info("Run loop exited paused state - resuming processing")
+                    pause_logged = False
 
                 # Process one tick
                 self.tick()
@@ -231,7 +244,7 @@ class SimulationEngine:
             self._running = False
             logger.info("Simulation loop ended")
 
-    def tick(self) -> Optional[Signal]:
+    def tick(self) -> Signal | None:
         """Process one candle and update state.
 
         This is the core processing method. Can be called directly for
@@ -291,12 +304,22 @@ class SimulationEngine:
             features=features_15m,
             htf_bias=current_htf_bias,
             current_signal=current_signal,
-            session_constraints={
-                "name": session_result.constraints.name if session_result.constraints else None,
-                "min_signal_score": getattr(
-                    session_result.constraints, "min_signal_score", 0.0
-                ) if session_result.constraints else 0.0,
-            } if session_result.constraints else None,
+            session_constraints=(
+                {
+                    "name": (
+                        session_result.constraints.name
+                        if session_result.constraints
+                        else None
+                    ),
+                    "min_signal_score": (
+                        getattr(session_result.constraints, "min_signal_score", 0.0)
+                        if session_result.constraints
+                        else 0.0
+                    ),
+                }
+                if session_result.constraints
+                else None
+            ),
             is_session_active=session_result.session_ok,
             simulation_progress=self.data_stream.get_progress(),
         )
@@ -319,7 +342,7 @@ class SimulationEngine:
 
         return current_signal
 
-    def _should_auto_pause(self, signal: Optional[Signal]) -> bool:
+    def _should_auto_pause(self, signal: Signal | None) -> bool:
         """Check if should auto-pause on this signal.
 
         Args:
@@ -344,7 +367,7 @@ class SimulationEngine:
         features: pd.Series,
         htf_bias: object,
         constraints: object,
-    ) -> Optional[Signal]:
+    ) -> Signal | None:
         """Generate trade signal using rule engine.
 
         Args:
@@ -360,7 +383,7 @@ class SimulationEngine:
             # Create a copy to avoid mutating the calculator's internal state
             # get_current_features_15m() returns a reference to self.features_15m
             features = features.copy()
-            
+
             # Ensure required fields
             if "timestamp" not in features:
                 features["timestamp"] = candle.timestamp
@@ -397,13 +420,39 @@ class SimulationEngine:
         logger.info(f"Simulation paused: {reason}")
 
     def resume(self) -> None:
-        """Resume simulation from pause."""
-        was_paused = self.state.is_paused
-        self._update_state(is_paused=False, pause_reason=None, paused_at_signal=None)
-        if was_paused:
-            logger.info("Simulation resumed")
+        """Resume simulation from pause.
 
-    def step(self) -> Optional[Signal]:
+        If the simulation thread has stopped (e.g., due to running out of data
+        or an exception), this will restart it.
+        """
+        was_paused = self.state.is_paused
+        thread_alive = self._thread and self._thread.is_alive()
+        logger.info(
+            f"Resume called | was_paused={was_paused} | "
+            f"_running={self._running} | "
+            f"thread_alive={thread_alive} | "
+            f"is_simulation_running={self.state.is_simulation_running}"
+        )
+
+        # Clear pause flags
+        self._update_state(is_paused=False, pause_reason=None, paused_at_signal=None)
+
+        # If thread is not running, restart it
+        if not self._running or not thread_alive:
+            if was_paused:
+                logger.info(
+                    "Simulation was paused but thread is not running - restarting"
+                )
+                self.start()
+            else:
+                logger.info(
+                    "Resume called but simulation was not paused - starting anyway"
+                )
+                self.start()
+        elif was_paused:
+            logger.info("Simulation resumed successfully")
+
+    def step(self) -> Signal | None:
         """Process single step (even when paused).
 
         Useful for step-through debugging or manual control.
@@ -432,4 +481,3 @@ class SimulationEngine:
         self.speed_multiplier = multiplier
         self._update_state(simulation_speed=multiplier)
         logger.info(f"Simulation speed set to {multiplier}x")
-

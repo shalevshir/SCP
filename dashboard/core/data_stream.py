@@ -10,8 +10,8 @@ Architecture:
 - Thread-safe iteration
 """
 
-from datetime import datetime, timedelta
-from typing import Iterator, Optional
+from collections.abc import Iterator
+from datetime import datetime
 
 from common.logger import get_logger
 from common.types import Candle
@@ -60,8 +60,8 @@ class DataStream:
 
         self._loader = HistoricalDataLoader(data_dir)
         self.enable_multi_timeframe = enable_multi_timeframe
-        self._sync_layer: Optional[MultiTimeframeSyncLayer] = None
-        self._multi_tf_data: Optional[MultiTimeframeData] = None
+        self._sync_layer: MultiTimeframeSyncLayer | None = None
+        self._multi_tf_data: MultiTimeframeData | None = None
 
         if enable_multi_timeframe:
             self._sync_layer = MultiTimeframeSyncLayer(data_dir)
@@ -160,7 +160,7 @@ class DataStream:
         self.stream_bars = len(self.gc_candles)
 
         logger.info(f"Loaded {len(self.gc_candles):,} aligned candle pairs")
-        
+
         # If multi-timeframe enabled, also load synchronized data
         if self.enable_multi_timeframe and self._sync_layer:
             try:
@@ -174,7 +174,7 @@ class DataStream:
                     f"Continuing with single timeframe mode."
                 )
                 self._multi_tf_data = None
-        
+
         return len(self.gc_candles)
 
     def seek_to_timestamp(self, target: datetime) -> int:
@@ -244,7 +244,7 @@ class DataStream:
             raise IndexError(f"Index {index} out of range [0, {len(self.gc_candles)})")
         return self.gc_candles[index], self.dxy_candles[index]
 
-    def advance(self) -> Optional[tuple[Candle, Candle]]:
+    def advance(self) -> tuple[Candle, Candle] | None:
         """Advance to next candle and return it.
 
         Returns:
@@ -309,44 +309,43 @@ class DataStream:
     def __len__(self) -> int:
         """Return total number of candles."""
         return len(self.gc_candles)
-    
-    def get_synchronized_bar(self, timestamp: datetime) -> Optional[SynchronizedBar]:
+
+    def get_synchronized_bar(self, timestamp: datetime) -> SynchronizedBar | None:
         """Get synchronized multi-timeframe bar for specific timestamp.
-        
+
         Requires multi-timeframe mode to be enabled. Returns None if:
         - Multi-timeframe mode is disabled
         - No synchronized data available
         - Timestamp not found
-        
+
         Args:
             timestamp: Execution timestamp to look up
-            
+
         Returns:
             SynchronizedBar with all timeframe data, or None
         """
         if not self.enable_multi_timeframe or self._multi_tf_data is None:
             return None
-        
+
         return self._multi_tf_data.get_bar(timestamp)
-    
-    def get_current_synchronized_bar(self) -> Optional[SynchronizedBar]:
+
+    def get_current_synchronized_bar(self) -> SynchronizedBar | None:
         """Get synchronized bar for current index.
-        
+
         Returns:
             SynchronizedBar for current position, or None if not available
         """
         if not self.gc_candles or self.current_index >= len(self.gc_candles):
             return None
-        
+
         current_timestamp = self.gc_candles[self.current_index].timestamp
         return self.get_synchronized_bar(current_timestamp)
-    
+
     @property
-    def multi_timeframe_data(self) -> Optional[MultiTimeframeData]:
+    def multi_timeframe_data(self) -> MultiTimeframeData | None:
         """Get multi-timeframe data if available.
-        
+
         Returns:
             MultiTimeframeData object, or None if not loaded
         """
         return self._multi_tf_data
-

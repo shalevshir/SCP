@@ -20,4 +20,3 @@ __all__ = [
     "get_validation_badge_class",
     "get_validation_tooltip",
 ]
-

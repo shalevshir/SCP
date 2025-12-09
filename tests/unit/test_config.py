@@ -5,10 +5,9 @@ import tempfile
 from pathlib import Path
 
 import pytest
-from pydantic import ValidationError
-
 from common.config import Config, load_config
 from common.exceptions import ConfigError
+from pydantic import ValidationError
 
 
 def test_load_config_from_yaml():
@@ -145,7 +144,7 @@ def test_config_type_safety():
     assert isinstance(config.system.timeframes, list)
     assert isinstance(config.risk.rr_target, float)
     assert isinstance(
-        config.backtest.initial_balance, (int, float)
+        config.backtest.initial_balance, int | float
     )  # Can be int or float
 
 

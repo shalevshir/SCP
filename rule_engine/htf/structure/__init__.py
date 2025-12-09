@@ -35,4 +35,3 @@ __all__ = [
     "extract_confirmation_candle",
     "extract_structure_candles",
 ]
-

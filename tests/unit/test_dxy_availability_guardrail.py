@@ -375,4 +375,3 @@ class TestDXYAvailabilityGuardrail:
         # With DXY missing, no trades should be executed
         assert results.total_trades == 0
         assert len(results.trades) == 0
-

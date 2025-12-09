@@ -3,12 +3,11 @@
 Tests the historical data stream with seeking and warmup functionality.
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
 import pandas as pd
 import pytest
-
 from common.types import Candle
 from dashboard.core.data_stream import DataStream
 
@@ -25,7 +24,7 @@ def sample_candles():
     """Create sample candle data for testing."""
     candles = []
     for i in range(10):
-        timestamp = datetime(2025, 1, 1, 10, i, 0, tzinfo=timezone.utc)
+        timestamp = datetime(2025, 1, 1, 10, i, 0, tzinfo=UTC)
         candles.append(
             Candle(
                 timestamp=timestamp,
@@ -89,8 +88,8 @@ class TestDataStream:
 
         stream = DataStream("/path/to/data")
         count = stream.load(
-            datetime(2025, 1, 1, tzinfo=timezone.utc),
-            datetime(2025, 1, 2, tzinfo=timezone.utc),
+            datetime(2025, 1, 1, tzinfo=UTC),
+            datetime(2025, 1, 2, tzinfo=UTC),
         )
 
         assert count == 2
@@ -103,7 +102,7 @@ class TestDataStream:
 
         # Manually populate candles for this test
         for i in range(10):
-            timestamp = datetime(2025, 1, 1, 10, i, 0, tzinfo=timezone.utc)
+            timestamp = datetime(2025, 1, 1, 10, i, 0, tzinfo=UTC)
             gc_candle = Candle(
                 timestamp=timestamp,
                 open=2650.0,
@@ -130,7 +129,7 @@ class TestDataStream:
             stream.dxy_candles.append(dxy_candle)
 
         # Seek to minute 5
-        target = datetime(2025, 1, 1, 10, 5, 0, tzinfo=timezone.utc)
+        target = datetime(2025, 1, 1, 10, 5, 0, tzinfo=UTC)
         index = stream.seek_to_timestamp(target)
 
         assert index == 5
@@ -145,14 +144,14 @@ class TestDataStream:
 
         # Populate candles
         for i in range(10):
-            timestamp = datetime(2025, 1, 1, 10, i, 0, tzinfo=timezone.utc)
+            timestamp = datetime(2025, 1, 1, 10, i, 0, tzinfo=UTC)
             base_price = 2650.0 + i
             gc_candle = Candle(
                 timestamp=timestamp,
                 open=base_price,
                 high=base_price + 5.0,  # Always higher than open
-                low=base_price - 5.0,   # Always lower than open
-                close=base_price + 2.0, # Between low and high
+                low=base_price - 5.0,  # Always lower than open
+                close=base_price + 2.0,  # Between low and high
                 volume=1000.0,
                 symbol="GC",
                 timeframe="1m",
@@ -173,7 +172,7 @@ class TestDataStream:
             stream.dxy_candles.append(dxy_candle)
 
         # Seek to minute 5
-        stream.seek_to_timestamp(datetime(2025, 1, 1, 10, 5, 0, tzinfo=timezone.utc))
+        stream.seek_to_timestamp(datetime(2025, 1, 1, 10, 5, 0, tzinfo=UTC))
 
         # Get warmup candles
         warmup = list(stream.get_warmup_candles())
@@ -192,7 +191,7 @@ class TestDataStream:
 
         # Populate candles
         for i in range(5):
-            timestamp = datetime(2025, 1, 1, 10, i, 0, tzinfo=timezone.utc)
+            timestamp = datetime(2025, 1, 1, 10, i, 0, tzinfo=UTC)
             gc_candle = Candle(
                 timestamp=timestamp,
                 open=2650.0 + i,
@@ -232,7 +231,7 @@ class TestDataStream:
 
         # Populate 10 candles
         for i in range(10):
-            timestamp = datetime(2025, 1, 1, 10, i, 0, tzinfo=timezone.utc)
+            timestamp = datetime(2025, 1, 1, 10, i, 0, tzinfo=UTC)
             gc_candle = Candle(
                 timestamp=timestamp,
                 open=2650.0,
@@ -259,7 +258,7 @@ class TestDataStream:
             stream.dxy_candles.append(dxy_candle)
 
         # Seek to minute 5 (5 warmup, 5 stream)
-        stream.seek_to_timestamp(datetime(2025, 1, 1, 10, 5, 0, tzinfo=timezone.utc))
+        stream.seek_to_timestamp(datetime(2025, 1, 1, 10, 5, 0, tzinfo=UTC))
 
         # Initially at 0% of stream
         assert stream.get_progress() == 0.0
@@ -277,7 +276,7 @@ class TestDataStream:
 
         # Populate candles
         for i in range(10):
-            timestamp = datetime(2025, 1, 1, 10, i, 0, tzinfo=timezone.utc)
+            timestamp = datetime(2025, 1, 1, 10, i, 0, tzinfo=UTC)
             gc_candle = Candle(
                 timestamp=timestamp,
                 open=2650.0,
@@ -304,7 +303,7 @@ class TestDataStream:
             stream.dxy_candles.append(dxy_candle)
 
         # Seek to minute 5
-        stream.seek_to_timestamp(datetime(2025, 1, 1, 10, 5, 0, tzinfo=timezone.utc))
+        stream.seek_to_timestamp(datetime(2025, 1, 1, 10, 5, 0, tzinfo=UTC))
 
         # Advance a few bars
         stream.advance()
@@ -324,7 +323,7 @@ class TestDataStream:
     def test_multi_timeframe_initialization(self, mock_loader):
         """Test DataStream initialization with multi-timeframe enabled."""
         stream = DataStream("/path/to/data", enable_multi_timeframe=True)
-        
+
         assert stream.enable_multi_timeframe is True
         assert stream._sync_layer is not None
         assert stream._multi_tf_data is None  # Not loaded yet
@@ -332,28 +331,27 @@ class TestDataStream:
     def test_multi_timeframe_disabled_by_default(self, mock_loader):
         """Test that multi-timeframe is disabled by default for backward compatibility."""
         stream = DataStream("/path/to/data")
-        
+
         assert stream.enable_multi_timeframe is False
         assert stream._sync_layer is None
 
     def test_get_synchronized_bar_returns_none_when_disabled(self, mock_loader):
         """Test that get_synchronized_bar returns None when multi-timeframe is disabled."""
         stream = DataStream("/path/to/data")
-        timestamp = datetime(2025, 1, 1, 10, 0, 0, tzinfo=timezone.utc)
-        
+        timestamp = datetime(2025, 1, 1, 10, 0, 0, tzinfo=UTC)
+
         bar = stream.get_synchronized_bar(timestamp)
         assert bar is None
 
     def test_get_current_synchronized_bar_returns_none_when_no_data(self, mock_loader):
         """Test that get_current_synchronized_bar returns None when no candles loaded."""
         stream = DataStream("/path/to/data", enable_multi_timeframe=True)
-        
+
         bar = stream.get_current_synchronized_bar()
         assert bar is None
 
     def test_multi_timeframe_data_property(self, mock_loader):
         """Test that multi_timeframe_data property returns None when not loaded."""
         stream = DataStream("/path/to/data", enable_multi_timeframe=True)
-        
-        assert stream.multi_timeframe_data is None
 
+        assert stream.multi_timeframe_data is None

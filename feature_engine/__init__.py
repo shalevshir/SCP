@@ -19,12 +19,12 @@ from feature_engine.integration import (
 )
 from feature_engine.rsi import calculate_rsi
 from feature_engine.state import (
-    FeatureState,
-    VWAPState,
-    RSIState,
-    EMAState,
     DXYCorrelationState,
+    EMAState,
+    FeatureState,
+    RSIState,
     StructureState,
+    VWAPState,
 )
 from feature_engine.structure import calculate_structure_labels
 from feature_engine.vwap import calculate_vwap, calculate_vwap_deviation

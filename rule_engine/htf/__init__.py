@@ -15,4 +15,3 @@ processing modes, with parity tests ensuring identical results.
 from rule_engine.htf.types import HTFBias
 
 __all__ = ["HTFBias"]
-

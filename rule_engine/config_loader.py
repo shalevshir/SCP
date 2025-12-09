@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-
 from common.exceptions import ConfigError
 
 
@@ -72,7 +71,7 @@ def load_scoring_config(config_path: str | None = None) -> ScoringConfig:
 
     # Load and parse YAML
     try:
-        with open(config_file, "r") as f:
+        with open(config_file) as f:
             config_data = yaml.safe_load(f)
     except yaml.YAMLError as e:
         raise ConfigError(
@@ -137,7 +136,7 @@ def validate_scoring_config(config_data: dict[str, Any]) -> None:
 
         # Check min_score is numeric
         min_score = setup_config["min_score"]
-        if not isinstance(min_score, (int, float)):
+        if not isinstance(min_score, int | float):
             raise ConfigError(
                 f"Setup type '{setup_name}' min_score must be numeric",
                 setup_name=setup_name,
@@ -183,4 +182,3 @@ def validate_scoring_config(config_data: dict[str, Any]) -> None:
             "validation must be a dictionary",
             found_type=type(validation).__name__,
         )
-

@@ -3,9 +3,7 @@
 from datetime import UTC, datetime
 
 import pandas as pd
-import pytest
 from common.types import Candle
-
 from data_layer.multi_timeframe_helpers import (
     build_htf_dataframe_from_candles,
     candles_to_dataframe,
@@ -26,9 +24,9 @@ class TestExtractExecutionDataframes:
             synchronized_bars=[],
             execution_timestamps=[],
         )
-        
+
         gc_df, dxy_df = extract_execution_dataframes(multi_tf_data)
-        
+
         assert isinstance(gc_df, pd.DataFrame)
         assert isinstance(dxy_df, pd.DataFrame)
         assert len(gc_df) == 0
@@ -61,23 +59,23 @@ class TestExtractExecutionDataframes:
             timeframe="1m",
             source="CSV",
         )
-        
+
         bar = SynchronizedBar(
             execution_timestamp=timestamp,
             execution_1m=(gc_candle, dxy_candle),
             htf_15m=None,
             htf_1h=None,
         )
-        
+
         multi_tf_data = MultiTimeframeData(
             execution_timeframe="1m",
             htf_timeframes=["15m", "1h"],
             synchronized_bars=[bar],
             execution_timestamps=[timestamp],
         )
-        
+
         gc_df, dxy_df = extract_execution_dataframes(multi_tf_data)
-        
+
         assert len(gc_df) == 1
         assert len(dxy_df) == 1
         assert gc_df.index[0] == timestamp
@@ -122,16 +120,16 @@ class TestExtractExecutionDataframes:
                 )
             )
             timestamps.append(ts)
-        
+
         multi_tf_data = MultiTimeframeData(
             execution_timeframe="1m",
             htf_timeframes=["15m", "1h"],
             synchronized_bars=bars,
             execution_timestamps=timestamps,
         )
-        
+
         gc_df, dxy_df = extract_execution_dataframes(multi_tf_data)
-        
+
         assert len(gc_df) == 5
         assert len(dxy_df) == 5
         assert list(gc_df.index) == timestamps
@@ -144,7 +142,7 @@ class TestCandlesToDataframe:
     def test_empty_list(self) -> None:
         """Test conversion of empty candle list."""
         df = candles_to_dataframe([], "1m")
-        
+
         assert isinstance(df, pd.DataFrame)
         assert len(df) == 0
         assert isinstance(df.index, pd.DatetimeIndex)
@@ -163,9 +161,9 @@ class TestCandlesToDataframe:
             timeframe="15m",
             source="CSV",
         )
-        
+
         df = candles_to_dataframe([candle], "15m")
-        
+
         assert len(df) == 1
         assert df.index[0] == timestamp
         assert df.loc[timestamp, "open"] == 2000.0
@@ -189,9 +187,9 @@ class TestCandlesToDataframe:
                     source="CSV",
                 )
             )
-        
+
         df = candles_to_dataframe(candles, "15m")
-        
+
         assert len(df) == 3
         assert list(df.index) == [c.timestamp for c in candles]
 
@@ -224,7 +222,7 @@ class TestExtractHtfCandlesByTimeframe:
             timeframe="1m",
             source="CSV",
         )
-        
+
         htf_15m_gc = Candle(
             timestamp=datetime(2025, 9, 30, 9, 59, 0, tzinfo=UTC),
             open=1999.0,
@@ -247,23 +245,23 @@ class TestExtractHtfCandlesByTimeframe:
             timeframe="15m",
             source="CSV",
         )
-        
+
         bar = SynchronizedBar(
             execution_timestamp=timestamp,
             execution_1m=(exec_gc, exec_dxy),
             htf_15m=(htf_15m_gc, htf_15m_dxy),
             htf_1h=None,
         )
-        
+
         multi_tf_data = MultiTimeframeData(
             execution_timeframe="1m",
             htf_timeframes=["15m", "1h"],
             synchronized_bars=[bar],
             execution_timestamps=[timestamp],
         )
-        
+
         gc_15m, dxy_15m = extract_htf_candles_by_timeframe(multi_tf_data, "15m")
-        
+
         assert len(gc_15m) == 1
         assert len(dxy_15m) == 1
         assert gc_15m[0] == htf_15m_gc
@@ -277,9 +275,9 @@ class TestExtractHtfCandlesByTimeframe:
             synchronized_bars=[],
             execution_timestamps=[],
         )
-        
+
         gc_5m, dxy_5m = extract_htf_candles_by_timeframe(multi_tf_data, "5m")
-        
+
         assert len(gc_5m) == 0
         assert len(dxy_5m) == 0
 
@@ -308,29 +306,29 @@ class TestExtractHtfCandlesByTimeframe:
             timeframe="1m",
             source="CSV",
         )
-        
+
         bar = SynchronizedBar(
             execution_timestamp=timestamp,
             execution_1m=(exec_gc, exec_dxy),
             htf_15m=None,  # No HTF data
             htf_1h=None,
         )
-        
+
         multi_tf_data = MultiTimeframeData(
             execution_timeframe="1m",
             htf_timeframes=["15m", "1h"],
             synchronized_bars=[bar],
             execution_timestamps=[timestamp],
         )
-        
+
         gc_15m, dxy_15m = extract_htf_candles_by_timeframe(multi_tf_data, "15m")
-        
+
         assert len(gc_15m) == 0
         assert len(dxy_15m) == 0
 
     def test_extract_deduplicates_forward_filled_candles(self) -> None:
         """Test that extraction deduplicates HTF candles that are forward-filled.
-        
+
         When multiple 1m execution bars reference the same HTF candle (forward-fill),
         the function should return only unique candles based on timestamp.
         """
@@ -357,7 +355,7 @@ class TestExtractHtfCandlesByTimeframe:
             timeframe="15m",
             source="CSV",
         )
-        
+
         # Create 15 synchronized bars (15 minutes of 1m data) all referencing the same 15m candle
         synchronized_bars = []
         execution_timestamps = []
@@ -385,7 +383,7 @@ class TestExtractHtfCandlesByTimeframe:
                 timeframe="1m",
                 source="CSV",
             )
-            
+
             # All bars reference the same 15m HTF candle (forward-fill behavior)
             bar = SynchronizedBar(
                 execution_timestamp=exec_timestamp,
@@ -395,27 +393,33 @@ class TestExtractHtfCandlesByTimeframe:
             )
             synchronized_bars.append(bar)
             execution_timestamps.append(exec_timestamp)
-        
+
         multi_tf_data = MultiTimeframeData(
             execution_timeframe="1m",
             htf_timeframes=["15m", "1h"],
             synchronized_bars=synchronized_bars,
             execution_timestamps=execution_timestamps,
         )
-        
+
         # Extract should return only 1 unique candle, not 15 duplicates
         gc_15m, dxy_15m = extract_htf_candles_by_timeframe(multi_tf_data, "15m")
-        
+
         # Should have only 1 unique candle, not 15 duplicates
-        assert len(gc_15m) == 1, f"Expected 1 unique candle, got {len(gc_15m)} duplicates"
-        assert len(dxy_15m) == 1, f"Expected 1 unique candle, got {len(dxy_15m)} duplicates"
+        assert (
+            len(gc_15m) == 1
+        ), f"Expected 1 unique candle, got {len(gc_15m)} duplicates"
+        assert (
+            len(dxy_15m) == 1
+        ), f"Expected 1 unique candle, got {len(dxy_15m)} duplicates"
         assert gc_15m[0] == htf_15m_gc
         assert dxy_15m[0] == htf_15m_dxy
-        
+
         # Verify DataFrame has unique timestamps (no duplicates)
         gc_df = candles_to_dataframe(gc_15m, "15m")
         assert len(gc_df) == 1
-        assert not gc_df.index.duplicated().any(), "DataFrame should not have duplicate timestamps"
+        assert (
+            not gc_df.index.duplicated().any()
+        ), "DataFrame should not have duplicate timestamps"
 
 
 class TestBuildHtfDataframeFromCandles:
@@ -442,10 +446,9 @@ class TestBuildHtfDataframeFromCandles:
             )
             for i in range(3)
         ]
-        
+
         df = build_htf_dataframe_from_candles(candles, "15m")
-        
+
         assert df is not None
         assert len(df) == 3
         assert isinstance(df.index, pd.DatetimeIndex)
-

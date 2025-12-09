@@ -6,7 +6,7 @@ Defines the HTFBias dataclass and related types used throughout the HTF engine.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal, Optional
+from typing import TYPE_CHECKING, Literal
 
 from rule_engine.htf.seasonality.rules import SeasonalityPeriod
 
@@ -26,34 +26,34 @@ class HTFBias:
         direction: Trading direction ("long", "short", "neutral")
         score: Confidence score 0-10 indicating bias strength
         confidence: High-level confidence rating
-        
+
         # Structure summary
         structure_1h: 1H structure label (HH, HL, LH, LL, or None)
         structure_15m: 15M structure label
         bos_detected: Whether Break of Structure occurred
         choch_detected: Whether Change of Character occurred
-        
+
         # Liquidity summary
         liquidity_sweep_detected: Whether liquidity sweep occurred
         liquidity_sweep_type: Type of sweep ("bullish", "bearish", None)
-        
+
         # Structure event candles
         bos_candle: Candle where BOS occurred (for SL calculation)
         choch_candle: Candle where CHoCH occurred
         sweep_candle: Candle where liquidity sweep occurred
         confirmation_candle: Confirmation candle for current setup
-        
+
         # VWAP summary
         vwap_1h: 1H VWAP value
         vwap_distance_1h: Price distance from 1H VWAP
         vwap_slope_1h: 1H VWAP slope
         vwap_trend_confirmed: Whether VWAP trend is confirmed
         fvg_alignment_score: FVG interaction score adjustment
-        
+
         # Seasonality flags
         seasonality_period: Current seasonality period (Sep, Oct, Nov-Dec)
         seasonality_adjustment: Score adjustment based on seasonality
-        
+
         # DXY flags
         dxy_corr_1h: 1H DXY correlation
         dxy_corr_15m: 15M DXY correlation
@@ -68,41 +68,41 @@ class HTFBias:
     confidence: Literal["high", "medium", "low"]
 
     # Structure
-    structure_1h: Optional[str] = None
-    structure_15m: Optional[str] = None
+    structure_1h: str | None = None
+    structure_15m: str | None = None
     bos_detected: bool = False
     choch_detected: bool = False
 
     # Liquidity
     liquidity_sweep_detected: bool = False
-    liquidity_sweep_type: Optional[Literal["bullish", "bearish"]] = None
+    liquidity_sweep_type: Literal["bullish", "bearish"] | None = None
 
     # Structure event candles
-    bos_candle: Optional["Candle"] = None
-    choch_candle: Optional["Candle"] = None
-    sweep_candle: Optional["Candle"] = None
-    confirmation_candle: Optional["Candle"] = None
+    bos_candle: Candle | None = None
+    choch_candle: Candle | None = None
+    sweep_candle: Candle | None = None
+    confirmation_candle: Candle | None = None
 
     # VWAP
-    vwap_1h: Optional[float] = None
-    vwap_distance_1h: Optional[float] = None
-    vwap_slope_1h: Optional[float] = None
+    vwap_1h: float | None = None
+    vwap_distance_1h: float | None = None
+    vwap_slope_1h: float | None = None
     vwap_trend_confirmed: bool = False
     fvg_alignment_score: float = 0.0
 
     # Seasonality
-    seasonality_period: Optional[SeasonalityPeriod] = None
+    seasonality_period: SeasonalityPeriod | None = None
     seasonality_adjustment: float = 0.0
 
     # DXY
-    dxy_corr_1h: Optional[float] = None
-    dxy_corr_15m: Optional[float] = None
+    dxy_corr_1h: float | None = None
+    dxy_corr_15m: float | None = None
     dxy_chop_detected: bool = False
     dxy_alignment: bool = False
 
     # Conflict detection
     conflict_detected: bool = False
-    conflict_reason: Optional[str] = None
+    conflict_reason: str | None = None
 
     def to_dict(self) -> dict:
         """Convert HTFBias to dictionary for logging/serialization."""
@@ -117,10 +117,18 @@ class HTFBias:
             "choch_detected": self.choch_detected,
             "liquidity_sweep_detected": self.liquidity_sweep_detected,
             "liquidity_sweep_type": self.liquidity_sweep_type,
-            "bos_candle_timestamp": self.bos_candle.timestamp if self.bos_candle else None,
-            "choch_candle_timestamp": self.choch_candle.timestamp if self.choch_candle else None,
-            "sweep_candle_timestamp": self.sweep_candle.timestamp if self.sweep_candle else None,
-            "confirmation_candle_timestamp": self.confirmation_candle.timestamp if self.confirmation_candle else None,
+            "bos_candle_timestamp": (
+                self.bos_candle.timestamp if self.bos_candle else None
+            ),
+            "choch_candle_timestamp": (
+                self.choch_candle.timestamp if self.choch_candle else None
+            ),
+            "sweep_candle_timestamp": (
+                self.sweep_candle.timestamp if self.sweep_candle else None
+            ),
+            "confirmation_candle_timestamp": (
+                self.confirmation_candle.timestamp if self.confirmation_candle else None
+            ),
             "vwap_1h": self.vwap_1h,
             "vwap_distance_1h": self.vwap_distance_1h,
             "vwap_slope_1h": self.vwap_slope_1h,
@@ -135,4 +143,3 @@ class HTFBias:
             "conflict_detected": self.conflict_detected,
             "conflict_reason": self.conflict_reason,
         }
-

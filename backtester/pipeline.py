@@ -357,10 +357,10 @@ def run_backtest_with_trades(
                 )
         else:
             entry_bias_value = entry_bias_obj.bias
-        
+
         # Extract structure candles from HTF bias
         bos_candle = entry_bias_obj.bos_candle if entry_bias_obj else None
-        
+
         # For confirmation candle, use HTF-provided if available,
         # otherwise use entry candle
         if entry_bias_obj and entry_bias_obj.confirmation_candle:
@@ -394,7 +394,9 @@ def run_backtest_with_trades(
             risk_config=risk_config,
             market_context={
                 "month": entry.entry_timestamp.month,
-                "htf_aligned": _is_htf_aligned(entry.signal.direction, entry_bias_value),
+                "htf_aligned": _is_htf_aligned(
+                    entry.signal.direction, entry_bias_value
+                ),
                 "dxy_aligned": dxy_aligned,
             },
         )
@@ -415,20 +417,20 @@ def run_backtest_with_trades(
             try:
                 # Find entry index in gc_df
                 entry_idx = gc_df.index.get_loc(entry.entry_timestamp)
-                
+
                 # Get data slice from start up to end of future candles
                 end_idx = min(entry_idx + 1 + len(future_candles), len(gc_df))
                 gc_slice = gc_df.iloc[:end_idx]
                 dxy_slice = dxy_df.iloc[:end_idx] if len(dxy_df) >= end_idx else dxy_df
-                
+
                 # Compute features for the entire slice using processor
                 # Note: This doesn't affect processor's validation state
                 features_df = processor._compute_features(gc_slice, dxy_slice)
-                
+
                 # Extract only features for future candles (after entry)
                 if len(features_df) > entry_idx + 1:
                     future_features_df = features_df.iloc[entry_idx + 1 :].copy()
-                    
+
                     # Set timestamp index if not already set
                     if "ts_event" in future_features_df.columns:
                         future_features_df = future_features_df.set_index("ts_event")
@@ -436,13 +438,15 @@ def run_backtest_with_trades(
                         # Use gc_slice timestamps for alignment
                         if len(gc_slice) > entry_idx + 1:
                             future_timestamps = gc_slice.index[entry_idx + 1 :]
-                            future_features_df.index = future_timestamps[: len(future_features_df)]
-                    
+                            future_features_df.index = future_timestamps[
+                                : len(future_features_df)
+                            ]
+
                     # Align with future_candles timestamps (handle any missing timestamps)
                     future_features = future_features_df.reindex(
                         future_candles.index, method=None
                     )
-                    
+
                     logger.debug(
                         f"Computed features for {len(future_features)} future candles "
                         f"(aligned with {len(future_candles)} candles)"
@@ -466,7 +470,7 @@ def run_backtest_with_trades(
         # Record trade outcome to update state in two places:
         # 1. InvalidationChecker: Updates daily_pnl, consecutive_losses for PDLL checks during trades
         # 2. Behavior Tracker: Updates loss streak guardrails before entry
-        # 
+        #
         # Outcome classification:
         # - won=True: pnl > 0 (actual profit)
         # - won=False: pnl < 0 (actual loss)
@@ -479,10 +483,10 @@ def run_backtest_with_trades(
             won = False
         else:  # pnl == 0
             won = None  # Breakeven: no win, no loss
-        
+
         # Update InvalidationChecker daily state (for PDLL checks during trade simulation)
         invalidation_checker.record_trade_outcome(closed_trade, won=won)
-        
+
         # Update behavior tracker (for loss streak guardrails before entry)
         if processor and processor.enable_validation:
             processor.record_trade_outcome(won)
@@ -518,10 +522,10 @@ def run_backtest_with_entries_multi_tf(
     processor: BacktestProcessor | None = None,
 ) -> tuple[list[EntryExecution], BacktestProcessor]:
     """Run backtest with MultiTimeframeData for efficient HTF bias computation.
-    
+
     This is the new interface that accepts MultiTimeframeData and automatically
     creates the HTF bias function with proper HTF feature computation.
-    
+
     Args:
         multi_tf_data: Synchronized multi-timeframe data
         timeframe: Execution timeframe (e.g., "1m")
@@ -536,18 +540,18 @@ def run_backtest_with_entries_multi_tf(
         log_signals: Whether to log signals to disk (default: False)
         log_dir: Directory for signal logs (required if log_signals=True)
         processor: Optional BacktestProcessor instance to reuse (for state persistence)
-        
+
     Returns:
         Tuple of (list of EntryExecution objects, processor instance).
         EntryExecution list includes both successful entries (executed=True) and
         rejected entries (executed=False with rejection_reason).
         Processor instance is returned to allow recording trade outcomes.
-        
+
     Example:
         >>> from data_layer.multi_timeframe_sync import MultiTimeframeSyncLayer
         >>> sync_layer = MultiTimeframeSyncLayer("data/gc_dx_ohlcv")
         >>> multi_tf_data = sync_layer.load(start, end)
-        >>> 
+        >>>
         >>> market_state = {
         ...     "buffer_phase": "growth",
         ...     "tier_active": "EarlyMild",
@@ -555,7 +559,7 @@ def run_backtest_with_entries_multi_tf(
         ...     "news_ok": True,
         ...     "session_ok": True,
         ... }
-        >>> 
+        >>>
         >>> executions, processor = run_backtest_with_entries_multi_tf(
         ...     multi_tf_data=multi_tf_data,
         ...     timeframe="1m",
@@ -567,20 +571,20 @@ def run_backtest_with_entries_multi_tf(
         f"Starting backtest with multi-timeframe sync: timeframe={timeframe}, "
         f"htf_approach={htf_approach}, tier={market_state.get('tier_active')}"
     )
-    
+
     # Extract 1m DataFrames for BacktestProcessor
     gc_df, dxy_df = extract_execution_dataframes(multi_tf_data)
-    
+
     if len(gc_df) == 0 or len(dxy_df) == 0:
         logger.warning("No execution data extracted from MultiTimeframeData")
         return [], processor or BacktestProcessor(timeframe=timeframe)
-    
+
     # Create HTF bias function with sync layer
     htf_bias_func = create_htf_bias_func_with_sync_layer(
         multi_tf_data,
         approach=htf_approach,
     )
-    
+
     # Call existing pipeline
     return run_backtest_with_entries(
         gc_df=gc_df,
@@ -605,10 +609,10 @@ def run_backtest_with_trades_multi_tf(
     log_dir: str | None = None,
 ) -> list[Trade]:
     """Run complete backtest pipeline with trade simulation using MultiTimeframeData.
-    
+
     This is the new interface that accepts MultiTimeframeData and automatically
     creates the HTF bias function with proper HTF feature computation.
-    
+
     Args:
         multi_tf_data: Synchronized multi-timeframe data
         timeframe: Execution timeframe (e.g., "1m")
@@ -622,21 +626,21 @@ def run_backtest_with_trades_multi_tf(
         config: Optional config dict for dollar PnL calculation
         log_signals: Whether to log signals to disk (default: False)
         log_dir: Directory for signal logs (required if log_signals=True)
-        
+
     Returns:
         List of Trade objects (all closed with outcomes)
-        
+
     Example:
         >>> from data_layer.multi_timeframe_sync import MultiTimeframeSyncLayer
         >>> sync_layer = MultiTimeframeSyncLayer("data/gc_dx_ohlcv")
         >>> multi_tf_data = sync_layer.load(start, end)
-        >>> 
+        >>>
         >>> risk_config = {
         ...     "risk_per_trade": 350.0,
         ...     "buffer_phase": "startup",
         ...     "max_contracts": 1,
         ... }
-        >>> 
+        >>>
         >>> trades = run_backtest_with_trades_multi_tf(
         ...     multi_tf_data=multi_tf_data,
         ...     timeframe="1m",
@@ -649,20 +653,20 @@ def run_backtest_with_trades_multi_tf(
         f"Starting backtest with trades (multi-timeframe): timeframe={timeframe}, "
         f"htf_approach={htf_approach}, tier={market_state.get('tier_active')}"
     )
-    
+
     # Extract 1m DataFrames
     gc_df, dxy_df = extract_execution_dataframes(multi_tf_data)
-    
+
     if len(gc_df) == 0 or len(dxy_df) == 0:
         logger.warning("No execution data extracted from MultiTimeframeData")
         return []
-    
+
     # Create HTF bias function with sync layer
     htf_bias_func = create_htf_bias_func_with_sync_layer(
         multi_tf_data,
         approach=htf_approach,
     )
-    
+
     # Call existing pipeline
     return run_backtest_with_trades(
         gc_df=gc_df,

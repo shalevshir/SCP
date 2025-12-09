@@ -16,4 +16,3 @@ _project_root_str = str(_project_root)
 # Ensure project root is in path BEFORE test imports
 if _project_root_str not in sys.path:
     sys.path.insert(0, _project_root_str)
-

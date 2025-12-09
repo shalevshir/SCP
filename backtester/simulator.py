@@ -77,9 +77,7 @@ def is_valid_trade(trade: Trade) -> bool:
     ]
     for val in critical_values:
         if math.isnan(val) or math.isinf(val):
-            logger.warning(
-                f"Trade {trade.trade_id} has NaN or Inf in critical fields"
-            )
+            logger.warning(f"Trade {trade.trade_id} has NaN or Inf in critical fields")
             return False
 
     return True
@@ -268,7 +266,9 @@ def simulate_trade_outcome(
                 candle_features = feature_row
             else:
                 # Try to convert to dict
-                candle_features = dict(feature_row) if hasattr(feature_row, '__iter__') else None
+                candle_features = (
+                    dict(feature_row) if hasattr(feature_row, "__iter__") else None
+                )
 
         # Exit Priority Order (per SOP):
         # 1. Stop Loss (highest priority)
@@ -307,7 +307,7 @@ def simulate_trade_outcome(
                     exit_reason = "window_expired"
                 elif "daily" in reason.lower() or "risk" in reason.lower():
                     exit_reason = "daily_risk_stop"
-                
+
                 logger.info(
                     f"Trade {trade.trade_id} invalidated: {reason} "
                     f"(bars={bars_elapsed}, exit_reason={exit_reason})"
@@ -316,9 +316,7 @@ def simulate_trade_outcome(
 
         # 8. Timeout (only if no other exit occurred)
         if check_timeout(bars_elapsed, trade.setup_type):
-            logger.info(
-                f"Trade {trade.trade_id} timed out after {bars_elapsed} bars"
-            )
+            logger.info(f"Trade {trade.trade_id} timed out after {bars_elapsed} bars")
             return close_trade(trade, candle, "timeout", config)
 
     # 5. End of data - close at last candle
@@ -334,8 +332,5 @@ def simulate_trade_outcome(
         source="SIMULATION",
     )
 
-    logger.info(
-        f"Trade {trade.trade_id} reached end of data after {bars_elapsed} bars"
-    )
+    logger.info(f"Trade {trade.trade_id} reached end of data after {bars_elapsed} bars")
     return close_trade(trade, last_candle, "end_of_data", config)
-

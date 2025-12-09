@@ -1,16 +1,15 @@
 """Tests for Candle dataclass."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
-
 from common.exceptions import NormalizationError
 from common.types import Candle
 
 
 def test_candle_creation_with_valid_data():
     """Test creating a candle with valid data."""
-    timestamp = datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+    timestamp = datetime(2025, 1, 1, 12, 0, 0, tzinfo=UTC)
     candle = Candle(
         timestamp=timestamp,
         open=100.0,
@@ -36,7 +35,7 @@ def test_candle_creation_with_valid_data():
 
 def test_candle_with_zero_volume():
     """Test that candles can have zero volume."""
-    timestamp = datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+    timestamp = datetime(2025, 1, 1, 12, 0, 0, tzinfo=UTC)
     candle = Candle(
         timestamp=timestamp,
         open=100.0,
@@ -54,7 +53,7 @@ def test_candle_with_zero_volume():
 
 def test_candle_with_equal_ohlc():
     """Test candle where all OHLC values are equal (valid case)."""
-    timestamp = datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+    timestamp = datetime(2025, 1, 1, 12, 0, 0, tzinfo=UTC)
     candle = Candle(
         timestamp=timestamp,
         open=100.0,
@@ -72,7 +71,7 @@ def test_candle_with_equal_ohlc():
 
 def test_candle_high_less_than_low_raises_error():
     """Test that high < low raises NormalizationError."""
-    timestamp = datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+    timestamp = datetime(2025, 1, 1, 12, 0, 0, tzinfo=UTC)
 
     with pytest.raises(NormalizationError) as exc_info:
         Candle(
@@ -93,7 +92,7 @@ def test_candle_high_less_than_low_raises_error():
 
 def test_candle_high_less_than_open_raises_error():
     """Test that high < open raises NormalizationError."""
-    timestamp = datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+    timestamp = datetime(2025, 1, 1, 12, 0, 0, tzinfo=UTC)
 
     with pytest.raises(NormalizationError) as exc_info:
         Candle(
@@ -113,7 +112,7 @@ def test_candle_high_less_than_open_raises_error():
 
 def test_candle_high_less_than_close_raises_error():
     """Test that high < close raises NormalizationError."""
-    timestamp = datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+    timestamp = datetime(2025, 1, 1, 12, 0, 0, tzinfo=UTC)
 
     with pytest.raises(NormalizationError) as exc_info:
         Candle(
@@ -133,7 +132,7 @@ def test_candle_high_less_than_close_raises_error():
 
 def test_candle_low_greater_than_open_raises_error():
     """Test that low > open raises NormalizationError."""
-    timestamp = datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+    timestamp = datetime(2025, 1, 1, 12, 0, 0, tzinfo=UTC)
 
     with pytest.raises(NormalizationError) as exc_info:
         Candle(
@@ -153,7 +152,7 @@ def test_candle_low_greater_than_open_raises_error():
 
 def test_candle_low_greater_than_close_raises_error():
     """Test that low > close raises NormalizationError."""
-    timestamp = datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+    timestamp = datetime(2025, 1, 1, 12, 0, 0, tzinfo=UTC)
 
     with pytest.raises(NormalizationError) as exc_info:
         Candle(
@@ -173,7 +172,7 @@ def test_candle_low_greater_than_close_raises_error():
 
 def test_candle_negative_open_raises_error():
     """Test that negative open price raises NormalizationError."""
-    timestamp = datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+    timestamp = datetime(2025, 1, 1, 12, 0, 0, tzinfo=UTC)
 
     with pytest.raises(NormalizationError) as exc_info:
         Candle(
@@ -196,7 +195,7 @@ def test_candle_negative_open_raises_error():
 
 def test_candle_negative_high_raises_error():
     """Test that negative high price raises NormalizationError."""
-    timestamp = datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+    timestamp = datetime(2025, 1, 1, 12, 0, 0, tzinfo=UTC)
 
     with pytest.raises(NormalizationError):
         Candle(
@@ -214,7 +213,7 @@ def test_candle_negative_high_raises_error():
 
 def test_candle_negative_low_raises_error():
     """Test that negative low price raises NormalizationError."""
-    timestamp = datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+    timestamp = datetime(2025, 1, 1, 12, 0, 0, tzinfo=UTC)
 
     with pytest.raises(NormalizationError):
         Candle(
@@ -232,7 +231,7 @@ def test_candle_negative_low_raises_error():
 
 def test_candle_negative_close_raises_error():
     """Test that negative close price raises NormalizationError."""
-    timestamp = datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+    timestamp = datetime(2025, 1, 1, 12, 0, 0, tzinfo=UTC)
 
     with pytest.raises(NormalizationError):
         Candle(
@@ -250,7 +249,7 @@ def test_candle_negative_close_raises_error():
 
 def test_candle_zero_ohlc_raises_error():
     """Test that zero OHLC prices raise NormalizationError."""
-    timestamp = datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+    timestamp = datetime(2025, 1, 1, 12, 0, 0, tzinfo=UTC)
 
     with pytest.raises(NormalizationError):
         Candle(
@@ -268,7 +267,7 @@ def test_candle_zero_ohlc_raises_error():
 
 def test_candle_negative_volume_raises_error():
     """Test that negative volume raises NormalizationError."""
-    timestamp = datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+    timestamp = datetime(2025, 1, 1, 12, 0, 0, tzinfo=UTC)
 
     with pytest.raises(NormalizationError) as exc_info:
         Candle(
@@ -312,7 +311,7 @@ def test_candle_naive_timestamp_raises_error():
 
 def test_candle_empty_symbol_raises_error():
     """Test that empty symbol raises NormalizationError."""
-    timestamp = datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+    timestamp = datetime(2025, 1, 1, 12, 0, 0, tzinfo=UTC)
 
     with pytest.raises(NormalizationError) as exc_info:
         Candle(
@@ -333,7 +332,7 @@ def test_candle_empty_symbol_raises_error():
 
 def test_candle_empty_timeframe_raises_error():
     """Test that empty timeframe raises NormalizationError."""
-    timestamp = datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+    timestamp = datetime(2025, 1, 1, 12, 0, 0, tzinfo=UTC)
 
     with pytest.raises(NormalizationError) as exc_info:
         Candle(
@@ -354,7 +353,7 @@ def test_candle_empty_timeframe_raises_error():
 
 def test_candle_empty_source_raises_error():
     """Test that empty source raises NormalizationError."""
-    timestamp = datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+    timestamp = datetime(2025, 1, 1, 12, 0, 0, tzinfo=UTC)
 
     with pytest.raises(NormalizationError) as exc_info:
         Candle(
@@ -375,7 +374,7 @@ def test_candle_empty_source_raises_error():
 
 def test_candle_is_immutable():
     """Test that Candle is immutable (frozen dataclass)."""
-    timestamp = datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+    timestamp = datetime(2025, 1, 1, 12, 0, 0, tzinfo=UTC)
     candle = Candle(
         timestamp=timestamp,
         open=100.0,
@@ -394,7 +393,7 @@ def test_candle_is_immutable():
 
 def test_candle_string_representation():
     """Test that Candle has a useful string representation."""
-    timestamp = datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+    timestamp = datetime(2025, 1, 1, 12, 0, 0, tzinfo=UTC)
     candle = Candle(
         timestamp=timestamp,
         open=100.0,
@@ -415,7 +414,7 @@ def test_candle_string_representation():
 
 def test_candle_equality():
     """Test that two candles with same data are equal."""
-    timestamp = datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+    timestamp = datetime(2025, 1, 1, 12, 0, 0, tzinfo=UTC)
     candle1 = Candle(
         timestamp=timestamp,
         open=100.0,
@@ -444,7 +443,7 @@ def test_candle_equality():
 
 def test_candle_inequality():
     """Test that candles with different data are not equal."""
-    timestamp = datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+    timestamp = datetime(2025, 1, 1, 12, 0, 0, tzinfo=UTC)
     candle1 = Candle(
         timestamp=timestamp,
         open=100.0,
@@ -473,7 +472,7 @@ def test_candle_inequality():
 
 def test_candle_hashable():
     """Test that Candle can be hashed (used in sets/dicts)."""
-    timestamp = datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+    timestamp = datetime(2025, 1, 1, 12, 0, 0, tzinfo=UTC)
     candle1 = Candle(
         timestamp=timestamp,
         open=100.0,
@@ -507,7 +506,7 @@ def test_candle_hashable():
 
 def test_candle_with_different_symbols():
     """Test candles with different valid symbols."""
-    timestamp = datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+    timestamp = datetime(2025, 1, 1, 12, 0, 0, tzinfo=UTC)
 
     gc_candle = Candle(
         timestamp=timestamp,
@@ -540,7 +539,7 @@ def test_candle_with_different_symbols():
 
 def test_candle_with_different_timeframes():
     """Test candles with different valid timeframes."""
-    timestamp = datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+    timestamp = datetime(2025, 1, 1, 12, 0, 0, tzinfo=UTC)
 
     candle_1m = Candle(
         timestamp=timestamp,

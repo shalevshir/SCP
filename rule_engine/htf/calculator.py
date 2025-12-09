@@ -51,9 +51,8 @@ def compute_htf_bias_multi_timeframe(
     bearish_signals = 0
 
     # === 1H STRUCTURE (Primary Signal, 3 points) ===
-    structure_1h = (
-        features_1h.get("structure_label")
-        or features_1h.get("structure_type", "")
+    structure_1h = features_1h.get("structure_label") or features_1h.get(
+        "structure_type", ""
     )
     if structure_1h in ("HH", "HL"):
         bullish_signals += 1
@@ -91,9 +90,8 @@ def compute_htf_bias_multi_timeframe(
             total_score += 2.0
 
     # === 15M STRUCTURE (Confirmation, 2 points) ===
-    structure_15m = (
-        features_15m.get("structure_label")
-        or features_15m.get("structure_type", "")
+    structure_15m = features_15m.get("structure_label") or features_15m.get(
+        "structure_type", ""
     )
     if structure_15m in ("HH", "HL"):
         if bullish_signals > bearish_signals:
@@ -218,21 +216,21 @@ def compute_htf_bias(
         get_seasonality_period,
     )
     from rule_engine.htf.structure import (
-        detect_swings,
+        check_fvg_filled,
         detect_bos,
         detect_choch,
         detect_fvg,
-        check_fvg_filled,
+        detect_swings,
     )
     from rule_engine.htf.vwap.fvg import score_fvg_alignment
-    
+
     # Use legacy logic to compute base bias and score
     bias, direction, score = compute_htf_bias_multi_timeframe(features_1h, features_15m)
-    
+
     # Store original bias before any neutralization for conflict detection
     original_bias = bias
     original_score = score
-    
+
     # Detect DXY chop if data provided
     dxy_chop_detected = False
     if dxy_1h is not None and len(dxy_1h) > 0:
@@ -241,7 +239,7 @@ def compute_htf_bias(
             # Get the latest chop detection value
             if len(chop_series) > 0:
                 dxy_chop_detected = bool(chop_series.iloc[-1])
-                
+
                 if dxy_chop_detected:
                     # Force HTF bias to neutral when DXY is in chop
                     logger.warning(
@@ -255,27 +253,29 @@ def compute_htf_bias(
         except Exception as e:
             logger.error(f"Error detecting DXY chop: {e}")
             # Continue without chop detection rather than failing
-    
+
     # Check for conflicts between timeframes
     # Use ORIGINAL bias (before DXY chop neutralization) for conflict detection
     from rule_engine.htf.conflicts import (
-        detect_structure_conflict,
         detect_price_chop_15m,
+        detect_structure_conflict,
         detect_sweep_against_trend,
     )
-    
+
     conflict_detected = False
     conflict_reason = None
-    
+
     # Rule 1: Structure conflict between 1H and 15M
     is_conflict, reason = detect_structure_conflict(
-        structure_1h=features_1h.get("structure_label") or features_1h.get("structure_type"),
-        structure_15m=features_15m.get("structure_label") or features_15m.get("structure_type"),
+        structure_1h=features_1h.get("structure_label")
+        or features_1h.get("structure_type"),
+        structure_15m=features_15m.get("structure_label")
+        or features_15m.get("structure_type"),
     )
     if is_conflict:
         conflict_detected = True
         conflict_reason = reason
-    
+
     # Rule 2: 15M price chop
     if not conflict_detected and df_15m is not None and len(df_15m) > 0:
         try:
@@ -285,7 +285,7 @@ def compute_htf_bias(
         except Exception as e:
             logger.error(f"Error detecting 15M price chop: {e}")
             # Continue without chop detection
-    
+
     # Rule 3: Liquidity sweep against trend
     # IMPORTANT: Use original_bias (before DXY chop neutralization)
     # to detect sweep conflicts based on the actual market structure
@@ -301,7 +301,7 @@ def compute_htf_bias(
         except Exception as e:
             logger.error(f"Error detecting sweep conflict: {e}")
             # Continue without sweep conflict detection
-    
+
     # Apply neutralization if conflict detected
     if conflict_detected:
         logger.warning(
@@ -311,39 +311,39 @@ def compute_htf_bias(
         bias = "neutral"
         direction = "neutral"
         score = min(score, 5.0)
-    
+
     # Apply seasonality adjustment if timestamp provided
     seasonality_period = None
     seasonality_adjustment = 0.0
-    
+
     if timestamp is not None:
         # Convert pandas Timestamp to datetime if needed
-        if hasattr(timestamp, 'to_pydatetime'):
+        if hasattr(timestamp, "to_pydatetime"):
             dt = timestamp.to_pydatetime()
         else:
             dt = timestamp
-        
+
         seasonality_period = get_seasonality_period(dt)
         dxy_corr = features_1h.get("dxy_corr")
-        
+
         score, seasonality_adjustment = apply_seasonality_adjustment(
             base_score=score,
             period=seasonality_period,
             dxy_corr=dxy_corr,
         )
-        
+
         logger.debug(
             "Seasonality integrated: period=%s | adjustment=%.2f | final_score=%.2f",
             seasonality_period,
             seasonality_adjustment,
-            score
+            score,
         )
-    
+
     # Re-cap score after seasonality if neutralization conditions exist
     if dxy_chop_detected or conflict_detected:
         # Re-cap score after any post-processing to enforce neutral bias
         score = min(score, 5.0)
-    
+
     # Determine confidence based on adjusted score
     if score >= 8.0:
         confidence = "high"
@@ -351,9 +351,9 @@ def compute_htf_bias(
         confidence = "medium"
     else:
         confidence = "low"
-    
+
     # === POPULATE MISSING FIELDS ===
-    
+
     # 1. BOS/CHoCH detection from 1H data
     bos_detected = False
     choch_detected = False
@@ -362,23 +362,23 @@ def compute_htf_bias(
     if df_1h is not None and len(df_1h) > 0:
         try:
             swing_highs_1h, swing_lows_1h = detect_swings(df_1h, lookback=5)
-            
+
             # Detect BOS events
             bos_series = detect_bos(df_1h, swing_highs_1h, swing_lows_1h)
             # Check if any BOS detected in recent bars
             if len(bos_series) > 0 and pd.notna(bos_series.iloc[-1]):
                 bos_detected = True
-            
+
             # Detect CHoCH events
             choch_series = detect_choch(df_1h, swing_highs_1h, swing_lows_1h)
             # Check if any CHoCH detected in recent bars
             if len(choch_series) > 0 and pd.notna(choch_series.iloc[-1]):
                 choch_detected = True
-                
+
         except Exception as e:
             logger.error(f"Error detecting BOS/CHoCH: {e}")
             # Continue without BOS/CHoCH detection
-    
+
     # 2. Liquidity sweep detection from sweep_events_15m
     liquidity_sweep_detected = False
     liquidity_sweep_type = None
@@ -396,30 +396,38 @@ def compute_htf_bias(
         except Exception as e:
             logger.error(f"Error extracting liquidity sweep: {e}")
             # Continue without sweep detection
-    
+
     # 3. VWAP metrics from features_1h
     vwap_1h = features_1h.get("vwap")
     vwap_distance_1h = None
     vwap_slope_1h = None
     vwap_trend_confirmed = False
-    
+
     if vwap_1h is not None and not pd.isna(vwap_1h):
         # Calculate VWAP distance as percentage
         close_1h = features_1h.get("close")
         if close_1h is not None and not pd.isna(close_1h) and vwap_1h > 0:
             vwap_distance_1h = ((close_1h - vwap_1h) / vwap_1h) * 100
-        
+
         # Extract VWAP slope from features if available
         vwap_slope_1h = features_1h.get("vwap_slope")
-        
+
         # Determine VWAP trend confirmation
         # IMPORTANT: Use original_bias to reflect underlying market structure
         # even when bias is neutralized due to DXY chop or conflicts
-        if original_bias == "bullish" and vwap_distance_1h is not None and vwap_distance_1h > 0:
+        if (
+            original_bias == "bullish"
+            and vwap_distance_1h is not None
+            and vwap_distance_1h > 0
+        ):
             vwap_trend_confirmed = True
-        elif original_bias == "bearish" and vwap_distance_1h is not None and vwap_distance_1h < 0:
+        elif (
+            original_bias == "bearish"
+            and vwap_distance_1h is not None
+            and vwap_distance_1h < 0
+        ):
             vwap_trend_confirmed = True
-    
+
     # 4. FVG alignment score
     fvg_alignment_score = 0.0
     if df_1h is not None and len(df_1h) >= 3:
@@ -434,33 +442,39 @@ def compute_htf_bias(
         except Exception as e:
             logger.error(f"Error calculating FVG alignment: {e}")
             # Continue with 0.0 score
-    
+
     # 5. DXY alignment flag
     dxy_alignment = False
     dxy_corr_1h = features_1h.get("dxy_corr")
     dxy_corr_15m = features_15m.get("dxy_corr")
-    
+
     # DXY alignment: strong negative correlation expected for both bull and bear bias
     # Gold typically moves inverse to DXY
     # IMPORTANT: Use original_bias to reflect underlying market structure
     # even when bias is neutralized due to DXY chop or conflicts
     if original_bias != "neutral":
-        if (dxy_corr_1h is not None and not pd.isna(dxy_corr_1h) and dxy_corr_1h < -0.6 and
-            dxy_corr_15m is not None and not pd.isna(dxy_corr_15m) and dxy_corr_15m < -0.6):
+        if (
+            dxy_corr_1h is not None
+            and not pd.isna(dxy_corr_1h)
+            and dxy_corr_1h < -0.6
+            and dxy_corr_15m is not None
+            and not pd.isna(dxy_corr_15m)
+            and dxy_corr_15m < -0.6
+        ):
             dxy_alignment = True
-    
+
     # 6. Extract structure event candles
     from rule_engine.htf.structure import (
         extract_bos_candle,
         extract_choch_candle,
         extract_sweep_candle,
     )
-    
+
     bos_candle = None
     choch_candle = None
     sweep_candle = None
     confirmation_candle = None  # Will be set by replay loop from execution timeframe
-    
+
     if timestamp is not None:
         # Extract BOS candle
         if df_1h is not None and bos_series is not None:
@@ -468,33 +482,31 @@ def compute_htf_bias(
                 bos_candle = extract_bos_candle(df_1h, bos_series, timestamp)
             except Exception as e:
                 logger.debug(f"Failed to extract BOS candle: {e}")
-        
+
         # Extract CHoCH candle
         if df_1h is not None and choch_series is not None:
             try:
                 choch_candle = extract_choch_candle(df_1h, choch_series, timestamp)
             except Exception as e:
                 logger.debug(f"Failed to extract CHoCH candle: {e}")
-        
+
         # Extract sweep candle
         if df_15m is not None and sweep_events_15m is not None:
             try:
                 sweep_candle = extract_sweep_candle(df_15m, sweep_events_15m, timestamp)
             except Exception as e:
                 logger.debug(f"Failed to extract sweep candle: {e}")
-    
+
     return HTFBias(
         bias=bias,
         direction=direction,
         score=score,
         confidence=confidence,
         structure_1h=(
-            features_1h.get("structure_label")
-            or features_1h.get("structure_type")
+            features_1h.get("structure_label") or features_1h.get("structure_type")
         ),
         structure_15m=(
-            features_15m.get("structure_label")
-            or features_15m.get("structure_type")
+            features_15m.get("structure_label") or features_15m.get("structure_type")
         ),
         bos_detected=bos_detected,
         choch_detected=choch_detected,
@@ -546,4 +558,3 @@ def is_london_or_ny_session(timestamp: pd.Timestamp) -> bool:
         return True
 
     return False
-

@@ -11,9 +11,9 @@ Architecture:
 
 import dash
 import dash_bootstrap_components as dbc
-from dash import Input, Output, State, dcc, html
-
 from common.logger import get_logger
+from dash import Input, Output, dcc, html
+
 from dashboard.components.chart import create_price_chart, render_price_chart
 from dashboard.components.controls import (
     create_controls_panel,
@@ -221,12 +221,19 @@ class LiveDashboard:
         )
         def on_play(n_clicks):
             """Handle play button click."""
+            logger.info(
+                f"Play button callback triggered | n_clicks={n_clicks} | "
+                f"is_paused={self.engine.state.is_paused} | "
+                f"is_running={self.engine.is_running()}"
+            )
             if n_clicks:
                 if self.engine.state.is_paused:
+                    logger.info("Simulation paused - calling resume()")
                     self.engine.resume()
                 elif not self.engine.is_running():
+                    logger.info("Simulation not running - calling start()")
                     self.engine.start()
-                logger.info("Play button clicked")
+                logger.info("Play button action completed")
             return {"action": "play"}
 
         @self.app.callback(
@@ -311,9 +318,7 @@ class LiveDashboard:
                 )
             )
             min_score = state.session_constraints.get("min_signal_score", 0)
-            parts.append(
-                html.P([html.Strong("Min Score: "), f"{min_score:.1f}"])
-            )
+            parts.append(html.P([html.Strong("Min Score: "), f"{min_score:.1f}"]))
 
         # Warmup status
         if self.engine.htf_calculator.is_warmed_up():
@@ -337,9 +342,7 @@ class LiveDashboard:
 
         return html.Div(parts)
 
-    def run(
-        self, host: str = "0.0.0.0", port: int = 8050, debug: bool = False
-    ) -> None:
+    def run(self, host: str = "0.0.0.0", port: int = 8050, debug: bool = False) -> None:
         """Run the dashboard server.
 
         Args:

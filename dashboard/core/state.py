@@ -9,10 +9,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
 from datetime import datetime
-from typing import Literal, Optional
 
 import pandas as pd
-
 from rule_engine.htf.types import HTFBias
 from rule_engine.signal import Signal
 
@@ -67,20 +65,20 @@ class DashboardState:
     """
 
     # Core state
-    timestamp: Optional[datetime] = None
+    timestamp: datetime | None = None
     features: pd.Series = field(default_factory=lambda: pd.Series(dtype=object))
-    htf_bias: Optional[HTFBias] = None
-    current_signal: Optional[Signal] = None
+    htf_bias: HTFBias | None = None
+    current_signal: Signal | None = None
 
     # Session
-    session_constraints: Optional[dict[str, object]] = None
+    session_constraints: dict[str, object] | None = None
     is_session_active: bool = False
 
     # Simulation control
     is_simulation_running: bool = False
     is_paused: bool = False
-    pause_reason: Optional[str] = None
-    paused_at_signal: Optional[Signal] = None
+    pause_reason: str | None = None
+    paused_at_signal: Signal | None = None
     simulation_speed: float = 1.0
     simulation_progress: float = 0.0
 
@@ -144,10 +142,10 @@ class DashboardState:
     @staticmethod
     def _hash_series(series: pd.Series) -> int:
         """Convert pd.Series to hashable representation.
-        
+
         Args:
             series: Pandas Series to hash
-            
+
         Returns:
             Hash value of the series. Empty series hash to hash(()).
             Non-empty series are converted to sorted tuple of (index, value) pairs.
@@ -161,11 +159,11 @@ class DashboardState:
     @staticmethod
     def _eq_series(s1: pd.Series, s2: pd.Series) -> bool:
         """Compare two pd.Series for equality.
-        
+
         Args:
             s1: First pandas Series
             s2: Second pandas Series
-            
+
         Returns:
             True if series are equal (same index and values), False otherwise.
             Uses pandas' equals() method with fallback to manual comparison.
@@ -185,12 +183,12 @@ class DashboardState:
             )
 
     @staticmethod
-    def _hash_htf_bias(bias: Optional[HTFBias]) -> int:
+    def _hash_htf_bias(bias: HTFBias | None) -> int:
         """Convert HTFBias to hashable representation.
-        
+
         Args:
             bias: HTFBias object or None
-            
+
         Returns:
             Hash value of the bias. None hashes to hash(None).
             Non-None bias objects are converted to tuple of all field values.
@@ -227,13 +225,13 @@ class DashboardState:
         )
 
     @staticmethod
-    def _eq_htf_bias(b1: Optional[HTFBias], b2: Optional[HTFBias]) -> bool:
+    def _eq_htf_bias(b1: HTFBias | None, b2: HTFBias | None) -> bool:
         """Compare two HTFBias objects for equality.
-        
+
         Args:
             b1: First HTFBias object or None
             b2: Second HTFBias object or None
-            
+
         Returns:
             True if both are None or all fields are equal, False otherwise.
         """
@@ -269,12 +267,12 @@ class DashboardState:
         )
 
     @staticmethod
-    def _hash_dict(d: Optional[dict[str, object]]) -> int:
+    def _hash_dict(d: dict[str, object] | None) -> int:
         """Convert dict to hashable representation.
-        
+
         Args:
             d: Dictionary to hash or None
-            
+
         Returns:
             Hash value of the dict. None hashes to hash(None).
             Attempts to use frozenset of items; falls back to string
@@ -290,13 +288,15 @@ class DashboardState:
             return hash(str(sorted(d.items())))
 
     @staticmethod
-    def _eq_dict(d1: Optional[dict[str, object]], d2: Optional[dict[str, object]]) -> bool:
+    def _eq_dict(
+        d1: dict[str, object] | None, d2: dict[str, object] | None
+    ) -> bool:
         """Compare two dicts for equality.
-        
+
         Args:
             d1: First dictionary or None
             d2: Second dictionary or None
-            
+
         Returns:
             True if both are None or dicts are equal, False otherwise.
         """
@@ -326,9 +326,7 @@ class DashboardState:
         """
         return replace(self, **kwargs)
 
-    def with_price_bars(
-        self, gc_bar: PriceBar, dxy_bar: PriceBar
-    ) -> DashboardState:
+    def with_price_bars(self, gc_bar: PriceBar, dxy_bar: PriceBar) -> DashboardState:
         """Create new state with appended price bars.
 
         Maintains max_history_size limit by dropping oldest bars.
@@ -417,7 +415,7 @@ class DashboardState:
             "session_constraints": self.session_constraints,
         }
 
-    def _serialize_htf_bias(self) -> Optional[dict[str, object]]:
+    def _serialize_htf_bias(self) -> dict[str, object] | None:
         """Serialize HTF bias to dict."""
         if not self.htf_bias:
             return None
@@ -432,7 +430,7 @@ class DashboardState:
             "vwap_trend_confirmed": self.htf_bias.vwap_trend_confirmed,
         }
 
-    def _serialize_signal(self) -> Optional[dict[str, object]]:
+    def _serialize_signal(self) -> dict[str, object] | None:
         """Serialize signal to dict."""
         if not self.current_signal:
             return None
@@ -444,4 +442,3 @@ class DashboardState:
             "htf_bias": self.current_signal.htf_bias,
             "rationale": self.current_signal.rationale,
         }
-

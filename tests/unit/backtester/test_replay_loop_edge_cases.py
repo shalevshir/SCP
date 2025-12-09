@@ -2,7 +2,6 @@
 
 from datetime import UTC, datetime, timedelta
 
-import pandas as pd
 import pytest
 from backtester.replay_loop import BacktestReplayLoop
 from common.types import Candle
@@ -94,7 +93,9 @@ class TestIndexAssignmentEdgeCases:
             # If it runs without error, the fix is working
             assert results is not None
         except ValueError as e:
-            if "Length mismatch" in str(e) or "cannot set using a list-like indexer" in str(e):
+            if "Length mismatch" in str(
+                e
+            ) or "cannot set using a list-like indexer" in str(e):
                 pytest.fail(f"Index assignment error not properly handled: {e}")
             else:
                 # Some other ValueError - might be expected
@@ -139,7 +140,7 @@ class TestIndexAssignmentEdgeCases:
         bars = []
         for i in range(10):
             ts = start_time + timedelta(minutes=i)
-            
+
             exec_gc = Candle(
                 timestamp=ts,
                 open=2650.0,
@@ -209,4 +210,3 @@ class TestIndexAssignmentEdgeCases:
             if "Length mismatch" in str(e):
                 pytest.fail(f"Length mismatch not handled: {e}")
             raise
-

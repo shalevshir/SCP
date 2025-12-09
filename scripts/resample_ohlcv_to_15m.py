@@ -17,7 +17,6 @@ Usage:
 
 import sys
 from pathlib import Path
-from typing import Optional
 
 import pandas as pd
 
@@ -72,11 +71,11 @@ def resample_ohlcv(
 
         # Define aggregation rules for OHLCV data
         agg_rules = {
-            "open": "first",    # First value in period
-            "high": "max",      # Maximum value in period
-            "low": "min",       # Minimum value in period
-            "close": "last",    # Last value in period
-            "volume": "sum",    # Sum of volume in period
+            "open": "first",  # First value in period
+            "high": "max",  # Maximum value in period
+            "low": "min",  # Minimum value in period
+            "close": "last",  # Last value in period
+            "volume": "sum",  # Sum of volume in period
         }
 
         # Add other columns if they exist (keep first occurrence)
@@ -116,8 +115,8 @@ def resample_ohlcv(
 
 
 def main(
-    input_folder: Optional[Path] = None,
-    output_folder: Optional[Path] = None,
+    input_folder: Path | None = None,
+    output_folder: Path | None = None,
     frequency: str = RESAMPLE_FREQUENCY,
 ) -> None:
     """Main execution function to resample all 1-minute OHLCV files.
@@ -166,9 +165,7 @@ def main(
             try:
                 # Generate output filename
                 # Replace 'ohlcv-1m' with 'ohlcv-15m'
-                output_filename = input_file.name.replace(
-                    "ohlcv-1m", "ohlcv-15m"
-                )
+                output_filename = input_file.name.replace("ohlcv-1m", "ohlcv-15m")
                 output_file = output_folder / output_filename
 
                 logger.info(f"Processing: {input_file.name}")
@@ -198,4 +195,3 @@ def main(
 
 if __name__ == "__main__":
     main()
-

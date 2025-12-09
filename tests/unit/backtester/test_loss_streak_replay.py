@@ -4,9 +4,7 @@ from datetime import UTC, datetime, timedelta
 
 import pandas as pd
 import pytest
-from backtester.pipeline import run_backtest_with_trades
 from backtester.replay_engine import ReplayEngine
-from rule_engine.htf.types import HTFBias
 
 
 class TestLossStreakReplay:
@@ -98,7 +96,9 @@ class TestLossStreakReplay:
 
         guardrails = BehaviorGuardrails()
         guardrail_result = guardrails.evaluate(state.state, constraints)
-        assert guardrail_result.allowed is False, "Should be blocked with 1 loss in September"
+        assert (
+            guardrail_result.allowed is False
+        ), "Should be blocked with 1 loss in September"
         assert "loss streak" in " ".join(guardrail_result.reasons).lower()
 
     def test_october_two_loss_halt(self, october_data):
@@ -134,7 +134,9 @@ class TestLossStreakReplay:
 
         # Now should block (2 >= 2)
         guardrail_result = guardrails.evaluate(state.state, constraints)
-        assert guardrail_result.allowed is False, "Should block with 2 losses in October"
+        assert (
+            guardrail_result.allowed is False
+        ), "Should block with 2 losses in October"
         assert "loss streak" in " ".join(guardrail_result.reasons).lower()
 
     def test_streak_resets_on_win(self, october_data):
@@ -197,7 +199,6 @@ class TestLossStreakReplay:
         # State should be reset (but we need to check the processor's internal state)
         # The reset happens in BacktestProcessor._check_session_reset
         # We can verify by checking that a new replay starts with 0 losses
-        state_after_reset = engine.behavior_state
         # Note: The reset happens during replay iteration, so we need to check
         # the state after replaying the new day
         # Actually, the reset is internal to the processor, so we can't easily test it
@@ -383,4 +384,3 @@ class TestLossStreakReplay:
 
         # Verify different max_losses
         assert constraints_sept.max_losses != constraints_oct.max_losses
-

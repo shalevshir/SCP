@@ -3,8 +3,8 @@
 Following TDD principles: tests demonstrate complete workflow.
 """
 
-from datetime import UTC, datetime
 from dataclasses import replace
+from datetime import UTC, datetime
 
 import pandas as pd
 import pytest
@@ -135,14 +135,23 @@ class TestRunBacktestWithTrades:
         )
 
         valid_reasons = [
-            "tp", "sl", "timeout", "vwap_invalidation", "htf_invalidation",
-            "dxy_flip", "session_close", "window_expired", "daily_risk_stop",
-            "end_of_data", "invalid_setup", "invalidation"  # Legacy support
+            "tp",
+            "sl",
+            "timeout",
+            "vwap_invalidation",
+            "htf_invalidation",
+            "dxy_flip",
+            "session_close",
+            "window_expired",
+            "daily_risk_stop",
+            "end_of_data",
+            "invalid_setup",
+            "invalidation",  # Legacy support
         ]
         for trade in trades:
-            assert trade.exit_reason in valid_reasons, (
-                f"Trade {trade.trade_id} has invalid exit_reason: {trade.exit_reason}"
-            )
+            assert (
+                trade.exit_reason in valid_reasons
+            ), f"Trade {trade.trade_id} has invalid exit_reason: {trade.exit_reason}"
 
     def test_trades_have_calculated_pnl(
         self, sample_gc_data, sample_dxy_data, market_state, risk_config
@@ -232,10 +241,11 @@ class TestGetFutureCandles:
         self, sample_gc_data, sample_dxy_data, market_state, risk_config
     ):
         """Test that confirmation candle is the entry candle, not previous candle."""
-        from backtester.trade import create_trade_from_entry
-        from backtester.entry_model import EntryExecution
-        from common.types import Candle
         from datetime import UTC, datetime
+
+        from backtester.entry_model import EntryExecution
+        from backtester.trade import create_trade_from_entry
+        from common.types import Candle
         from rule_engine.signal import Signal
 
         # Create a mock entry execution
@@ -301,10 +311,11 @@ class TestGetFutureCandles:
         self, sample_gc_data, sample_dxy_data, market_state, risk_config
     ):
         """Test that HTF alignment correctly compares bullish/long and bearish/short."""
-        from backtester.trade import create_trade_from_entry
-        from backtester.entry_model import EntryExecution
-        from common.types import Candle
         from datetime import UTC, datetime
+
+        from backtester.entry_model import EntryExecution
+        from backtester.trade import create_trade_from_entry
+        from common.types import Candle
         from rule_engine.signal import Signal
 
         # Test case 1: Bullish bias with long direction should be aligned
@@ -529,7 +540,7 @@ class TestGetFutureCandles:
             def iterate_with_context(self, *_args, **_kwargs):
                 yield signal_features, {}
                 yield entry_features, {}
-            
+
             def record_trade_outcome(self, won: bool) -> None:
                 """Mock method for recording trade outcomes."""
                 pass
@@ -616,22 +627,25 @@ class TestDailyPnLTracking:
         self, sample_gc_data, sample_dxy_data, market_state, risk_config, monkeypatch
     ):
         """Test that InvalidationChecker daily_pnl is updated correctly during backtest.
-        
+
         This verifies the fix for the bug where invalidation_checker.record_trade_outcome()
         was removed, causing daily_pnl to stay at 0.0 forever. This is critical because
         check_daily_risk_breach() uses daily_pnl to enforce PDLL during trade simulation.
         """
-        from backtester.pipeline import run_backtest_with_trades
         from backtester.invalidations import InvalidationChecker
+        from backtester.pipeline import run_backtest_with_trades
 
         # Patch pipeline to capture the invalidation_checker instance
-        captured_checker = None
-        original_run = run_backtest_with_trades.__wrapped__ if hasattr(run_backtest_with_trades, '__wrapped__') else None
-        
+        (
+            run_backtest_with_trades.__wrapped__
+            if hasattr(run_backtest_with_trades, "__wrapped__")
+            else None
+        )
+
         # Create data that will generate some trades
         gc_df = sample_gc_data.copy()
         dxy_df = sample_dxy_data.copy()
-        
+
         # Run the full pipeline
         trades = run_backtest_with_trades(
             gc_df=gc_df,
@@ -641,43 +655,43 @@ class TestDailyPnLTracking:
             htf_bias_func=simple_htf_bias,
             risk_config=risk_config,
         )
-        
+
         # If we got trades, verify they have PnL
         if len(trades) == 0:
             pytest.skip("No trades generated - need trades to test daily_pnl tracking")
-        
+
         # The test verifies the fix by checking that trade PnL is non-zero
         # (which means invalidation_checker.record_trade_outcome was called)
         # If the bug existed, daily_pnl would stay at 0.0 forever, and PDLL checks
         # would never trigger during trade simulation
-        
+
         # Calculate total PnL from trades
         total_pnl = sum(t.pnl for t in trades if t.pnl is not None)
-        
+
         # Verify that we have some PnL (positive or negative)
         # The key insight is that if the bug exists, the invalidation_checker's
         # daily_pnl would be 0.0 even though trades have PnL, breaking PDLL checks
-        assert len([t for t in trades if t.pnl is not None]) > 0, (
-            "Should have at least one trade with PnL to verify tracking"
-        )
-        
+        assert (
+            len([t for t in trades if t.pnl is not None]) > 0
+        ), "Should have at least one trade with PnL to verify tracking"
+
         # Test the fix indirectly by verifying that InvalidationChecker.record_trade_outcome
         # is actually called during the pipeline. We'll create a new test that patches
         # the method to verify it's called.
-        
+
         # Create a fresh invalidation checker for direct testing
         checker = InvalidationChecker()
-        
+
         # Manually record outcomes to verify it works
         for trade in trades:
             if trade.pnl is not None:
                 won = trade.pnl > 0
                 checker.record_trade_outcome(trade, won=won)
-        
+
         # Verify daily_pnl accumulates correctly
         expected_pnl = total_pnl
         actual_pnl = checker._daily_state["daily_pnl"]
-        
+
         assert abs(actual_pnl - expected_pnl) < 0.01, (
             f"InvalidationChecker daily_pnl ({actual_pnl}) should match "
             f"cumulative trade PnL ({expected_pnl}). If this fails, "
@@ -686,18 +700,18 @@ class TestDailyPnLTracking:
 
     def test_consecutive_losses_tracked_in_invalidation_checker(self):
         """Test that consecutive losses are tracked in InvalidationChecker.
-        
+
         This is needed for check_daily_risk_breach() to enforce loss streak stops
         during trade simulation.
         """
         from backtester.invalidations import InvalidationChecker
         from backtester.trade import Trade
-        
+
         checker = InvalidationChecker()
-        
+
         # Create losing trades using the Trade dataclass directly
         base_time = datetime(2025, 1, 1, 10, 0, tzinfo=UTC)
-        
+
         # Create 3 consecutive losses
         for i in range(3):
             trade = Trade(
@@ -731,17 +745,17 @@ class TestDailyPnLTracking:
                 duration_bars=3,
                 invalidation_triggered=False,
             )
-            
+
             # Record loss
             checker.record_trade_outcome(trade, won=False)
-            
+
             # Verify consecutive_losses increments
             expected_losses = i + 1
             assert checker._daily_state["consecutive_losses"] == expected_losses, (
                 f"After {expected_losses} losses, consecutive_losses should be {expected_losses}, "
                 f"got {checker._daily_state['consecutive_losses']}"
             )
-        
+
         # Verify that winning trade resets streak
         winning_trade = Trade(
             trade_id="test-win",
@@ -774,9 +788,9 @@ class TestDailyPnLTracking:
             duration_bars=3,
             invalidation_triggered=False,
         )
-        
+
         checker.record_trade_outcome(winning_trade, won=True)
-        
+
         # Streak should reset
         assert checker._daily_state["consecutive_losses"] == 0, (
             "consecutive_losses should reset to 0 after win, "
@@ -785,18 +799,19 @@ class TestDailyPnLTracking:
 
     def test_breakeven_trades_do_not_increment_loss_streak(self):
         """Test that breakeven trades (pnl == 0) don't increment loss streak.
-        
+
         This is a critical fix: per SOP, only losing trades should increment
         the loss streak. Breakeven trades (where no capital was lost) should
         not affect the streak. This prevents premature trading halts when
         breakeven trades occur during a sequence.
         """
+        from datetime import UTC, datetime
+
         from backtester.invalidations import InvalidationChecker
         from backtester.trade import Trade
-        from datetime import datetime, UTC
-        
+
         checker = InvalidationChecker()
-        
+
         # Create a losing trade (pnl < 0)
         losing_trade = Trade(
             trade_id="loss_1",
@@ -829,12 +844,12 @@ class TestDailyPnLTracking:
             duration_bars=5,
             invalidation_triggered=False,
         )
-        
+
         # Record loss - should increment streak
         checker.record_trade_outcome(losing_trade, won=False)
         assert checker._daily_state["consecutive_losses"] == 1
         assert checker._daily_state["daily_pnl"] == -10.0
-        
+
         # Create a breakeven trade (pnl == 0)
         breakeven_trade = Trade(
             trade_id="breakeven_1",
@@ -867,7 +882,7 @@ class TestDailyPnLTracking:
             duration_bars=5,
             invalidation_triggered=False,
         )
-        
+
         # Record breakeven - should NOT increment streak
         checker.record_trade_outcome(breakeven_trade, won=None)
         assert checker._daily_state["consecutive_losses"] == 1, (
@@ -875,7 +890,7 @@ class TestDailyPnLTracking:
             f"expected 1, got {checker._daily_state['consecutive_losses']}"
         )
         assert checker._daily_state["daily_pnl"] == -10.0  # No change in PnL
-        
+
         # Another breakeven trade
         breakeven_trade_2 = Trade(
             trade_id="breakeven_2",
@@ -908,14 +923,14 @@ class TestDailyPnLTracking:
             duration_bars=5,
             invalidation_triggered=False,
         )
-        
+
         # Another breakeven - still should NOT increment
         checker.record_trade_outcome(breakeven_trade_2, won=None)
-        assert checker._daily_state["consecutive_losses"] == 1, (
-            "Multiple breakeven trades should not increment loss streak"
-        )
+        assert (
+            checker._daily_state["consecutive_losses"] == 1
+        ), "Multiple breakeven trades should not increment loss streak"
         assert checker._daily_state["daily_pnl"] == -10.0
-        
+
         # Create a winning trade
         winning_trade = Trade(
             trade_id="win_1",
@@ -948,9 +963,8 @@ class TestDailyPnLTracking:
             duration_bars=5,
             invalidation_triggered=False,
         )
-        
+
         # Win should reset streak
         checker.record_trade_outcome(winning_trade, won=True)
         assert checker._daily_state["consecutive_losses"] == 0
         assert checker._daily_state["daily_pnl"] == 20.0  # -10 + 0 + 0 + 30
-

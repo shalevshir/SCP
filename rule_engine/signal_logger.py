@@ -8,7 +8,6 @@ in separate files.
 from __future__ import annotations
 
 import json
-from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -83,7 +82,11 @@ def signal_to_dict(
             "consecutive_losses": behavior_state.consecutive_losses,
             "fatigue_flag": behavior_state.fatigue_flag,
             "session_extended": behavior_state.session_extended,
-            "last_reset": behavior_state.last_reset.isoformat() if behavior_state.last_reset else None,
+            "last_reset": (
+                behavior_state.last_reset.isoformat()
+                if behavior_state.last_reset
+                else None
+            ),
         }
 
     return base_dict
@@ -142,4 +145,3 @@ def log_signal(
     with open(log_file, "a") as f:
         json.dump(signal_dict, f)
         f.write("\n")
-

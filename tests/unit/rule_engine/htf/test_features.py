@@ -11,8 +11,7 @@ from datetime import UTC, datetime
 import pandas as pd
 import pytest
 from common.types import Candle
-
-from data_layer.multi_timeframe_sync import MultiTimeframeData, SynchronizedBar
+from data_layer.multi_timeframe_sync import SynchronizedBar
 from rule_engine.htf.features import (
     StreamingHTFFeatureComputer,
     compute_htf_features_vectorized,
@@ -40,7 +39,7 @@ class TestStreamingHTFFeatureComputer:
     ) -> None:
         """Test updating features from sync bar with HTF data."""
         timestamp = datetime(2025, 9, 30, 10, 0, 0, tzinfo=UTC)
-        
+
         exec_gc = Candle(
             timestamp=timestamp,
             open=2000.0,
@@ -63,7 +62,7 @@ class TestStreamingHTFFeatureComputer:
             timeframe="1m",
             source="CSV",
         )
-        
+
         htf_15m_gc = Candle(
             timestamp=datetime(2025, 9, 30, 9, 59, 0, tzinfo=UTC),
             open=1999.0,
@@ -86,7 +85,7 @@ class TestStreamingHTFFeatureComputer:
             timeframe="15m",
             source="CSV",
         )
-        
+
         htf_1h_gc = Candle(
             timestamp=datetime(2025, 9, 30, 9, 0, 0, tzinfo=UTC),
             open=1998.0,
@@ -109,16 +108,16 @@ class TestStreamingHTFFeatureComputer:
             timeframe="1h",
             source="CSV",
         )
-        
+
         sync_bar = SynchronizedBar(
             execution_timestamp=timestamp,
             execution_1m=(exec_gc, exec_dxy),
             htf_15m=(htf_15m_gc, htf_15m_dxy),
             htf_1h=(htf_1h_gc, htf_1h_dxy),
         )
-        
+
         features_15m, features_1h = htf_computer.update_from_sync_bar(sync_bar)
-        
+
         # Features should be computed (may be empty if not warmed up)
         assert isinstance(features_15m, pd.Series)
         assert isinstance(features_1h, pd.Series)
@@ -128,7 +127,7 @@ class TestStreamingHTFFeatureComputer:
     ) -> None:
         """Test updating when HTF data is None."""
         timestamp = datetime(2025, 9, 30, 10, 0, 0, tzinfo=UTC)
-        
+
         exec_gc = Candle(
             timestamp=timestamp,
             open=2000.0,
@@ -151,16 +150,16 @@ class TestStreamingHTFFeatureComputer:
             timeframe="1m",
             source="CSV",
         )
-        
+
         sync_bar = SynchronizedBar(
             execution_timestamp=timestamp,
             execution_1m=(exec_gc, exec_dxy),
             htf_15m=None,
             htf_1h=None,
         )
-        
+
         features_15m, features_1h = htf_computer.update_from_sync_bar(sync_bar)
-        
+
         # Features should still be returned (may be empty)
         assert isinstance(features_15m, pd.Series)
         assert isinstance(features_1h, pd.Series)
@@ -169,7 +168,7 @@ class TestStreamingHTFFeatureComputer:
         """Test warmup detection."""
         # Initially not warmed up
         assert not htf_computer.is_warmed_up()
-        
+
         # After processing many bars, should be warmed up
         # (This is a basic test - actual warmup requires many bars)
         # For now, just verify the method exists and returns bool
@@ -188,7 +187,7 @@ class TestComputeHtfFeaturesVectorized:
             gc_candles_1h=[],
             dxy_candles_1h=[],
         )
-        
+
         assert features_15m is None
         assert features_1h is None
 
@@ -216,7 +215,7 @@ class TestComputeHtfFeaturesVectorized:
             timeframe="15m",
             source="CSV",
         )
-        
+
         gc_1h = Candle(
             timestamp=datetime(2025, 9, 30, 10, 0, 0, tzinfo=UTC),
             open=1999.0,
@@ -239,14 +238,14 @@ class TestComputeHtfFeaturesVectorized:
             timeframe="1h",
             source="CSV",
         )
-        
+
         features_15m, features_1h = compute_htf_features_vectorized(
             gc_candles_15m=[gc_15m],
             dxy_candles_15m=[dxy_15m],
             gc_candles_1h=[gc_1h],
             dxy_candles_1h=[dxy_1h],
         )
-        
+
         # With single candles, features may be None due to insufficient data
         # for indicators (RSI needs 14, DXY correlation needs 50, etc.)
         # But the function should not crash
@@ -260,7 +259,7 @@ class TestComputeHtfFeaturesVectorized:
         dxy_15m_candles = []
         gc_1h_candles = []
         dxy_1h_candles = []
-        
+
         # Create 60 15m candles (enough for DXY correlation window of 50)
         for i in range(60):
             # Calculate hours and minutes properly (15m intervals)
@@ -293,9 +292,10 @@ class TestComputeHtfFeaturesVectorized:
                     source="CSV",
                 )
             )
-        
+
         # Create 60 1h candles (spread across multiple days if needed)
         from datetime import timedelta
+
         base_date = datetime(2025, 9, 30, 8, 0, 0, tzinfo=UTC)
         for i in range(60):
             ts_1h = base_date + timedelta(hours=i)
@@ -325,14 +325,14 @@ class TestComputeHtfFeaturesVectorized:
                     source="CSV",
                 )
             )
-        
+
         features_15m, features_1h = compute_htf_features_vectorized(
             gc_candles_15m=gc_15m_candles,
             dxy_candles_15m=dxy_15m_candles,
             gc_candles_1h=gc_1h_candles,
             dxy_candles_1h=dxy_1h_candles,
         )
-        
+
         # Should have computed features
         assert features_15m is not None
         assert features_1h is not None
@@ -340,10 +340,9 @@ class TestComputeHtfFeaturesVectorized:
         assert isinstance(features_1h, pd.DataFrame)
         assert len(features_15m) > 0
         assert len(features_1h) > 0
-        
+
         # Check that expected columns exist
         expected_cols = ["open", "high", "low", "close", "volume"]
         for col in expected_cols:
             assert col in features_15m.columns
             assert col in features_1h.columns
-

@@ -16,9 +16,10 @@ from dataclasses import dataclass, replace
 from datetime import datetime
 from uuid import uuid4
 
-from backtester.entry_model import EntryExecution
 from common.logger import get_logger
 from common.types import Candle
+
+from backtester.entry_model import EntryExecution
 
 logger = get_logger(__name__)
 
@@ -164,8 +165,7 @@ def calculate_stop_loss(
             rationale = "Above sweep candle high (fade setup)"
 
         logger.debug(
-            f"Fade SL calculated: {sl} (direction={direction}, "
-            f"setup={setup_type})"
+            f"Fade SL calculated: {sl} (direction={direction}, " f"setup={setup_type})"
         )
         return sl, rationale
 
@@ -443,16 +443,23 @@ def close_trade(
     # Determine exit price based on exit reason
     # Handle both old (uppercase) and new (lowercase) exit reasons for backward compatibility
     exit_reason_lower = exit_reason.lower() if exit_reason else ""
-    
+
     if exit_reason_lower in ("tp", "take_profit"):
         exit_price = trade.take_profit
     elif exit_reason_lower in ("sl", "stop_loss"):
         exit_price = trade.stop_loss
     elif exit_reason_lower in (
-        "vwap_invalidation", "htf_invalidation", "dxy_flip",
-        "session_close", "window_expired", "daily_risk_stop",
-        "invalidation", "timeout", "time", "end_of_data",
-        "invalid_setup"
+        "vwap_invalidation",
+        "htf_invalidation",
+        "dxy_flip",
+        "session_close",
+        "window_expired",
+        "daily_risk_stop",
+        "invalidation",
+        "timeout",
+        "time",
+        "end_of_data",
+        "invalid_setup",
     ):
         # Use close price of exit candle for all invalidation/timeout exits
         exit_price = exit_candle.close
@@ -490,11 +497,11 @@ def close_trade(
 
         try:
             # Extract config values
-            tick_value = config.get("assets", {}).get("tick_values", {}).get(
-                trade.symbol, 10.0
+            tick_value = (
+                config.get("assets", {}).get("tick_values", {}).get(trade.symbol, 10.0)
             )
-            tick_size = config.get("assets", {}).get("tick_sizes", {}).get(
-                trade.symbol, 0.1
+            tick_size = (
+                config.get("assets", {}).get("tick_sizes", {}).get(trade.symbol, 0.1)
             )
             slippage_points = config.get("backtest", {}).get("slippage_points", 0.5)
             commission_per_contract = config.get("backtest", {}).get(
@@ -557,9 +564,13 @@ def close_trade(
     # Determine if invalidation triggered
     exit_reason_lower = exit_reason.lower() if exit_reason else ""
     invalidation_triggered = exit_reason_lower in (
-        "vwap_invalidation", "htf_invalidation", "dxy_flip",
-        "session_close", "window_expired", "daily_risk_stop",
-        "invalidation"
+        "vwap_invalidation",
+        "htf_invalidation",
+        "dxy_flip",
+        "session_close",
+        "window_expired",
+        "daily_risk_stop",
+        "invalidation",
     )
 
     logger.info(
@@ -603,8 +614,9 @@ def to_dict(trade: Trade) -> dict:
         >>> import json
         >>> json_str = json.dumps(trade_dict)
     """
-    from backtester.entry_model import EntryExecution
     from rule_engine.signal import Signal
+
+    from backtester.entry_model import EntryExecution
 
     # Helper to serialize EntryExecution
     def serialize_entry_execution(entry: EntryExecution) -> dict:
@@ -686,8 +698,9 @@ def from_dict(data: dict) -> Trade:
     """
     from datetime import datetime
 
-    from backtester.entry_model import EntryExecution
     from rule_engine.signal import Signal
+
+    from backtester.entry_model import EntryExecution
 
     # Helper to deserialize Signal
     def deserialize_signal(signal_data: dict) -> Signal:
@@ -752,4 +765,3 @@ def from_dict(data: dict) -> Trade:
         duration_bars=data["duration_bars"],
         invalidation_triggered=data["invalidation_triggered"],
     )
-

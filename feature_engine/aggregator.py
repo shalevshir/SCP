@@ -46,12 +46,12 @@ def aggregate_features(
                    ["1s", "1m", "15m", "1h"].
         indicators: Optional dictionary to configure which indicators to calculate.
                     If None, all indicators are calculated with default parameters.
-                    
+
                     Configuration options:
                     - Set to False or None to skip: {"rsi": False}
                     - Set to True for defaults: {"rsi": True}
                     - Set to dict for custom params: {"rsi": {"period": 21}}
-                    
+
                     Default configuration (when indicators=None):
                     {
                         "vwap": {"session_reset": True},
@@ -78,19 +78,19 @@ def aggregate_features(
     Examples:
         >>> import pandas as pd
         >>> from feature_engine.aggregator import aggregate_features
-        >>> 
+        >>>
         >>> # Load data
         >>> gc_df = pd.read_csv('data/gc_dx_ohlcv/GC_ohlcv-1m.csv',
         ...                      parse_dates=['ts_event'])
         >>> dxy_df = pd.read_csv('data/gc_dx_ohlcv/DX_ohlcv-1m.csv',
         ...                       parse_dates=['ts_event'])
-        >>> 
+        >>>
         >>> # All indicators with defaults
         >>> features = aggregate_features(gc_df, dxy_df, "1m")
         >>> print(features.columns)
         Index(['ts_event', 'open', 'high', 'low', 'close', 'volume',
                'vwap', 'rsi', 'ema_9', 'ema_20', 'ema_50', 'dxy_corr'])
-        >>> 
+        >>>
         >>> # Custom configuration: skip VWAP, use RSI(21)
         >>> custom_indicators = {
         ...     "vwap": False,
@@ -164,10 +164,10 @@ def aggregate_features(
             params = ema_config
         else:
             params = DEFAULT_INDICATORS["ema"]
-        
+
         # calculate_ema_multiple returns DataFrame with cols: ema_9, ema_20, ema_50
         ema_df = calculate_ema_multiple(gc_df, **params)
-        
+
         # Add each EMA column to result
         for col in ema_df.columns:
             result[col] = ema_df[col]
@@ -179,10 +179,10 @@ def aggregate_features(
             params = dxy_corr_config
         else:
             params = DEFAULT_INDICATORS["dxy_correlation"]
-        
+
         # Calculate correlation (returns Series with timestamp index)
         dxy_corr_series = calculate_dxy_correlation(gc_df, dxy_df, **params)
-        
+
         # Align correlation with GC DataFrame by mapping timestamp to value
         # Handles index mismatch: GC (RangeIndex) vs correlation (DatetimeIndex)
         if "ts_event" in gc_df.columns:
@@ -196,4 +196,3 @@ def aggregate_features(
             result["dxy_corr"] = dxy_corr_series.reindex(result.index)
 
     return result
-

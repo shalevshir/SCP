@@ -8,7 +8,6 @@ import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 
-import pandas as pd
 import pytest
 from common.exceptions import DataSourceError, NormalizationError
 from data_layer.clients import LocalCSVClient
@@ -243,7 +242,9 @@ def test_fetch_fails_on_first_invalid_row():
     with tempfile.NamedTemporaryFile(mode="w", suffix=".csv", delete=False) as f:
         f.write("ts_event,open,high,low,close,volume,symbol\n")
         f.write("2025-01-01T12:00:00+00:00,100.0,105.0,95.0,102.0,1000.0,GC\n")
-        f.write("2025-01-01T12:01:00+00:00,-100.0,105.0,95.0,102.0,1000.0,GC\n")  # Invalid
+        f.write(
+            "2025-01-01T12:01:00+00:00,-100.0,105.0,95.0,102.0,1000.0,GC\n"
+        )  # Invalid
         f.write("2025-01-01T12:02:00+00:00,100.0,105.0,95.0,102.0,1000.0,GC\n")
         csv_path = f.name
 
@@ -265,11 +266,11 @@ def test_fetch_fails_on_first_invalid_row():
 
 def test_fetch_validates_converted_numeric_values_not_strings():
     """Test that negative/zero validation uses converted numeric values, not original strings.
-    
+
     This test verifies the fix for the bug where:
     - Line 384 converts column to numeric: numeric_col = pd.to_numeric(df[col], errors='coerce')
     - Line 406 incorrectly checked original column: df[df[col] <= 0]
-    
+
     The bug meant that numeric string comparisons could fail silently.
     The fix ensures we validate numeric_col instead of df[col].
     """
@@ -290,7 +291,9 @@ def test_fetch_validates_converted_numeric_values_not_strings():
 
         error_msg = str(exc_info.value).lower()
         # Should detect negative value and mention open price or positive requirement
-        assert ("open" in error_msg or "positive" in error_msg) and ("invalid" in error_msg or "negative" in error_msg)
+        assert ("open" in error_msg or "positive" in error_msg) and (
+            "invalid" in error_msg or "negative" in error_msg
+        )
     finally:
         Path(csv_path).unlink()
 
@@ -320,21 +323,23 @@ def test_fetch_validates_zero_after_numeric_conversion():
 
 def test_fetch_rejects_nan_values_in_csv():
     """Test that NaN values already present in CSV are detected and rejected.
-    
+
     This test verifies the fix for the bug where:
     - NaN values already in the CSV (not from failed conversion) were not caught
     - The check at line 387 only catches: numeric_col.isna() & df[col].notna()
       (values that became NaN during conversion, where original was not NaN)
     - The check at line 406: invalid_mask = numeric_col <= 0
       doesn't catch NaN because in pandas, NaN <= 0 evaluates to False
-    
+
     The fix adds an explicit check for any NaN values in numeric_col.
     """
     with tempfile.NamedTemporaryFile(mode="w", suffix=".csv", delete=False) as f:
         f.write("ts_event,open,high,low,close,volume,symbol\n")
         # Write a row with NaN already in the data (pandas will read empty/NaN as NaN)
         # Use pandas NaN representation that will be read as NaN
-        f.write("2025-01-01T12:00:00+00:00,100.0,105.0,,102.0,1000.0,GC\n")  # Empty low field
+        f.write(
+            "2025-01-01T12:00:00+00:00,100.0,105.0,,102.0,1000.0,GC\n"
+        )  # Empty low field
         csv_path = f.name
 
     try:
@@ -348,7 +353,7 @@ def test_fetch_rejects_nan_values_in_csv():
 
         error_msg = str(exc_info.value).lower()
         # Should detect missing/NaN value and mention the column
-        assert ("nan" in error_msg or "missing" in error_msg or "invalid" in error_msg)
+        assert "nan" in error_msg or "missing" in error_msg or "invalid" in error_msg
     finally:
         Path(csv_path).unlink()
 
@@ -371,7 +376,6 @@ def test_fetch_rejects_explicit_nan_string_in_csv():
             client.fetch(start, end, "1m")
 
         error_msg = str(exc_info.value).lower()
-        assert ("nan" in error_msg or "missing" in error_msg or "invalid" in error_msg)
+        assert "nan" in error_msg or "missing" in error_msg or "invalid" in error_msg
     finally:
         Path(csv_path).unlink()
-

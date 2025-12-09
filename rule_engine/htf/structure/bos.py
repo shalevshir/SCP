@@ -11,7 +11,6 @@ Status: Not started
 from __future__ import annotations
 
 import pandas as pd
-
 from common.logger import get_logger
 
 logger = get_logger(__name__)
@@ -120,4 +119,3 @@ def detect_bos(
     )
 
     return bos_labels
-

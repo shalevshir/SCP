@@ -3,11 +3,11 @@
 This module provides the indicator and HTF bias panels for the dashboard.
 """
 
-from typing import Optional
 
 import dash_bootstrap_components as dbc
 import pandas as pd
 from dash import html
+from rule_engine.htf.types import HTFBias
 
 from dashboard.components.validation import (
     get_all_indicator_validations,
@@ -15,7 +15,6 @@ from dashboard.components.validation import (
     get_validation_tooltip,
     validate_structure,
 )
-from rule_engine.htf.types import HTFBias
 
 
 def create_indicators_panel() -> dbc.Card:
@@ -47,7 +46,7 @@ def create_htf_panel() -> dbc.Card:
     )
 
 
-def render_indicators(features: pd.Series, htf_bias: Optional[HTFBias]) -> html.Div:
+def render_indicators(features: pd.Series, htf_bias: HTFBias | None) -> html.Div:
     """Render the 15M indicators panel content.
 
     Args:
@@ -65,7 +64,7 @@ def render_indicators(features: pd.Series, htf_bias: Optional[HTFBias]) -> html.
 
     def format_with_badge(
         label: str,
-        value: Optional[float],
+        value: float | None,
         decimals: int,
         validation_key: str,
     ) -> html.P:
@@ -134,7 +133,7 @@ def render_indicators(features: pd.Series, htf_bias: Optional[HTFBias]) -> html.
     )
 
 
-def render_htf_panel(htf_bias: Optional[HTFBias]) -> html.Div:
+def render_htf_panel(htf_bias: HTFBias | None) -> html.Div:
     """Render the HTF bias panel content.
 
     Args:
@@ -172,7 +171,7 @@ def render_htf_panel(htf_bias: Optional[HTFBias]) -> html.Div:
         htf_badge_status = "WEAK"
         htf_badge_class = "badge bg-warning text-dark ms-2"
 
-    def format_structure_with_badge(structure_value: Optional[str]) -> list:
+    def format_structure_with_badge(structure_value: str | None) -> list:
         """Format structure with SOP validation badge."""
         status = validate_structure(structure_value, htf_bias)
         badge_class = get_validation_badge_class(status)
@@ -231,7 +230,9 @@ def render_htf_panel(htf_bias: Optional[HTFBias]) -> html.Div:
             html.P(
                 [
                     html.Strong("DXY Aligned: "),
-                    *format_boolean_with_badge(htf_bias.dxy_alignment, lambda x: x is True),
+                    *format_boolean_with_badge(
+                        htf_bias.dxy_alignment, lambda x: x is True
+                    ),
                 ]
             ),
             html.P(
@@ -244,4 +245,3 @@ def render_htf_panel(htf_bias: Optional[HTFBias]) -> html.Div:
             ),
         ]
     )
-

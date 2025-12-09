@@ -76,16 +76,16 @@ def calculate_structure_labels(
     # Identify swing highs and lows, then delay labels by swing_window bars
     # to prevent lookahead bias. Labels appear swing_window bars after the
     # swing point is confirmed, matching the incremental StructureState behavior.
-    
+
     # Track detected swing points and their labels (before delay)
     # Format: (swing_detection_idx, label, value)
     # The label will be assigned to position swing_detection_idx + swing_window
     swing_detections: list[tuple[int, str, float]] = []
-    
+
     # Track previous swing high and low values
     prev_swing_high: float | None = None
     prev_swing_low: float | None = None
-    
+
     # Detect swing points and determine their labels
     # We iterate through positions where we can detect swings AND where the delayed
     # label will not exceed the valid range (last swing_window positions must be None).
@@ -96,7 +96,7 @@ def calculate_structure_labels(
         idx = df.index[i]
         center_high = df.loc[idx, high_column]
         center_low = df.loc[idx, low_column]
-        
+
         # Check if center point is a swing high (local maximum)
         # Use >= to match StructureState logic (all other values <= center)
         window_highs = df[high_column].iloc[i - swing_window : i + swing_window + 1]
@@ -105,7 +105,7 @@ def calculate_structure_labels(
             for j in range(len(window_highs))
             if j != swing_window
         )
-        
+
         # Check if center point is a swing low (local minimum)
         # Use <= to match StructureState logic (all other values >= center)
         window_lows = df[low_column].iloc[i - swing_window : i + swing_window + 1]
@@ -114,9 +114,9 @@ def calculate_structure_labels(
             for j in range(len(window_lows))
             if j != swing_window
         )
-        
+
         label: str | None = None
-        
+
         # Process swing high (takes priority over swing low)
         if is_swing_high:
             if prev_swing_high is not None:
@@ -130,11 +130,11 @@ def calculate_structure_labels(
                 # First swing high - label as HH
                 label = "HH"
             prev_swing_high = center_high
-            
+
             # Store detection: will assign label at position i + swing_window
             if label:
                 swing_detections.append((i, label, center_high))
-        
+
         # Process swing low (only if not already processed as swing high)
         elif is_swing_low:
             if prev_swing_low is not None:
@@ -148,11 +148,11 @@ def calculate_structure_labels(
                 # First swing low - label as HL
                 label = "HL"
             prev_swing_low = center_low
-            
+
             # Store detection: will assign label at position i + swing_window
             if label:
                 swing_detections.append((i, label, center_low))
-    
+
     # Assign labels with delay: label detected at position i appears at position i + swing_window
     # This matches StructureState behavior where update() at position i returns label for
     # swing detected at position i - swing_window
@@ -166,4 +166,3 @@ def calculate_structure_labels(
                 labels.iloc[delayed_idx] = label
 
     return labels
-
