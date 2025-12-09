@@ -30,12 +30,22 @@ def create_htf_bias_from_context(context: dict) -> HTFBias:
     else:
         confidence = "low"
 
+    # Set structure quality metrics for proper structure alignment scoring
+    # These values ensure structure_alignment gets full points (2.5 max)
+    structure_clarity = context.get("structure_clarity", 0.9)  # High clarity for tests
+    bars_since_bos = context.get("bars_since_bos", 10)  # Recent BOS for tests
+    chop_detected = context.get("chop_detected", False)  # No chop for tests
+
     return HTFBias(
         bias=bias,
         direction=direction,
         score=score,
         confidence=confidence,
         dxy_alignment=True,  # Assume aligned for tests
+        structure_clarity=structure_clarity,
+        bars_since_bos=bars_since_bos,
+        chop_detected=chop_detected,
+        vwap_trend_confirmed=context.get("vwap_trend_confirmed", True),  # Assume confirmed for tests
     )
 
 
@@ -806,7 +816,7 @@ class TestEnhancedStructureAlignment:
     """Test enhanced structure alignment with BOS bonus (CHoCH is penalized, not rewarded)."""
 
     def test_enhanced_structure_with_bos(self) -> None:
-        """Test BOS detection adds bonus to structure score."""
+        """Test structure alignment with recent BOS gets full points."""
         from rule_engine.scoring import calculate_structure_alignment
 
         features = pd.Series(
@@ -826,13 +836,16 @@ class TestEnhancedStructureAlignment:
             bos_detected=True,
             choch_detected=False,
             dxy_alignment=True,
+            structure_clarity=0.9,  # High clarity (40% of max)
+            bars_since_bos=10,  # Recent BOS (30% of max)
+            chop_detected=False,  # No chop (30% of max)
         )
 
         max_points = 2.5
         score = calculate_structure_alignment(features, htf_bias, max_points)
 
-        # Should get base (70%) + BOS bonus (15%) = 85% of max
-        expected = max_points * 0.85
+        # Should get full points: clarity (40%) + recent BOS (30%) + no chop (30%) = 100%
+        expected = max_points
         assert abs(score - expected) < 0.01
 
     def test_enhanced_structure_with_choch(self) -> None:
@@ -856,17 +869,21 @@ class TestEnhancedStructureAlignment:
             bos_detected=False,
             choch_detected=True,
             dxy_alignment=True,
+            structure_clarity=0.9,  # High clarity (40% of max)
+            bars_since_bos=35,  # Stale BOS (no credit)
+            chop_detected=False,  # No chop (30% of max)
         )
 
         max_points = 2.5
         score = calculate_structure_alignment(features, htf_bias, max_points)
 
-        # Should get only base (70%) - CHoCH is NOT rewarded (penalized in adjust_score_with_htf)
+        # Should get: clarity (40%) + no chop (30%) = 70% of max
+        # CHoCH is NOT rewarded here (penalized in adjust_score_with_htf instead)
         expected = max_points * 0.7
         assert abs(score - expected) < 0.01
 
     def test_enhanced_structure_with_both(self) -> None:
-        """Test BOS adds bonus but CHoCH does NOT (CHoCH indicates reversal)."""
+        """Test structure alignment with both BOS and CHoCH (CHoCH indicates reversal)."""
         from rule_engine.scoring import calculate_structure_alignment
 
         features = pd.Series(
@@ -886,14 +903,17 @@ class TestEnhancedStructureAlignment:
             bos_detected=True,
             choch_detected=True,
             dxy_alignment=True,
+            structure_clarity=0.9,  # High clarity (40% of max)
+            bars_since_bos=10,  # Recent BOS (30% of max)
+            chop_detected=False,  # No chop (30% of max)
         )
 
         max_points = 2.5
         score = calculate_structure_alignment(features, htf_bias, max_points)
 
-        # Should get base (70%) + BOS (15%) = 85% of max
+        # Should get full points: clarity (40%) + recent BOS (30%) + no chop (30%) = 100%
         # CHoCH is NOT rewarded here (penalized in adjust_score_with_htf instead)
-        expected = max_points * 0.85
+        expected = max_points
         assert abs(score - expected) < 0.01
 
 
