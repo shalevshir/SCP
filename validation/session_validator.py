@@ -121,7 +121,7 @@ class SessionValidator:
         return self._config.default_rule
 
     def _is_within_window(self, local_dt: datetime, rule: SeasonRule) -> bool:
-        current_time = local_dt.timetz().replace(tzinfo=None)
+        current_time = local_dt.time()
         start = rule.window_start
         end = rule.window_end
 

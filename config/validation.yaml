@@ -1,14 +1,14 @@
 # Validation Configuration for SCP Trading Bot
 # Defines seasonality rules, session windows, and trading constraints per SOP
 
-# Timezone for session validation (London time converted to America/New_York for consistency)
-timezone: "Europe/London"
+# Timezone for session validation (ILT - Israel Local Time per SOP)
+timezone: "Asia/Jerusalem"
 
 # Default session rules (applied when no season-specific rule matches)
 default_session:
   name: "Default Conservative"
-  window_start: "10:00"  # London time
-  window_end: "13:00"    # London time
+  window_start: "10:00"  # ILT (Israel Local Time)
+  window_end: "13:00"    # ILT (Israel Local Time)
   allowed_tiers:
     - "Conservative"
     - "EarlyMild"

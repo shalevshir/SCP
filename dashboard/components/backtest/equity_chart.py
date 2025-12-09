@@ -92,9 +92,11 @@ def render_equity_chart(
 
     running_pnl = 0.0
     running_dollars = 0.0
+    trade_counter = 0  # Separate counter that increments only for included trades
 
-    for i, trade in enumerate(trades_sorted):
+    for trade in trades_sorted:
         if trade.pnl is not None:
+            trade_counter += 1  # Increment only when trade is included
             running_pnl += trade.pnl
             cumulative_pnl.append(running_pnl)
 
@@ -105,7 +107,7 @@ def render_equity_chart(
                 cumulative_dollars.append(running_dollars)
 
             timestamps.append(trade.exit_timestamp or trade.entry_timestamp)
-            trade_numbers.append(i + 1)
+            trade_numbers.append(trade_counter)  # Use sequential counter, not enumerate index
 
     # Calculate drawdown
     if display_mode == "points":

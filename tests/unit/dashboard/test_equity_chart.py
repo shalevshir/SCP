@@ -205,3 +205,174 @@ def test_render_equity_chart_with_valid_pnl(sample_entry_execution):
     if fig.layout.annotations:
         assert "No PnL data available" not in str(fig.layout.annotations)
 
+
+def test_render_equity_chart_with_mixed_pnl_sequential_trade_numbers(sample_entry_execution):
+    """Test that trade_numbers are sequential (1, 2, 3) even when some trades have None PnL.
+    
+    This verifies the fix for the bug where enumerate index was used instead of
+    a separate counter, causing gaps in trade_numbers when trades with pnl=None
+    were skipped.
+    """
+    # Create trades: first has None PnL (should be skipped), others have valid PnL
+    trades = [
+        Trade(
+            trade_id="test-trade-001",
+            symbol="GC",
+            timeframe="1m",
+            entry_execution=sample_entry_execution,
+            entry_timestamp=datetime(2025, 1, 1, 10, 1, tzinfo=UTC),
+            entry_price=2650.0,
+            direction="long",
+            setup_type="VWAP_RECLAIM",
+            stop_loss=2645.0,
+            take_profit=2665.0,
+            sl_rationale="Below confirmation candle low",
+            tp_rationale="3R continuation setup",
+            risk_amount=5.0,
+            reward_amount=15.0,
+            r_multiple=3.0,
+            contracts=1,
+            exit_timestamp=None,
+            exit_price=None,
+            exit_reason=None,
+            pnl=None,  # First trade has None PnL - should be skipped
+            pnl_percent=None,
+            r_realized=None,
+            pnl_dollars=None,
+            pnl_net=None,
+            slippage_cost=None,
+            commission_cost=None,
+            status="OPEN",
+            duration_bars=None,
+            invalidation_triggered=False,
+        ),
+        Trade(
+            trade_id="test-trade-002",
+            symbol="GC",
+            timeframe="1m",
+            entry_execution=sample_entry_execution,
+            entry_timestamp=datetime(2025, 1, 1, 10, 5, tzinfo=UTC),
+            entry_price=2651.0,
+            direction="short",
+            setup_type="VWAP_FADE",
+            stop_loss=2655.0,
+            take_profit=2636.0,
+            sl_rationale="Above sweep candle high",
+            tp_rationale="2R fade setup",
+            risk_amount=4.0,
+            reward_amount=8.0,
+            r_multiple=2.0,
+            contracts=1,
+            exit_timestamp=datetime(2025, 1, 1, 10, 10, tzinfo=UTC),
+            exit_price=2636.0,
+            exit_reason="TP",
+            pnl=15.0,  # Valid PnL - should be included as trade #1
+            pnl_percent=375.0,
+            r_realized=3.75,
+            pnl_dollars=150.0,
+            pnl_net=145.0,
+            slippage_cost=2.5,
+            commission_cost=2.5,
+            status="CLOSED_WIN",
+            duration_bars=5,
+            invalidation_triggered=False,
+        ),
+        Trade(
+            trade_id="test-trade-003",
+            symbol="GC",
+            timeframe="1m",
+            entry_execution=sample_entry_execution,
+            entry_timestamp=datetime(2025, 1, 1, 10, 15, tzinfo=UTC),
+            entry_price=2640.0,
+            direction="long",
+            setup_type="VWAP_RECLAIM",
+            stop_loss=2635.0,
+            take_profit=2660.0,
+            sl_rationale="Below confirmation candle low",
+            tp_rationale="3R continuation setup",
+            risk_amount=5.0,
+            reward_amount=20.0,
+            r_multiple=4.0,
+            contracts=1,
+            exit_timestamp=datetime(2025, 1, 1, 10, 20, tzinfo=UTC),
+            exit_price=2660.0,
+            exit_reason="TP",
+            pnl=20.0,  # Valid PnL - should be included as trade #2
+            pnl_percent=400.0,
+            r_realized=4.0,
+            pnl_dollars=200.0,
+            pnl_net=195.0,
+            slippage_cost=2.5,
+            commission_cost=2.5,
+            status="CLOSED_WIN",
+            duration_bars=5,
+            invalidation_triggered=False,
+        ),
+        Trade(
+            trade_id="test-trade-004",
+            symbol="GC",
+            timeframe="1m",
+            entry_execution=sample_entry_execution,
+            entry_timestamp=datetime(2025, 1, 1, 10, 25, tzinfo=UTC),
+            entry_price=2655.0,
+            direction="short",
+            setup_type="VWAP_FADE",
+            stop_loss=2660.0,
+            take_profit=2630.0,
+            sl_rationale="Above sweep candle high",
+            tp_rationale="2R fade setup",
+            risk_amount=5.0,
+            reward_amount=10.0,
+            r_multiple=2.0,
+            contracts=1,
+            exit_timestamp=datetime(2025, 1, 1, 10, 30, tzinfo=UTC),
+            exit_price=2630.0,
+            exit_reason="TP",
+            pnl=25.0,  # Valid PnL - should be included as trade #3
+            pnl_percent=500.0,
+            r_realized=5.0,
+            pnl_dollars=250.0,
+            pnl_net=245.0,
+            slippage_cost=2.5,
+            commission_cost=2.5,
+            status="CLOSED_WIN",
+            duration_bars=5,
+            invalidation_triggered=False,
+        ),
+    ]
+
+    results = BacktestResults(
+        trades=trades,
+        executions=[],
+        total_pnl=60.0,
+        win_rate=100.0,
+        total_trades=4,
+        winning_trades=3,
+        losing_trades=0,
+        average_r=4.0,
+    )
+
+    # Should render chart with data
+    fig = render_equity_chart(results=results, display_mode="points")
+
+    assert fig is not None
+    assert len(fig.data) > 0
+    
+    # Extract trade_numbers from the first trace (equity curve)
+    equity_trace = fig.data[0]
+    # Convert to list (x and y may be array, tuple, or list)
+    trade_numbers = list(equity_trace.x)
+    cumulative_pnl = list(equity_trace.y)
+    
+    # Verify trade_numbers are sequential starting from 1
+    # Even though first trade was skipped, numbers should be [1, 2, 3], not [2, 3, 4]
+    assert trade_numbers == [1, 2, 3], (
+        f"Expected trade_numbers to be [1, 2, 3], got {trade_numbers}. "
+        "This indicates the enumerate index bug is still present."
+    )
+    
+    # Verify cumulative PnL values are correct
+    assert cumulative_pnl == [15.0, 35.0, 60.0], (
+        f"Expected cumulative PnL to be [15.0, 35.0, 60.0], got {cumulative_pnl}"
+    )
+
