@@ -16,6 +16,134 @@ from rule_engine.htf.types import HTFBias
 logger = get_logger(__name__)
 
 
+def detect_structure_chop(structure_labels: list[str | None], lookback: int = 10) -> bool:
+    """Detect chop when recent structure labels are mixed.
+
+    Chop = seeing both bullish (HH/HL) and bearish (LH/LL) labels
+    within the lookback window, indicating indecisive market structure.
+
+    Args:
+        structure_labels: List of structure labels (HH/HL/LH/LL/None), most recent last
+        lookback: Number of recent labels to examine (default: 10)
+
+    Returns:
+        True if chop detected (both bullish and bearish labels present)
+
+    Example:
+        >>> labels = [None, "HH", "HL", "LH", "LL", "HH"]
+        >>> detect_structure_chop(labels, lookback=5)
+        True  # Mixed HH/HL and LH/LL in window
+    """
+    # Filter to non-None labels and take last N
+    valid_labels = [label for label in structure_labels if label is not None]
+    recent = valid_labels[-lookback:] if len(valid_labels) > lookback else valid_labels
+
+    if len(recent) < 2:
+        return False  # Need at least 2 labels to detect chop
+
+    bullish = {"HH", "HL"}
+    bearish = {"LH", "LL"}
+    has_bullish = bool(set(recent) & bullish)
+    has_bearish = bool(set(recent) & bearish)
+
+    return has_bullish and has_bearish
+
+
+def calculate_structure_clarity(
+    structure_labels: list[str | None], lookback: int = 10
+) -> float:
+    """Calculate structure clarity score (0-1) based on swing sequence purity.
+
+    Clarity measures how consistent the recent structure labels are:
+    - 1.0 = All bullish (HH/HL) or all bearish (LH/LL)
+    - 0.5 = Mixed but with majority
+    - 0.0 = Complete chop (50/50 mix)
+
+    Args:
+        structure_labels: List of structure labels, most recent last
+        lookback: Number of recent labels to examine (default: 10)
+
+    Returns:
+        Float 0-1 indicating structure purity
+
+    Example:
+        >>> labels = ["HH", "HL", "HH", "HL", "HH"]
+        >>> calculate_structure_clarity(labels, lookback=5)
+        1.0  # All bullish
+
+        >>> labels = ["HH", "HL", "LH", "LL", "HH"]
+        >>> calculate_structure_clarity(labels, lookback=5)
+        0.2  # Mixed, 60% bullish vs 40% bearish = |0.6-0.4| = 0.2
+    """
+    # Filter to non-None labels and take last N
+    valid_labels = [label for label in structure_labels if label is not None]
+    recent = valid_labels[-lookback:] if len(valid_labels) > lookback else valid_labels
+
+    if len(recent) == 0:
+        return 0.0  # No data
+
+    bullish = {"HH", "HL"}
+    bearish = {"LH", "LL"}
+
+    bullish_count = sum(1 for label in recent if label in bullish)
+    bearish_count = sum(1 for label in recent if label in bearish)
+    total = bullish_count + bearish_count
+
+    if total == 0:
+        return 0.0
+
+    # Calculate purity: 1.0 = all one direction, 0.0 = 50/50 split
+    bullish_ratio = bullish_count / total
+    bearish_ratio = bearish_count / total
+
+    # Purity = abs difference from 50/50 * 2 (normalize to 0-1)
+    purity = abs(bullish_ratio - bearish_ratio)
+
+    return purity
+
+
+def calculate_bars_since_event(
+    event_series: pd.Series | None, current_timestamp: pd.Timestamp
+) -> int | None:
+    """Calculate number of bars since last event occurrence.
+
+    Args:
+        event_series: Series with event labels (non-None = event detected)
+        current_timestamp: Current timestamp to measure from
+
+    Returns:
+        Number of bars since last event, or None if no event found
+
+    Example:
+        >>> events = pd.Series([None, None, "BOS", None, None])
+        >>> events.index = pd.date_range("2025-01-01", periods=5, freq="1H")
+        >>> calculate_bars_since_event(events, events.index[-1])
+        2  # Event was 2 bars ago
+    """
+    if event_series is None or event_series.empty:
+        return None
+
+    # Find all events (non-None values)
+    event_mask = event_series.notna()
+    if not event_mask.any():
+        return None
+
+    # Get index of last event
+    last_event_idx = event_series[event_mask].index[-1]
+
+    # Count bars from last event to current
+    if last_event_idx not in event_series.index:
+        return None
+
+    try:
+        current_idx_pos = event_series.index.get_loc(current_timestamp)
+        last_event_idx_pos = event_series.index.get_loc(last_event_idx)
+        bars_since = current_idx_pos - last_event_idx_pos
+        return int(bars_since) if bars_since >= 0 else None
+    except KeyError:
+        return None
+
+
 def compute_htf_bias_multi_timeframe(
     features_1h: pd.Series,
     features_15m: pd.Series,
@@ -531,7 +659,40 @@ def compute_htf_bias(
         )
         logger.info(f"DXY alignment: {dxy_alignment} | {dxy_alignment_rationale}")
 
-    # 6. Extract structure event candles
+    # 6. Calculate structure quality metrics
+    structure_clarity = 0.0
+    chop_detected_flag = False
+    bars_since_bos_val = None
+    bars_since_choch_val = None
+
+    # Build list of structure labels from available data
+    structure_labels_list: list[str | None] = []
+
+    # Extract structure labels from DataFrames if available
+    if df_1h is not None and len(df_1h) > 0:
+        # Try to get structure_label or structure_type column
+        if "structure_label" in df_1h.columns:
+            structure_labels_list = df_1h["structure_label"].tolist()
+        elif "structure_type" in df_1h.columns:
+            structure_labels_list = df_1h["structure_type"].tolist()
+
+    # If we have structure labels, calculate clarity and chop
+    if structure_labels_list:
+        structure_clarity = calculate_structure_clarity(structure_labels_list, lookback=10)
+        chop_detected_flag = detect_structure_chop(structure_labels_list, lookback=10)
+
+        logger.debug(
+            f"Structure quality: clarity={structure_clarity:.2f}, chop={chop_detected_flag}"
+        )
+
+    # Calculate bars since BOS/CHoCH events
+    if bos_series is not None and timestamp is not None:
+        bars_since_bos_val = calculate_bars_since_event(bos_series, timestamp)
+
+    if choch_series is not None and timestamp is not None:
+        bars_since_choch_val = calculate_bars_since_event(choch_series, timestamp)
+
+    # 7. Extract structure event candles
     from rule_engine.htf.structure import (
         extract_bos_candle,
         extract_choch_candle,
@@ -598,6 +759,10 @@ def compute_htf_bias(
         dxy_chop_5m=dxy_chop_5m,
         dxy_alignment=dxy_alignment,
         dxy_alignment_score=dxy_alignment_score,
+        structure_clarity=structure_clarity,
+        bars_since_bos=bars_since_bos_val,
+        bars_since_choch=bars_since_choch_val,
+        chop_detected=chop_detected_flag,
         seasonality_period=seasonality_period,
         seasonality_adjustment=seasonality_adjustment,
         conflict_detected=conflict_detected,
@@ -729,7 +894,7 @@ def calculate_bars_since_event(
     and returns the number of bars between that event and current_ts.
 
     Args:
-        events: Series with event labels (indexed by timestamp)
+        events: Series with event labels (indexed by timestamp or integer)
         current_ts: Current timestamp to measure from
 
     Returns:
@@ -747,9 +912,20 @@ def calculate_bars_since_event(
     if len(events) == 0:
         return None
 
-    # Find the most recent non-None event up to and including current_ts
-    # Filter to events at or before current_ts
-    valid_events = events[events.index <= current_ts]
+    # Check if index is datetime-like (DatetimeIndex) or integer (RangeIndex/Int64Index)
+    is_datetime_index = pd.api.types.is_datetime64_any_dtype(events.index)
+
+    if is_datetime_index:
+        # Find the most recent non-None event up to and including current_ts
+        # Filter to events at or before current_ts
+        try:
+            valid_events = events[events.index <= current_ts]
+        except TypeError:
+            # If comparison fails (e.g., mixed types), use all events
+            valid_events = events
+    else:
+        # For integer indexes, use all events (can't filter by timestamp)
+        valid_events = events
 
     if len(valid_events) == 0:
         return None
@@ -761,16 +937,24 @@ def calculate_bars_since_event(
         return None
 
     # Get the index of the most recent event
-    last_event_ts = non_none_events.index[-1]
+    last_event_idx = non_none_events.index[-1]
 
-    # Find position of current_ts and last_event_ts in the original series
-    # Count bars between them
-    try:
-        current_idx = events.index.get_loc(current_ts)
-        event_idx = events.index.get_loc(last_event_ts)
+    if is_datetime_index:
+        # Find position of current_ts and last_event_ts in the original series
+        # Count bars between them
+        try:
+            current_idx = events.index.get_loc(current_ts)
+            event_idx = events.index.get_loc(last_event_idx)
+            bars_since = current_idx - event_idx
+            return int(bars_since)
+        except (KeyError, IndexError):
+            # If timestamps don't match exactly, try to find closest
+            # For simplicity, return None if we can't match
+            return None
+    else:
+        # For integer indexes, calculate position difference directly
+        # Use the last position in the series as current position
+        current_idx = len(events) - 1
+        event_idx = events.index.get_loc(last_event_idx) if hasattr(events.index, 'get_loc') else list(events.index).index(last_event_idx)
         bars_since = current_idx - event_idx
         return int(bars_since)
-    except (KeyError, IndexError):
-        # If timestamps don't match exactly, try to find closest
-        # For simplicity, return None if we can't match
-        return None
