@@ -49,20 +49,20 @@ def create_price_chart_with_markers() -> dbc.Card:
 
 def render_price_chart_with_markers(
     results: BacktestResults,
-    gc_df: pd.DataFrame,
+    gc_df: pd.DataFrame | None,
     selected_trade_id: str | None = None,
 ) -> go.Figure:
     """Render price chart with entry/exit markers.
 
     Args:
         results: BacktestResults object with all trades
-        gc_df: GC price DataFrame with OHLCV columns and DatetimeIndex
+        gc_df: GC price DataFrame with OHLCV columns and DatetimeIndex, or None
         selected_trade_id: Optional trade ID to highlight
 
     Returns:
         Plotly figure with candlesticks and trade markers
     """
-    if gc_df.empty:
+    if gc_df is None or gc_df.empty:
         # Return empty chart
         fig = go.Figure()
         fig.update_layout(
