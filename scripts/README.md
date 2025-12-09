@@ -1,6 +1,23 @@
 # Scripts Directory
 
-This directory contains utility scripts for data fetching, analysis, and system maintenance.
+This directory contains utility scripts for data fetching, cleaning, analysis, and system maintenance.
+
+## Quick Reference
+
+```bash
+# 1. Fetch raw historical data (requires Databento API key)
+export DATABENTO_API_KEY="your-key"
+python scripts/fetch_gc_dx_ohlcv_to_csv.py
+
+# 2. Clean and deduplicate data (removes spreads, selects highest volume)
+./scripts/clean_all_csv_data.sh
+
+# 3. Resample to other timeframes (e.g., 15-minute bars)
+python scripts/resample_ohlcv_to_15m.py
+
+# Run tests for data cleaning
+poetry run pytest tests/unit/test_data_cleaner.py -v
+```
 
 ## Available Scripts
 
@@ -124,6 +141,86 @@ python scripts/resample_ohlcv_to_15m.py
 ```
 
 This approach keeps the repo lean while maintaining test data availability.
+
+---
+
+### `clean_csv_data.py` - Clean and Deduplicate OHLCV Data
+
+Processes raw OHLCV CSV files to remove spread instruments, filter by instrument prefix, and select the highest volume contract for each minute.
+
+**Requirements:**
+- Raw OHLCV CSV files with columns: timestamp, symbol, open, high, low, close, volume
+
+**Usage:**
+
+```bash
+# Clean Gold (GC) data
+poetry run python scripts/clean_csv_data.py \
+  --input data/gc_dx_ohlcv/glbx_ohlcv_1m.csv \
+  --output data/gc_dx_ohlcv/GC_ohlcv_1m.csv \
+  --prefix GC
+
+# Clean Dollar Index (DX) data
+poetry run python scripts/clean_csv_data.py \
+  --input data/gc_dx_ohlcv/dxy_ohlcv_1m.csv.csv \
+  --output data/gc_dx_ohlcv/DX_ohlcv_1m.csv \
+  --prefix DX
+
+# Enable verbose logging
+poetry run python scripts/clean_csv_data.py \
+  --input data/gc_dx_ohlcv/glbx_ohlcv_1m.csv \
+  --output data/gc_dx_ohlcv/GC_ohlcv_1m.csv \
+  --prefix GC \
+  --verbose
+```
+
+**Features:**
+- **Remove spread instruments**: Filters out spread instruments like "GC-DX" or "GCZ24-GCF25"
+- **Prefix filtering**: Keeps only instruments starting with specified prefix (GC or DX)
+- **Volume selection**: For each minute, selects the contract with highest trading volume
+- **Deduplication**: Ensures no duplicate timestamps in output
+- **Sorting**: Outputs data sorted by timestamp
+- **Validation**: Checks for required columns and logs comprehensive statistics
+- **Full test coverage**: 15 unit tests following TDD principles
+
+**What Gets Filtered Out:**
+- Spread instruments (any symbol containing "-")
+- Instruments not starting with the specified prefix
+- Lower-volume contracts when multiple contracts exist at the same timestamp
+- Duplicate timestamps
+
+**Test Coverage:**
+
+Run tests to verify functionality:
+```bash
+poetry run pytest tests/unit/test_data_cleaner.py -v
+```
+
+---
+
+### `clean_all_csv_data.sh` - Batch Clean All Data
+
+Convenience script to clean both GC and DX data files in one command.
+
+**Usage:**
+
+```bash
+# Make script executable (first time only)
+chmod +x scripts/clean_all_csv_data.sh
+
+# Run batch cleaning
+./scripts/clean_all_csv_data.sh
+```
+
+**What It Does:**
+1. Processes `glbx_ohlcv_1m.csv` → `GC_ohlcv_1m.csv` (Gold data)
+2. Processes `dxy_ohlcv_1m.csv.csv` → `DX_ohlcv_1m.csv` (Dollar Index data)
+3. Handles missing files gracefully with warnings
+4. Provides summary of cleaned output files
+
+**Output:**
+- `data/gc_dx_ohlcv/GC_ohlcv_1m.csv` - Clean Gold 1-minute bars
+- `data/gc_dx_ohlcv/DX_ohlcv_1m.csv` - Clean DX 1-minute bars
 
 ---
 

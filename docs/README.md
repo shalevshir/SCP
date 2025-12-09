@@ -20,6 +20,10 @@ This directory contains documentation for the Shir Capital Partners Trading Bot 
   - [RSI](./feature-engine/rsi.md) - Relative Strength Index
   - [EMA](./feature-engine/ema.md) - Exponential Moving Average
   - [DXY Correlation](./feature-engine/dxy-correlation.md) - Gold-Dollar correlation
+- [**🎯 BACKTEST SYSTEM (NEW)**](./backtester/README.md) - Complete backtesting documentation
+  - [Comprehensive Guide](./backtester/comprehensive-backtest-system.md) - 1,225 lines of detailed documentation
+  - [Quick Reference](./backtester/quick-reference.md) - Condensed lookup guide
+  - [Component Docs](./backtester/) - Replay engine, simulator, trades, invalidations
 
 ## Phase 1 Status
 
@@ -43,6 +47,10 @@ This directory contains documentation for the Shir Capital Partners Trading Bot 
   - ValidationContext with SOP enforcement
   - ValidationEngine with 6 SOP rule checks
   - 55 tests, 100% coverage
+- ✅ **Backtest System Documentation** (Phase 3)
+  - Comprehensive 1,225-line technical documentation
+  - Quick reference guide for rapid lookup
+  - Complete coverage: candle processing, guardrails, scoring, HTF, risk management, trade simulation
 
 ### In Progress
 - Additional data layer components (DataNormalizer)
