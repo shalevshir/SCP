@@ -51,8 +51,29 @@ def compute_htf_bias_multi_timeframe(
     bearish_signals = 0
 
     # === 1H STRUCTURE (Primary Signal, 3 points) ===
-    structure_1h = features_1h.get("structure_label") or features_1h.get(
-        "structure_type", ""
+    # Get structure label, handling None values properly
+    structure_1h = features_1h.get("structure_label")
+    is_none_or_nan_1h = (
+        structure_1h is None
+        or (isinstance(structure_1h, float) and pd.isna(structure_1h))
+    )
+    if is_none_or_nan_1h:
+        structure_1h = features_1h.get("structure_type")
+    is_none_or_nan_1h = (
+        structure_1h is None
+        or (isinstance(structure_1h, float) and pd.isna(structure_1h))
+    )
+    if is_none_or_nan_1h:
+        structure_1h = ""
+    
+    # Debug logging for structure detection
+    # Log at INFO level when structure is valid for visibility
+    is_valid_structure = structure_1h in ("HH", "HL", "LH", "LL")
+    log_level = logger.info if is_valid_structure else logger.debug
+    log_level(
+        f"1H structure check - value: '{structure_1h}' "
+        f"(type: {type(structure_1h).__name__}), "
+        f"raw: {features_1h.get('structure_label')!r}"
     )
     if structure_1h in ("HH", "HL"):
         bullish_signals += 1
@@ -90,9 +111,20 @@ def compute_htf_bias_multi_timeframe(
             total_score += 2.0
 
     # === 15M STRUCTURE (Confirmation, 2 points) ===
-    structure_15m = features_15m.get("structure_label") or features_15m.get(
-        "structure_type", ""
+    # Get structure label, handling None values properly
+    structure_15m = features_15m.get("structure_label")
+    is_none_or_nan = (
+        structure_15m is None
+        or (isinstance(structure_15m, float) and pd.isna(structure_15m))
     )
+    if is_none_or_nan:
+        structure_15m = features_15m.get("structure_type")
+    is_none_or_nan = (
+        structure_15m is None
+        or (isinstance(structure_15m, float) and pd.isna(structure_15m))
+    )
+    if is_none_or_nan:
+        structure_15m = ""
     if structure_15m in ("HH", "HL"):
         if bullish_signals > bearish_signals:
             # Confirms bullish bias
@@ -184,6 +216,9 @@ def compute_htf_bias(
     features_1h: pd.Series,
     features_15m: pd.Series,
     dxy_1h: pd.DataFrame | None = None,
+    dxy_5m: pd.DataFrame | None = None,
+    features_1m: pd.Series | None = None,
+    features_5m: pd.Series | None = None,
     df_15m: pd.DataFrame | None = None,
     df_1h: pd.DataFrame | None = None,
     sweep_events_15m: pd.Series | None = None,
@@ -198,9 +233,12 @@ def compute_htf_bias(
         features_1h: 1h timeframe features
         features_15m: 15m timeframe features
         dxy_1h: Optional DXY 1h DataFrame for chop detection (needs OHLC columns)
-        df_15m: Optional 15M price DataFrame for price chop detection (needs OHLC columns)
-        df_1h: Optional 1H price DataFrame for BOS/CHoCH/FVG detection (needs OHLC columns)
-        sweep_events_15m: Optional Series with liquidity sweep events from detect_liquidity_sweeps()
+        dxy_5m: Optional DXY 5m DataFrame for chop detection (OHLC)
+        features_1m: Optional 1m timeframe features (micro correlation)
+        features_5m: Optional 5m timeframe features (micro & DXY structure)
+        df_15m: Optional 15M price DataFrame for chop detection (OHLC)
+        df_1h: Optional 1H price DataFrame for BOS/CHoCH/FVG (OHLC)
+        sweep_events_15m: Optional Series with liquidity sweep events
         timestamp: Current timestamp for seasonality
 
     Returns:
@@ -443,25 +481,55 @@ def compute_htf_bias(
             logger.error(f"Error calculating FVG alignment: {e}")
             # Continue with 0.0 score
 
-    # 5. DXY alignment flag
-    dxy_alignment = False
+    # 5. DXY alignment using behavior-based SOP rules
+    from rule_engine.htf.dxy import compute_dxy_alignment
+
+    # Extract correlation values
     dxy_corr_1h = features_1h.get("dxy_corr")
     dxy_corr_15m = features_15m.get("dxy_corr")
+    dxy_corr_1m = features_1m.get("dxy_corr_micro") if features_1m is not None else None
+    dxy_corr_5m = features_5m.get("dxy_corr_micro") if features_5m is not None else None
 
-    # DXY alignment: strong negative correlation expected for both bull and bear bias
-    # Gold typically moves inverse to DXY
-    # IMPORTANT: Use original_bias to reflect underlying market structure
-    # even when bias is neutralized due to DXY chop or conflicts
+    # Extract DXY structure label (from 5M features)
+    dxy_structure = (
+        features_5m.get("dxy_structure_label")
+        if features_5m is not None
+        else None
+    )
+
+    # Detect 5M chop
+    dxy_chop_5m = False
+    if dxy_5m is not None and len(dxy_5m) > 0:
+        try:
+            chop_series_5m = detect_dxy_chop(dxy_5m)
+            if len(chop_series_5m) > 0:
+                dxy_chop_5m = bool(chop_series_5m.iloc[-1])
+        except Exception as e:
+            logger.warning(f"Error detecting DXY 5M chop: {e}")
+
+    # Compute alignment using behavior-based rules
+    # IMPORTANT: Use original_direction (not neutralized)
+    # to reflect underlying market structure
+    dxy_alignment = False
+    dxy_alignment_score = 0.0
+    dxy_alignment_rationale = "N/A"
+    
     if original_bias != "neutral":
-        if (
-            dxy_corr_1h is not None
-            and not pd.isna(dxy_corr_1h)
-            and dxy_corr_1h < -0.6
-            and dxy_corr_15m is not None
-            and not pd.isna(dxy_corr_15m)
-            and dxy_corr_15m < -0.6
-        ):
-            dxy_alignment = True
+        original_direction = "long" if original_bias == "bullish" else "short"
+        (
+            dxy_alignment,
+            dxy_alignment_score,
+            dxy_alignment_rationale,
+        ) = compute_dxy_alignment(
+            trade_direction=original_direction,
+            dxy_structure=dxy_structure,
+            dxy_chop_5m=dxy_chop_5m,
+            dxy_corr_1m=dxy_corr_1m,
+            dxy_corr_5m=dxy_corr_5m,
+            dxy_corr_15m=dxy_corr_15m,
+            dxy_corr_1h=dxy_corr_1h,
+        )
+        logger.info(f"DXY alignment: {dxy_alignment} | {dxy_alignment_rationale}")
 
     # 6. Extract structure event candles
     from rule_engine.htf.structure import (
@@ -523,8 +591,13 @@ def compute_htf_bias(
         fvg_alignment_score=fvg_alignment_score,
         dxy_corr_1h=dxy_corr_1h,
         dxy_corr_15m=dxy_corr_15m,
+        dxy_corr_1m=dxy_corr_1m,
+        dxy_corr_5m=dxy_corr_5m,
+        dxy_structure=dxy_structure,
         dxy_chop_detected=dxy_chop_detected,
+        dxy_chop_5m=dxy_chop_5m,
         dxy_alignment=dxy_alignment,
+        dxy_alignment_score=dxy_alignment_score,
         seasonality_period=seasonality_period,
         seasonality_adjustment=seasonality_adjustment,
         conflict_detected=conflict_detected,
