@@ -74,13 +74,13 @@ class TestDXYChopDetection:
         result = detect_dxy_chop(simple_chop_data, wick_threshold=0.5, min_chop_candles=3)
 
         # First 2 candles should be False (need 3 consecutive)
-        assert result.iloc[0] == False
-        assert result.iloc[1] == False
+        assert not result.iloc[0]
+        assert not result.iloc[1]
 
         # From candle 3 onwards should be True (3+ consecutive chop)
-        assert result.iloc[2] == True
-        assert result.iloc[3] == True
-        assert result.iloc[4] == True
+        assert result.iloc[2]
+        assert result.iloc[3]
+        assert result.iloc[4]
 
     def test_detect_chop_two_consecutive_not_enough(
         self, simple_chop_data: pd.DataFrame
@@ -91,7 +91,7 @@ class TestDXYChopDetection:
         result = detect_dxy_chop(data, wick_threshold=0.5, min_chop_candles=3)
 
         # Should all be False (need 3 consecutive)
-        assert result.all() == False
+        assert not result.any()
 
     def test_detect_chop_single_candle_not_enough(
         self, simple_chop_data: pd.DataFrame
@@ -102,7 +102,7 @@ class TestDXYChopDetection:
         result = detect_dxy_chop(data, wick_threshold=0.5, min_chop_candles=3)
 
         # Should be False
-        assert result.iloc[0] == False
+        assert not result.iloc[0]
 
     def test_detect_chop_trending_data_no_trigger(
         self, simple_trending_data: pd.DataFrame
@@ -111,7 +111,7 @@ class TestDXYChopDetection:
         result = detect_dxy_chop(simple_trending_data, wick_threshold=0.5)
 
         # All should be False (no chop in trending data)
-        assert result.all() == False
+        assert not result.any()
 
     def test_detect_chop_interrupted_sequence_resets(
         self, mixed_chop_data: pd.DataFrame
@@ -120,29 +120,29 @@ class TestDXYChopDetection:
         result = detect_dxy_chop(mixed_chop_data, wick_threshold=0.5, min_chop_candles=3)
 
         # Candles 0-1: chop but only 2 (not enough)
-        assert result.iloc[0] == False
-        assert result.iloc[1] == False
+        assert not result.iloc[0]
+        assert not result.iloc[1]
 
         # Candle 2: trending (resets count)
-        assert result.iloc[2] == False
+        assert not result.iloc[2]
 
         # Candles 3-4: chop but only 2 (not enough, count was reset)
-        assert result.iloc[3] == False
-        assert result.iloc[4] == False
+        assert not result.iloc[3]
+        assert not result.iloc[4]
 
         # Candles 5-6: trending
-        assert result.iloc[5] == False
-        assert result.iloc[6] == False
+        assert not result.iloc[5]
+        assert not result.iloc[6]
 
     def test_detect_chop_custom_threshold(self, simple_chop_data: pd.DataFrame) -> None:
         """Test chop detection with custom wick threshold."""
         # Very high threshold (only extreme wicks trigger)
         result_high = detect_dxy_chop(simple_chop_data, wick_threshold=10.0)
-        assert result_high.all() == False  # No candles meet threshold
+        assert not result_high.any()  # No candles meet threshold
 
         # Very low threshold (almost all candles trigger)
         result_low = detect_dxy_chop(simple_chop_data, wick_threshold=0.1)
-        assert result_low.iloc[2:].all() == True  # Most candles meet threshold
+        assert result_low.iloc[2:].all()  # Most candles meet threshold
 
     def test_detect_chop_custom_min_candles(self, simple_chop_data: pd.DataFrame) -> None:
         """Test chop detection with custom minimum consecutive candles."""
@@ -150,10 +150,10 @@ class TestDXYChopDetection:
         result = detect_dxy_chop(simple_chop_data, min_chop_candles=5)
 
         # First 4 should be False
-        assert result.iloc[:4].all() == False
+        assert not result.iloc[:4].any()
 
         # 5th candle should be True (5 consecutive)
-        assert result.iloc[4] == True
+        assert result.iloc[4]
 
     def test_detect_chop_doji_candles(self) -> None:
         """Test that doji candles (zero body) are treated as chop."""
@@ -170,7 +170,7 @@ class TestDXYChopDetection:
 
         # All doji should be considered chop
         # Third candle should trigger (3 consecutive)
-        assert result.iloc[2] == True
+        assert result.iloc[2]
 
     def test_detect_chop_empty_dataframe(self) -> None:
         """Test chop detection with empty DataFrame."""
@@ -195,7 +195,7 @@ class TestDXYChopDetection:
         result = detect_dxy_chop(small_df, min_chop_candles=3)
 
         # All should be False (need 3 candles, only have 2)
-        assert result.all() == False
+        assert not result.any()
 
     def test_detect_chop_missing_high_column(self) -> None:
         """Test that missing 'high' column raises ValueError."""
@@ -301,7 +301,7 @@ class TestDXYChopDetection:
         assert len(result) == len(nan_data)
 
         # NaN row should not be considered chop
-        assert result.iloc[1] == False
+        assert not result.iloc[1]
 
     def test_detect_chop_index_preserved(self, simple_chop_data: pd.DataFrame) -> None:
         """Test that result preserves input DataFrame index."""
@@ -339,11 +339,11 @@ class TestDXYChopDetection:
 
         # Ratio is 3.0, threshold 0.5, should trigger chop
         result = detect_dxy_chop(test_data, wick_threshold=0.5, min_chop_candles=1)
-        assert result.iloc[0] == True
+        assert result.iloc[0]
 
         # Ratio is 3.0, threshold 5.0, should not trigger chop
         result = detect_dxy_chop(test_data, wick_threshold=5.0, min_chop_candles=1)
-        assert result.iloc[0] == False
+        assert not result.iloc[0]
 
     def test_detect_chop_consecutive_count_accuracy(self) -> None:
         """Test accurate consecutive counting with interruptions."""
@@ -361,17 +361,17 @@ class TestDXYChopDetection:
         result = detect_dxy_chop(test_data, wick_threshold=0.5, min_chop_candles=3)
 
         # First 2: chop but not enough
-        assert result.iloc[0] == False
-        assert result.iloc[1] == False
+        assert not result.iloc[0]
+        assert not result.iloc[1]
 
         # Candle 2: trend (resets)
-        assert result.iloc[2] == False
+        assert not result.iloc[2]
 
         # Candles 3-4: chop but only 2 after reset
-        assert result.iloc[3] == False
-        assert result.iloc[4] == False
+        assert not result.iloc[3]
+        assert not result.iloc[4]
 
         # Candles 5-6: 3rd and 4th consecutive chop, should trigger
-        assert result.iloc[5] == True
-        assert result.iloc[6] == True
+        assert result.iloc[5]
+        assert result.iloc[6]
 

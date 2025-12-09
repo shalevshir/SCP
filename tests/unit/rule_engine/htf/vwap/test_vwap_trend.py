@@ -28,13 +28,13 @@ class TestVWAPTrendValidation:
         result = validate_vwap_trend(df, min_candles=3)
         
         # First 2 bars: insufficient history → False
-        assert result.iloc[0] == False
-        assert result.iloc[1] == False
+        assert not result.iloc[0]
+        assert not result.iloc[1]
         
         # Bar 2 onwards: 3 consecutive closes above VWAP → True
-        assert result.iloc[2] == True
-        assert result.iloc[3] == True
-        assert result.iloc[4] == True
+        assert result.iloc[2]
+        assert result.iloc[3]
+        assert result.iloc[4]
 
     def test_bearish_trend_confirmed(self):
         """Test that bearish trend is confirmed after N consecutive closes below VWAP."""
@@ -46,13 +46,13 @@ class TestVWAPTrendValidation:
         result = validate_vwap_trend(df, min_candles=3)
         
         # First 2 bars: insufficient history → False
-        assert result.iloc[0] == False
-        assert result.iloc[1] == False
+        assert not result.iloc[0]
+        assert not result.iloc[1]
         
         # Bar 2 onwards: 3 consecutive closes below VWAP → True
-        assert result.iloc[2] == True
-        assert result.iloc[3] == True
-        assert result.iloc[4] == True
+        assert result.iloc[2]
+        assert result.iloc[3]
+        assert result.iloc[4]
 
     def test_mixed_no_confirmation(self):
         """Test that crosses within window prevent confirmation."""
@@ -64,11 +64,11 @@ class TestVWAPTrendValidation:
         result = validate_vwap_trend(df, min_candles=3)
         
         # All bars: price crosses VWAP at index 2 → False throughout
-        assert result.iloc[0] == False
-        assert result.iloc[1] == False
-        assert result.iloc[2] == False  # Cross here
-        assert result.iloc[3] == False  # Within 3-bar window of cross
-        assert result.iloc[4] == False  # Within 3-bar window of cross
+        assert not result.iloc[0]
+        assert not result.iloc[1]
+        assert not result.iloc[2]  # Cross here
+        assert not result.iloc[3]  # Within 3-bar window of cross
+        assert not result.iloc[4]  # Within 3-bar window of cross
 
     def test_exact_threshold_confirms(self):
         """Test that exactly min_candles consecutive triggers confirmation."""
@@ -80,11 +80,11 @@ class TestVWAPTrendValidation:
         result = validate_vwap_trend(df, min_candles=3)
         
         # First 2 bars: insufficient history
-        assert result.iloc[0] == False
-        assert result.iloc[1] == False
+        assert not result.iloc[0]
+        assert not result.iloc[1]
         
         # Bar 2: exactly 3 consecutive above → True
-        assert result.iloc[2] == True
+        assert result.iloc[2]
 
     def test_just_under_threshold_no_confirmation(self):
         """Test that min_candles-1 consecutive does not trigger confirmation."""
@@ -96,8 +96,8 @@ class TestVWAPTrendValidation:
         result = validate_vwap_trend(df, min_candles=3)
         
         # All bars: only 2 candles, need 3 → False
-        assert result.iloc[0] == False
-        assert result.iloc[1] == False
+        assert not result.iloc[0]
+        assert not result.iloc[1]
 
     # =========================================================================
     # Edge Cases Tests (6 tests)
@@ -122,7 +122,7 @@ class TestVWAPTrendValidation:
         result = validate_vwap_trend(df, min_candles=3)
         
         assert len(result) == 1
-        assert result.iloc[0] == False
+        assert not result.iloc[0]
 
     def test_min_candles_one_immediate_confirmation(self):
         """Test that min_candles=1 gives immediate confirmation."""
@@ -134,10 +134,10 @@ class TestVWAPTrendValidation:
         result = validate_vwap_trend(df, min_candles=1)
         
         # Every bar where close != vwap should be confirmed
-        assert result.iloc[0] == True   # Above VWAP → confirmed
-        assert result.iloc[1] == True   # Above VWAP → confirmed
-        assert result.iloc[2] == True   # Below VWAP → confirmed (bearish)
-        assert result.iloc[3] == True   # Above VWAP → confirmed
+        assert result.iloc[0]   # Above VWAP → confirmed
+        assert result.iloc[1]   # Above VWAP → confirmed
+        assert result.iloc[2]   # Below VWAP → confirmed (bearish)
+        assert result.iloc[3]   # Above VWAP → confirmed
 
     def test_invalid_min_candles_zero(self):
         """Test that min_candles=0 raises ValueError."""
@@ -192,13 +192,13 @@ class TestVWAPTrendValidation:
         
         # First bar has NaN VWAP, affects rolling window
         # Bars 0-2: NaN in window → False
-        assert result.iloc[0] == False
-        assert result.iloc[1] == False
-        assert result.iloc[2] == False
+        assert not result.iloc[0]
+        assert not result.iloc[1]
+        assert not result.iloc[2]
         
         # Bar 3: rolling window [1,2,3] all valid and above → True
-        assert result.iloc[3] == True
-        assert result.iloc[4] == True
+        assert result.iloc[3]
+        assert result.iloc[4]
 
     def test_nan_in_close_column(self):
         """Test that NaN in close column results in False for those rows."""
@@ -210,15 +210,15 @@ class TestVWAPTrendValidation:
         result = validate_vwap_trend(df, min_candles=3)
         
         # Bars with NaN in rolling window → False
-        assert result.iloc[0] == False  # Insufficient history
-        assert result.iloc[1] == False  # NaN close
-        assert result.iloc[2] == False  # NaN in window
+        assert not result.iloc[0]  # Insufficient history
+        assert not result.iloc[1]  # NaN close
+        assert not result.iloc[2]  # NaN in window
         
         # Bar 3: rolling window [1,2,3] has NaN at index 1 → False
-        assert result.iloc[3] == False
+        assert not result.iloc[3]
         
         # Bar 4: rolling window [2,3,4] no NaN, all above VWAP → True
-        assert result.iloc[4] == True
+        assert result.iloc[4]
 
     def test_all_nan_returns_all_false(self):
         """Test that all NaN values result in all False."""
@@ -230,9 +230,9 @@ class TestVWAPTrendValidation:
         result = validate_vwap_trend(df, min_candles=3)
         
         # All NaN → all False
-        assert result.iloc[0] == False
-        assert result.iloc[1] == False
-        assert result.iloc[2] == False
+        assert not result.iloc[0]
+        assert not result.iloc[1]
+        assert not result.iloc[2]
 
     # =========================================================================
     # Validation Tests (3 tests)
@@ -248,12 +248,12 @@ class TestVWAPTrendValidation:
         result = validate_vwap_trend(df, min_candles=3)
         
         # First 2 bars: insufficient
-        assert result.iloc[0] == False
-        assert result.iloc[1] == False
+        assert not result.iloc[0]
+        assert not result.iloc[1]
         
         # Bar 2 onwards: 3 consecutive → True
-        assert result.iloc[2] == True
-        assert result.iloc[3] == True
+        assert result.iloc[2]
+        assert result.iloc[3]
 
     def test_configurable_min_candles_five(self):
         """Test that min_candles=5 requires 5 consecutive candles."""
@@ -265,14 +265,14 @@ class TestVWAPTrendValidation:
         result = validate_vwap_trend(df, min_candles=5)
         
         # First 4 bars: insufficient
-        assert result.iloc[0] == False
-        assert result.iloc[1] == False
-        assert result.iloc[2] == False
-        assert result.iloc[3] == False
+        assert not result.iloc[0]
+        assert not result.iloc[1]
+        assert not result.iloc[2]
+        assert not result.iloc[3]
         
         # Bar 4 onwards: 5 consecutive → True
-        assert result.iloc[4] == True
-        assert result.iloc[5] == True
+        assert result.iloc[4]
+        assert result.iloc[5]
 
     def test_index_preservation(self):
         """Test that output Series index matches input DataFrame index."""
@@ -302,19 +302,19 @@ class TestVWAPTrendValidation:
         result = validate_vwap_trend(df, min_candles=3)
         
         # Bars 0-2: 3 consecutive above → True at bar 2
-        assert result.iloc[2] == True
+        assert result.iloc[2]
         
         # Bar 3: breaks below → False (cross in window)
-        assert result.iloc[3] == False
+        assert not result.iloc[3]
         
         # Bar 4: still has cross in window → False
-        assert result.iloc[4] == False
+        assert not result.iloc[4]
         
         # Bar 5: window [3,4,5] has cross at 3 → False
-        assert result.iloc[5] == False
+        assert not result.iloc[5]
         
         # Bar 6: window [4,5,6] all above → True
-        assert result.iloc[6] == True
+        assert result.iloc[6]
 
     def test_equal_to_vwap_not_confirmed(self):
         """Test that close == vwap does not count as above or below."""
@@ -327,10 +327,10 @@ class TestVWAPTrendValidation:
         
         # Bar 1: close == vwap, breaks streak
         # Bar 2: window [0,1,2] has equality at index 1 → False
-        assert result.iloc[2] == False
+        assert not result.iloc[2]
         
         # Bar 3: window [1,2,3] has equality at index 1 → False
-        assert result.iloc[3] == False
+        assert not result.iloc[3]
 
     def test_alternating_bullish_bearish(self):
         """Test that alternating above/below never confirms."""
@@ -343,5 +343,5 @@ class TestVWAPTrendValidation:
         
         # All bars: alternating, never 3 consecutive in same direction → all False
         for i in range(len(result)):
-            assert result.iloc[i] == False
+            assert not result.iloc[i]
 
