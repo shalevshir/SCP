@@ -22,12 +22,13 @@ Key Components:
 Architecture:
     For each candle:
         1. Update active trades (check exits)
-        2. Check guardrails (PDLL, loss streak, session, etc.)
-        3. Compute HTF bias
-        4. Generate signal (if guardrails pass)
-        5. Execute entry (if signal is A+)
-        6. Create trade (if entry executed)
-        7. Update state (PnL, loss streak, daily counters)
+        2. Compute HTF bias (must run on every bar for structure warmup)
+        3. Check if active trade exists (skip signal generation if true)
+        4. Check guardrails (PDLL, loss streak, session, etc.)
+        5. Generate signal (if guardrails pass)
+        6. Execute entry (if signal is A+)
+        7. Create trade (if entry executed)
+        8. Update state (PnL, loss streak, daily counters)
 
 Example:
     >>> from data_layer.multi_timeframe_sync import MultiTimeframeSyncLayer
@@ -317,12 +318,13 @@ class BacktestReplayLoop:
         This method implements the core loop logic:
         1. Check session boundaries and reset state if needed
         2. Update active trades (check for exits)
-        3. Check guardrails before allowing new entries
-        4. Compute HTF bias
-        5. Generate signal (if guardrails pass)
-        6. Execute entry (if signal is A+)
-        7. Create trade (if entry executed)
-        8. Update state after trade closes
+        3. Compute HTF bias (must run on every bar for structure warmup)
+        4. Check if active trade exists (skip signal generation if true)
+        5. Check guardrails before allowing new entries
+        6. Generate signal (if guardrails pass)
+        7. Execute entry (if signal is A+)
+        8. Create trade (if entry executed)
+        9. Update state after trade closes
 
         Args:
             features: Feature series for current candle
@@ -359,23 +361,24 @@ class BacktestReplayLoop:
             )
             return None
 
-        # Step 3: Check if we can take new entries (max one active trade)
-        if len(self._active_trades) > 0:
-            logger.debug(
-                f"Active trade exists at {current_timestamp}, "
-                "skipping signal generation"
-            )
-            return None
-
-        # Step 4: Compute HTF bias FIRST (must happen every bar to accumulate HTF data)
-        # This must run BEFORE guardrails check so streaming HTF processor gets updated
-        # even outside trading hours - needed for structure detection warmup
+        # Step 3: Compute HTF bias FIRST (must happen every bar to accumulate HTF data)
+        # This must run BEFORE active trade check AND guardrails check so streaming 
+        # HTF processor gets updated even when trades are active or outside trading 
+        # hours - needed for structure detection warmup
         try:
             htf_bias = self._htf_bias_func(features, validation_context)
         except Exception as e:
             logger.warning(
                 f"Failed to compute HTF bias at {current_timestamp}: {e}",
                 exc_info=True,
+            )
+            return None
+
+        # Step 4: Check if we can take new entries (max one active trade)
+        if len(self._active_trades) > 0:
+            logger.debug(
+                f"Active trade exists at {current_timestamp}, "
+                "skipping signal generation"
             )
             return None
 
