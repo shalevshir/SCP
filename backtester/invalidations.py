@@ -15,7 +15,6 @@ Key Features:
 
 import math
 from datetime import time
-from zoneinfo import ZoneInfo
 
 from common.logger import get_logger
 from common.types import Candle
@@ -132,7 +131,7 @@ class InvalidationChecker:
             if features is not None:
                 vwap = _sanitize_float(features.get("vwap"))
                 if vwap is not None:
-                    # VWAP reclaimed if price closes above VWAP (for long fade) or below (for short fade)
+                    # VWAP reclaimed if price closes above (long) or below (short)
                     if trade.direction == "long":
                         if candle.close > vwap:
                             state["vwap_reclaimed"] = True
@@ -238,25 +237,25 @@ class InvalidationChecker:
             # FADE setups require 2 CONSECUTIVE bars meeting invalidation criteria
             # This prevents premature exits on micro-noise and intrabar wicks
             trade_id = trade.trade_id
-            
+
             # Check if invalidation condition is met on THIS bar
             condition_met = False
-            
+
             if trade.direction == "long":
-                # Long fade: invalid if close below VWAP + slope turning down
-                if candle.close < vwap and (vwap_slope is not None and vwap_slope < 0):
-                    condition_met = True
-            else:  # short
-                # Short fade: invalid if close above VWAP + slope turning up
+                # Long fade (short position): invalid if price RECLAIMS ABOVE VWAP
                 if candle.close > vwap and (vwap_slope is not None and vwap_slope > 0):
                     condition_met = True
-            
+            else:  # short
+                # Short fade (long position): invalid if price BREAKS BELOW VWAP
+                if candle.close < vwap and (vwap_slope is not None and vwap_slope < 0):
+                    condition_met = True
+
             # Track consecutive bars meeting condition
             if condition_met:
                 # Increment counter
                 current_count = self._fade_invalidation_count.get(trade_id, 0)
                 self._fade_invalidation_count[trade_id] = current_count + 1
-                
+
                 # Require 2 consecutive bars
                 if self._fade_invalidation_count[trade_id] >= 2:
                     reason = (
@@ -289,10 +288,10 @@ class InvalidationChecker:
         self, trade: Trade, candle: Candle, session_end_time: time | None = None
     ) -> tuple[bool, str | None]:
         """Check if session has ended (FIX #6: NO force exit at session close).
-        
+
         FIX #6: Session guard must NOT force auto-exits.
         Trades entered during valid session must run to TP/SL, not force-closed.
-        
+
         This function now always returns (False, None) to prevent session-based exits.
         Session validation should only block NEW entries, not close existing trades.
 
@@ -355,13 +354,13 @@ class InvalidationChecker:
         if trade.direction == "long":
             # Long trade invalidated only by LL (confirmed bearish break)
             if structure_label == "LL":
-                reason = f"HTF break: HL -> LL (confirmed bearish structure)"
+                reason = "HTF break: HL -> LL (confirmed bearish structure)"
                 logger.info(f"Trade {trade.trade_id} invalidated: {reason}")
                 return True, reason
         else:  # short
             # Short trade invalidated only by HH (confirmed bullish break)
             if structure_label == "HH":
-                reason = f"HTF break: LH -> HH (confirmed bullish structure)"
+                reason = "HTF break: LH -> HH (confirmed bullish structure)"
                 logger.info(f"Trade {trade.trade_id} invalidated: {reason}")
                 return True, reason
 
@@ -392,9 +391,17 @@ class InvalidationChecker:
         # Stricter logic for DXY_CONTINUATION setups
         if trade.setup_type == "DXY_CONTINUATION":
             # Get micro correlations and structure
-            corr_1m = _sanitize_float(features.get("dxy_corr_1m"))
-            corr_5m = _sanitize_float(features.get("dxy_corr_5m"))
-            dxy_structure = features.get("dxy_structure")
+            # Support both HTFBias keys (dxy_corr_1m/5m) and streaming keys (dxy_corr_micro)
+            corr_1m = _sanitize_float(
+                features.get("dxy_corr_1m") or features.get("dxy_corr_micro")
+            )
+            corr_5m = _sanitize_float(
+                features.get("dxy_corr_5m") or features.get("dxy_corr_micro")
+            )
+            # Support both dxy_structure and dxy_structure_label
+            dxy_structure = features.get("dxy_structure") or features.get(
+                "dxy_structure_label"
+            )
 
             # For continuation setups, require BOTH correlation flip AND structure break
             if trade.direction == "long":
@@ -408,11 +415,31 @@ class InvalidationChecker:
                     and corr_5m > -0.1
                     and dxy_structure in ("HH", "HL")
                 ):
+                    # Add invalidation diagnostics
+                    from backtester.diagnostics import add_nested_diag
+
+                    add_nested_diag(
+                        trade, "invalidation_context", "type", "dxy_continuation"
+                    )
+                    add_nested_diag(
+                        trade, "invalidation_context", "dxy_corr_1m", corr_1m
+                    )
+                    add_nested_diag(
+                        trade, "invalidation_context", "dxy_corr_5m", corr_5m
+                    )
+                    add_nested_diag(
+                        trade,
+                        "invalidation_context",
+                        "dxy_structure_label",
+                        dxy_structure,
+                    )
+
                     reason = (
                         f"DXY continuation invalidated: structure + correlation flip "
                         f"(corr_1m={corr_1m:.3f}, corr_5m={corr_5m:.3f}, "
                         f"dxy_structure={dxy_structure})"
                     )
+                    add_nested_diag(trade, "invalidation_context", "reason", reason)
                     logger.info(f"Trade {trade.trade_id} invalidated: {reason}")
                     return True, reason
 
