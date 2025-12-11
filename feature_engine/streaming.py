@@ -17,7 +17,6 @@ from feature_engine.dxy_correlation import calculate_dxy_correlation
 from feature_engine.rsi import calculate_rsi
 from feature_engine.structure import (
     StructureContextTracker,
-    calculate_structure_labels,
     get_swing_window_for_timeframe,
 )
 from feature_engine.timezone_utils import get_vwap_session_id
@@ -342,7 +341,8 @@ class StreamingFeatureProcessor:
         
         # Add GC structure fields to features
         features["structure_label"] = gc_structure_ctx.last_structure_label
-        features["structure_type"] = gc_structure_ctx.last_structure_label  # Alias for compatibility
+        # Alias for compatibility
+        features["structure_type"] = gc_structure_ctx.last_structure_label
         features["last_structure_label"] = gc_structure_ctx.last_structure_label
         features["trend_direction"] = gc_structure_ctx.trend_direction
         features["trend_confidence"] = gc_structure_ctx.trend_confidence
@@ -353,9 +353,11 @@ class StreamingFeatureProcessor:
         features["last_swing_low"] = gc_structure_ctx.last_swing_low
         features["last_swing_high_idx"] = gc_structure_ctx.last_swing_high_idx
         features["last_swing_low_idx"] = gc_structure_ctx.last_swing_low_idx
+        features["bos_direction"] = gc_structure_ctx.bos_direction
+        features["bos_recent"] = gc_structure_ctx.bos_recent
+        features["bos_age"] = gc_structure_ctx.bos_age
         features["choch_detected"] = gc_structure_ctx.choch_detected
         features["choch_age"] = gc_structure_ctx.choch_age
-        # Note: bos_age will be added in Structure Engine v2.0 Part 2
 
         # === 7. DXY Structure Context ===
         # Update DXY structure tracker

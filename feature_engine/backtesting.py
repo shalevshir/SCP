@@ -242,9 +242,11 @@ class BacktestProcessor:
                     "last_swing_low": features.get("last_swing_low"),
                     "last_swing_high_idx": features.get("last_swing_high_idx"),
                     "last_swing_low_idx": features.get("last_swing_low_idx"),
+                    "bos_direction": features.get("bos_direction"),
+                    "bos_recent": features.get("bos_recent"),
+                    "bos_age": features.get("bos_age"),
                     "choch_detected": features.get("choch_detected"),
                     "choch_age": features.get("choch_age"),
-                    # Note: bos_age will be added in Structure Engine v2.0 Part 2
                 }
             )
 
@@ -364,9 +366,11 @@ class BacktestProcessor:
                     "last_swing_low": features.get("last_swing_low"),
                     "last_swing_high_idx": features.get("last_swing_high_idx"),
                     "last_swing_low_idx": features.get("last_swing_low_idx"),
+                    "bos_direction": features.get("bos_direction"),
+                    "bos_recent": features.get("bos_recent"),
+                    "bos_age": features.get("bos_age"),
                     "choch_detected": features.get("choch_detected"),
                     "choch_age": features.get("choch_age"),
-                    # Note: bos_age will be added in Structure Engine v2.0 Part 2
                 }
             )
 
