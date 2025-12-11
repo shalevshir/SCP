@@ -7,6 +7,46 @@ or LL (Lower Low) for structure analysis.
 
 import pandas as pd
 
+# Timeframe-to-swing-window mapping (optimized for each timeframe's noise level)
+TIMEFRAME_SWING_WINDOWS = {
+    "1s": 2,   # 1-second: Very noisy, need tight window
+    "1m": 2,   # 1-minute: High noise, small swings
+    "5m": 3,   # 5-minute: Medium noise, moderate swings
+    "15m": 3,  # 15-minute: Medium noise, moderate swings
+    "1h": 5,   # 1-hour: Lower noise, larger swings
+}
+
+
+def get_swing_window_for_timeframe(timeframe: str) -> int:
+    """Get appropriate swing_window for a given timeframe.
+    
+    Different timeframes have different noise characteristics:
+    - Shorter timeframes (1s, 1m) have high noise → need smaller swing_window (2)
+    - Medium timeframes (15m) have moderate noise → use medium swing_window (3)
+    - Longer timeframes (1h) have lower noise → can use larger swing_window (5)
+    
+    Args:
+        timeframe: Timeframe string (e.g., "1m", "15m", "1h")
+        
+    Returns:
+        Appropriate swing_window value for the timeframe
+        
+    Raises:
+        ValueError: If timeframe is not recognized
+        
+    Example:
+        >>> get_swing_window_for_timeframe("1m")
+        2
+        >>> get_swing_window_for_timeframe("1h")
+        5
+    """
+    if timeframe not in TIMEFRAME_SWING_WINDOWS:
+        raise ValueError(
+            f"Unknown timeframe: {timeframe}. "
+            f"Supported timeframes: {list(TIMEFRAME_SWING_WINDOWS.keys())}"
+        )
+    return TIMEFRAME_SWING_WINDOWS[timeframe]
+
 
 def calculate_structure_labels(
     df: pd.DataFrame,
@@ -87,11 +127,15 @@ def calculate_structure_labels(
     prev_swing_low: float | None = None
 
     # Detect swing points and determine their labels
-    # We iterate through positions where we can detect swings AND where the delayed
-    # label will not exceed the valid range (last swing_window positions must be None).
-    # For position i, we check if it's a swing point using window [i-swing_window : i+swing_window+1]
-    # The delayed label appears at position i + swing_window, which must be < len(df) - swing_window
-    # Therefore: i + swing_window < len(df) - swing_window → i < len(df) - 2*swing_window
+    # We iterate through positions where we can detect swings AND where the
+    # delayed label will not exceed the valid range (last swing_window positions
+    # must be None).
+    # For position i, we check if it's a swing point using window
+    # [i-swing_window : i+swing_window+1]
+    # The delayed label appears at position i + swing_window, which must be
+    # < len(df) - swing_window
+    # Therefore: i + swing_window < len(df) - swing_window
+    # → i < len(df) - 2*swing_window
     for i in range(swing_window, len(df) - 2 * swing_window):
         idx = df.index[i]
         center_high = df.loc[idx, high_column]
@@ -153,15 +197,18 @@ def calculate_structure_labels(
             if label:
                 swing_detections.append((i, label, center_low))
 
-    # Assign labels with delay: label detected at position i appears at position i + swing_window
-    # This matches StructureState behavior where update() at position i returns label for
-    # swing detected at position i - swing_window
+    # Assign labels with delay: label detected at position i appears at
+    # position i + swing_window
+    # This matches StructureState behavior where update() at position i returns
+    # label for swing detected at position i - swing_window
     for swing_idx, label, _ in swing_detections:
         delayed_idx = swing_idx + swing_window
         # Ensure delayed labels don't exceed len(df) - swing_window - 1
-        # (last swing_window positions must remain None per zero-lookahead guarantee)
+        # (last swing_window positions must remain None per zero-lookahead
+        # guarantee)
         if delayed_idx < len(df) - swing_window:
-            # Only assign if not already assigned (swing high takes priority over swing low)
+            # Only assign if not already assigned (swing high takes priority
+            # over swing low)
             if pd.isna(labels.iloc[delayed_idx]):
                 labels.iloc[delayed_idx] = label
 

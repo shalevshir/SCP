@@ -64,9 +64,17 @@ def aggregate_features(
         DataFrame containing all original GC columns plus requested feature
         columns. Feature columns added:
         - vwap: Volume-Weighted Average Price
+        - vwap_slope: Rate of change of VWAP
         - rsi: Relative Strength Index
         - ema_9, ema_20, ema_50: Exponential Moving Averages
-        - dxy_corr: Rolling Pearson correlation with DXY
+        - volume_sma_20: 20-period simple moving average of volume
+        - atr: 14-period Average True Range (volatility measure)
+        - upper_wick_pct: Upper wick size relative to body (ratio)
+        - lower_wick_pct: Lower wick size relative to body (ratio)
+        - close_vwap_diff: Absolute difference between close and VWAP
+        - close_vwap_pct: Percentage difference between close and VWAP
+        - dxy_corr: Rolling Pearson correlation with DXY (50-period)
+        - dxy_corr_micro: Rolling Pearson correlation with DXY (5-period)
 
     Raises:
         ValueError: If timeframe is not in ALLOWED_TIMEFRAMES.
@@ -147,6 +155,8 @@ def aggregate_features(
         else:
             params = DEFAULT_INDICATORS["vwap"]
         result["vwap"] = calculate_vwap(gc_df, **params)
+        # Calculate VWAP slope (rate of change) for trend direction
+        result["vwap_slope"] = result["vwap"].diff()
 
     # Calculate RSI if requested
     rsi_config = indicators.get("rsi", True)
@@ -171,6 +181,34 @@ def aggregate_features(
         # Add each EMA column to result
         for col in ema_df.columns:
             result[col] = ema_df[col]
+
+    # Calculate volume SMA (20-period) for volume spike detection
+    # Always calculated as it's lightweight and needed for VWAP_FADE scoring
+    result["volume_sma_20"] = gc_df["volume"].rolling(window=20, min_periods=20).mean()
+
+    # Calculate ATR (14-period Average True Range)
+    # ATR measures volatility and is used for dynamic slippage and displacement detection
+    high_low = gc_df["high"] - gc_df["low"]
+    high_close = (gc_df["high"] - gc_df["close"].shift(1)).abs()
+    low_close = (gc_df["low"] - gc_df["close"].shift(1)).abs()
+    true_range = high_low.combine(high_close, max).combine(low_close, max)
+    result["atr"] = true_range.rolling(window=14, min_periods=14).mean()
+
+    # Calculate wick percentages (relative to body)
+    # Used for rejection candle detection in VWAP_FADE scoring
+    body = (gc_df["close"] - gc_df["open"]).abs()
+    upper_wick = gc_df["high"] - gc_df[["open", "close"]].max(axis=1)
+    lower_wick = gc_df[["open", "close"]].min(axis=1) - gc_df["low"]
+    # Avoid division by zero - use small epsilon for doji candles (0.01% of price)
+    body_safe = body.where(body > 0, gc_df["high"] * 0.0001)
+    result["upper_wick_pct"] = upper_wick / body_safe
+    result["lower_wick_pct"] = lower_wick / body_safe
+
+    # Calculate VWAP difference (absolute and percentage)
+    # Used for proximity detection and invalidation logic
+    if "vwap" in result.columns:
+        result["close_vwap_diff"] = gc_df["close"] - result["vwap"]
+        result["close_vwap_pct"] = (result["close_vwap_diff"] / result["vwap"]) * 100
 
     # Calculate DXY correlation if requested
     dxy_corr_config = indicators.get("dxy_correlation", True)

@@ -24,7 +24,10 @@ from validation.guardrails import (
 from validation.session_validator import SessionValidator
 
 from feature_engine.aggregator import aggregate_features
-from feature_engine.structure import calculate_structure_labels
+from feature_engine.structure import (
+    calculate_structure_labels,
+    get_swing_window_for_timeframe,
+)
 from feature_engine.vwap import calculate_vwap_deviation
 
 logger = get_logger(__name__)
@@ -57,7 +60,7 @@ class BacktestProcessor:
         rsi_period: int = 14,
         ema_periods: list[int] | None = None,
         dxy_window: int = 50,
-        swing_window: int = 5,
+        swing_window: int | None = None,
         warmup_period: int | None = None,
         enable_validation: bool = True,
     ):
@@ -69,7 +72,9 @@ class BacktestProcessor:
             rsi_period: RSI calculation period. Default is 14.
             ema_periods: List of EMA periods to calculate. Default is [9, 20, 50].
             dxy_window: DXY correlation window size. Default is 50.
-            swing_window: Structure label swing window. Default is 5.
+            swing_window: Structure label swing window. If None, automatically
+                         determined based on timeframe (1m=2, 15m=3, 1h=5).
+                         Can be explicitly set to override default.
             warmup_period: Number of periods to skip before yielding features.
                           If None, uses max(dxy_window, swing_window * 2 + 1).
             enable_validation: Whether to enable validation layer components.
@@ -80,7 +85,20 @@ class BacktestProcessor:
         self.rsi_period = rsi_period
         self.ema_periods = ema_periods if ema_periods is not None else [9, 20, 50]
         self.dxy_window = dxy_window
-        self.swing_window = swing_window
+        
+        # Automatically determine swing_window based on timeframe if not provided
+        if swing_window is None:
+            self.swing_window = get_swing_window_for_timeframe(timeframe)
+            logger.info(
+                f"Using timeframe-appropriate swing_window={self.swing_window} "
+                f"for {timeframe}"
+            )
+        else:
+            self.swing_window = swing_window
+            logger.info(
+                f"Using explicit swing_window={self.swing_window} for {timeframe}"
+            )
+        
         self.enable_validation = enable_validation
 
         # Calculate warmup period if not provided
@@ -196,12 +214,19 @@ class BacktestProcessor:
                     "close": features["close"],
                     "volume": features["volume"],
                     "vwap": features["vwap"],
+                    "vwap_slope": features.get("vwap_slope"),
                     "rsi": features["rsi"],
                     "ema_9": features["ema_9"],
                     "ema_20": features["ema_20"],
                     "ema_50": features["ema_50"],
                     "dxy_corr": features["dxy_corr"],
                     "dxy_corr_micro": features.get("dxy_corr_micro"),
+                    "volume_sma_20": features.get("volume_sma_20"),
+                    "atr": features.get("atr"),
+                    "upper_wick_pct": features.get("upper_wick_pct"),
+                    "lower_wick_pct": features.get("lower_wick_pct"),
+                    "close_vwap_diff": features.get("close_vwap_diff"),
+                    "close_vwap_pct": features.get("close_vwap_pct"),
                     "structure_label": features.get("structure_label"),
                     "structure_type": features.get("structure_type"),
                     "vwap_deviation": features.get("vwap_deviation"),
@@ -296,13 +321,20 @@ class BacktestProcessor:
                     "low": features["low"],
                     "close": features["close"],
                     "volume": features["volume"],
+                    "volume_sma_20": features.get("volume_sma_20"),
                     "vwap": features["vwap"],
+                    "vwap_slope": features.get("vwap_slope"),
                     "rsi": features["rsi"],
                     "ema_9": features["ema_9"],
                     "ema_20": features["ema_20"],
                     "ema_50": features["ema_50"],
                     "dxy_corr": features["dxy_corr"],
                     "dxy_corr_micro": features.get("dxy_corr_micro"),
+                    "atr": features.get("atr"),
+                    "upper_wick_pct": features.get("upper_wick_pct"),
+                    "lower_wick_pct": features.get("lower_wick_pct"),
+                    "close_vwap_diff": features.get("close_vwap_diff"),
+                    "close_vwap_pct": features.get("close_vwap_pct"),
                     "structure_label": features.get("structure_label"),
                     "structure_type": features.get("structure_type"),
                     "vwap_deviation": features.get("vwap_deviation"),
