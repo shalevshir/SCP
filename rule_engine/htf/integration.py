@@ -28,13 +28,13 @@ logger = get_logger(__name__)
 
 def validate_signal_with_htf(
     signal_direction: str,
-    htf_bias: HTFBias,
+    htf_bias: HTFBias | None,
 ) -> tuple[bool, str]:
     """Validate trading signal against HTF bias.
 
     Args:
         signal_direction: Signal direction ("long", "short")
-        htf_bias: HTF bias object
+        htf_bias: HTF bias object (None if not available)
 
     Returns:
         Tuple of (is_valid, rejection_reason)
@@ -49,6 +49,11 @@ def validate_signal_with_htf(
         - RuleEngine boosts signals when HTF strongly aligned
         - End-to-end test passes
     """
+    # Handle None HTF bias (treat as neutral)
+    if htf_bias is None:
+        logger.debug("HTF bias is None, allowing signal with caution")
+        return True, ""
+    
     # Rule 1: Reject if conflict detected
     if htf_bias.conflict_detected:
         reason = f"HTF conflict detected: {htf_bias.conflict_reason}"
@@ -93,14 +98,14 @@ def validate_signal_with_htf(
 
 def adjust_score_with_htf(
     base_score: float,
-    htf_bias: HTFBias,
+    htf_bias: HTFBias | None,
     signal_direction: str,
 ) -> tuple[float, dict]:
     """Adjust signal score based on HTF bias alignment.
 
     Args:
         base_score: Base signal score before HTF adjustment
-        htf_bias: HTF bias object
+        htf_bias: HTF bias object (None if not available)
         signal_direction: Signal direction ("long", "short")
 
     Returns:
@@ -118,6 +123,11 @@ def adjust_score_with_htf(
     """
     adjusted_score = base_score
     adjustments = {}
+
+    # Handle None HTF bias (no adjustments)
+    if htf_bias is None:
+        logger.debug("HTF bias is None, no score adjustments applied")
+        return adjusted_score, adjustments
 
     # 1. Apply seasonality adjustment (already calculated in HTFBias)
     if htf_bias.seasonality_adjustment != 0.0:
@@ -262,7 +272,6 @@ def create_htf_bias_func_with_sync_layer(
             rsi_period=rsi_period,
             ema_periods=ema_periods,
             dxy_window=dxy_window,
-            swing_window=swing_window,
         )
 
         # Track previous sync bar to detect changes

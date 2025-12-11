@@ -76,6 +76,33 @@ def validate_signal(signal: Signal, htf_bias: HTFBias, context: dict) -> Signal:
     dxy_alignment_ok = htf_bias.dxy_alignment
     validation_flags["dxy_alignment_ok"] = dxy_alignment_ok
 
+    # Gold chop validation: DXY_CONTINUATION and VWAP_FADE blocked by chop
+    # VWAP_RECLAIM is allowed during chop (structural setup, not momentum)
+    chop_ok = True
+    if signal.setup_type == "DXY_CONTINUATION":
+        if htf_bias.dxy_chop_5m:
+            chop_ok = False
+            logger.info(
+                f"DXY_CONTINUATION rejected: DXY 5M chop detected "
+                f"(dxy_chop_5m={htf_bias.dxy_chop_5m})"
+            )
+        elif htf_bias.chop_detected:
+            chop_ok = False
+            logger.info(
+                f"DXY_CONTINUATION rejected: Gold micro chop detected "
+                f"(chop_detected={htf_bias.chop_detected})"
+            )
+    elif signal.setup_type == "VWAP_FADE":
+        # VWAP_FADE also blocked by gold micro chop (momentum setup)
+        if htf_bias.chop_detected:
+            chop_ok = False
+            logger.info(
+                f"VWAP_FADE rejected: Gold micro chop detected "
+                f"(chop_detected={htf_bias.chop_detected})"
+            )
+    # Note: VWAP_RECLAIM is NOT blocked by chop (structural setup)
+    validation_flags["chop_ok"] = chop_ok
+
     # Check HTF bias alignment
     htf_bias_ok = signal.direction == htf_bias.direction
     validation_flags["htf_bias_ok"] = htf_bias_ok
@@ -91,6 +118,7 @@ def validate_signal(signal: Signal, htf_bias: HTFBias, context: dict) -> Signal:
             validation_flags["tier_ok"],
             validation_flags["htf_bias_ok"],
             validation_flags["htf_valid"],
+            validation_flags["chop_ok"],
         ]
     )
 
@@ -114,6 +142,14 @@ def validate_signal(signal: Signal, htf_bias: HTFBias, context: dict) -> Signal:
                 rejection_reasons.append(f"HTF conflict: {htf_bias.conflict_reason}")
             if htf_bias.dxy_chop_detected:
                 rejection_reasons.append("DXY in chop mode")
+        if not validation_flags["chop_ok"]:
+            if signal.setup_type == "DXY_CONTINUATION":
+                if htf_bias.dxy_chop_5m:
+                    rejection_reasons.append("DXY 5M chop - continuation invalid")
+                elif htf_bias.chop_detected:
+                    rejection_reasons.append("Gold micro chop - continuation invalid")
+            elif signal.setup_type == "VWAP_FADE":
+                rejection_reasons.append("Gold micro chop - fade invalid")
 
         logger.info(f"Signal validation failed: {'; '.join(rejection_reasons)}")
 

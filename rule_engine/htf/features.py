@@ -47,7 +47,7 @@ class StreamingHTFFeatureComputer:
         rsi_period: int = 14,
         ema_periods: list[int] | None = None,
         dxy_window: int = 50,
-        swing_window: int = 5,
+        swing_window: int | None = None,
     ) -> None:
         """Initialize streaming HTF feature computer.
 

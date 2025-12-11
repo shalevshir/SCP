@@ -121,6 +121,7 @@ class HTFBias:
     bars_since_bos: int | None = None  # Bars since last BOS (staleness metric)
     bars_since_choch: int | None = None  # Bars since last CHoCH
     chop_detected: bool = False  # True if recent labels are mixed (HH+LL within window)
+    atr_15m: float | None = None  # 15M ATR for noise filtering in structure detection
 
     # Conflict detection
     conflict_detected: bool = False
@@ -171,6 +172,7 @@ class HTFBias:
             "bars_since_bos": self.bars_since_bos,
             "bars_since_choch": self.bars_since_choch,
             "chop_detected": self.chop_detected,
+            "atr_15m": self.atr_15m,
             "conflict_detected": self.conflict_detected,
             "conflict_reason": self.conflict_reason,
         }
