@@ -15,7 +15,6 @@ Key Features:
 
 import math
 from datetime import time
-from zoneinfo import ZoneInfo
 
 from common.logger import get_logger
 from common.types import Candle
@@ -269,12 +268,12 @@ class InvalidationChecker:
             condition_met = False
             
             if trade.direction == "long":
-                # Long fade: invalid if close below VWAP + slope turning down
-                if candle.close < vwap and (vwap_slope is not None and vwap_slope < 0):
+                # Long fade (long position): invalid if close RECLAIMS ABOVE VWAP
+                if candle.close > vwap and (vwap_slope is not None and vwap_slope > 0):
                     condition_met = True
             else:  # short
-                # Short fade: invalid if close above VWAP + slope turning up
-                if candle.close > vwap and (vwap_slope is not None and vwap_slope > 0):
+                # Short fade (short position): invalid if BREAKS BELOW VWAP
+                if candle.close < vwap and (vwap_slope is not None and vwap_slope < 0):
                     condition_met = True
             
             # Track consecutive bars meeting condition
@@ -294,9 +293,12 @@ class InvalidationChecker:
                     add_nested_diag(trade, "invalidation_context", "candle_close", candle.close)
                     add_nested_diag(trade, "invalidation_context", "fade_consecutive_closes_against", self._fade_invalidation_count[trade_id])
                     
+                    # Message format matches corrected logic:
+                    # - Long fade: invalidated by reclaim ABOVE vwap (>)
+                    # - Short fade: invalidated by break BELOW vwap (<)
                     reason = (
                         f"VWAP invalidation (2-bar confirmed): "
-                        f"close {candle.close:.2f} {'<' if trade.direction == 'long' else '>'} "
+                        f"close {candle.close:.2f} {'>' if trade.direction == 'long' else '<'} "
                         f"VWAP {vwap:.2f}, slope {vwap_slope:.4f}"
                     )
                     add_nested_diag(trade, "invalidation_context", "reason", reason)
