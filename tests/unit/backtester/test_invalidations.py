@@ -638,16 +638,17 @@ class TestVWAPInvalidation:
         """Test VWAP invalidation for long fade requires 2 consecutive bars (2-bar confirmation)."""
         checker = InvalidationChecker()
 
-        # Bar 1: close below VWAP + negative slope (condition met)
+        # Bar 1: close ABOVE VWAP + positive slope (condition met - RECLAIM)
+        # FIX: Long fade = short position, invalidated when price RECLAIMS above VWAP
         candle1 = make_candle(
             timestamp=datetime(2025, 1, 1, 10, 5, tzinfo=UTC),
-            open=2650.0,
-            high=2651.0,
-            low=2648.0,
-            close=2649.0,  # Below VWAP with negative slope (bar 1)
+            open=2649.0,
+            high=2652.0,
+            low=2649.0,
+            close=2651.0,  # Above VWAP with positive slope (bar 1)
         )
 
-        features1 = {"vwap": 2650.0, "vwap_slope": -0.0001}
+        features1 = {"vwap": 2650.0, "vwap_slope": 0.0001}
 
         # First bar: condition met but not yet invalid
         is_invalid, reason = checker.check_vwap_invalidation(
@@ -659,13 +660,13 @@ class TestVWAPInvalidation:
         # Bar 2: condition met again → 2-bar confirmed → invalid
         candle2 = make_candle(
             timestamp=datetime(2025, 1, 1, 10, 6, tzinfo=UTC),
-            open=2649.0,
-            high=2650.0,
-            low=2647.0,
-            close=2648.0,  # Still below VWAP with negative slope (bar 2)
+            open=2651.0,
+            high=2653.0,
+            low=2651.0,
+            close=2652.0,  # Still above VWAP with positive slope (bar 2)
         )
 
-        features2 = {"vwap": 2650.0, "vwap_slope": -0.0002}
+        features2 = {"vwap": 2650.0, "vwap_slope": 0.0002}
 
         is_invalid, reason = checker.check_vwap_invalidation(
             long_fade_trade, candle2, features2
@@ -679,30 +680,30 @@ class TestVWAPInvalidation:
         """Test FADE invalidation counter resets when condition not met."""
         checker = InvalidationChecker()
 
-        # Bar 1: condition met (bar 1/2)
+        # Bar 1: condition met (bar 1/2) - RECLAIM above VWAP
         candle1 = make_candle(
             timestamp=datetime(2025, 1, 1, 10, 5, tzinfo=UTC),
             open=2649.0,
-            high=2650.0,
-            low=2648.0,
-            close=2648.0,  # Below VWAP with negative slope
+            high=2652.0,
+            low=2649.0,
+            close=2651.0,  # Above VWAP with positive slope
         )
-        features1 = {"vwap": 2650.0, "vwap_slope": -0.0001}
+        features1 = {"vwap": 2650.0, "vwap_slope": 0.0001}
 
         is_invalid, _ = checker.check_vwap_invalidation(
             long_fade_trade, candle1, features1
         )
         assert is_invalid is False
 
-        # Bar 2: condition NOT met (positive slope) → counter resets
+        # Bar 2: condition NOT met (back below VWAP) → counter resets
         candle2 = make_candle(
             timestamp=datetime(2025, 1, 1, 10, 6, tzinfo=UTC),
             open=2651.0,
-            high=2652.0,
-            low=2650.0,
-            close=2651.0,  # Above VWAP (condition not met)
+            high=2651.0,
+            low=2648.0,
+            close=2649.0,  # Below VWAP (condition not met)
         )
-        features2 = {"vwap": 2650.0, "vwap_slope": 0.0001}
+        features2 = {"vwap": 2650.0, "vwap_slope": -0.0001}
 
         is_invalid, _ = checker.check_vwap_invalidation(
             long_fade_trade, candle2, features2
@@ -713,11 +714,11 @@ class TestVWAPInvalidation:
         candle3 = make_candle(
             timestamp=datetime(2025, 1, 1, 10, 7, tzinfo=UTC),
             open=2649.0,
-            high=2650.0,
-            low=2648.0,
-            close=2648.0,  # Below VWAP with negative slope
+            high=2652.0,
+            low=2649.0,
+            close=2651.0,  # Above VWAP with positive slope
         )
-        features3 = {"vwap": 2650.0, "vwap_slope": -0.0001}
+        features3 = {"vwap": 2650.0, "vwap_slope": 0.0001}
 
         is_invalid, _ = checker.check_vwap_invalidation(
             long_fade_trade, candle3, features3
@@ -728,15 +729,16 @@ class TestVWAPInvalidation:
         """Test VWAP invalidation for short fade requires 2 consecutive bars (2-bar confirmation)."""
         checker = InvalidationChecker()
 
-        # Bar 1: condition met (above VWAP + positive slope)
+        # Bar 1: condition met (BELOW VWAP + negative slope)
+        # FIX: Short fade = long position, invalidated when price BREAKS below VWAP
         candle1 = make_candle(
             timestamp=datetime(2025, 1, 1, 10, 5, tzinfo=UTC),
-            open=2649.0,
+            open=2651.0,
             high=2651.0,
             low=2648.0,
-            close=2651.0,  # Above VWAP with positive slope (bar 1)
+            close=2649.0,  # Below VWAP with negative slope (bar 1)
         )
-        features1 = {"vwap": 2650.0, "vwap_slope": 0.0001}
+        features1 = {"vwap": 2650.0, "vwap_slope": -0.0001}
 
         # First bar: condition met but not yet invalid
         is_invalid, reason = checker.check_vwap_invalidation(
@@ -748,12 +750,12 @@ class TestVWAPInvalidation:
         # Bar 2: condition met again → 2-bar confirmed → invalid
         candle2 = make_candle(
             timestamp=datetime(2025, 1, 1, 10, 6, tzinfo=UTC),
-            open=2651.0,
-            high=2652.0,
-            low=2650.0,
-            close=2652.0,  # Still above VWAP with positive slope (bar 2)
+            open=2649.0,
+            high=2649.0,
+            low=2647.0,
+            close=2648.0,  # Still below VWAP with negative slope (bar 2)
         )
-        features2 = {"vwap": 2650.0, "vwap_slope": 0.0002}
+        features2 = {"vwap": 2650.0, "vwap_slope": -0.0002}
 
         is_invalid, reason = checker.check_vwap_invalidation(
             short_fade_trade, candle2, features2
@@ -770,14 +772,15 @@ class TestVWAPInvalidation:
         checker = InvalidationChecker()
 
         # Only 1 bar meeting condition → not invalid
+        # FIX: Short fade = long position, invalidation = break below VWAP
         candle = make_candle(
             timestamp=datetime(2025, 1, 1, 10, 5, tzinfo=UTC),
-            open=2649.0,
+            open=2651.0,
             high=2651.0,
             low=2648.0,
-            close=2651.0,  # Above VWAP with positive slope
+            close=2649.0,  # Below VWAP with negative slope
         )
-        features = {"vwap": 2650.0, "vwap_slope": 0.0001}
+        features = {"vwap": 2650.0, "vwap_slope": -0.0001}
 
         is_invalid, reason = checker.check_vwap_invalidation(
             short_fade_trade, candle, features
@@ -2131,11 +2134,12 @@ class TestDXYContinuationInvalidation:
         )
         
         # Features showing correlation flip and structure break
-        # Uses correct keys: dxy_corr_micro (5-period), dxy_corr (50-period), dxy_structure_label
+        # FIX: Use correct keys expected by invalidation checker
         features = {
-            "dxy_corr_micro": 0.1,  # 5-period micro correlation - weakened (was negative)
+            "dxy_corr_1m": 0.1,  # 1M micro correlation - weakened (was negative)
+            "dxy_corr_5m": 0.1,  # 5M micro correlation - weakened
             "dxy_corr": 0.05,  # 50-period correlation - weakened
-            "dxy_structure_label": "HH",  # DXY bullish (bad for long gold)
+            "dxy_structure": "HH",  # DXY bullish (bad for long gold)
         }
         
         is_invalid, reason = checker.check_dxy_flip(
@@ -2166,7 +2170,8 @@ class TestDXYContinuationInvalidation:
         
         # Correlation weakened but structure still bearish
         features = {
-            "dxy_corr_micro": 0.1,
+            "dxy_corr_1m": 0.1,
+            "dxy_corr_5m": 0.1,
             "dxy_corr": 0.05,
             "dxy_structure_label": "LL",  # DXY still bearish (OK for long gold)
         }
@@ -2197,9 +2202,10 @@ class TestDXYContinuationInvalidation:
         
         # Features showing correlation flip and structure break
         features = {
-            "dxy_corr_micro": 0.1,
+            "dxy_corr_1m": 0.1,
+            "dxy_corr_5m": 0.1,
             "dxy_corr": 0.05,
-            "dxy_structure_label": "LL",  # DXY bearish (bad for short gold)
+            "dxy_structure": "LL",  # DXY bearish (bad for short gold)
         }
         
         is_invalid, reason = checker.check_dxy_flip(

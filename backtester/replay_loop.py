@@ -219,9 +219,6 @@ class BacktestReplayLoop:
 
         # State tracking
         self._active_trades: dict[str, Trade] = {}
-        # Stores simulated exit results for active trades (to avoid re-simulation)
-        # Maps trade_id -> (closed_trade, already_processed)
-        self._simulated_exits: dict[str, tuple[Trade, bool]] = {}
         self._daily_pnl: float = 0.0
         self._session_date: datetime | None = None
         self._trades_today: int = 0
@@ -233,6 +230,9 @@ class BacktestReplayLoop:
         # Structure label statistics for diagnostics
         from collections import Counter
         self._structure_stats: Counter = Counter()
+        
+        # Track simulated exits to prevent overlapping trades
+        self._simulated_exits: dict[str, datetime] = {}
 
         # Results tracking
         self._all_trades: list[Trade] = []
@@ -500,7 +500,7 @@ class BacktestReplayLoop:
                     
                     # Indicators
                     add_nested_diag(trade, "entry_context", "rsi", features.get("rsi"))
-                    add_nested_diag(trade, "entry_context", "atr", features.get("atr"))
+                    add_nested_diag(trade, "entry_context", "atr_5", features.get("atr_5"))
                     
                     # Volume
                     add_nested_diag(trade, "entry_context", "volume", features.get("volume"))
@@ -508,10 +508,8 @@ class BacktestReplayLoop:
                     
                     # Rejection candle raw components (if available)
                     add_nested_diag(trade, "entry_context", "rejection_candle_raw", {
-                        "upper_wick_pct": features.get("upper_wick_pct"),
-                        "lower_wick_pct": features.get("lower_wick_pct"),
-                        "close_vwap_diff": features.get("close_vwap_diff"),
-                        "close_vwap_pct": features.get("close_vwap_pct"),
+                        "wick_penetration": features.get("wick_penetration"),
+                        "close_vs_vwap_diff": features.get("close_vs_vwap_diff"),
                         "direction_valid": features.get("rejection_direction_valid"),
                     })
                 
@@ -790,65 +788,46 @@ class BacktestReplayLoop:
                     )
                     future_features = None
 
-                # Check if we already simulated this trade's exit
-                if trade_id in self._simulated_exits:
-                    closed_trade, _ = self._simulated_exits[trade_id]
-                else:
-                    # First time processing this trade after entry - simulate outcome
-                    # Inject current ATR into config for dynamic slippage calculation
-                    config_with_atr = self.config.copy()
-                    if features is not None and "atr" in features:
-                        config_with_atr["current_atr"] = features.get("atr")
-                    
-                    closed_trade = simulate_trade_outcome(
-                        trade=trade,
-                        future_candles=future_candles,
-                        invalidation_checker=self._invalidation_checker,
-                        config=config_with_atr,
-                        future_features=future_features,
-                    )
-                    
-                    # Store the simulated result to avoid re-simulating
-                    if closed_trade.status != "OPEN":
-                        self._simulated_exits[trade_id] = (closed_trade, False)
+                # Simulate trade outcome using future candles
+                closed_trade = simulate_trade_outcome(
+                    trade=trade,
+                    future_candles=future_candles,
+                    invalidation_checker=self._invalidation_checker,
+                    config=self.config,
+                    future_features=future_features,
+                )
 
-                # Only process the exit when we've ACTUALLY reached the exit candle
-                # This prevents opening new trades while this one is still "active"
+                # If trade closed, remove from active trades immediately
+                # Note: simulate_trade_outcome looks at future candles, so
+                # exit_timestamp may be in the future. We should still remove
+                # the trade now to avoid re-simulating on subsequent candles.
                 if closed_trade.status != "OPEN":
-                    exit_ts = closed_trade.exit_timestamp
-                    
-                    # Check if current candle has reached or passed the exit timestamp
-                    if current_candle.timestamp >= exit_ts:
-                        pnl_str = (
-                            f"{closed_trade.pnl:.2f}"
-                            if closed_trade.pnl is not None
-                            else "None"
-                        )
-                        r_str = (
-                            f"{closed_trade.r_realized:.2f}"
-                            if closed_trade.r_realized is not None
-                            else "None"
-                        )
-                        logger.info(
-                            f"Trade {trade_id} closed at "
-                            f"{closed_trade.exit_timestamp}: "
-                            f"exit_reason={closed_trade.exit_reason}, "
-                            f"PnL={pnl_str}, "
-                            f"R={r_str}"
-                        )
+                    pnl_str = (
+                        f"{closed_trade.pnl:.2f}"
+                        if closed_trade.pnl is not None
+                        else "None"
+                    )
+                    r_str = (
+                        f"{closed_trade.r_realized:.2f}"
+                        if closed_trade.r_realized is not None
+                        else "None"
+                    )
+                    logger.info(
+                        f"Trade {trade_id} closed at "
+                        f"{closed_trade.exit_timestamp}: "
+                        f"exit_reason={closed_trade.exit_reason}, "
+                        f"PnL={pnl_str}, "
+                        f"R={r_str}"
+                    )
 
-                        # Remove from active trades - NOW we've reached the exit
-                        del self._active_trades[trade_id]
-                        
-                        # Clean up simulated exits cache
-                        if trade_id in self._simulated_exits:
-                            del self._simulated_exits[trade_id]
+                    # Remove from active trades
+                    del self._active_trades[trade_id]
 
-                        # Add to completed trades
-                        self._all_trades.append(closed_trade)
+                    # Add to completed trades
+                    self._all_trades.append(closed_trade)
 
-                        # Update state (PnL, loss streak, etc.)
-                        self._update_state(closed_trade)
+                    # Update state (PnL, loss streak, etc.)
+                    self._update_state(closed_trade)
 
             except KeyError:
                 logger.warning(
@@ -1035,27 +1014,16 @@ class BacktestReplayLoop:
 
         # Close each remaining trade
         for trade_id, trade in list(self._active_trades.items()):
-            # Check if we already have a simulated exit for this trade
-            if trade_id in self._simulated_exits:
-                closed_trade, _ = self._simulated_exits[trade_id]
-                logger.info(
-                    f"Using simulated exit for trade {trade_id}: "
-                    f"exit_timestamp={closed_trade.exit_timestamp}, "
-                    f"exit_reason={closed_trade.exit_reason}"
-                )
-                del self._simulated_exits[trade_id]
-            else:
-                # No simulated exit - close at end of data
-                logger.warning(
-                    f"Closing trade {trade_id} at end of dataset: "
-                    f"entry={trade.entry_timestamp}, last_candle={last_timestamp}"
-                )
+            logger.warning(
+                f"Closing trade {trade_id} at end of dataset: "
+                f"entry={trade.entry_timestamp}, last_candle={last_timestamp}"
+            )
 
-                # Import close_trade function
-                from backtester.trade import close_trade
+            # Import close_trade function
+            from backtester.trade import close_trade
 
-                # Close trade at last candle
-                closed_trade = close_trade(trade, last_candle, "end_of_data", self.config)
+            # Close trade at last candle
+            closed_trade = close_trade(trade, last_candle, "end_of_data", self.config)
 
             # Remove from active trades
             del self._active_trades[trade_id]

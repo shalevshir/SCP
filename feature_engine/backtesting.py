@@ -26,6 +26,7 @@ from validation.session_validator import SessionValidator
 from feature_engine.aggregator import aggregate_features
 from feature_engine.structure import (
     calculate_structure_labels,
+    compute_structure_context_batch,
     get_swing_window_for_timeframe,
 )
 from feature_engine.vwap import calculate_vwap_deviation
@@ -230,6 +231,22 @@ class BacktestProcessor:
                     "structure_label": features.get("structure_label"),
                     "structure_type": features.get("structure_type"),
                     "vwap_deviation": features.get("vwap_deviation"),
+                    # Structure context derived fields
+                    "last_structure_label": features.get("last_structure_label"),
+                    "trend_direction": features.get("trend_direction"),
+                    "trend_confidence": features.get("trend_confidence"),
+                    "structure_clarity": features.get("structure_clarity"),
+                    "is_chop": features.get("is_chop"),
+                    "structure_conflict_flag": features.get("structure_conflict_flag"),
+                    "last_swing_high": features.get("last_swing_high"),
+                    "last_swing_low": features.get("last_swing_low"),
+                    "last_swing_high_idx": features.get("last_swing_high_idx"),
+                    "last_swing_low_idx": features.get("last_swing_low_idx"),
+                    "bos_direction": features.get("bos_direction"),
+                    "bos_recent": features.get("bos_recent"),
+                    "bos_age": features.get("bos_age"),
+                    "choch_detected": features.get("choch_detected"),
+                    "choch_age": features.get("choch_age"),
                 }
             )
 
@@ -338,6 +355,22 @@ class BacktestProcessor:
                     "structure_label": features.get("structure_label"),
                     "structure_type": features.get("structure_type"),
                     "vwap_deviation": features.get("vwap_deviation"),
+                    # Structure context derived fields
+                    "last_structure_label": features.get("last_structure_label"),
+                    "trend_direction": features.get("trend_direction"),
+                    "trend_confidence": features.get("trend_confidence"),
+                    "structure_clarity": features.get("structure_clarity"),
+                    "is_chop": features.get("is_chop"),
+                    "structure_conflict_flag": features.get("structure_conflict_flag"),
+                    "last_swing_high": features.get("last_swing_high"),
+                    "last_swing_low": features.get("last_swing_low"),
+                    "last_swing_high_idx": features.get("last_swing_high_idx"),
+                    "last_swing_low_idx": features.get("last_swing_low_idx"),
+                    "bos_direction": features.get("bos_direction"),
+                    "bos_recent": features.get("bos_recent"),
+                    "bos_age": features.get("bos_age"),
+                    "choch_detected": features.get("choch_detected"),
+                    "choch_age": features.get("choch_age"),
                 }
             )
 
@@ -407,15 +440,27 @@ class BacktestProcessor:
             },
         )
 
-        # Add structure labels
+        # Add structure labels (sparse, for backward compatibility)
         structure_labels = calculate_structure_labels(
             features, swing_window=self.swing_window
         )
         features["structure_label"] = structure_labels
+        features["structure_type"] = structure_labels  # Alias
 
-        # Structure labels already ARE structure types (HH/HL/LH/LL)
-        # No need to derive them - just use them directly
-        features["structure_type"] = structure_labels
+        # Add structure context (continuous derived fields)
+        structure_context = compute_structure_context_batch(
+            features[["high", "low", "close"]],
+            swing_window=self.swing_window,
+        )
+        
+        # Merge structure context fields into features
+        for col in structure_context.columns:
+            # Don't overwrite structure_label (keep sparse version for compatibility)
+            if col not in ["last_structure_label"]:
+                features[col] = structure_context[col]
+        
+        # Add last_structure_label separately (continuous version)
+        features["last_structure_label"] = structure_context["last_structure_label"]
 
         # Add VWAP deviation
         if "vwap" in features.columns:

@@ -16,7 +16,7 @@ from common.types import Candle
 from feature_engine.dxy_correlation import calculate_dxy_correlation
 from feature_engine.rsi import calculate_rsi
 from feature_engine.structure import (
-    calculate_structure_labels,
+    StructureContextTracker,
     get_swing_window_for_timeframe,
 )
 from feature_engine.timezone_utils import get_vwap_session_id
@@ -147,24 +147,22 @@ class StreamingFeatureProcessor:
         self.volume_sma_period = 20
         self.volume_buffer: deque[float] = deque(maxlen=self.volume_sma_period)
 
-        # Structure detection buffer (needs enough bars to capture swing points)
-        # Structure calculation requires 3*swing_window+1 bars minimum
-        # Buffer size scales with timeframe to ensure adequate swing detection:
-        # - 1m/5m: 30 bars (30-150 min of data)
-        # - 15m: 50 bars (12.5 hours of data)  
-        # - 1h: 100 bars (100 hours / ~4 days of data)
-        buffer_size = self._get_buffer_size_for_timeframe(timeframe)
-        self.structure_buffer: deque[dict] = deque(maxlen=buffer_size)
-        self.dxy_structure_buffer: deque[dict] = deque(maxlen=buffer_size)
+        # Structure context trackers (replaces old buffer-based approach)
+        # Provides continuous structure state with derived fields on every bar
+        clarity_window = 10  # Window for clarity/chop detection
+        self.structure_tracker = StructureContextTracker(
+            swing_window=self.swing_window,
+            clarity_window=clarity_window,
+        )
+        self.dxy_structure_tracker = StructureContextTracker(
+            swing_window=self.swing_window,
+            clarity_window=clarity_window,
+        )
         
         logger.info(
             f"[StreamingFeatureProcessor] Initialized: timeframe={timeframe}, "
-            f"swing_window={swing_window}, structure_buffer_size={buffer_size}"
+            f"swing_window={self.swing_window}, clarity_window={clarity_window}"
         )
-
-        # Track last detected structure label (persists between bars)
-        self.last_structure_label: str | None = None
-        self.last_dxy_structure_label: str | None = None
 
         # VWAP cumulative state
         self.vwap_pv_sum = 0.0
@@ -333,108 +331,47 @@ class StreamingFeatureProcessor:
         else:
             features["dxy_corr_micro"] = None
 
-        # === 6. Structure Labels (lookback-based, calls existing function) ===
-        # Update structure buffer
-        self.structure_buffer.append(
-            {
-                "timestamp": gc_bar.timestamp,
-                "high": gc_bar.high,
-                "low": gc_bar.low,
-                "close": gc_bar.close,
-            }
+        # === 6. Structure Context (continuous state with derived fields) ===
+        # Update GC structure tracker
+        gc_structure_ctx = self.structure_tracker.update(
+            high=gc_bar.high,
+            low=gc_bar.low,
+            close=gc_bar.close,
         )
-
-        # Need enough bars for structure detection
-        # The structure calculation loop requires: len(df) > 3 * swing_window
-        # So we need at least 3 * swing_window + 1 bars for the loop to execute
-        required_bars = 3 * self.swing_window + 1
         
-        # Initialize with persisted value - will be updated if we detect a new swing
-        current_label = self.last_structure_label
-        
-        if len(self.structure_buffer) >= required_bars:
-            # Convert buffer to DataFrame
-            df_structure = pd.DataFrame(list(self.structure_buffer))
+        # Add GC structure fields to features
+        features["structure_label"] = gc_structure_ctx.last_structure_label
+        # Alias for compatibility
+        features["structure_type"] = gc_structure_ctx.last_structure_label
+        features["last_structure_label"] = gc_structure_ctx.last_structure_label
+        features["trend_direction"] = gc_structure_ctx.trend_direction
+        features["trend_confidence"] = gc_structure_ctx.trend_confidence
+        features["structure_clarity"] = gc_structure_ctx.structure_clarity
+        features["is_chop"] = gc_structure_ctx.is_chop
+        features["structure_conflict_flag"] = gc_structure_ctx.structure_conflict_flag
+        features["last_swing_high"] = gc_structure_ctx.last_swing_high
+        features["last_swing_low"] = gc_structure_ctx.last_swing_low
+        features["last_swing_high_idx"] = gc_structure_ctx.last_swing_high_idx
+        features["last_swing_low_idx"] = gc_structure_ctx.last_swing_low_idx
+        features["bos_direction"] = gc_structure_ctx.bos_direction
+        features["bos_recent"] = gc_structure_ctx.bos_recent
+        features["bos_age"] = gc_structure_ctx.bos_age
+        features["choch_detected"] = gc_structure_ctx.choch_detected
+        features["choch_age"] = gc_structure_ctx.choch_age
 
-            # Call existing function
-            try:
-                labels_series = calculate_structure_labels(
-                    df_structure,
-                    swing_window=self.swing_window,
-                    high_column="high",
-                    low_column="low",
-                )
-                # Get the latest confirmed structure label (non-NA swing point)
-                # Structure labels are sparse - only exist at actual swing highs/lows
-                # We need the most recent confirmed swing, not a fixed position
-                valid_labels = labels_series.dropna()
-
-                if len(valid_labels) > 0:
-                    # Latest real swing point (HH/HL/LH/LL)
-                    current_label = valid_labels.iloc[-1]
-                    self.last_structure_label = current_label
-                    logger.debug(
-                        f"[{self.timeframe}] Structure updated -> {current_label}"
-                    )
-                else:
-                    # No swings detected in buffer
-                    if self.last_structure_label is None:
-                        logger.debug(
-                            f"[{self.timeframe}] No swings detected in "
-                            f"{len(self.structure_buffer)}-bar buffer "
-                            f"(swing_window={self.swing_window}). "
-                            f"Consider increasing buffer size or swing_window."
-                        )
-            except Exception as e:
-                logger.warning(f"Structure label calculation failed: {e}")
-                # Keep current_label as self.last_structure_label
-
-        # Return the current structure label (latest confirmed swing or persisted value)
-        features["structure_label"] = current_label
-        features["structure_type"] = current_label  # Alias for compatibility
-
-        # === 7. DXY Structure Labels ===
-        # Update DXY structure buffer
-        self.dxy_structure_buffer.append(
-            {
-                "timestamp": dxy_bar.timestamp,
-                "high": dxy_bar.high,
-                "low": dxy_bar.low,
-                "close": dxy_bar.close,
-            }
+        # === 7. DXY Structure Context ===
+        # Update DXY structure tracker
+        dxy_structure_ctx = self.dxy_structure_tracker.update(
+            high=dxy_bar.high,
+            low=dxy_bar.low,
+            close=dxy_bar.close,
         )
-
-        # Initialize with persisted value
-        current_dxy_label = self.last_dxy_structure_label
-
-        if len(self.dxy_structure_buffer) >= required_bars:
-            # Convert buffer to DataFrame
-            df_dxy_structure = pd.DataFrame(list(self.dxy_structure_buffer))
-
-            # Call existing function for DXY
-            try:
-                dxy_labels_series = calculate_structure_labels(
-                    df_dxy_structure,
-                    swing_window=self.swing_window,
-                    high_column="high",
-                    low_column="low",
-                )
-                # Get the latest confirmed DXY structure label
-                valid_dxy_labels = dxy_labels_series.dropna()
-
-                if len(valid_dxy_labels) > 0:
-                    # Latest real swing point for DXY
-                    current_dxy_label = valid_dxy_labels.iloc[-1]
-                    self.last_dxy_structure_label = current_dxy_label
-                    logger.debug(
-                        f"[{self.timeframe}] DXY Structure updated -> "
-                        f"{current_dxy_label}"
-                    )
-            except Exception as e:
-                logger.warning(f"DXY structure label calculation failed: {e}")
-
-        # Add DXY structure label to features
-        features["dxy_structure_label"] = current_dxy_label
+        
+        # Add DXY structure fields to features
+        features["dxy_structure_label"] = dxy_structure_ctx.last_structure_label
+        features["dxy_trend_direction"] = dxy_structure_ctx.trend_direction
+        features["dxy_structure_clarity"] = dxy_structure_ctx.structure_clarity
+        features["dxy_is_chop"] = dxy_structure_ctx.is_chop
 
         return pd.Series(features)
 
@@ -465,10 +402,18 @@ class StreamingFeatureProcessor:
         self.micro_corr_gc_buffer.clear()
         self.micro_corr_dxy_buffer.clear()
         self.volume_buffer.clear()
-        self.structure_buffer.clear()
-        self.dxy_structure_buffer.clear()
-        self.last_structure_label = None
-        self.last_dxy_structure_label = None
+        
+        # Reset structure trackers
+        clarity_window = 10
+        self.structure_tracker = StructureContextTracker(
+            swing_window=self.swing_window,
+            clarity_window=clarity_window,
+        )
+        self.dxy_structure_tracker = StructureContextTracker(
+            swing_window=self.swing_window,
+            clarity_window=clarity_window,
+        )
+        
         self.vwap_pv_sum = 0.0
         self.vwap_v_sum = 0.0
         self.vwap_current_session = None

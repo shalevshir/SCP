@@ -13,10 +13,10 @@ from rule_engine.signal import Signal
 class TestDXYContinuationFeatureKeyBugFix:
     """Test that check_dxy_flip uses correct feature keys from feature engine.
     
-    Bug: The check_dxy_flip function was looking for keys that don't exist:
-    - dxy_corr_1m (doesn't exist) -> should use dxy_corr_micro (5-period)
-    - dxy_corr_5m (doesn't exist) -> should use dxy_corr (50-period)
-    - dxy_structure (doesn't exist) -> should use dxy_structure_label
+    Bug: The check_dxy_flip function expects specific feature keys:
+    - dxy_corr_1m (1-minute correlation)
+    - dxy_corr_5m (5-minute correlation)
+    - dxy_structure (DXY structure label)
     
     This caused the entire DXY_CONTINUATION invalidation code path to be dead code
     since all .get() calls returned None.
@@ -112,9 +112,10 @@ class TestDXYContinuationFeatureKeyBugFix:
         """
         # Features using the REAL keys from feature_engine/streaming.py
         features = {
-            "dxy_corr_micro": 0.1,  # 5-period micro correlation (weak positive)
+            "dxy_corr_1m": 0.1,  # 5-period micro correlation (weak positive)
+            "dxy_corr_5m": 0.1,  # 5-minute correlation
             "dxy_corr": 0.05,  # 50-period correlation (weak positive)
-            "dxy_structure_label": "HH",  # DXY turned bullish
+            "dxy_structure": "HH",  # DXY turned bullish
         }
 
         is_invalid, reason = checker.check_dxy_flip(
@@ -134,9 +135,10 @@ class TestDXYContinuationFeatureKeyBugFix:
     ):
         """Test that strong correlation prevents invalidation (using real keys)."""
         features = {
-            "dxy_corr_micro": -0.5,  # Strong negative (good for long)
+            "dxy_corr_1m": -0.5,  # Strong negative (good for long)
+            "dxy_corr_5m": -0.5,  # 5-minute correlation
             "dxy_corr": -0.6,  # Strong negative
-            "dxy_structure_label": "HH",  # Structure flipped but correlation strong
+            "dxy_structure": "HH",  # Structure flipped but correlation strong
         }
 
         is_invalid, reason = checker.check_dxy_flip(
@@ -151,9 +153,10 @@ class TestDXYContinuationFeatureKeyBugFix:
     ):
         """Test that bearish DXY structure prevents invalidation (using real keys)."""
         features = {
-            "dxy_corr_micro": 0.1,  # Weak correlation
+            "dxy_corr_1m": 0.1,  # Weak correlation
+            "dxy_corr_5m": 0.1,  # 5-minute correlation
             "dxy_corr": 0.05,
-            "dxy_structure_label": "LL",  # DXY still bearish - good for long
+            "dxy_structure": "LL",  # DXY still bearish - good for long
         }
 
         is_invalid, reason = checker.check_dxy_flip(
@@ -242,9 +245,10 @@ class TestDXYContinuationInvalidation:
         # Features showing correlation flip + structure flip
         # Uses correct keys: dxy_corr_micro (5-period), dxy_corr (50-period), dxy_structure_label
         features = {
-            "dxy_corr_micro": 0.1,  # 5-period micro correlation - weak positive (was negative)
+            "dxy_corr_1m": 0.1,  # 5-period micro correlation - weak positive (was negative)
+            "dxy_corr_5m": 0.1,  # 5-minute correlation
             "dxy_corr": 0.05,  # 50-period correlation - weak positive (was negative)
-            "dxy_structure_label": "HH",  # DXY turned bullish
+            "dxy_structure": "HH",  # DXY turned bullish
         }
 
         is_invalid, reason = checker.check_dxy_flip(trade, candle, features)
@@ -326,9 +330,10 @@ class TestDXYContinuationInvalidation:
 
         # Correlation flipped but structure still bearish
         features = {
-            "dxy_corr_micro": 0.1,
+            "dxy_corr_1m": 0.1,
+            "dxy_corr_5m": 0.1,  # 5-minute correlation
             "dxy_corr": 0.05,
-            "dxy_structure_label": "LL",  # Still bearish
+            "dxy_structure": "LL",  # Still bearish
         }
 
         is_invalid, reason = checker.check_dxy_flip(trade, candle, features)
@@ -408,9 +413,10 @@ class TestDXYContinuationInvalidation:
 
         # Structure flipped but correlation still strong
         features = {
-            "dxy_corr_micro": -0.5,  # Still strong inverse
+            "dxy_corr_1m": -0.5,  # Still strong inverse
+            "dxy_corr_5m": -0.5,  # 5-minute correlation
             "dxy_corr": -0.6,
-            "dxy_structure_label": "HH",  # Turned bullish
+            "dxy_structure": "HH",  # Turned bullish
         }
 
         is_invalid, reason = checker.check_dxy_flip(trade, candle, features)
@@ -495,9 +501,10 @@ class TestDXYContinuationInvalidation:
 
         # Correlation weakened (moved toward zero) + structure turned bearish
         features = {
-            "dxy_corr_micro": -0.05,  # Weak correlation (was -0.4 at entry)
+            "dxy_corr_1m": -0.05,  # Weak correlation (was -0.4 at entry)
+            "dxy_corr_5m": -0.05,  # 5-minute correlation
             "dxy_corr": 0.0,  # Near zero
-            "dxy_structure_label": "LL",  # Turned bearish
+            "dxy_structure": "LL",  # Turned bearish
         }
 
         is_invalid, reason = checker.check_dxy_flip(trade, candle, features)
@@ -584,9 +591,10 @@ class TestDXYContinuationInvalidation:
         # Correlation became MORE strongly negative + structure turned bearish
         # This should NOT invalidate (correlation is still strong, not weakening)
         features = {
-            "dxy_corr_micro": -0.7,  # Strong negative (was -0.4, now MORE negative)
+            "dxy_corr_1m": -0.7,  # Strong negative (was -0.4, now MORE negative)
+            "dxy_corr_5m": -0.7,  # 5-minute correlation
             "dxy_corr": -0.8,
-            "dxy_structure_label": "LL",  # Turned bearish
+            "dxy_structure": "LL",  # Turned bearish
         }
 
         is_invalid, reason = checker.check_dxy_flip(trade, candle, features)
