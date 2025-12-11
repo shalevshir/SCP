@@ -7,8 +7,8 @@ timezone: "Asia/Jerusalem"
 # Default session rules (applied when no season-specific rule matches)
 default_session:
   name: "Default Conservative"
-  window_start: "10:00"  # ILT (Israel Local Time)
-  window_end: "13:00"    # ILT (Israel Local Time)
+  window_start: "09:00"  # ILT (Israel Local Time)
+  window_end: "14:00"    # ILT (Israel Local Time)
   allowed_tiers:
     - "Conservative"
     - "EarlyMild"
@@ -26,8 +26,8 @@ seasons:
   # September Defensive: Heightened caution, strict requirements
   - name: "September Defensive"
     months: [9]  # September
-    window_start: "10:00"
-    window_end: "13:00"
+    window_start: "09:00"
+    window_end: "14:00"
     allowed_tiers:
       - "Conservative"
       - "EarlyMild"
@@ -41,8 +41,8 @@ seasons:
   # October Base/Reconstruction: Transitional phase
   - name: "October Base/Reconstruction"
     months: [10]  # October
-    window_start: "10:00"
-    window_end: "13:00"
+    window_start: "09:00"
+    window_end: "14:00"
     allowed_tiers:
       - "Conservative"
       - "EarlyMild"
@@ -58,8 +58,8 @@ seasons:
   # November-December Trend Window: Optimal trading conditions
   - name: "November-December Trend Window"
     months: [11, 12]  # November and December
-    window_start: "10:00"
-    window_end: "13:00"
+    window_start: "09:00"
+    window_end: "14:00"
     allowed_tiers:
       - "Conservative"
       - "EarlyMild"
