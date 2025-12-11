@@ -146,13 +146,14 @@ class StructureContextTracker:
         is_chop = self._detect_chop()
         structure_conflict_flag = self._detect_conflict()
         
-        # Track CHoCH age
-        choch_age = None if self.last_choch_idx is None else (self.bar_count - self.last_choch_idx)
-        
-        # Detect CHoCH on this bar
+        # Detect CHoCH on this bar (must be done BEFORE calculating age)
+        # so that if a CHoCH is detected, last_choch_idx is updated and age will be 0
         choch_detected = False
         if new_label is not None:
             choch_detected = self._detect_choch_event(new_label)
+        
+        # Track CHoCH age (calculated AFTER detection so current CHoCH has age=0)
+        choch_age = None if self.last_choch_idx is None else (self.bar_count - self.last_choch_idx)
         
         return StructureContext(
             last_structure_label=self.last_structure_label,

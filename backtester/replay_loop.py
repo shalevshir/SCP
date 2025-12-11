@@ -230,6 +230,9 @@ class BacktestReplayLoop:
         # Structure label statistics for diagnostics
         from collections import Counter
         self._structure_stats: Counter = Counter()
+        
+        # Track simulated exits to prevent overlapping trades
+        self._simulated_exits: dict[str, datetime] = {}
 
         # Results tracking
         self._all_trades: list[Trade] = []
@@ -477,6 +480,7 @@ class BacktestReplayLoop:
                     bos_candle=bos_candle,
                     risk_config=self.risk_config,
                     market_context=market_context,
+                    config=self.config,
                 )
 
                 # Add diagnostic context at entry

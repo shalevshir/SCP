@@ -247,6 +247,75 @@ class TestChopDetection:
         assert isinstance(ctx.is_chop, bool)
 
 
+class TestChochDetection:
+    """Test CHoCH (Change of Character) detection and age calculation."""
+
+    def test_choch_age_is_zero_when_choch_detected_on_current_bar(self):
+        """Test that choch_age=0 when choch_detected=True on the current bar.
+        
+        Bug fix: choch_age was calculated BEFORE _detect_choch_event, causing
+        it to reflect the previous CHoCH's age instead of 0 when a new CHoCH
+        is detected on the current bar.
+        """
+        tracker = StructureContextTracker(swing_window=2)
+        
+        # Build up structure: start with bullish (HH)
+        # Bar 0-1: Build initial structure
+        tracker.update(high=100.0, low=98.0, close=99.0)  # Bar 0
+        tracker.update(high=102.0, low=100.0, close=101.0)  # Bar 1
+        tracker.update(high=104.0, low=102.0, close=103.0)  # Bar 2 - potential HH
+        
+        # Bar 3-4: Continue bullish
+        tracker.update(high=105.0, low=103.0, close=104.0)  # Bar 3
+        tracker.update(high=106.0, low=104.0, close=105.0)  # Bar 4
+        
+        # Now create a bearish swing (LL) to trigger CHoCH (H→L transition)
+        # Bar 5-6: Create swing low
+        tracker.update(high=104.0, low=100.0, close=101.0)  # Bar 5
+        ctx_with_choch = tracker.update(high=102.0, low=98.0, close=99.0)  # Bar 6 - potential LL (CHoCH)
+        
+        # When CHoCH is detected on current bar, age should be 0
+        if ctx_with_choch.choch_detected:
+            assert ctx_with_choch.choch_age == 0, (
+                f"When choch_detected=True, choch_age should be 0, "
+                f"but got {ctx_with_choch.choch_age}"
+            )
+        
+        # Continue to next bar - age should increment
+        ctx_next = tracker.update(high=101.0, low=97.0, close=98.0)  # Bar 7
+        if ctx_with_choch.choch_detected:
+            # Age should now be 1 (one bar since CHoCH)
+            assert ctx_next.choch_age == 1, (
+                f"One bar after CHoCH, choch_age should be 1, "
+                f"but got {ctx_next.choch_age}"
+            )
+
+    def test_choch_age_increments_after_detection(self):
+        """Test that choch_age increments correctly after CHoCH detection."""
+        tracker = StructureContextTracker(swing_window=2)
+        
+        # Build structure and trigger CHoCH
+        tracker.update(high=100.0, low=98.0, close=99.0)
+        tracker.update(high=102.0, low=100.0, close=101.0)
+        tracker.update(high=104.0, low=102.0, close=103.0)
+        tracker.update(high=105.0, low=103.0, close=104.0)
+        tracker.update(high=106.0, low=104.0, close=105.0)
+        tracker.update(high=104.0, low=100.0, close=101.0)
+        
+        # This should trigger CHoCH (H→L)
+        ctx_choch = tracker.update(high=102.0, low=98.0, close=99.0)
+        
+        if ctx_choch.choch_detected:
+            assert ctx_choch.choch_age == 0
+            
+            # Age should increment each bar
+            for expected_age in range(1, 4):
+                ctx = tracker.update(high=101.0, low=97.0, close=98.0)
+                assert ctx.choch_age == expected_age, (
+                    f"Expected choch_age={expected_age}, got {ctx.choch_age}"
+                )
+
+
 class TestNoLookaheadBias:
     """Test that StructureContext has no lookahead bias."""
 
