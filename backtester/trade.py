@@ -12,8 +12,9 @@ Key Features:
 - Full PnL and metrics tracking
 """
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import datetime
+from typing import Any
 from uuid import uuid4
 
 from common.logger import get_logger
@@ -26,6 +27,149 @@ logger = get_logger(__name__)
 # Minimum risk threshold in ticks to prevent micro-chop entries
 # Trades with risk below this threshold are rejected to avoid noise
 MIN_RISK_TICKS = 10
+
+# Minimum stop-loss distance for VWAP_RECLAIM setups (SOP requirement)
+# VWAP_RECLAIM requires retest protection, so SL must be far enough
+# from entry to avoid premature stop-out during the retest phase
+# PATCH PART 4: Updated from 20 to 12 ticks per patch specification
+MIN_SL_TICKS_VWAP_RECLAIM = 12
+
+# Minimum stop-loss distance for DXY_CONTINUATION setups
+# Continuation trades need structural breathing room to avoid micro-swing noise
+# PATCH PART 4: Updated from 15 to 25 ticks per patch specification
+MIN_SL_TICKS_DXY_CONTINUATION = 25
+
+# Minimum stop-loss distance for VWAP_FADE setups
+# Fade setups need sufficient SL distance to avoid instant stop-out from micro-chop
+MIN_SL_TICKS_VWAP_FADE = 15
+
+
+# PATCH PART 1: Setup-specific helper functions for clean isolation
+def is_fade(trade: "Trade") -> bool:
+    """Check if trade is a VWAP_FADE setup.
+    
+    Args:
+        trade: Trade object to check
+        
+    Returns:
+        True if setup_type is VWAP_FADE, False otherwise
+    """
+    return trade.setup_type == "VWAP_FADE"
+
+
+def is_reclaim(trade: "Trade") -> bool:
+    """Check if trade is a VWAP_RECLAIM setup.
+    
+    Args:
+        trade: Trade object to check
+        
+    Returns:
+        True if setup_type is VWAP_RECLAIM, False otherwise
+    """
+    return trade.setup_type == "VWAP_RECLAIM"
+
+
+def is_continuation(trade: "Trade") -> bool:
+    """Check if trade is a DXY_CONTINUATION setup.
+    
+    Args:
+        trade: Trade object to check
+        
+    Returns:
+        True if setup_type is DXY_CONTINUATION, False otherwise
+    """
+    return trade.setup_type == "DXY_CONTINUATION"
+
+
+def validate_trade_invariants(
+    entry_price: float,
+    stop_loss: float,
+    take_profit: float,
+    direction: str,
+    risk_amount: float,
+    reward_amount: float,
+) -> None:
+    """Validate trade invariants before trade creation (FIX #3/#8).
+    
+    Ensures that:
+    - SL != entry_price
+    - TP != entry_price
+    - TP is on correct side of entry (long: TP > entry, short: TP < entry)
+    - SL is on correct side of entry (long: SL < entry, short: SL > entry)
+    - risk_amount > 0
+    - reward_amount > 0
+    
+    Args:
+        entry_price: Entry price
+        stop_loss: Stop loss price
+        take_profit: Take profit price
+        direction: Trade direction ("long" or "short")
+        risk_amount: Risk amount (distance from entry to SL)
+        reward_amount: Reward amount (distance from entry to TP)
+        
+    Raises:
+        ValueError: If any invariant is violated
+    """
+    # Check SL != entry
+    if stop_loss == entry_price:
+        raise ValueError(
+            f"Invalid trade: stop_loss cannot equal entry_price. "
+            f"SL={stop_loss}, entry={entry_price}"
+        )
+    
+    # Check TP != entry
+    if take_profit == entry_price:
+        raise ValueError(
+            f"Invalid trade: take_profit cannot equal entry_price. "
+            f"TP={take_profit}, entry={entry_price}"
+        )
+    
+    # Check SL is on correct side of entry
+    if direction == "long":
+        if stop_loss >= entry_price:
+            raise ValueError(
+                f"Invalid long trade: stop_loss must be below entry_price. "
+                f"SL={stop_loss}, entry={entry_price}"
+            )
+    else:  # short
+        if stop_loss <= entry_price:
+            raise ValueError(
+                f"Invalid short trade: stop_loss must be above entry_price. "
+                f"SL={stop_loss}, entry={entry_price}"
+            )
+    
+    # Check TP is on correct side of entry
+    if direction == "long":
+        if take_profit <= entry_price:
+            raise ValueError(
+                f"Invalid long trade: take_profit must be above entry_price. "
+                f"TP={take_profit}, entry={entry_price}"
+            )
+    else:  # short
+        if take_profit >= entry_price:
+            raise ValueError(
+                f"Invalid short trade: take_profit must be below entry_price. "
+                f"TP={take_profit}, entry={entry_price}"
+            )
+    
+    # Check risk_amount > 0
+    if risk_amount <= 0:
+        raise ValueError(
+            f"Invalid trade: risk_amount must be positive. "
+            f"risk={risk_amount}, SL={stop_loss}, entry={entry_price}"
+        )
+    
+    # Check reward_amount > 0
+    if reward_amount <= 0:
+        raise ValueError(
+            f"Invalid trade: reward_amount must be positive. "
+            f"reward={reward_amount}, TP={take_profit}, entry={entry_price}"
+        )
+    
+    logger.debug(
+        f"Trade invariants validated: SL={stop_loss}, entry={entry_price}, "
+        f"TP={take_profit}, risk={risk_amount}, reward={reward_amount}"
+    )
 
 
 @dataclass(frozen=True)
@@ -128,6 +272,10 @@ class Trade:
     status: str
     duration_bars: int | None
     invalidation_triggered: bool
+    ignore_first_retest_bar: bool  # FIX #2: Retest protection flag for VWAP_RECLAIM
+    
+    # Diagnostics (mutable dict for debugging context)
+    diagnostics: dict[str, Any] = field(default_factory=dict)
 
 
 def calculate_stop_loss(
@@ -135,7 +283,8 @@ def calculate_stop_loss(
     direction: str,
     confirmation_candle: Candle,
     bos_candle: Candle | None = None,
-) -> tuple[float, str]:
+    config: dict | None = None,
+) -> tuple[float, str, bool]:
     """Calculate stop loss based on SOP rules.
 
     SOP Rules:
@@ -143,23 +292,29 @@ def calculate_stop_loss(
     - Continuation (short): SL = max(confirmation_high, bos_high)
     - Fade: SL = sweep candle extreme (confirmation_candle is sweep)
     - SL must be outside liquidity zones (not inside FVG, sweep wick, etc.)
+    - VWAP_RECLAIM: Minimum 20-tick buffer to prevent premature stop-out during retest
 
     Args:
         entry_execution: Entry execution with signal details
         direction: Trade direction ("long" or "short")
         confirmation_candle: Confirmation candle (or sweep candle for fades)
         bos_candle: Break of structure candle (optional, for continuation)
+        config: Config dict for asset-specific tick sizes (optional)
 
     Returns:
-        Tuple of (stop_loss_price, rationale)
+        Tuple of (stop_loss_price, rationale, ignore_first_retest_bar)
+        - stop_loss_price: Stop loss price level
+        - rationale: Explanation of SL placement
+        - ignore_first_retest_bar: True if SL should be ignored on first bar (VWAP_RECLAIM only)
 
     Example:
-        >>> sl, rationale = calculate_stop_loss(entry, "long", conf_candle, bos_candle)
-        >>> print(f"SL: {sl} - {rationale}")
+        >>> sl, rationale, retest_flag = calculate_stop_loss(entry, "long", conf_candle, bos_candle, config)
+        >>> print(f"SL: {sl} - {rationale} (retest protection: {retest_flag})")
     """
     setup_type = entry_execution.signal.setup_type
+    entry_price = entry_execution.entry_price
 
-    # VWAP_FADE: Use sweep candle extreme
+    # VWAP_FADE: Use sweep candle extreme (no retest protection)
     if setup_type == "VWAP_FADE":
         if direction == "long":
             sl = confirmation_candle.low
@@ -168,10 +323,36 @@ def calculate_stop_loss(
             sl = confirmation_candle.high
             rationale = "Above sweep candle high (fade setup)"
 
+        # FIX: VWAP_FADE minimum 15-tick buffer to prevent instant stop-out
+        # Get tick_size from config based on symbol (default 0.1 for GC)
+        symbol = entry_execution.signal.symbol
+        if config is not None:
+            tick_size = config.get("assets", {}).get("tick_sizes", {}).get(symbol, 0.1)
+        else:
+            # Fallback defaults for common assets
+            default_tick_sizes = {"GC": 0.1, "ES": 0.25, "NQ": 0.25, "CL": 0.01}
+            tick_size = default_tick_sizes.get(symbol, 0.1)
+        
+        risk_distance = abs(entry_price - sl)
+        risk_ticks = risk_distance / tick_size
+        
+        if risk_ticks < MIN_SL_TICKS_VWAP_FADE:
+            # Expand SL outward to meet minimum requirement
+            if direction == "long":
+                sl = entry_price - (MIN_SL_TICKS_VWAP_FADE * tick_size)
+            else:
+                sl = entry_price + (MIN_SL_TICKS_VWAP_FADE * tick_size)
+            
+            rationale = f"VWAP Fade SL padded to {MIN_SL_TICKS_VWAP_FADE}-tick minimum (was {risk_ticks:.1f} ticks)"
+            logger.info(
+                f"VWAP_FADE SL expanded: {entry_price} -> {sl} "
+                f"(from {risk_ticks:.1f} ticks to {MIN_SL_TICKS_VWAP_FADE} ticks)"
+            )
+
         logger.debug(
             f"Fade SL calculated: {sl} (direction={direction}, " f"setup={setup_type})"
         )
-        return sl, rationale
+        return sl, rationale, False  # No retest protection for fades
 
     # Continuation setups (VWAP_RECLAIM, DXY_CONTINUATION)
     if direction == "long":
@@ -197,11 +378,72 @@ def calculate_stop_loss(
             sl = confirmation_candle.high
             rationale = "Above confirmation candle high (structure-based)"
 
+    # FIX #1: VWAP_RECLAIM minimum 20-tick buffer
+    # FIX #2: VWAP_RECLAIM retest protection (skip SL on first bar)
+    ignore_first_retest_bar = False
+    if setup_type == "VWAP_RECLAIM":
+        # Get tick_size from config based on symbol (default 0.1 for GC)
+        symbol = entry_execution.signal.symbol
+        if config is not None:
+            tick_size = config.get("assets", {}).get("tick_sizes", {}).get(symbol, 0.1)
+        else:
+            # Fallback defaults for common assets
+            default_tick_sizes = {"GC": 0.1, "ES": 0.25, "NQ": 0.25, "CL": 0.01}
+            tick_size = default_tick_sizes.get(symbol, 0.1)
+        
+        risk_distance = abs(entry_price - sl)
+        risk_ticks = risk_distance / tick_size
+        
+        if risk_ticks < MIN_SL_TICKS_VWAP_RECLAIM:
+            # Expand SL outward to meet minimum requirement
+            if direction == "long":
+                sl = entry_price - (MIN_SL_TICKS_VWAP_RECLAIM * tick_size)
+            else:
+                sl = entry_price + (MIN_SL_TICKS_VWAP_RECLAIM * tick_size)
+            
+            rationale = f"VWAP Reclaim SL padded to {MIN_SL_TICKS_VWAP_RECLAIM}-tick minimum (was {risk_ticks:.1f} ticks)"
+            logger.info(
+                f"VWAP_RECLAIM SL expanded: {entry_price} -> {sl} "
+                f"(from {risk_ticks:.1f} ticks to {MIN_SL_TICKS_VWAP_RECLAIM} ticks)"
+            )
+        
+        # Enable retest protection for all VWAP_RECLAIM setups
+        ignore_first_retest_bar = True
+        logger.debug(f"VWAP_RECLAIM retest protection enabled for trade")
+
+    # FIX #3: DXY_CONTINUATION minimum 15-tick buffer
+    if setup_type == "DXY_CONTINUATION":
+        # Get tick_size from config based on symbol (default 0.1 for GC)
+        symbol = entry_execution.signal.symbol
+        if config is not None:
+            tick_size = config.get("assets", {}).get("tick_sizes", {}).get(symbol, 0.1)
+        else:
+            # Fallback defaults for common assets
+            default_tick_sizes = {"GC": 0.1, "ES": 0.25, "NQ": 0.25, "CL": 0.01}
+            tick_size = default_tick_sizes.get(symbol, 0.1)
+        
+        risk_distance = abs(entry_price - sl)
+        risk_ticks = risk_distance / tick_size
+        
+        if risk_ticks < MIN_SL_TICKS_DXY_CONTINUATION:
+            # Expand SL outward to meet minimum requirement
+            if direction == "long":
+                sl = entry_price - (MIN_SL_TICKS_DXY_CONTINUATION * tick_size)
+            else:
+                sl = entry_price + (MIN_SL_TICKS_DXY_CONTINUATION * tick_size)
+            
+            rationale = f"Continuation SL padded to {MIN_SL_TICKS_DXY_CONTINUATION}-tick minimum (was {risk_ticks:.1f} ticks)"
+            logger.info(
+                f"DXY_CONTINUATION SL expanded: {entry_price} -> {sl} "
+                f"(from {risk_ticks:.1f} ticks to {MIN_SL_TICKS_DXY_CONTINUATION} ticks)"
+            )
+
     logger.debug(
         f"Continuation SL calculated: {sl} (direction={direction}, "
-        f"bos_provided={bos_candle is not None})"
+        f"bos_provided={bos_candle is not None}, setup={setup_type}, "
+        f"retest_protection={ignore_first_retest_bar})"
     )
-    return sl, rationale
+    return sl, rationale, ignore_first_retest_bar
 
 
 def calculate_take_profit(
@@ -326,9 +568,9 @@ def create_trade_from_entry(
     direction = signal.direction
     setup_type = signal.setup_type
 
-    # 1. Calculate stop loss
-    stop_loss, sl_rationale = calculate_stop_loss(
-        entry_execution, direction, confirmation_candle, bos_candle
+    # 1. Calculate stop loss (FIX #2: Also returns retest protection flag)
+    stop_loss, sl_rationale, ignore_first_retest_bar = calculate_stop_loss(
+        entry_execution, direction, confirmation_candle, bos_candle, config
     )
 
     # 1.5. Validate minimum risk threshold (prevent micro-chop entries)
@@ -383,6 +625,17 @@ def create_trade_from_entry(
     # 5. Determine contracts (from risk config)
     contracts = risk_config.get("max_contracts", 1)
 
+    # 5.5. Validate trade invariants (FIX #3/#8)
+    # This ensures we never create a trade with invalid SL/TP or risk
+    validate_trade_invariants(
+        entry_price=entry_execution.entry_price,
+        stop_loss=stop_loss,
+        take_profit=take_profit,
+        direction=direction,
+        risk_amount=risk_distance,
+        reward_amount=reward_distance,
+    )
+
     # 6. Generate unique trade ID
     trade_id = str(uuid4())
 
@@ -422,6 +675,7 @@ def create_trade_from_entry(
         status="OPEN",
         duration_bars=None,
         invalidation_triggered=False,
+        ignore_first_retest_bar=ignore_first_retest_bar,  # FIX #2: Store retest protection flag
     )
 
 
@@ -512,7 +766,7 @@ def close_trade(
     commission_cost = None
 
     if config is not None:
-        from backtester.pnl_calculator import calculate_net_pnl
+        from backtester.pnl_calculator import calculate_net_pnl, compute_slippage
 
         try:
             # Extract config values
@@ -522,13 +776,14 @@ def close_trade(
             tick_size = (
                 config.get("assets", {}).get("tick_sizes", {}).get(trade.symbol, 0.1)
             )
-            slippage_points = config.get("backtest", {}).get("slippage_points", 0.5)
             commission_per_contract = config.get("backtest", {}).get(
                 "commission_per_trade", 5.0
             )
 
-            # Convert slippage from points to ticks
-            slippage_ticks = slippage_points / tick_size
+            # PATCH PART 5: Dynamic slippage based on ATR instead of fixed value
+            # Try to get ATR from config (passed from simulator) or use default
+            atr = config.get("current_atr")
+            slippage_ticks = compute_slippage(atr, order_type="market")
 
             # Calculate complete PnL breakdown
             pnl_breakdown = calculate_net_pnl(
@@ -697,6 +952,8 @@ def to_dict(trade: Trade) -> dict:
         "status": trade.status,
         "duration_bars": trade.duration_bars,
         "invalidation_triggered": trade.invalidation_triggered,
+        "ignore_first_retest_bar": trade.ignore_first_retest_bar,
+        "diagnostics": trade.diagnostics or {},
     }
 
 
@@ -783,4 +1040,6 @@ def from_dict(data: dict) -> Trade:
         status=data["status"],
         duration_bars=data["duration_bars"],
         invalidation_triggered=data["invalidation_triggered"],
+        ignore_first_retest_bar=data.get("ignore_first_retest_bar", False),  # Default to False for backward compat
+        diagnostics=data.get("diagnostics", {}),  # Default to empty dict for backward compat
     )

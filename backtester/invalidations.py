@@ -73,6 +73,8 @@ class InvalidationChecker:
             "daily_pnl": 0.0,
             "last_session_date": None,
         }
+        # Track consecutive invalidation bars for FADE setups (2-bar confirmation)
+        self._fade_invalidation_count: dict[str, int] = {}
 
     def _get_trade_state(self, trade_id: str) -> dict:
         """Get or create trade state.
@@ -170,9 +172,17 @@ class InvalidationChecker:
         # Check if +1R was reached
         state = self._get_trade_state(trade.trade_id)
         if not state["reached_1r"]:
+            # Add invalidation diagnostics
+            from backtester.diagnostics import add_nested_diag
+            
+            add_nested_diag(trade, "invalidation_context", "type", "no_1r_reached")
+            add_nested_diag(trade, "invalidation_context", "bars_elapsed", bars_elapsed)
+            add_nested_diag(trade, "invalidation_context", "time_limit", time_limit)
+            
             reason = (
                 f"+1R not reached within {time_limit} bars " f"({trade.setup_type})"
             )
+            add_nested_diag(trade, "invalidation_context", "reason", reason)
             logger.info(f"Trade {trade.trade_id} invalidated: {reason}")
             return True, reason
 
@@ -212,83 +222,135 @@ class InvalidationChecker:
         if vwap is None:
             return False, None
 
+        # PATCH PART 3: Extract VWAP slope for confirmation (prevents noise-based exits)
+        vwap_slope = _sanitize_float(features.get("vwap_slope"))
+
         # Check VWAP invalidation - different logic for RECLAIM vs FADE
         if trade.setup_type == "VWAP_RECLAIM":
             # Continuation setups: invalid if price moves against continuation
             if trade.direction == "long":
                 if candle.close < vwap:
+                    # Add invalidation diagnostics
+                    from backtester.diagnostics import add_nested_diag
+                    
+                    add_nested_diag(trade, "invalidation_context", "type", "vwap")
+                    add_nested_diag(trade, "invalidation_context", "vwap", vwap)
+                    add_nested_diag(trade, "invalidation_context", "vwap_slope", vwap_slope)
+                    add_nested_diag(trade, "invalidation_context", "candle_close", candle.close)
+                    
                     reason = (
                         f"VWAP invalidation: close {candle.close:.2f} < VWAP {vwap:.2f}"
                     )
+                    add_nested_diag(trade, "invalidation_context", "reason", reason)
                     logger.info(f"Trade {trade.trade_id} invalidated: {reason}")
                     return True, reason
             else:  # short
                 if candle.close > vwap:
+                    # Add invalidation diagnostics
+                    from backtester.diagnostics import add_nested_diag
+                    
+                    add_nested_diag(trade, "invalidation_context", "type", "vwap")
+                    add_nested_diag(trade, "invalidation_context", "vwap", vwap)
+                    add_nested_diag(trade, "invalidation_context", "vwap_slope", vwap_slope)
+                    add_nested_diag(trade, "invalidation_context", "candle_close", candle.close)
+                    
                     reason = (
                         f"VWAP invalidation: close {candle.close:.2f} > VWAP {vwap:.2f}"
                     )
+                    add_nested_diag(trade, "invalidation_context", "reason", reason)
                     logger.info(f"Trade {trade.trade_id} invalidated: {reason}")
                     return True, reason
         else:  # VWAP_FADE
-            # Fade setups: invalid if price reclaims VWAP (opposite of continuation)
+            # FADE setups require 2 CONSECUTIVE bars meeting invalidation criteria
+            # This prevents premature exits on micro-noise and intrabar wicks
+            trade_id = trade.trade_id
+            
+            # Check if invalidation condition is met on THIS bar
+            condition_met = False
+            
             if trade.direction == "long":
-                if candle.close > vwap:
-                    reason = f"VWAP invalidation: close {candle.close:.2f} > VWAP {vwap:.2f} (VWAP reclaimed)"
-                    logger.info(f"Trade {trade.trade_id} invalidated: {reason}")
-                    return True, reason
+                # Long fade: invalid if close below VWAP + slope turning down
+                if candle.close < vwap and (vwap_slope is not None and vwap_slope < 0):
+                    condition_met = True
             else:  # short
-                if candle.close < vwap:
-                    reason = f"VWAP invalidation: close {candle.close:.2f} < VWAP {vwap:.2f} (VWAP reclaimed)"
+                # Short fade: invalid if close above VWAP + slope turning up
+                if candle.close > vwap and (vwap_slope is not None and vwap_slope > 0):
+                    condition_met = True
+            
+            # Track consecutive bars meeting condition
+            if condition_met:
+                # Increment counter
+                current_count = self._fade_invalidation_count.get(trade_id, 0)
+                self._fade_invalidation_count[trade_id] = current_count + 1
+                
+                # Require 2 consecutive bars
+                if self._fade_invalidation_count[trade_id] >= 2:
+                    # Add invalidation diagnostics for FADE
+                    from backtester.diagnostics import add_nested_diag
+                    
+                    add_nested_diag(trade, "invalidation_context", "type", "vwap_fade")
+                    add_nested_diag(trade, "invalidation_context", "vwap", vwap)
+                    add_nested_diag(trade, "invalidation_context", "vwap_slope", vwap_slope)
+                    add_nested_diag(trade, "invalidation_context", "candle_close", candle.close)
+                    add_nested_diag(trade, "invalidation_context", "fade_consecutive_closes_against", self._fade_invalidation_count[trade_id])
+                    
+                    reason = (
+                        f"VWAP invalidation (2-bar confirmed): "
+                        f"close {candle.close:.2f} {'<' if trade.direction == 'long' else '>'} "
+                        f"VWAP {vwap:.2f}, slope {vwap_slope:.4f}"
+                    )
+                    add_nested_diag(trade, "invalidation_context", "reason", reason)
                     logger.info(f"Trade {trade.trade_id} invalidated: {reason}")
+                    # Clear counter after invalidation
+                    self._fade_invalidation_count[trade_id] = 0
                     return True, reason
+                else:
+                    # First bar meeting condition - not yet invalid
+                    logger.debug(
+                        f"Trade {trade.trade_id}: FADE invalidation condition met "
+                        f"(bar {self._fade_invalidation_count[trade_id]}/2)"
+                    )
+            else:
+                # Condition NOT met - reset counter
+                if trade_id in self._fade_invalidation_count:
+                    logger.debug(
+                        f"Trade {trade.trade_id}: FADE invalidation condition reset "
+                        f"(was at {self._fade_invalidation_count[trade_id]} bars)"
+                    )
+                    self._fade_invalidation_count[trade_id] = 0
 
         return False, None
 
     def check_session_end(
         self, trade: Trade, candle: Candle, session_end_time: time | None = None
     ) -> tuple[bool, str | None]:
-        """Check if session has ended (force exit at session close).
+        """Check if session has ended (FIX #6: NO force exit at session close).
+        
+        FIX #6: Session guard must NOT force auto-exits.
+        Trades entered during valid session must run to TP/SL, not force-closed.
+        
+        This function now always returns (False, None) to prevent session-based exits.
+        Session validation should only block NEW entries, not close existing trades.
 
         Args:
             trade: Open trade to check
             candle: Current candle
-            session_end_time: Session end time (default: 13:00 ILT)
-                           If None, uses default 13:00 ILT
+            session_end_time: Ignored (kept for signature compatibility)
 
         Returns:
-            Tuple of (is_invalid, reason)
+            Tuple of (is_invalid, reason) - always (False, None)
 
-        SOP Rules:
-            - Force exit at session end (13:00 ILT by default)
-            - Executes BEFORE timeout
+        SOP Rules (Updated):
+            - Session end does NOT close open trades
+            - Trades run to TP/SL regardless of session time
+            - Session validation is for entry blocking only
         """
-        # Default session end: 13:00 ILT (Israel Local Time)
-        if session_end_time is None:
-            session_end_time = time(13, 0, 0)  # 13:00:00
-
-        # Convert candle timestamp to Israel timezone (Asia/Jerusalem)
-        israel_tz = ZoneInfo("Asia/Jerusalem")
-
-        # Handle timezone-aware and naive timestamps
-        if candle.timestamp.tzinfo is None:
-            # Assume UTC if naive
-            local_dt = candle.timestamp.replace(tzinfo=ZoneInfo("UTC")).astimezone(
-                israel_tz
-            )
-        else:
-            local_dt = candle.timestamp.astimezone(israel_tz)
-
-        current_time = local_dt.time()
-
-        # Check if current time >= session end
-        if current_time >= session_end_time:
-            reason = (
-                f"Session end: {current_time.strftime('%H:%M:%S')} ILT >= "
-                f"{session_end_time.strftime('%H:%M:%S')} ILT"
-            )
-            logger.info(f"Trade {trade.trade_id} invalidated: {reason}")
-            return True, reason
-
+        # FIX #6: Do not auto-exit trades based on session end
+        # Session validation is for entry blocking only
+        logger.debug(
+            f"Trade {trade.trade_id}: session end check disabled (FIX #6). "
+            f"Trade will run to TP/SL."
+        )
         return False, None
 
     def check_htf_structure_invalidation(
@@ -322,25 +384,34 @@ class InvalidationChecker:
         if structure_label is None:
             return False, None
 
-        # Check for structure break against trade direction
-        # Long trades invalidated by bearish structure (LH, LL) regardless of entry bias
-        # Short trades invalidated by bullish structure (HH, HL) regardless of entry bias
+        # Check for confirmed structure break against trade direction
+        # Long trades: only invalidate on LL (confirmed HL->LL break)
+        # Short trades: only invalidate on HH (confirmed LH->HH break)
+        # This reduces noise from intermediate labels like LH (for longs) or HL (for shorts)
         if trade.direction == "long":
-            # Long trade invalidated by bearish structure
-            if structure_label in ("LH", "LL"):
-                reason = (
-                    f"HTF structure invalidation: {structure_label} detected "
-                    f"(bearish structure breaks against long trade)"
-                )
+            # Long trade invalidated only by LL (confirmed bearish break)
+            if structure_label == "LL":
+                # Add invalidation diagnostics
+                from backtester.diagnostics import add_nested_diag
+                
+                add_nested_diag(trade, "invalidation_context", "type", "htf_structure")
+                add_nested_diag(trade, "invalidation_context", "structure_label", structure_label)
+                
+                reason = f"HTF break: HL -> LL (confirmed bearish structure)"
+                add_nested_diag(trade, "invalidation_context", "reason", reason)
                 logger.info(f"Trade {trade.trade_id} invalidated: {reason}")
                 return True, reason
         else:  # short
-            # Short trade invalidated by bullish structure
-            if structure_label in ("HH", "HL"):
-                reason = (
-                    f"HTF structure invalidation: {structure_label} detected "
-                    f"(bullish structure breaks against short trade)"
-                )
+            # Short trade invalidated only by HH (confirmed bullish break)
+            if structure_label == "HH":
+                # Add invalidation diagnostics
+                from backtester.diagnostics import add_nested_diag
+                
+                add_nested_diag(trade, "invalidation_context", "type", "htf_structure")
+                add_nested_diag(trade, "invalidation_context", "structure_label", structure_label)
+                
+                reason = f"HTF break: LH -> HH (confirmed bullish structure)"
+                add_nested_diag(trade, "invalidation_context", "reason", reason)
                 logger.info(f"Trade {trade.trade_id} invalidated: {reason}")
                 return True, reason
 
@@ -360,48 +431,118 @@ class InvalidationChecker:
             Tuple of (is_invalid, reason)
 
         SOP Rules:
+            - DXY_CONTINUATION setups: Strict correlation + structure validation
+            - Other setups: Simpler correlation-based checks
             - Exit immediately when DXY breaks alignment
-            - Long: Invalid if DXY structure breaks bearish (opposite to GC long)
-            - Short: Invalid if DXY structure breaks bullish (opposite to GC short)
-            - Can detect via DXY correlation flip or structure break
         """
         # Need DXY info from features
         if features is None:
             return False, None
 
-        # Get DXY correlation from features
+        # Stricter logic for DXY_CONTINUATION setups
+        if trade.setup_type == "DXY_CONTINUATION":
+            # Get micro correlations and structure
+            corr_1m = _sanitize_float(features.get("dxy_corr_1m"))
+            corr_5m = _sanitize_float(features.get("dxy_corr_5m"))
+            dxy_structure = features.get("dxy_structure")
+
+            # For continuation setups, require BOTH correlation flip AND structure break
+            if trade.direction == "long":
+                # Long continuation invalidated when:
+                # - Correlation weakens (both > -0.1) AND
+                # - DXY structure turns bullish (HH/HL)
+                if (
+                    corr_1m is not None
+                    and corr_5m is not None
+                    and corr_1m > -0.1
+                    and corr_5m > -0.1
+                    and dxy_structure in ("HH", "HL")
+                ):
+                    # Add invalidation diagnostics
+                    from backtester.diagnostics import add_nested_diag
+                    
+                    add_nested_diag(trade, "invalidation_context", "type", "dxy_continuation")
+                    add_nested_diag(trade, "invalidation_context", "dxy_corr_1m", corr_1m)
+                    add_nested_diag(trade, "invalidation_context", "dxy_corr_5m", corr_5m)
+                    add_nested_diag(trade, "invalidation_context", "dxy_structure", dxy_structure)
+                    
+                    reason = (
+                        f"DXY continuation invalidated: structure + correlation flip "
+                        f"(corr_1m={corr_1m:.3f}, corr_5m={corr_5m:.3f}, "
+                        f"dxy_structure={dxy_structure})"
+                    )
+                    add_nested_diag(trade, "invalidation_context", "reason", reason)
+                    logger.info(f"Trade {trade.trade_id} invalidated: {reason}")
+                    return True, reason
+
+            else:  # short
+                # Short continuation invalidated when:
+                # - Correlation weakens (both > -0.1, moving toward zero) AND
+                # - DXY structure turns bearish (LH/LL)
+                if (
+                    corr_1m is not None
+                    and corr_5m is not None
+                    and corr_1m > -0.1
+                    and corr_5m > -0.1
+                    and dxy_structure in ("LH", "LL")
+                ):
+                    # Add invalidation diagnostics
+                    from backtester.diagnostics import add_nested_diag
+                    
+                    add_nested_diag(trade, "invalidation_context", "type", "dxy_continuation")
+                    add_nested_diag(trade, "invalidation_context", "dxy_corr_1m", corr_1m)
+                    add_nested_diag(trade, "invalidation_context", "dxy_corr_5m", corr_5m)
+                    add_nested_diag(trade, "invalidation_context", "dxy_structure", dxy_structure)
+                    
+                    reason = (
+                        f"DXY continuation invalidated: structure + correlation flip "
+                        f"(corr_1m={corr_1m:.3f}, corr_5m={corr_5m:.3f}, "
+                        f"dxy_structure={dxy_structure})"
+                    )
+                    add_nested_diag(trade, "invalidation_context", "reason", reason)
+                    logger.info(f"Trade {trade.trade_id} invalidated: {reason}")
+                    return True, reason
+
+            # Continuation setup but no invalidation yet
+            return False, None
+
+        # Standard logic for other setups (VWAP_RECLAIM, VWAP_FADE)
         dxy_corr = _sanitize_float(features.get("dxy_corr"))
 
-        # For now, use a simple heuristic: if DXY correlation flips significantly
-        # against the trade direction, consider it invalidated
-        # This is a simplified check - can be enhanced with actual DXY structure detection
         if dxy_corr is None:
             return False, None
 
         # Long trade: DXY should be negatively correlated (DXY down = GC up)
-        # If correlation becomes positive or less negative, DXY may be flipping
         if trade.direction == "long":
-            # DXY correlation should be negative for long GC trades
-            # If it flips to positive or becomes less negative, DXY may be flipping
-            # Use a threshold: if correlation > -0.3, consider it flipped
             if dxy_corr > -0.3:
+                # Add invalidation diagnostics
+                from backtester.diagnostics import add_nested_diag
+                
+                add_nested_diag(trade, "invalidation_context", "type", "dxy")
+                add_nested_diag(trade, "invalidation_context", "dxy_corr", dxy_corr)
+                
                 reason = (
                     f"DXY flip: correlation {dxy_corr:.3f} indicates DXY structure "
                     f"breaking against long trade (expected < -0.6)"
                 )
+                add_nested_diag(trade, "invalidation_context", "reason", reason)
                 logger.info(f"Trade {trade.trade_id} invalidated: {reason}")
                 return True, reason
 
         # Short trade: DXY should be positively correlated or less negative
-        # If correlation becomes very negative, DXY may be flipping
         else:  # short
-            # For short GC trades, DXY correlation can be less negative
-            # If it becomes very negative (< -0.6), DXY is strongly inverse (flipping)
             if dxy_corr < -0.6:
+                # Add invalidation diagnostics
+                from backtester.diagnostics import add_nested_diag
+                
+                add_nested_diag(trade, "invalidation_context", "type", "dxy")
+                add_nested_diag(trade, "invalidation_context", "dxy_corr", dxy_corr)
+                
                 reason = (
                     f"DXY flip: correlation {dxy_corr:.3f} indicates DXY structure "
                     f"breaking against short trade (strong inverse correlation)"
                 )
+                add_nested_diag(trade, "invalidation_context", "reason", reason)
                 logger.info(f"Trade {trade.trade_id} invalidated: {reason}")
                 return True, reason
 
@@ -430,10 +571,16 @@ class InvalidationChecker:
         # VWAP_FADE: Window expires when VWAP is reclaimed
         if trade.setup_type == "VWAP_FADE":
             if state["vwap_reclaimed"]:
+                # Add invalidation diagnostics
+                from backtester.diagnostics import add_nested_diag
+                
+                add_nested_diag(trade, "invalidation_context", "type", "window_expired")
+                
                 reason = (
                     "Setup window expired: VWAP_FADE window closed "
                     "(VWAP was reclaimed)"
                 )
+                add_nested_diag(trade, "invalidation_context", "reason", reason)
                 logger.info(f"Trade {trade.trade_id} invalidated: {reason}")
                 return True, reason
 
@@ -484,10 +631,18 @@ class InvalidationChecker:
         max_losses = 1 if month == 9 else 2
 
         if consecutive_losses >= max_losses:
+            # Add invalidation diagnostics
+            from backtester.diagnostics import add_nested_diag
+            
+            add_nested_diag(trade, "invalidation_context", "type", "daily_risk_stop")
+            add_nested_diag(trade, "invalidation_context", "consecutive_losses", consecutive_losses)
+            add_nested_diag(trade, "invalidation_context", "max_losses", max_losses)
+            
             reason = (
                 f"Daily risk stop: {consecutive_losses} consecutive losses "
                 f"(max allowed: {max_losses})"
             )
+            add_nested_diag(trade, "invalidation_context", "reason", reason)
             logger.info(f"Trade {trade.trade_id} invalidated: {reason}")
             return True, reason
 
@@ -496,10 +651,18 @@ class InvalidationChecker:
         daily_pnl = daily_pnl_state.get("daily_pnl", 0.0)
 
         if pdll is not None and daily_pnl <= -abs(pdll):
+            # Add invalidation diagnostics
+            from backtester.diagnostics import add_nested_diag
+            
+            add_nested_diag(trade, "invalidation_context", "type", "daily_risk_stop")
+            add_nested_diag(trade, "invalidation_context", "daily_pnl", daily_pnl)
+            add_nested_diag(trade, "invalidation_context", "pdll", pdll)
+            
             reason = (
                 f"Daily risk stop: PDLL breached "
                 f"(daily PnL: {daily_pnl:.2f}, PDLL: {pdll:.2f})"
             )
+            add_nested_diag(trade, "invalidation_context", "reason", reason)
             logger.info(f"Trade {trade.trade_id} invalidated: {reason}")
             return True, reason
 
