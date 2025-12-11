@@ -292,3 +292,30 @@ def test_complex_diagnostics_structure(sample_trade):
     assert reconstructed.diagnostics["entry_context"]["structure_label"] == "HH"
     assert reconstructed.diagnostics["rejection_during_trade"]["bar_1"]["wick_penetration"] == 0.6
 
+
+def test_add_diag_handles_none_diagnostics(sample_trade):
+    """Test that add_diag handles None diagnostics (frozen dataclass edge case)."""
+    # Simulate edge case where diagnostics is None (shouldn't happen in practice,
+    # but could occur with malformed data or manual object manipulation)
+    object.__setattr__(sample_trade, "diagnostics", None)
+
+    # Should not raise FrozenInstanceError
+    add_diag(sample_trade, "test_key", "test_value")
+
+    # Verify diagnostic was added
+    assert sample_trade.diagnostics is not None
+    assert sample_trade.diagnostics["test_key"] == "test_value"
+
+
+def test_add_nested_diag_handles_none_diagnostics(sample_trade):
+    """Test that add_nested_diag handles None diagnostics (frozen dataclass edge case)."""
+    # Simulate edge case where diagnostics is None
+    object.__setattr__(sample_trade, "diagnostics", None)
+
+    # Should not raise FrozenInstanceError
+    add_nested_diag(sample_trade, "entry_context", "vwap", 2650.5)
+
+    # Verify diagnostic was added
+    assert sample_trade.diagnostics is not None
+    assert sample_trade.diagnostics["entry_context"]["vwap"] == 2650.5
+

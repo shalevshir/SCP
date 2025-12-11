@@ -24,8 +24,10 @@ def add_diag(trade: Any, key: str, value: Any) -> None:
         >>> add_diag(trade, "entry_method", "next_bar_open")
         >>> add_diag(trade, "slippage_ticks", 2.5)
     """
+    # Handle frozen dataclass: use object.__setattr__ to bypass frozen check
+    # if diagnostics is None or doesn't exist
     if not hasattr(trade, "diagnostics") or trade.diagnostics is None:
-        trade.diagnostics = {}
+        object.__setattr__(trade, "diagnostics", {})
     trade.diagnostics[key] = value
 
 
@@ -43,8 +45,10 @@ def add_nested_diag(trade: Any, section: str, key: str, value: Any) -> None:
         >>> add_nested_diag(trade, "entry_context", "rsi", 55.2)
         >>> # Results in: trade.diagnostics["entry_context"] = {"vwap": 2650.5, "rsi": 55.2}
     """
+    # Handle frozen dataclass: use object.__setattr__ to bypass frozen check
+    # if diagnostics is None or doesn't exist
     if not hasattr(trade, "diagnostics") or trade.diagnostics is None:
-        trade.diagnostics = {}
+        object.__setattr__(trade, "diagnostics", {})
     
     # Get or create section dict
     section_dict = trade.diagnostics.get(section, {})

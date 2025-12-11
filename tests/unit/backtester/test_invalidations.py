@@ -2131,10 +2131,11 @@ class TestDXYContinuationInvalidation:
         )
         
         # Features showing correlation flip and structure break
+        # Uses correct keys: dxy_corr_micro (5-period), dxy_corr (50-period), dxy_structure_label
         features = {
-            "dxy_corr_1m": 0.1,  # Weakened (was negative)
-            "dxy_corr_5m": 0.05,  # Weakened
-            "dxy_structure": "HH",  # DXY bullish (bad for long gold)
+            "dxy_corr_micro": 0.1,  # 5-period micro correlation - weakened (was negative)
+            "dxy_corr": 0.05,  # 50-period correlation - weakened
+            "dxy_structure_label": "HH",  # DXY bullish (bad for long gold)
         }
         
         is_invalid, reason = checker.check_dxy_flip(
@@ -2165,9 +2166,9 @@ class TestDXYContinuationInvalidation:
         
         # Correlation weakened but structure still bearish
         features = {
-            "dxy_corr_1m": 0.1,
-            "dxy_corr_5m": 0.05,
-            "dxy_structure": "LL",  # DXY still bearish (OK for long gold)
+            "dxy_corr_micro": 0.1,
+            "dxy_corr": 0.05,
+            "dxy_structure_label": "LL",  # DXY still bearish (OK for long gold)
         }
         
         is_invalid, reason = checker.check_dxy_flip(
@@ -2196,9 +2197,9 @@ class TestDXYContinuationInvalidation:
         
         # Features showing correlation flip and structure break
         features = {
-            "dxy_corr_1m": 0.1,
-            "dxy_corr_5m": 0.05,
-            "dxy_structure": "LL",  # DXY bearish (bad for short gold)
+            "dxy_corr_micro": 0.1,
+            "dxy_corr": 0.05,
+            "dxy_structure_label": "LL",  # DXY bearish (bad for short gold)
         }
         
         is_invalid, reason = checker.check_dxy_flip(
@@ -2228,7 +2229,7 @@ class TestDXYContinuationInvalidation:
         
         # Missing correlation features
         features = {
-            "dxy_structure": "HH",
+            "dxy_structure_label": "HH",
         }
         
         is_invalid, reason = checker.check_dxy_flip(

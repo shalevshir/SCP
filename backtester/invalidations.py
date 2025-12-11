@@ -441,10 +441,13 @@ class InvalidationChecker:
 
         # Stricter logic for DXY_CONTINUATION setups
         if trade.setup_type == "DXY_CONTINUATION":
-            # Get micro correlations and structure
-            corr_1m = _sanitize_float(features.get("dxy_corr_1m"))
-            corr_5m = _sanitize_float(features.get("dxy_corr_5m"))
-            dxy_structure = features.get("dxy_structure")
+            # Get correlations and structure using CORRECT feature keys:
+            # - dxy_corr_micro: 5-period micro correlation (most reactive)
+            # - dxy_corr: 50-period correlation (trend confirmation)
+            # - dxy_structure_label: DXY structure label from streaming processor
+            corr_micro = _sanitize_float(features.get("dxy_corr_micro"))
+            corr_50 = _sanitize_float(features.get("dxy_corr"))
+            dxy_structure = features.get("dxy_structure_label")
 
             # For continuation setups, require BOTH correlation flip AND structure break
             if trade.direction == "long":
@@ -452,23 +455,23 @@ class InvalidationChecker:
                 # - Correlation weakens (both > -0.1) AND
                 # - DXY structure turns bullish (HH/HL)
                 if (
-                    corr_1m is not None
-                    and corr_5m is not None
-                    and corr_1m > -0.1
-                    and corr_5m > -0.1
+                    corr_micro is not None
+                    and corr_50 is not None
+                    and corr_micro > -0.1
+                    and corr_50 > -0.1
                     and dxy_structure in ("HH", "HL")
                 ):
                     # Add invalidation diagnostics
                     from backtester.diagnostics import add_nested_diag
-                    
+
                     add_nested_diag(trade, "invalidation_context", "type", "dxy_continuation")
-                    add_nested_diag(trade, "invalidation_context", "dxy_corr_1m", corr_1m)
-                    add_nested_diag(trade, "invalidation_context", "dxy_corr_5m", corr_5m)
-                    add_nested_diag(trade, "invalidation_context", "dxy_structure", dxy_structure)
-                    
+                    add_nested_diag(trade, "invalidation_context", "dxy_corr_micro", corr_micro)
+                    add_nested_diag(trade, "invalidation_context", "dxy_corr", corr_50)
+                    add_nested_diag(trade, "invalidation_context", "dxy_structure_label", dxy_structure)
+
                     reason = (
                         f"DXY continuation invalidated: structure + correlation flip "
-                        f"(corr_1m={corr_1m:.3f}, corr_5m={corr_5m:.3f}, "
+                        f"(corr_micro={corr_micro:.3f}, corr={corr_50:.3f}, "
                         f"dxy_structure={dxy_structure})"
                     )
                     add_nested_diag(trade, "invalidation_context", "reason", reason)
@@ -480,23 +483,23 @@ class InvalidationChecker:
                 # - Correlation weakens (both > -0.1, moving toward zero) AND
                 # - DXY structure turns bearish (LH/LL)
                 if (
-                    corr_1m is not None
-                    and corr_5m is not None
-                    and corr_1m > -0.1
-                    and corr_5m > -0.1
+                    corr_micro is not None
+                    and corr_50 is not None
+                    and corr_micro > -0.1
+                    and corr_50 > -0.1
                     and dxy_structure in ("LH", "LL")
                 ):
                     # Add invalidation diagnostics
                     from backtester.diagnostics import add_nested_diag
-                    
+
                     add_nested_diag(trade, "invalidation_context", "type", "dxy_continuation")
-                    add_nested_diag(trade, "invalidation_context", "dxy_corr_1m", corr_1m)
-                    add_nested_diag(trade, "invalidation_context", "dxy_corr_5m", corr_5m)
-                    add_nested_diag(trade, "invalidation_context", "dxy_structure", dxy_structure)
-                    
+                    add_nested_diag(trade, "invalidation_context", "dxy_corr_micro", corr_micro)
+                    add_nested_diag(trade, "invalidation_context", "dxy_corr", corr_50)
+                    add_nested_diag(trade, "invalidation_context", "dxy_structure_label", dxy_structure)
+
                     reason = (
                         f"DXY continuation invalidated: structure + correlation flip "
-                        f"(corr_1m={corr_1m:.3f}, corr_5m={corr_5m:.3f}, "
+                        f"(corr_micro={corr_micro:.3f}, corr={corr_50:.3f}, "
                         f"dxy_structure={dxy_structure})"
                     )
                     add_nested_diag(trade, "invalidation_context", "reason", reason)
