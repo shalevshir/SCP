@@ -163,10 +163,10 @@ class StreamingHTFFeatureComputer:
                 self.last_1h_timestamp = htf_1h_timestamp
                 # Log at INFO level for visibility
                 structure_val = self.features_1h.get('structure_label', 'N/A')
-                buffer_size = len(self.processor_1h.structure_buffer)
+                # Note: structure_buffer no longer exists (replaced with StructureContextTracker)
                 logger.info(
                     f"Updated 1h features at {htf_1h_timestamp} "
-                    f"(structure: {structure_val}, buffer: {buffer_size})"
+                    f"(structure: {structure_val})"
                 )
 
         return self.features_5m, self.features_15m, self.features_1h
