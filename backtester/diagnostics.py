@@ -43,7 +43,8 @@ def add_nested_diag(trade: Any, section: str, key: str, value: Any) -> None:
     Example:
         >>> add_nested_diag(trade, "entry_context", "vwap", 2650.5)
         >>> add_nested_diag(trade, "entry_context", "rsi", 55.2)
-        >>> # Results in: trade.diagnostics["entry_context"] = {"vwap": 2650.5, "rsi": 55.2}
+        >>> # Results in: trade.diagnostics["entry_context"]
+        >>> # = {"vwap": 2650.5, "rsi": 55.2}
     """
     # Handle frozen dataclass: use object.__setattr__ to bypass frozen check
     # if diagnostics is None or doesn't exist
