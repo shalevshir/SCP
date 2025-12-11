@@ -23,9 +23,12 @@ import pandas as pd
 from common.logger import get_logger
 from common.types import Candle
 
-from backtester.trade import Trade, close_trade
+from backtester.trade import Trade, close_trade, is_fade, is_reclaim, is_continuation
 
 logger = get_logger(__name__)
+
+# PATCH PART 2: Grace period constants removed in favor of inline setup-specific logic
+# Old constants MIN_BARS_RECLAIM, MIN_BARS_CONTINUATION, MIN_BARS_FADE removed
 
 # SOP timeout limits per setup type
 TIMEOUT_BARS = {
@@ -103,20 +106,33 @@ def check_tp_hit(trade: Trade, candle: Candle) -> bool:
         return candle.low <= trade.take_profit
 
 
-def check_sl_hit(trade: Trade, candle: Candle) -> bool:
+def check_sl_hit(trade: Trade, candle: Candle, use_close: bool = False) -> bool:
     """Check if stop loss is hit within candle.
 
     Args:
         trade: Open trade with SL level
         candle: Candle to check
+        use_close: If True, use close-based SL (for FADE bar 1 protection)
 
     Returns:
         True if SL is hit, False otherwise
 
     Logic:
-        - Long: SL hit if candle.low <= trade.stop_loss
-        - Short: SL hit if candle.high >= trade.stop_loss
+        - use_close=True: Close-based (tolerant - for FADE bar 1)
+          * Long: SL hit if candle.close <= trade.stop_loss
+          * Short: SL hit if candle.close >= trade.stop_loss
+        - use_close=False (default): Wick-based (strict)
+          * Long: SL hit if candle.low <= trade.stop_loss
+          * Short: SL hit if candle.high >= trade.stop_loss
     """
+    if use_close:
+        # CLOSE-BASED (tolerant - for FADE bar 1)
+        if trade.direction == "long":
+            return candle.close <= trade.stop_loss
+        else:
+            return candle.close >= trade.stop_loss
+    
+    # WICK-BASED (strict - default)
     if trade.direction == "long":
         return candle.low <= trade.stop_loss
     else:  # short
@@ -227,6 +243,10 @@ def simulate_trade_outcome(
         return close_trade(trade, exit_candle, "end_of_data", config)
 
     bars_elapsed = 0
+    
+    # FIX #2: Track retest protection for VWAP_RECLAIM
+    # If trade has retest protection enabled, we skip SL check on first bar
+    retest_protection_active = trade.ignore_first_retest_bar
 
     # Iterate through future candles
     for timestamp, row in future_candles.iterrows():
@@ -255,6 +275,9 @@ def simulate_trade_outcome(
         # SOP timeout rules apply to valid candles only
         bars_elapsed += 1
 
+        # Log rejection-candle diagnostics during trade lifetime (per-bar tracking)
+        from backtester.diagnostics import add_nested_diag
+        
         # Extract features for this candle if available
         candle_features = None
         if future_features is not None and timestamp in future_features.index:
@@ -269,18 +292,101 @@ def simulate_trade_outcome(
                 candle_features = (
                     dict(feature_row) if hasattr(feature_row, "__iter__") else None
                 )
+        
+        # Add per-bar rejection diagnostics if features available
+        if candle_features is not None:
+            key = f"bar_{bars_elapsed}"
+            add_nested_diag(trade, "rejection_during_trade", key, {
+                "upper_wick_pct": candle_features.get("upper_wick_pct"),
+                "lower_wick_pct": candle_features.get("lower_wick_pct"),
+                "close_vwap_diff": candle_features.get("close_vwap_diff"),
+                "close_vwap_pct": candle_features.get("close_vwap_pct"),
+                "direction_valid": candle_features.get("rejection_direction_valid"),
+            })
+
+        # PATCH PART 2: Setup-specific grace periods with separate SL/TP and invalidation flags
+        # This prevents contamination: FADE shouldn't skip SL/TP, but should skip early invalidations
+        skip_sl_tp = False
+        skip_invalidations = False
+        
+        if is_continuation(trade):
+            # CONTINUATION: skip both SL/TP and invalidations for first 6 bars (strict protection)
+            skip_sl_tp = bars_elapsed <= 6
+            skip_invalidations = bars_elapsed <= 6
+            if skip_sl_tp:
+                logger.debug(
+                    f"Trade {trade.trade_id}: CONTINUATION grace period active "
+                    f"(bar {bars_elapsed}/6) - skipping SL/TP and invalidations"
+                )
+        elif is_fade(trade):
+            # FADE: NEVER skip SL/TP (allow TP hits and close-based SL on bar 1)
+            # But skip invalidations for 3 bars (grace period for invalidations only)
+            # This allows multi-candle duration while still honoring TP targets and SL checks
+            skip_sl_tp = False
+            skip_invalidations = bars_elapsed <= 3
+            if skip_invalidations:
+                logger.debug(
+                    f"Trade {trade.trade_id}: FADE invalidation grace active "
+                    f"(bar {bars_elapsed}/3) - SL/TP allowed, invalidations skipped"
+                )
+        elif is_reclaim(trade):
+            # RECLAIM: Skip SL/TP for first 2 bars (grace period), skip invalidations for 2 bars (allow retest)
+            skip_sl_tp = bars_elapsed <= 2
+            skip_invalidations = bars_elapsed <= 2
+            if skip_sl_tp:
+                logger.debug(
+                    f"Trade {trade.trade_id}: RECLAIM grace period active "
+                    f"(bar {bars_elapsed}/2) - skipping SL/TP and invalidations"
+                )
 
         # Exit Priority Order (per SOP):
         # 1. Stop Loss (highest priority)
-        if check_sl_hit(trade, candle):
-            logger.info(
-                f"Trade {trade.trade_id} hit SL at {trade.stop_loss} "
-                f"(bars={bars_elapsed})"
-            )
-            return close_trade(trade, candle, "sl", config)
+        # PATCH PART 2: Use skip_sl_tp flag for grace period
+        # Note: retest_protection_active is now handled by skip_sl_tp for RECLAIM
+        if skip_sl_tp:
+            # Grace period: skip SL check
+            pass
+        else:
+            # FADE bar 1: use close-based SL for volatility protection
+            use_close_sl = is_fade(trade) and bars_elapsed == 1
+            if use_close_sl:
+                logger.debug(
+                    f"Trade {trade.trade_id}: FADE bar 1 - using close-based SL"
+                )
+            
+            if check_sl_hit(trade, candle, use_close=use_close_sl):
+                # Add SL hit diagnostics before closing
+                from backtester.diagnostics import add_nested_diag
+                
+                add_nested_diag(trade, "sl_hit_context", "sl_level", trade.stop_loss)
+                add_nested_diag(trade, "sl_hit_context", "candle_low", candle.low)
+                add_nested_diag(trade, "sl_hit_context", "candle_high", candle.high)
+                add_nested_diag(trade, "sl_hit_context", "candle_close", candle.close)
+                add_nested_diag(trade, "sl_hit_context", "bars_elapsed", bars_elapsed)
+                add_nested_diag(trade, "sl_hit_context", "used_close_based_sl", use_close_sl)
+                
+                # ATR at SL hit (if features are passed in this scope)
+                if candle_features is not None:
+                    add_nested_diag(trade, "sl_hit_context", "atr_5", candle_features.get("atr_5"))
+                
+                logger.info(
+                    f"Trade {trade.trade_id} hit SL at {trade.stop_loss} "
+                    f"(bars={bars_elapsed}, close_based={use_close_sl})"
+                )
+                return close_trade(trade, candle, "sl", config)
 
         # 2. Take Profit
-        if check_tp_hit(trade, candle):
+        # PATCH PART 2: Use skip_sl_tp flag for grace period
+        if not skip_sl_tp and check_tp_hit(trade, candle):
+            # Add TP hit diagnostics before closing
+            from backtester.diagnostics import add_nested_diag
+            
+            add_nested_diag(trade, "tp_hit_context", "tp_level", trade.take_profit)
+            add_nested_diag(trade, "tp_hit_context", "candle_high", candle.high)
+            add_nested_diag(trade, "tp_hit_context", "candle_low", candle.low)
+            add_nested_diag(trade, "tp_hit_context", "candle_close", candle.close)
+            add_nested_diag(trade, "tp_hit_context", "bars_elapsed", bars_elapsed)
+            
             logger.info(
                 f"Trade {trade.trade_id} hit TP at {trade.take_profit} "
                 f"(bars={bars_elapsed})"
@@ -288,7 +394,8 @@ def simulate_trade_outcome(
             return close_trade(trade, candle, "tp", config)
 
         # 3-7. Invalidation checks (VWAP, HTF, DXY, Session, Window)
-        if invalidation_checker is not None:
+        # PATCH PART 2: Use skip_invalidations flag (separate from SL/TP)
+        if not skip_invalidations and invalidation_checker is not None:
             is_invalid, reason = invalidation_checker.check_all(
                 trade, candle, bars_elapsed, features=candle_features
             )

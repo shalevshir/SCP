@@ -101,6 +101,7 @@ class BacktestResults:
         max_consecutive_losses: Maximum consecutive losses encountered
         pdll_hits: Number of times PDLL was hit
         session_resets: Number of session resets performed
+        structure_stats: Structure label distribution for diagnostics
     """
 
     trades: list[Trade] = field(default_factory=list)
@@ -115,6 +116,7 @@ class BacktestResults:
     max_consecutive_losses: int = 0
     pdll_hits: int = 0
     session_resets: int = 0
+    structure_stats: dict[str, int] = field(default_factory=dict)
 
 
 class BacktestReplayLoop:
@@ -217,6 +219,9 @@ class BacktestReplayLoop:
 
         # State tracking
         self._active_trades: dict[str, Trade] = {}
+        # Stores simulated exit results for active trades (to avoid re-simulation)
+        # Maps trade_id -> (closed_trade, already_processed)
+        self._simulated_exits: dict[str, tuple[Trade, bool]] = {}
         self._daily_pnl: float = 0.0
         self._session_date: datetime | None = None
         self._trades_today: int = 0
@@ -224,6 +229,10 @@ class BacktestReplayLoop:
         self._max_consecutive_losses: int = 0
         self._pdll_hit_count: int = 0
         self._session_reset_count: int = 0
+        
+        # Structure label statistics for diagnostics
+        from collections import Counter
+        self._structure_stats: Counter = Counter()
 
         # Results tracking
         self._all_trades: list[Trade] = []
@@ -374,6 +383,12 @@ class BacktestReplayLoop:
             )
             return None
 
+        # Track structure label statistics for diagnostics
+        structure_label = features.get("structure_label", "NA")
+        if structure_label is None or (isinstance(structure_label, float) and pd.isna(structure_label)):
+            structure_label = "NA"
+        self._structure_stats[str(structure_label)] += 1
+
         # Step 4: Check if we can take new entries (max one active trade)
         if len(self._active_trades) > 0:
             logger.debug(
@@ -465,7 +480,44 @@ class BacktestReplayLoop:
                     bos_candle=bos_candle,
                     risk_config=self.risk_config,
                     market_context=market_context,
+                    config=self.config,
                 )
+
+                # Add diagnostic context at entry
+                from backtester.diagnostics import add_nested_diag
+                
+                # Get features for entry candle
+                if features is not None:
+                    # Structure features
+                    add_nested_diag(trade, "entry_context", "structure_label", features.get("structure_label"))
+                    add_nested_diag(trade, "entry_context", "micro_bos", features.get("micro_bos"))
+                    add_nested_diag(trade, "entry_context", "liquidity_sweep", features.get("liquidity_sweep"))
+                    
+                    # VWAP features
+                    add_nested_diag(trade, "entry_context", "vwap", features.get("vwap"))
+                    add_nested_diag(trade, "entry_context", "vwap_deviation", features.get("vwap_deviation"))
+                    add_nested_diag(trade, "entry_context", "vwap_slope", features.get("vwap_slope"))
+                    
+                    # Indicators
+                    add_nested_diag(trade, "entry_context", "rsi", features.get("rsi"))
+                    add_nested_diag(trade, "entry_context", "atr", features.get("atr"))
+                    
+                    # Volume
+                    add_nested_diag(trade, "entry_context", "volume", features.get("volume"))
+                    add_nested_diag(trade, "entry_context", "volume_sma_20", features.get("volume_sma_20"))
+                    
+                    # Rejection candle raw components (if available)
+                    add_nested_diag(trade, "entry_context", "rejection_candle_raw", {
+                        "upper_wick_pct": features.get("upper_wick_pct"),
+                        "lower_wick_pct": features.get("lower_wick_pct"),
+                        "close_vwap_diff": features.get("close_vwap_diff"),
+                        "close_vwap_pct": features.get("close_vwap_pct"),
+                        "direction_valid": features.get("rejection_direction_valid"),
+                    })
+                
+                # Log factor-level scoring if available on the signal object
+                if hasattr(execution.signal, "factors") and execution.signal.factors:
+                    add_nested_diag(trade, "entry_context", "scoring_factors", execution.signal.factors)
 
                 # Add to active trades
                 self._active_trades[trade.trade_id] = trade
@@ -738,22 +790,35 @@ class BacktestReplayLoop:
                     )
                     future_features = None
 
-                # Simulate trade outcome using future candles
-                closed_trade = simulate_trade_outcome(
-                    trade=trade,
-                    future_candles=future_candles,
-                    invalidation_checker=self._invalidation_checker,
-                    config=self.config,
-                    future_features=future_features,
-                )
+                # Check if we already simulated this trade's exit
+                if trade_id in self._simulated_exits:
+                    closed_trade, _ = self._simulated_exits[trade_id]
+                else:
+                    # First time processing this trade after entry - simulate outcome
+                    # Inject current ATR into config for dynamic slippage calculation
+                    config_with_atr = self.config.copy()
+                    if features is not None and "atr" in features:
+                        config_with_atr["current_atr"] = features.get("atr")
+                    
+                    closed_trade = simulate_trade_outcome(
+                        trade=trade,
+                        future_candles=future_candles,
+                        invalidation_checker=self._invalidation_checker,
+                        config=config_with_atr,
+                        future_features=future_features,
+                    )
+                    
+                    # Store the simulated result to avoid re-simulating
+                    if closed_trade.status != "OPEN":
+                        self._simulated_exits[trade_id] = (closed_trade, False)
 
-                # If trade closed on this candle, remove from active trades
+                # Only process the exit when we've ACTUALLY reached the exit candle
+                # This prevents opening new trades while this one is still "active"
                 if closed_trade.status != "OPEN":
-                    # Check if exit occurred on current candle
-                    if (
-                        closed_trade.exit_timestamp
-                        and closed_trade.exit_timestamp <= current_candle.timestamp
-                    ):
+                    exit_ts = closed_trade.exit_timestamp
+                    
+                    # Check if current candle has reached or passed the exit timestamp
+                    if current_candle.timestamp >= exit_ts:
                         pnl_str = (
                             f"{closed_trade.pnl:.2f}"
                             if closed_trade.pnl is not None
@@ -772,8 +837,12 @@ class BacktestReplayLoop:
                             f"R={r_str}"
                         )
 
-                        # Remove from active trades
+                        # Remove from active trades - NOW we've reached the exit
                         del self._active_trades[trade_id]
+                        
+                        # Clean up simulated exits cache
+                        if trade_id in self._simulated_exits:
+                            del self._simulated_exits[trade_id]
 
                         # Add to completed trades
                         self._all_trades.append(closed_trade)
@@ -887,6 +956,19 @@ class BacktestReplayLoop:
         logger.info(f"Previous session date: {self._session_date}")
         logger.info(f"Previous daily PnL: {self._daily_pnl:.2f}")
         logger.info(f"Previous trades today: {self._trades_today}")
+        
+        # Log structure label distribution from previous session
+        if self._session_date is not None and self._structure_stats:
+            total_candles = sum(self._structure_stats.values())
+            logger.info(
+                f"Session {self._session_date} structure distribution "
+                f"(total: {total_candles} candles):"
+            )
+            for label in ["HH", "HL", "LH", "LL", "NA"]:
+                count = self._structure_stats.get(label, 0)
+                pct = (count / total_candles * 100) if total_candles > 0 else 0
+                logger.info(f"  {label}: {count} ({pct:.1f}%)")
+        
         logger.info("=" * 60)
 
         # Reset daily state
@@ -895,6 +977,9 @@ class BacktestReplayLoop:
         self._trades_today = 0
         self._session_date = current_date
         self._session_reset_count += 1
+        
+        # Reset structure statistics for new session
+        self._structure_stats.clear()
 
         # Reset behavior tracker (loss streak resets at session start per SOP)
         if self._processor and hasattr(self._processor, "_behavior_tracker"):
@@ -950,16 +1035,27 @@ class BacktestReplayLoop:
 
         # Close each remaining trade
         for trade_id, trade in list(self._active_trades.items()):
-            logger.warning(
-                f"Closing trade {trade_id} at end of dataset: "
-                f"entry={trade.entry_timestamp}, last_candle={last_timestamp}"
-            )
+            # Check if we already have a simulated exit for this trade
+            if trade_id in self._simulated_exits:
+                closed_trade, _ = self._simulated_exits[trade_id]
+                logger.info(
+                    f"Using simulated exit for trade {trade_id}: "
+                    f"exit_timestamp={closed_trade.exit_timestamp}, "
+                    f"exit_reason={closed_trade.exit_reason}"
+                )
+                del self._simulated_exits[trade_id]
+            else:
+                # No simulated exit - close at end of data
+                logger.warning(
+                    f"Closing trade {trade_id} at end of dataset: "
+                    f"entry={trade.entry_timestamp}, last_candle={last_timestamp}"
+                )
 
-            # Import close_trade function
-            from backtester.trade import close_trade
+                # Import close_trade function
+                from backtester.trade import close_trade
 
-            # Close trade at last candle
-            closed_trade = close_trade(trade, last_candle, "end_of_data", self.config)
+                # Close trade at last candle
+                closed_trade = close_trade(trade, last_candle, "end_of_data", self.config)
 
             # Remove from active trades
             del self._active_trades[trade_id]
@@ -1020,4 +1116,5 @@ class BacktestReplayLoop:
             max_consecutive_losses=self._max_consecutive_losses,
             pdll_hits=self._pdll_hit_count,
             session_resets=self._session_reset_count,
+            structure_stats=dict(self._structure_stats),
         )

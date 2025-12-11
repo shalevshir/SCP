@@ -100,3 +100,4 @@ Both tests pass, confirming the fix works correctly.
 - Enhanced logging helps diagnose pause/resume issues in production
 - Thread safety is maintained through existing lock mechanisms (`self._lock`)
 
+

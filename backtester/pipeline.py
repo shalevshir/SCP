@@ -399,6 +399,7 @@ def run_backtest_with_trades(
                 ),
                 "dxy_aligned": dxy_aligned,
             },
+            config=None,  # TODO: Add config parameter to enable MIN_RISK_TICKS validation
         )
 
         # Get future candles for simulation

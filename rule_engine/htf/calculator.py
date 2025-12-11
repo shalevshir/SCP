@@ -16,132 +16,134 @@ from rule_engine.htf.types import HTFBias
 logger = get_logger(__name__)
 
 
-def detect_structure_chop(structure_labels: list[str | None], lookback: int = 10) -> bool:
-    """Detect chop when recent structure labels are mixed.
+def is_structural_chop(structure_labels: list[str | None], min_alternations: int = 2) -> bool:
+    """Detect structural chop based on consecutive alternation density.
 
-    Chop = seeing both bullish (HH/HL) and bearish (LH/LL) labels
-    within the lookback window, indicating indecisive market structure.
+    Only marks chop when there are min_alternations or more consecutive
+    high→low→high or low→high→low alternations.
+
+    Args:
+        structure_labels: List of structure labels, most recent last
+        min_alternations: Minimum consecutive alternations to mark as chop (default: 2)
+
+    Returns:
+        True if chop density exceeds threshold
+
+    Example:
+        >>> labels = ["HH", "LL", "HH", "LL"]
+        >>> is_structural_chop(labels, min_alternations=2)
+        True  # 3 consecutive alternations (HH→LL, LL→HH, HH→LL)
+
+        >>> labels = ["HH", "HL", "HH", "HL"]
+        >>> is_structural_chop(labels, min_alternations=2)
+        False  # No alternations (all bullish)
+    """
+    # Filter to non-None labels
+    valid_labels = [label for label in structure_labels if label is not None]
+
+    if len(valid_labels) < 3:
+        return False  # Need at least 3 labels to detect alternations
+
+    # Count consecutive alternations in recent labels (last 6)
+    recent = valid_labels[-6:]
+    alternation_count = 0
+
+    for i in range(len(recent) - 1):
+        current = recent[i]
+        next_label = recent[i + 1]
+
+        # Check if this is an alternation (H→L or L→H)
+        if (current[0] == "H" and next_label[0] == "L") or (
+            current[0] == "L" and next_label[0] == "H"
+        ):
+            alternation_count += 1
+        else:
+            # Reset count on non-alternation (trend continuation)
+            # Always reset, regardless of current count, because trend continuation
+            # breaks the consecutive alternation pattern
+            alternation_count = 0
+
+    return alternation_count >= min_alternations
+
+
+def detect_structure_chop(
+    structure_labels: list[str | None],
+    lookback: int = 10,
+    atr: float | None = None,
+    swing_prices: list[float] | None = None,
+    max_noise_ratio: float = 0.25,
+) -> bool:
+    """Detect chop with tolerant filtering for retracements and noise.
+
+    This version distinguishes between true chop (rapid alternations) and
+    healthy retracements within a trend.
+
+    Only marks chop when:
+    1. 2+ consecutive H→L→H or L→H→L alternations occur, OR
+    2. Swing distances are too small (< 0.25 * ATR = noise)
+
+    Allows normal trend behavior:
+    - HL/HH retracements in an uptrend (bullish)
+    - LH/LL retracements in a downtrend (bearish)
 
     Args:
         structure_labels: List of structure labels (HH/HL/LH/LL/None), most recent last
         lookback: Number of recent labels to examine (default: 10)
+        atr: Average True Range for noise filtering (optional)
+        swing_prices: List of swing prices corresponding to labels (optional)
+        max_noise_ratio: Swings < (ATR * ratio) are considered noise (default: 0.25)
 
     Returns:
-        True if chop detected (both bullish and bearish labels present)
-
-    Example:
-        >>> labels = [None, "HH", "HL", "LH", "LL", "HH"]
-        >>> detect_structure_chop(labels, lookback=5)
-        True  # Mixed HH/HL and LH/LL in window
-    """
-    # Filter to non-None labels and take last N
-    valid_labels = [label for label in structure_labels if label is not None]
-    recent = valid_labels[-lookback:] if len(valid_labels) > lookback else valid_labels
-
-    if len(recent) < 2:
-        return False  # Need at least 2 labels to detect chop
-
-    bullish = {"HH", "HL"}
-    bearish = {"LH", "LL"}
-    has_bullish = bool(set(recent) & bullish)
-    has_bearish = bool(set(recent) & bearish)
-
-    return has_bullish and has_bearish
-
-
-def calculate_structure_clarity(
-    structure_labels: list[str | None], lookback: int = 10
-) -> float:
-    """Calculate structure clarity score (0-1) based on swing sequence purity.
-
-    Clarity measures how consistent the recent structure labels are:
-    - 1.0 = All bullish (HH/HL) or all bearish (LH/LL)
-    - 0.5 = Mixed but with majority
-    - 0.0 = Complete chop (50/50 mix)
-
-    Args:
-        structure_labels: List of structure labels, most recent last
-        lookback: Number of recent labels to examine (default: 10)
-
-    Returns:
-        Float 0-1 indicating structure purity
+        True if chop detected (rapid alternations or noise swings)
 
     Example:
         >>> labels = ["HH", "HL", "HH", "HL", "HH"]
-        >>> calculate_structure_clarity(labels, lookback=5)
-        1.0  # All bullish
+        >>> detect_structure_chop(labels, lookback=5)
+        False  # All bullish - uptrend with retracements
 
-        >>> labels = ["HH", "HL", "LH", "LL", "HH"]
-        >>> calculate_structure_clarity(labels, lookback=5)
-        0.2  # Mixed, 60% bullish vs 40% bearish = |0.6-0.4| = 0.2
+        >>> labels = ["HH", "LL", "HH", "LL", "HH"]
+        >>> detect_structure_chop(labels, lookback=5)
+        True  # Rapid alternations - true chop
     """
-    # Filter to non-None labels and take last N
+    # Filter to non-None labels
     valid_labels = [label for label in structure_labels if label is not None]
     recent = valid_labels[-lookback:] if len(valid_labels) > lookback else valid_labels
 
-    if len(recent) == 0:
-        return 0.0  # No data
+    if len(recent) < 3:
+        return False  # Need at least 3 labels for pattern detection
 
+    # Check 1: Noise filter (ATR-based)
+    if atr is not None and swing_prices is not None and len(swing_prices) >= 2:
+        # Check if recent swings are too small (noise)
+        recent_prices = swing_prices[-min(len(recent), len(swing_prices)) :]
+        for i in range(len(recent_prices) - 1):
+            swing_distance = abs(recent_prices[i + 1] - recent_prices[i])
+            if swing_distance < atr * max_noise_ratio:
+                logger.debug(
+                    f"Noise swing detected: {swing_distance:.2f} < {atr * max_noise_ratio:.2f}"
+                )
+                return True  # Too small to be meaningful structure
+
+    # Check 2: Structural chop (consecutive alternations)
+    if is_structural_chop(recent, min_alternations=2):
+        logger.debug("Structural chop detected: 2+ consecutive alternations")
+        return True
+
+    # Check 3: Trend classification with retracements allowed
     bullish = {"HH", "HL"}
     bearish = {"LH", "LL"}
 
-    bullish_count = sum(1 for label in recent if label in bullish)
-    bearish_count = sum(1 for label in recent if label in bearish)
-    total = bullish_count + bearish_count
+    # Count last 3 labels for trend determination
+    last_3 = recent[-3:]
+    bullish_count = sum(1 for label in last_3 if label in bullish)
+    bearish_count = sum(1 for label in last_3 if label in bearish)
 
-    if total == 0:
-        return 0.0
+    # If 2 out of 3 agree, it's a trend (not chop)
+    if bullish_count >= 2 or bearish_count >= 2:
+        return False
 
-    # Calculate purity: 1.0 = all one direction, 0.0 = 50/50 split
-    bullish_ratio = bullish_count / total
-    bearish_ratio = bearish_count / total
-
-    # Purity = abs difference from 50/50 * 2 (normalize to 0-1)
-    purity = abs(bullish_ratio - bearish_ratio)
-
-    return purity
-
-
-def calculate_bars_since_event(
-    event_series: pd.Series | None, current_timestamp: pd.Timestamp
-) -> int | None:
-    """Calculate number of bars since last event occurrence.
-
-    Args:
-        event_series: Series with event labels (non-None = event detected)
-        current_timestamp: Current timestamp to measure from
-
-    Returns:
-        Number of bars since last event, or None if no event found
-
-    Example:
-        >>> events = pd.Series([None, None, "BOS", None, None])
-        >>> events.index = pd.date_range("2025-01-01", periods=5, freq="1H")
-        >>> calculate_bars_since_event(events, events.index[-1])
-        2  # Event was 2 bars ago
-    """
-    if event_series is None or event_series.empty:
-        return None
-
-    # Find all events (non-None values)
-    event_mask = event_series.notna()
-    if not event_mask.any():
-        return None
-
-    # Get index of last event
-    last_event_idx = event_series[event_mask].index[-1]
-
-    # Count bars from last event to current
-    if last_event_idx not in event_series.index:
-        return None
-
-    try:
-        current_idx_pos = event_series.index.get_loc(current_timestamp)
-        last_event_idx_pos = event_series.index.get_loc(last_event_idx)
-        bars_since = current_idx_pos - last_event_idx_pos
-        return int(bars_since) if bars_since >= 0 else None
-    except KeyError:
-        return None
+    # Mixed structure without clear trend = chop
+    return True
 
 
 def compute_htf_bias_multi_timeframe(
@@ -442,10 +444,21 @@ def compute_htf_bias(
         conflict_detected = True
         conflict_reason = reason
 
-    # Rule 2: 15M price chop
+    # Rule 2: 15M price chop (with ATR filtering for noise)
     if not conflict_detected and df_15m is not None and len(df_15m) > 0:
         try:
-            if detect_price_chop_15m(df_15m):
+            # Compute ATR from df_15m for noise filtering
+            atr_15m = None
+            if len(df_15m) >= 14:
+                # Calculate True Range
+                high_low = df_15m["high"] - df_15m["low"]
+                high_close = (df_15m["high"] - df_15m["close"].shift(1)).abs()
+                low_close = (df_15m["low"] - df_15m["close"].shift(1)).abs()
+                true_range = high_low.combine(high_close, max).combine(low_close, max)
+                atr_15m = true_range.rolling(window=14).mean().iloc[-1]
+            
+            # Use tolerant thresholds with ATR filtering
+            if detect_price_chop_15m(df_15m, atr=atr_15m):
                 conflict_detected = True
                 conflict_reason = "15M price action in chop"
         except Exception as e:
@@ -763,6 +776,7 @@ def compute_htf_bias(
         bars_since_bos=bars_since_bos_val,
         bars_since_choch=bars_since_choch_val,
         chop_detected=chop_detected_flag,
+        atr_15m=features_15m.get("atr") if features_15m is not None else None,
         seasonality_period=seasonality_period,
         seasonality_adjustment=seasonality_adjustment,
         conflict_detected=conflict_detected,
@@ -796,46 +810,6 @@ def is_london_or_ny_session(timestamp: pd.Timestamp) -> bool:
         return True
 
     return False
-
-
-def detect_structure_chop(labels: list[str | None], lookback: int) -> bool:
-    """Detect if structure labels indicate chop (mixed bullish/bearish).
-
-    Chop is detected when both bullish (HH/HL) and bearish (LH/LL) labels
-    are present in the lookback window. None values are filtered out.
-
-    Args:
-        labels: List of structure labels (HH, HL, LH, LL, or None)
-        lookback: Number of recent labels to consider
-
-    Returns:
-        True if chop detected (mixed bullish/bearish), False otherwise
-
-    Example:
-        >>> detect_structure_chop(["HH", "HL", "LH", "LL", "HH"], lookback=5)
-        True
-        >>> detect_structure_chop(["HH", "HL", "HH", "HL", "HH"], lookback=5)
-        False
-    """
-    if not labels:
-        return False
-
-    # Take last N labels (respecting lookback window)
-    recent_labels = labels[-lookback:] if len(labels) > lookback else labels
-
-    # Filter out None values
-    valid_labels = [label for label in recent_labels if label is not None]
-
-    # Need at least 2 valid labels to detect chop
-    if len(valid_labels) < 2:
-        return False
-
-    # Check for both bullish and bearish labels
-    has_bullish = any(label in ("HH", "HL") for label in valid_labels)
-    has_bearish = any(label in ("LH", "LL") for label in valid_labels)
-
-    # Chop = mixed signals
-    return has_bullish and has_bearish
 
 
 def calculate_structure_clarity(labels: list[str | None], lookback: int) -> float:

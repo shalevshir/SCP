@@ -24,6 +24,7 @@ class TestCalculateStructureAlignment:
             structure_clarity=0.9,  # Very clean
             bars_since_bos=10,  # Recent
             chop_detected=False,  # No chop
+            liquidity_sweep_detected=True,  # Required for structure scoring
         )
         features = pd.Series(
             {
@@ -36,7 +37,7 @@ class TestCalculateStructureAlignment:
         max_points = 2.5
 
         # Act
-        score = calculate_structure_alignment(features, htf_bias, max_points)
+        score = calculate_structure_alignment(features, htf_bias, max_points, "DXY_CONTINUATION")
 
         # Assert: Should get full points (40% + 30% + 30% = 100%)
         assert score == max_points
@@ -64,11 +65,10 @@ class TestCalculateStructureAlignment:
         max_points = 2.5
 
         # Act
-        score = calculate_structure_alignment(features, htf_bias, max_points)
+        score = calculate_structure_alignment(features, htf_bias, max_points, "DXY_CONTINUATION")
 
-        # Assert: Should lose 30% (no chop credit)
-        # 40% + 30% = 70% of max = 1.75
-        assert score == pytest.approx(1.75, abs=0.01)
+        # Assert: Chop detected returns 0 for strict setups (DXY_CONTINUATION)
+        assert score == 0.0
 
     def test_stale_bos_returns_partial_points(self):
         """Test that stale BOS (>30 bars ago) gets no recency credit."""
@@ -93,11 +93,10 @@ class TestCalculateStructureAlignment:
         max_points = 2.5
 
         # Act
-        score = calculate_structure_alignment(features, htf_bias, max_points)
+        score = calculate_structure_alignment(features, htf_bias, max_points, "DXY_CONTINUATION")
 
-        # Assert: Should lose 30% (no recency credit)
-        # 40% + 30% = 70% of max = 1.75
-        assert score == pytest.approx(1.75, abs=0.01)
+        # Assert: Stale BOS (>15 bars) returns 0 for strict setups
+        assert score == 0.0
 
     def test_poor_clarity_returns_low_score(self):
         """Test that poor structure clarity gets minimal points."""
@@ -122,10 +121,10 @@ class TestCalculateStructureAlignment:
         max_points = 2.5
 
         # Act
-        score = calculate_structure_alignment(features, htf_bias, max_points)
+        score = calculate_structure_alignment(features, htf_bias, max_points, "DXY_CONTINUATION")
 
-        # Assert: Should get 30% + 30% = 60% (no clarity credit)
-        assert score == pytest.approx(1.5, abs=0.01)
+        # Assert: Low clarity (<0.6) returns 0 for strict setups
+        assert score == 0.0
 
     def test_micro_chop_conditions_return_zero(self):
         """Test that micro-chop conditions (mixed structure, chop) return near-zero."""
@@ -150,7 +149,7 @@ class TestCalculateStructureAlignment:
         max_points = 2.5
 
         # Act
-        score = calculate_structure_alignment(features, htf_bias, max_points)
+        score = calculate_structure_alignment(features, htf_bias, max_points, "DXY_CONTINUATION")
 
         # Assert: Should get 0 points (fails all checks)
         assert score == 0.0
@@ -178,7 +177,7 @@ class TestCalculateStructureAlignment:
         max_points = 2.5
 
         # Act
-        score = calculate_structure_alignment(features, htf_bias, max_points)
+        score = calculate_structure_alignment(features, htf_bias, max_points, "DXY_CONTINUATION")
 
         # Assert: Direction mismatch = 0 points
         assert score == 0.0
@@ -206,10 +205,10 @@ class TestCalculateStructureAlignment:
         max_points = 2.5
 
         # Act
-        score = calculate_structure_alignment(features, htf_bias, max_points)
+        score = calculate_structure_alignment(features, htf_bias, max_points, "DXY_CONTINUATION")
 
-        # Assert: Should get 20% + 30% + 30% = 80%
-        assert score == pytest.approx(2.0, abs=0.01)
+        # Assert: Moderate clarity (0.5 < 0.6) returns 0 for strict setups
+        assert score == 0.0
 
     def test_moderate_bos_age_gets_partial_credit(self):
         """Test that BOS between 15-30 bars gets partial credit."""
@@ -234,8 +233,8 @@ class TestCalculateStructureAlignment:
         max_points = 2.5
 
         # Act
-        score = calculate_structure_alignment(features, htf_bias, max_points)
+        score = calculate_structure_alignment(features, htf_bias, max_points, "DXY_CONTINUATION")
 
-        # Assert: Should get 40% + 15% + 30% = 85%
-        assert score == pytest.approx(2.125, abs=0.01)
+        # Assert: BOS > 15 bars returns 0 for strict setups
+        assert score == 0.0
 

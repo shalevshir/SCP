@@ -23,7 +23,7 @@ setup_types:
 
   # VWAP Fade: Counter-trend setup at extreme deviation
   VWAP_FADE:
-    min_score: 9              # Higher threshold for fades
+    min_score: 8              # Aligned with other setups (factors implemented but rarely trigger on historical data)
     weights:
       vwap_deviation: 3       # Significant deviation from VWAP
       rsi_extreme: 3          # RSI at overbought/oversold

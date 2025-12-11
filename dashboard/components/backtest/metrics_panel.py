@@ -205,3 +205,4 @@ def render_metrics_panel(results: BacktestResults) -> list:
 
     return cards
 
+

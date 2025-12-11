@@ -39,14 +39,15 @@ class TestDetectStructureChop:
         assert chop is False
 
     def test_mixed_labels_detect_chop(self):
-        """Test that mixed bullish/bearish labels detect chop."""
-        # Arrange: Mixed structure
-        labels = ["HH", "HL", "LH", "LL", "HH"]
+        """Test that rapid alternations detect as chop (tolerant version)."""
+        # Arrange: Rapid alternations (HH->LL->HH->LL)
+        # With tolerant logic, needs 2+ consecutive alternations for chop
+        labels = ["HH", "LL", "HH", "LL", "HH"]
 
         # Act
         chop = detect_structure_chop(labels, lookback=5)
 
-        # Assert
+        # Assert: Rapid alternations = chop
         assert chop is True
 
     def test_lookback_window_respects_recent_labels(self):
@@ -61,14 +62,15 @@ class TestDetectStructureChop:
         assert chop is False
 
     def test_none_labels_are_filtered(self):
-        """Test that None labels are ignored in chop detection."""
-        # Arrange: Mixed labels with None values
-        labels = [None, "HH", None, "HL", None, "LH", None, "LL"]
+        """Test that None labels are filtered and alternations detected (tolerant version)."""
+        # Arrange: Alternations with None values
+        # After filtering: ["HH", "LL", "HH", "LL"] = 3 consecutive alternations
+        labels = [None, "HH", "LL", None, "HH", "LL", None]
 
         # Act
         chop = detect_structure_chop(labels, lookback=10)
 
-        # Assert: Mixed HH/HL and LH/LL = chop
+        # Assert: Rapid alternations after filtering Nones = chop
         assert chop is True
 
     def test_insufficient_labels_no_chop(self):

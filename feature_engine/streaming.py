@@ -15,7 +15,10 @@ from common.types import Candle
 
 from feature_engine.dxy_correlation import calculate_dxy_correlation
 from feature_engine.rsi import calculate_rsi
-from feature_engine.structure import calculate_structure_labels
+from feature_engine.structure import (
+    calculate_structure_labels,
+    get_swing_window_for_timeframe,
+)
 from feature_engine.timezone_utils import get_vwap_session_id
 
 logger = get_logger(__name__)
@@ -73,7 +76,10 @@ class StreamingFeatureProcessor:
         else:  # 1m and others
             buffer_size = 30  # 30 minutes for 1m
         
-        logger.debug(f"[StreamingProcessor] Buffer size for {timeframe}: {buffer_size} bars")
+        logger.debug(
+            f"[StreamingProcessor] Buffer size for {timeframe}: "
+            f"{buffer_size} bars"
+        )
         return buffer_size
 
     def __init__(
@@ -82,7 +88,7 @@ class StreamingFeatureProcessor:
         rsi_period: int = 14,
         ema_periods: list[int] | None = None,
         dxy_window: int = 50,
-        swing_window: int = 5,
+        swing_window: int | None = None,
         session_reset: bool = True,
     ):
         """Initialize streaming processor.
@@ -92,14 +98,22 @@ class StreamingFeatureProcessor:
             rsi_period: RSI calculation period (default: 14)
             ema_periods: List of EMA periods (default: [9, 20, 50])
             dxy_window: DXY correlation window (default: 50)
-            swing_window: Structure label swing window (default: 5)
+            swing_window: Structure label swing window. If None, automatically
+                         determined based on timeframe (1m=2, 15m=3, 1h=5).
+                         Can be explicitly set to override default.
             session_reset: Whether to reset VWAP at session boundaries (default: True)
         """
         self.timeframe = timeframe
         self.rsi_period = rsi_period
         self.ema_periods = ema_periods if ema_periods is not None else [9, 20, 50]
         self.dxy_window = dxy_window
-        self.swing_window = swing_window
+        
+        # Automatically determine swing_window based on timeframe if not provided
+        if swing_window is None:
+            self.swing_window = get_swing_window_for_timeframe(timeframe)
+        else:
+            self.swing_window = swing_window
+            
         self.session_reset = session_reset
 
         # EMA state: {period: current_ema_value}
@@ -129,6 +143,10 @@ class StreamingFeatureProcessor:
         self.micro_corr_gc_buffer: deque[float] = deque(maxlen=self.micro_corr_window)
         self.micro_corr_dxy_buffer: deque[float] = deque(maxlen=self.micro_corr_window)
 
+        # Volume SMA buffer (20-period for volume spike detection)
+        self.volume_sma_period = 20
+        self.volume_buffer: deque[float] = deque(maxlen=self.volume_sma_period)
+
         # Structure detection buffer (needs enough bars to capture swing points)
         # Structure calculation requires 3*swing_window+1 bars minimum
         # Buffer size scales with timeframe to ensure adequate swing detection:
@@ -152,6 +170,7 @@ class StreamingFeatureProcessor:
         self.vwap_pv_sum = 0.0
         self.vwap_v_sum = 0.0
         self.vwap_current_session: str | None = None
+        self.prev_vwap: float | None = None  # For vwap_slope calculation
 
         # Warmup tracking
         self.bar_count = 0
@@ -176,6 +195,15 @@ class StreamingFeatureProcessor:
         features["low"] = gc_bar.low
         features["close"] = gc_bar.close
         features["volume"] = gc_bar.volume
+
+        # === 0. Volume SMA (20-period for volume spike detection) ===
+        self.volume_buffer.append(gc_bar.volume)
+        if len(self.volume_buffer) >= self.volume_sma_period:
+            features["volume_sma_20"] = sum(self.volume_buffer) / len(
+                self.volume_buffer
+            )
+        else:
+            features["volume_sma_20"] = None
 
         # === 1. EMA (incremental formula) ===
         for period in self.ema_periods:
@@ -213,6 +241,13 @@ class StreamingFeatureProcessor:
             self.vwap_pv_sum / self.vwap_v_sum if self.vwap_v_sum > 0 else gc_bar.close
         )
         features["vwap"] = vwap
+
+        # Calculate VWAP slope (rate of change for trend direction)
+        if self.prev_vwap is not None:
+            features["vwap_slope"] = vwap - self.prev_vwap
+        else:
+            features["vwap_slope"] = None
+        self.prev_vwap = vwap
 
         # === 3. VWAP Deviation ===
         if vwap > 0:
@@ -284,7 +319,10 @@ class StreamingFeatureProcessor:
             gc_mean = sum(gc_array) / len(gc_array)
             dxy_mean = sum(dxy_array) / len(dxy_array)
 
-            numerator = sum((gc - gc_mean) * (dxy - dxy_mean) for gc, dxy in zip(gc_array, dxy_array, strict=False))
+            numerator = sum(
+                (gc - gc_mean) * (dxy - dxy_mean)
+                for gc, dxy in zip(gc_array, dxy_array, strict=False)
+            )
             gc_std = (sum((gc - gc_mean) ** 2 for gc in gc_array)) ** 0.5
             dxy_std = (sum((dxy - dxy_mean) ** 2 for dxy in dxy_array)) ** 0.5
 
@@ -342,8 +380,10 @@ class StreamingFeatureProcessor:
                     # No swings detected in buffer
                     if self.last_structure_label is None:
                         logger.debug(
-                            f"[{self.timeframe}] No swings detected in {len(self.structure_buffer)}-bar buffer "
-                            f"(swing_window={self.swing_window}). Consider increasing buffer size or swing_window."
+                            f"[{self.timeframe}] No swings detected in "
+                            f"{len(self.structure_buffer)}-bar buffer "
+                            f"(swing_window={self.swing_window}). "
+                            f"Consider increasing buffer size or swing_window."
                         )
             except Exception as e:
                 logger.warning(f"Structure label calculation failed: {e}")
@@ -387,7 +427,8 @@ class StreamingFeatureProcessor:
                     current_dxy_label = valid_dxy_labels.iloc[-1]
                     self.last_dxy_structure_label = current_dxy_label
                     logger.debug(
-                        f"[{self.timeframe}] DXY Structure updated -> {current_dxy_label}"
+                        f"[{self.timeframe}] DXY Structure updated -> "
+                        f"{current_dxy_label}"
                     )
             except Exception as e:
                 logger.warning(f"DXY structure label calculation failed: {e}")
@@ -407,7 +448,8 @@ class StreamingFeatureProcessor:
             max(self.ema_periods),
             self.rsi_period + 1,
             self.dxy_window,
-            3 * self.swing_window + 1,  # Structure calculation needs 3*swing_window+1 bars
+            # Structure calculation needs 3*swing_window+1 bars
+            3 * self.swing_window + 1,
         )
         return self.bar_count >= min_warmup
 
@@ -422,6 +464,7 @@ class StreamingFeatureProcessor:
         self.dxy_corr_dxy_buffer.clear()
         self.micro_corr_gc_buffer.clear()
         self.micro_corr_dxy_buffer.clear()
+        self.volume_buffer.clear()
         self.structure_buffer.clear()
         self.dxy_structure_buffer.clear()
         self.last_structure_label = None
@@ -429,5 +472,6 @@ class StreamingFeatureProcessor:
         self.vwap_pv_sum = 0.0
         self.vwap_v_sum = 0.0
         self.vwap_current_session = None
+        self.prev_vwap = None
         self.bar_count = 0
         logger.info("Streaming feature processor reset")

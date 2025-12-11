@@ -14,15 +14,23 @@ from rule_engine.signal import Signal
 class TestMinimumRiskValidation:
     """Tests for minimum risk threshold enforcement."""
 
-    def test_micro_risk_raises_error(self):
-        """Test that risk below MIN_RISK_TICKS raises ValueError."""
+    def test_minimum_sl_enforcement_prevents_micro_risk(self):
+        """Test that minimum SL enforcement prevents micro-risk trades.
+        
+        Updated: All setups now have minimum SL enforcement:
+        - VWAP_FADE: 15-tick minimum
+        - VWAP_RECLAIM: 20-tick minimum
+        - DXY_CONTINUATION: 15-tick minimum
+        
+        Micro-risk scenarios are auto-corrected, not rejected.
+        """
         # Arrange: Signal and entry with tiny risk
         signal = Signal(
             timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=timezone.utc),
             symbol="GC",
             timeframe="1m",
             direction="long",
-            setup_type="VWAP_RECLAIM",
+            setup_type="VWAP_FADE",
             htf_bias="bullish",
             score=8.5,
             confidence="A+",
@@ -41,12 +49,14 @@ class TestMinimumRiskValidation:
             rejection_reason=None,
         )
 
-        # Confirmation candle extremely close to entry (micro-chop)
+        # Confirmation candle extremely close to entry (would be micro-chop without enforcement)
+        # For VWAP_FADE long, SL = confirmation.low = 0.05 below entry = 0.5 ticks
+        # But MIN_SL_TICKS_VWAP_FADE = 15 will expand it to 1.5 points
         confirmation = Candle(
             timestamp=datetime(2025, 1, 1, 10, 1, tzinfo=timezone.utc),
             open=2650.0,
             high=2650.5,
-            low=2649.95,  # Only 0.05 below entry = 0.5 ticks
+            low=2649.95,  # Only 0.05 below entry = 0.5 ticks (< MIN_RISK_TICKS)
             close=2650.2,
             volume=100,
             symbol="GC",
@@ -58,24 +68,22 @@ class TestMinimumRiskValidation:
         market_context = {"month": 11, "htf_aligned": True, "dxy_aligned": True}
         config = {
             "assets": {"tick_sizes": {"GC": 0.1}},
-            # Set min_sl_ticks low (5 ticks) so risk validation catches micro-chop
-            "sl_rules": {"min_sl_ticks": {"VWAP_RECLAIM": 5}},
         }
 
-        # Act & Assert: Should raise ValueError for micro-risk
-        with pytest.raises(ValueError) as exc_info:
-            create_trade_from_entry(
-                entry,
-                confirmation,
-                None,  # No BOS candle
-                risk_config,
-                market_context,
-                config,
-            )
+        # Act: Should succeed with auto-expanded SL (not raise ValueError)
+        trade = create_trade_from_entry(
+            entry,
+            confirmation,
+            None,  # No BOS candle
+            risk_config,
+            market_context,
+            config,
+        )
 
-        # Check error message mentions minimum threshold
-        assert "Risk below minimum threshold" in str(exc_info.value)
-        assert f"{MIN_RISK_TICKS}" in str(exc_info.value)
+        # Assert: Risk should be expanded to minimum (15 ticks = 1.5 points)
+        assert trade.risk_amount >= 1.5
+        risk_ticks = trade.risk_amount / 0.1
+        assert risk_ticks >= 15  # MIN_SL_TICKS_VWAP_FADE
 
     def test_adequate_risk_succeeds(self):
         """Test that risk >= MIN_RISK_TICKS creates trade successfully."""

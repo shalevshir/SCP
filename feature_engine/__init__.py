@@ -2,7 +2,7 @@
 
 Supports both vectorized (batch) and incremental (stateful) calculation modes:
 - Vectorized: Fast batch processing for backtesting with correct time slicing
-- Incremental: One-candle-at-a-time processing for live trading and realistic backtesting
+- Incremental: One-candle-at-a-time for live trading and realistic backtesting
 """
 
 from feature_engine.aggregator import aggregate_features
@@ -26,7 +26,10 @@ from feature_engine.state import (
     StructureState,
     VWAPState,
 )
-from feature_engine.structure import calculate_structure_labels
+from feature_engine.structure import (
+    calculate_structure_labels,
+    get_swing_window_for_timeframe,
+)
 from feature_engine.vwap import calculate_vwap, calculate_vwap_deviation
 
 __all__ = [
@@ -41,6 +44,7 @@ __all__ = [
     "calculate_structure_labels",
     "calculate_vwap",
     "calculate_vwap_deviation",
+    "get_swing_window_for_timeframe",
     "prepare_for_aggregation",
     "process_features",
     # Incremental state classes

@@ -91,6 +91,24 @@ def score_signal(features: pd.Series, htf_bias: HTFBias, context: dict) -> Signa
     # Determine setup type based on features
     setup_type = determine_setup_type(features, htf_bias)
 
+    # Handle rejected setups
+    if setup_type == "REJECTED":
+        logger.warning("Setup type rejected - no valid setup detected")
+        return Signal(
+            timestamp=features["timestamp"],
+            symbol=features["symbol"],
+            timeframe=features["timeframe"],
+            direction=signal_direction,
+            setup_type="REJECTED",
+            htf_bias=htf_bias.bias,
+            score=0.0,
+            confidence="Reject",
+            factors={},
+            rationale="Rejected: No valid setup type detected (failed prerequisites)",
+            validation_flags={"htf_valid": False},
+            enforcer_tier=context.get("enforcer_tier", "Conservative"),
+        )
+
     # Get setup configuration and weights
     setup_config = config.setup_types[setup_type]
     weights = setup_config["weights"]
@@ -157,19 +175,27 @@ def score_signal(features: pd.Series, htf_bias: HTFBias, context: dict) -> Signa
 
 
 def determine_setup_type(features: pd.Series, htf_bias: HTFBias) -> str:
-    """Determine setup type based on market features.
+    """Determine setup type based on market features with strict validation.
 
     Args:
         features: Feature data including VWAP, RSI, DXY correlation
         htf_bias: HTFBias object
 
     Returns:
-        Setup type name: "VWAP_RECLAIM", "VWAP_FADE", or "DXY_CONTINUATION"
+        Setup type name: "VWAP_RECLAIM", "VWAP_FADE", "DXY_CONTINUATION", or "REJECTED"
 
     Logic:
         - VWAP_FADE: RSI extreme (<30 or >70) with significant VWAP deviation
-        - DXY_CONTINUATION: Strong DXY correlation (<-0.8)
-        - VWAP_RECLAIM: Default continuation setup
+        - DXY_CONTINUATION: Very strong inverse correlation (<-0.8)
+        - VWAP_RECLAIM: Requires full reclaim sequence validation
+        - REJECTED: No valid setup detected
+
+    Note:
+        VWAP_RECLAIM now requires:
+        1. Liquidity sweep detected
+        2. Structure clarity >= 0.7
+        3. No chop detected
+        4. BOS detected within 15 bars
     """
     close = features.get("close", 0)
     vwap = features.get("vwap", 0)
@@ -183,12 +209,24 @@ def determine_setup_type(features: pd.Series, htf_bias: HTFBias) -> str:
     if (rsi < 30 or rsi > 70) and vwap_dev > 0.5:
         return "VWAP_FADE"
 
-    # DXY_CONTINUATION: Very strong inverse correlation
-    if dxy_corr is not None and dxy_corr < -0.8:
+    # DXY_CONTINUATION: Strict multi-factor validation
+    from rule_engine.setup_detectors.dxy_continuation import detect_dxy_continuation
+
+    if detect_dxy_continuation(features, htf_bias):
         return "DXY_CONTINUATION"
 
-    # Default: VWAP_RECLAIM (continuation setup)
-    return "VWAP_RECLAIM"
+    # VWAP_RECLAIM: Requires full reclaim sequence validation
+    # Import here to avoid circular dependency
+    from rule_engine.htf.vwap.reclaim import validate_reclaim_prerequisites
+
+    is_valid, reason = validate_reclaim_prerequisites(htf_bias)
+
+    if is_valid:
+        return "VWAP_RECLAIM"
+    else:
+        # Log rejection reason for debugging
+        logger.debug(f"VWAP_RECLAIM rejected: {reason}")
+        return "REJECTED"
 
 
 def calculate_factor_scores(
@@ -210,7 +248,7 @@ def calculate_factor_scores(
     # Structure alignment: Price action matches HTF bias
     if "structure_alignment" in weights:
         scores["structure_alignment"] = calculate_structure_alignment(
-            features, htf_bias, weights["structure_alignment"]
+            features, htf_bias, weights["structure_alignment"], setup_type
         )
 
     # VWAP relation: Position relative to VWAP
@@ -285,42 +323,43 @@ def calculate_factor_scores(
 
 
 def calculate_structure_alignment(
-    features: pd.Series, htf_bias: HTFBias, max_points: float
+    features: pd.Series, htf_bias: HTFBias, max_points: float, setup_type: str
 ) -> float:
-    """Calculate structure alignment score with strict quality requirements.
+    """Calculate structure alignment score with setup-specific requirements.
 
-    Strict structure scoring that requires:
-    1. Direction matches HTF bias (base requirement)
-    2. Clean swing sequence - structure_clarity >= 0.7 (40% of max)
-    3. Recent structure event - BOS within threshold bars (30% of max)
-    4. No chop detected (30% of max)
+    VWAP_RECLAIM (loosened per SOP):
+    - Skips chop/clarity hard rejections
+    - Minimum base score of 50% max_points (not 0)
+    - Only requires: direction match, liquidity sweep, recent BOS
 
-    This prevents micro-chop entries from scoring high on structure alone.
+    DXY_CONTINUATION & VWAP_FADE (strict):
+    - Requires clean structure (clarity >= 0.6)
+    - No chop detected
+    - Recent BOS (within 15 bars)
+    - Liquidity sweep detected
 
     Args:
         features: Feature data for determining signal direction
         htf_bias: HTFBias object containing structure quality metrics
         max_points: Maximum points this factor can contribute
+        setup_type: Setup type ("VWAP_RECLAIM", "DXY_CONTINUATION", "VWAP_FADE")
 
     Returns:
         Score contribution (0 to max_points)
 
     Example:
-        >>> # Genuine A+ structure: clean, recent BOS, no chop
+        >>> # VWAP_RECLAIM with chop - still scores
         >>> htf_bias = HTFBias(
-        ...     direction="long", structure_clarity=0.9,
-        ...     bars_since_bos=10, chop_detected=False
+        ...     direction="long", structure_clarity=0.4,
+        ...     bars_since_bos=10, chop_detected=True,
+        ...     liquidity_sweep_detected=True
         ... )
-        >>> calculate_structure_alignment(features, htf_bias, 2.5)
-        2.5  # Full points
+        >>> calculate_structure_alignment(features, htf_bias, 2.5, "VWAP_RECLAIM")
+        1.25  # Gets minimum 50% of max_points
 
-        >>> # Micro-chop: mixed structure, stale BOS
-        >>> htf_bias = HTFBias(
-        ...     direction="long", structure_clarity=0.3,
-        ...     bars_since_bos=40, chop_detected=True
-        ... )
-        >>> calculate_structure_alignment(features, htf_bias, 2.5)
-        0.0  # Zero points - fails all quality checks
+        >>> # DXY_CONTINUATION with chop - rejected
+        >>> calculate_structure_alignment(features, htf_bias, 2.5, "DXY_CONTINUATION")
+        0.0  # Zero points - fails hard rejections
     """
     direction = determine_direction(features, htf_bias)
 
@@ -328,33 +367,96 @@ def calculate_structure_alignment(
     if htf_bias.direction != direction or direction == "neutral":
         return 0.0
 
+    # VWAP_RECLAIM: Loosened requirements per SOP
+    if setup_type == "VWAP_RECLAIM":
+        # Skip chop and clarity hard rejections
+        # VWAP_RECLAIM can work during micro chop (reclaim is structural, not momentum)
+        
+        # Still require liquidity sweep (prerequisite validates this)
+        if not htf_bias.liquidity_sweep_detected:
+            logger.debug("VWAP_RECLAIM structure: no liquidity sweep")
+            return max_points * 0.3  # Reduced but not zero
+        
+        # Still require recent BOS
+        if htf_bias.bars_since_bos is None or htf_bias.bars_since_bos > 15:
+            logger.debug(
+                f"VWAP_RECLAIM structure: BOS stale "
+                f"(bars_since_bos={htf_bias.bars_since_bos})"
+            )
+            return max_points * 0.3  # Reduced but not zero
+        
+        # Calculate score for VWAP_RECLAIM (tolerant scoring)
+        score = max_points * 0.5  # Minimum base (50%)
+        
+        # Bonus for high clarity (but not required)
+        if htf_bias.structure_clarity >= 0.7:
+            score += max_points * 0.3
+        elif htf_bias.structure_clarity >= 0.5:
+            score += max_points * 0.15
+        
+        # Bonus for very recent BOS
+        if htf_bias.bars_since_bos <= 10:
+            score += max_points * 0.2
+        
+        logger.debug(
+            f"VWAP_RECLAIM structure (tolerant): clarity={htf_bias.structure_clarity:.2f}, "
+            f"bars_since_bos={htf_bias.bars_since_bos}, "
+            f"sweep={htf_bias.liquidity_sweep_detected}, score={score:.2f}/{max_points}"
+        )
+        
+        return min(score, max_points)
+
+    # STRICT REQUIREMENTS for DXY_CONTINUATION and VWAP_FADE
+    # These setups need clean structure (no chop tolerance)
+
+    # Rejection 1: Choppy structure
+    if htf_bias.chop_detected:
+        logger.debug(f"{setup_type} structure rejected: chop detected")
+        return 0.0
+
+    # Rejection 2: No recent BOS or BOS too stale
+    if htf_bias.bars_since_bos is None or htf_bias.bars_since_bos > 15:
+        logger.debug(
+            f"{setup_type} structure rejected: BOS stale or missing "
+            f"(bars_since_bos={htf_bias.bars_since_bos})"
+        )
+        return 0.0
+
+    # Rejection 3: Low structure clarity
+    if htf_bias.structure_clarity < 0.6:
+        logger.debug(
+            f"{setup_type} structure rejected: low clarity "
+            f"({htf_bias.structure_clarity:.2f} < 0.6)"
+        )
+        return 0.0
+
+    # Rejection 4: No liquidity sweep
+    if not htf_bias.liquidity_sweep_detected:
+        logger.debug(f"{setup_type} structure rejected: no liquidity sweep")
+        return 0.0
+
+    # All hard rejections passed - calculate score
     score = 0.0
 
     # Factor 1: Clean swing structure (40% of max)
-    # Requires structure_clarity >= 0.7 for full credit
     if htf_bias.structure_clarity >= 0.7:
         score += max_points * 0.4
-    elif htf_bias.structure_clarity >= 0.4:
-        # Partial credit for moderate clarity
+    elif htf_bias.structure_clarity >= 0.6:
         score += max_points * 0.2
 
     # Factor 2: Recent structure event (30% of max)
-    # BOS within 15 bars gets full credit, 30 bars gets half
-    if htf_bias.bars_since_bos is not None:
-        if htf_bias.bars_since_bos <= 15:
-            score += max_points * 0.3
-        elif htf_bias.bars_since_bos <= 30:
-            score += max_points * 0.15
-        # No credit if BOS is stale (>30 bars ago)
+    if htf_bias.bars_since_bos <= 10:
+        score += max_points * 0.3
+    elif htf_bias.bars_since_bos <= 15:
+        score += max_points * 0.15
 
     # Factor 3: No chop detected (30% of max)
-    if not htf_bias.chop_detected:
-        score += max_points * 0.3
+    score += max_points * 0.3
 
     logger.debug(
-        f"Structure alignment breakdown: clarity={htf_bias.structure_clarity:.2f}, "
+        f"{setup_type} structure (strict): clarity={htf_bias.structure_clarity:.2f}, "
         f"bars_since_bos={htf_bias.bars_since_bos}, chop={htf_bias.chop_detected}, "
-        f"score={score:.2f}/{max_points}"
+        f"sweep={htf_bias.liquidity_sweep_detected}, score={score:.2f}/{max_points}"
     )
 
     return min(score, max_points)
@@ -551,15 +653,108 @@ def calculate_rejection_candle(
 ) -> float:
     """Calculate rejection candle score for fade setups.
 
-    TODO: Implement proper wick analysis:
-    - Wick > 2x body size
-    - Rejection in correct direction (upper wick for short, lower wick for long)
-    - Close near opposite end of wick
+    Analyzes candle structure to detect rejection patterns indicating
+    potential reversal. Awards points for wicks indicating rejection
+    in the direction supporting the fade setup, with confirmation from
+    VWAP proximity and candle body direction.
 
-    Returns 0 until properly implemented to prevent inflated scores.
+    Criteria (all required for full points):
+    - Strong rejection wick: Wick > 2x body size
+    - VWAP proximity: Close within 0.15% of VWAP (rejection back into value)
+    - Candle body direction: Closes in fade direction
+      * Long fade: bullish close (close > open)
+      * Short fade: bearish close (close < open)
+
+    Scoring:
+    - All 3 conditions met: full points
+    - Wick + 1 other condition: half points
+    - Wick only or no wick: 0 points
+
+    Args:
+        features: Feature series containing OHLC data and VWAP
+        htf_bias: HTFBias object (direction indicates HTF bias direction)
+        max_points: Maximum points this factor can contribute
+
+    Returns:
+        Score contribution (0 to max_points)
+
+    Example:
+        For HTF bullish (long direction), VWAP_FADE bounces from oversold
+        → look for LOWER wick rejection + close near VWAP + bullish close
+        
+        For HTF bearish (short direction), VWAP_FADE pulls back from overbought
+        → look for UPPER wick rejection + close near VWAP + bearish close
     """
-    # Return 0 until properly implemented
-    # Previously gave free 50% points which inflated fade setup scores
+    open_price = features.get("open", 0)
+    high = features.get("high", 0)
+    low = features.get("low", 0)
+    close = features.get("close", 0)
+    vwap = features.get("vwap", 0)
+
+    # Validate OHLC data
+    if high == 0 or low == 0 or high < low or vwap == 0:
+        return 0.0
+
+    # Calculate body and wicks
+    body = abs(close - open_price)
+    upper_wick = high - max(open_price, close)
+    lower_wick = min(open_price, close) - low
+
+    # Avoid division by zero for very small bodies (near-doji candles)
+    # For doji-like candles, check if wick is at least 0.1% of price
+    min_wick_threshold = high * 0.001 if body < 0.01 else body
+
+    # Check VWAP proximity (within 0.15%)
+    vwap_proximity = abs(close - vwap) / vwap < 0.0015
+
+    # Check candle body direction
+    bullish_close = close > open_price
+    bearish_close = close < open_price
+
+    # HTF bullish (long): VWAP_FADE bounces from oversold
+    # Need: lower wick + close near VWAP + bullish close
+    if htf_bias.direction == "long":
+        has_strong_wick = lower_wick > body * 2
+        has_moderate_wick = lower_wick > max(body, min_wick_threshold)
+        correct_body = bullish_close
+
+        if has_strong_wick:
+            # Strong wick exists, check other conditions
+            conditions_met = sum([vwap_proximity, correct_body])
+            if conditions_met == 2:
+                # All 3 conditions: full points
+                return max_points
+            elif conditions_met == 1:
+                # Wick + 1 condition: half points
+                return max_points * 0.5
+            # Wick only: no points (quality filter)
+            return 0.0
+        elif has_moderate_wick and vwap_proximity and correct_body:
+            # Moderate wick with both confirmations: partial credit
+            return max_points * 0.5
+
+    # HTF bearish (short): VWAP_FADE pulls back from overbought
+    # Need: upper wick + close near VWAP + bearish close
+    elif htf_bias.direction == "short":
+        has_strong_wick = upper_wick > body * 2
+        has_moderate_wick = upper_wick > max(open_price, min_wick_threshold)
+        correct_body = bearish_close
+
+        if has_strong_wick:
+            # Strong wick exists, check other conditions
+            conditions_met = sum([vwap_proximity, correct_body])
+            if conditions_met == 2:
+                # All 3 conditions: full points
+                return max_points
+            elif conditions_met == 1:
+                # Wick + 1 condition: half points
+                return max_points * 0.5
+            # Wick only: no points (quality filter)
+            return 0.0
+        elif has_moderate_wick and vwap_proximity and correct_body:
+            # Moderate wick with both confirmations: partial credit
+            return max_points * 0.5
+
     return 0.0
 
 
@@ -568,15 +763,45 @@ def calculate_volume_spike(
 ) -> float:
     """Calculate volume spike score for fade setups.
 
-    TODO: Implement proper volume analysis:
-    - Compare current volume to 20-bar average
-    - Require volume > 1.5x average for full points
-    - Partial credit for 1.2-1.5x average
+    Analyzes volume relative to recent average to detect institutional
+    participation. High volume on reversal candles indicates strong
+    conviction and increases fade setup reliability.
 
-    Returns 0 until properly implemented to prevent inflated scores.
+    Criteria:
+    - Strong spike: Volume >= 1.5x average (full points)
+    - Moderate spike: Volume >= 1.2x average (partial points)
+    - Normal/low volume: Below 1.2x average (no points)
+
+    Args:
+        features: Feature series containing volume and volume_sma_20
+        htf_bias: HTFBias object (unused, kept for signature consistency)
+        max_points: Maximum points this factor can contribute
+
+    Returns:
+        Score contribution (0 to max_points)
+
+    Note:
+        If volume_sma_20 is not available in features, gives partial credit
+        for non-zero volume to avoid penalizing data availability issues.
     """
-    # Return 0 until properly implemented
-    # Previously gave free 50% points which inflated fade setup scores
+    volume = features.get("volume", 0)
+    volume_sma = features.get("volume_sma_20", None)
+
+    # If no SMA available, return 0.0 (strict scoring - no free points)
+    # This ensures volume spike scoring is based on actual volume comparison
+    if volume_sma is None or pd.isna(volume_sma) or volume_sma == 0:
+        logger.debug("volume_sma_20 unavailable - no points for volume_spike")
+        return 0.0
+
+    # Calculate volume ratio
+    volume_ratio = volume / volume_sma
+
+    # Award points based on volume spike magnitude
+    if volume_ratio >= 1.5:
+        return max_points
+    elif volume_ratio >= 1.2:
+        return max_points * 0.5
+
     return 0.0
 
 

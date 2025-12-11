@@ -82,24 +82,34 @@ def detect_structure_conflict(
 
 def detect_price_chop_15m(
     df_15m: pd.DataFrame,
-    wick_threshold: float = 0.5,
-    min_chop_candles: int = 3,
+    wick_threshold: float = 1.0,
+    min_chop_candles: int = 5,
+    atr: float | None = None,
+    min_candle_size_ratio: float = 0.3,
 ) -> bool:
-    """Detect if 15M price action is in chop mode.
+    """Detect if 15M price action is in chop mode (tolerant version).
 
-    Chop is defined as wick-to-wick behavior where wicks are large relative
-    to the candle body, indicating ranging/indecisive market conditions.
+    Chop is defined as sustained wick-to-wick behavior where wicks are large 
+    relative to the candle body, indicating ranging/indecisive market conditions.
+
+    Tolerant thresholds (post-fix):
+    - Wicks must EXCEED body (1.0 ratio, was 0.5)
+    - Requires 5 consecutive candles (was 3)
+    - Filters out small candles (< 0.3 * ATR) to avoid noise
 
     Args:
         df_15m: DataFrame with 15M OHLC data
-        wick_threshold: Minimum wick-to-body ratio to consider chop
-        min_chop_candles: Consecutive chop candles needed to trigger
+        wick_threshold: Minimum wick-to-body ratio to consider chop (default: 1.0)
+        min_chop_candles: Consecutive chop candles needed to trigger (default: 5)
+        atr: Average True Range for noise filtering (optional)
+        min_candle_size_ratio: Min candle size as fraction of ATR (default: 0.3)
 
     Returns:
         True if chop detected in recent candles
 
     Logic:
         - Chop candle: (upper_wick + lower_wick) / body >= wick_threshold
+        - Noise filter: candles with range < min_candle_size_ratio * ATR ignored
         - Chop condition: min_chop_candles consecutive chop candles
         - Check most recent candles
 
@@ -140,6 +150,19 @@ def detect_price_chop_15m(
     lower_wick = df_15m[["open", "close"]].min(axis=1) - df_15m["low"]
     body_size = (df_15m["close"] - df_15m["open"]).abs()
 
+    # ATR-based noise filter: ignore small candles
+    is_noise_candle = pd.Series([False] * len(df_15m), index=df_15m.index)
+    if atr is not None and atr > 0:
+        candle_range = df_15m["high"] - df_15m["low"]
+        min_candle_size = atr * min_candle_size_ratio
+        is_noise_candle = candle_range < min_candle_size
+        
+        noise_count = is_noise_candle.sum()
+        if noise_count > 0:
+            logger.debug(
+                f"Filtering {noise_count} noise candles (range < {min_candle_size:.2f})"
+            )
+
     # Calculate wick ratio
     wick_ratio = pd.Series(index=df_15m.index, dtype=float)
 
@@ -153,8 +176,8 @@ def detect_price_chop_15m(
         upper_wick[non_zero_mask] + lower_wick[non_zero_mask]
     ) / body_size[non_zero_mask]
 
-    # Identify individual chop candles
-    is_chop_candle = wick_ratio >= wick_threshold
+    # Identify individual chop candles (excluding noise candles)
+    is_chop_candle = (wick_ratio >= wick_threshold) & (~is_noise_candle)
     is_chop_candle = is_chop_candle.fillna(False)
 
     # Count consecutive chop candles from the end
@@ -246,4 +269,76 @@ def detect_sweep_against_trend(
         return True, reason
 
     # No conflict (sweep aligns with trend)
+    return False, None
+
+
+def detect_structure_invalidation(
+    prev_structure: str | None,
+    curr_structure: str | None,
+    bias: str,
+) -> tuple[bool, str | None]:
+    """Detect if structure transition invalidates HTF bias.
+
+    Only invalidates on real structure breaks, not micro volatility.
+
+    Valid invalidations (per SOP):
+    - Bullish bias + (HH->LL or HL->LL) = invalidate
+    - Bearish bias + (LH->HH or LL->HH) = invalidate
+
+    NOT invalidations (micro volatility):
+    - HL->LH (single step, not a break)
+    - LH->HL (single step, not a break)
+    - Same structure continuation (HH->HH, LL->LL, etc.)
+
+    Args:
+        prev_structure: Previous structure label (HH, HL, LH, LL, or None)
+        curr_structure: Current structure label (HH, HL, LH, LL, or None)
+        bias: Current HTF bias ("bullish", "bearish", "neutral")
+
+    Returns:
+        Tuple of (is_invalidated, reason):
+        - is_invalidated: True if structure transition invalidates bias
+        - reason: Description of invalidation, or None if not invalidated
+
+    Example:
+        >>> detect_structure_invalidation("HH", "LL", "bullish")
+        (True, "Bullish bias invalidated: HH -> LL (structure break)")
+    """
+    # Neutral bias cannot be invalidated
+    if bias == "neutral":
+        return False, None
+
+    # Handle None values
+    if prev_structure is None or curr_structure is None:
+        return False, None
+
+    # No change = no invalidation
+    if prev_structure == curr_structure:
+        return False, None
+
+    # Define bullish and bearish labels
+    bullish_labels = {"HH", "HL"}
+    bearish_labels = {"LH", "LL"}
+
+    # Bullish bias invalidations
+    if bias == "bullish":
+        # HH -> LL or HL -> LL = bullish to bearish flip
+        if prev_structure in bullish_labels and curr_structure == "LL":
+            reason = f"Bullish bias invalidated: {prev_structure} -> {curr_structure} (structure break)"
+            logger.warning(reason)
+            return True, reason
+
+    # Bearish bias invalidations
+    elif bias == "bearish":
+        # LH -> HH or LL -> HH = bearish to bullish flip
+        if prev_structure in bearish_labels and curr_structure == "HH":
+            reason = f"Bearish bias invalidated: {prev_structure} -> {curr_structure} (structure break)"
+            logger.warning(reason)
+            return True, reason
+
+    # All other transitions are NOT invalidations
+    # Examples:
+    # - HL -> LH (single step, micro volatility)
+    # - HH -> HL (bullish continuation)
+    # - LL -> LH (bearish continuation)
     return False, None

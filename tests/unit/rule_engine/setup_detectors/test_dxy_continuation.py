@@ -1,0 +1,216 @@
+"""Tests for DXY continuation detector."""
+
+import pandas as pd
+import pytest
+
+from rule_engine.htf.types import HTFBias
+from rule_engine.setup_detectors.dxy_continuation import detect_dxy_continuation
+
+
+class TestDXYContinuationDetector:
+    """Test DXY continuation detection logic."""
+
+    def test_valid_continuation_long(self):
+        """Test valid DXY continuation for long setup."""
+        # Create HTFBias with all required conditions met
+        htf_bias = HTFBias(
+            bias="bullish",
+            direction="long",
+            score=8.5,
+            confidence="high",
+            dxy_corr_1m=-0.4,  # Strong inverse
+            dxy_corr_5m=-0.5,  # Strong inverse
+            dxy_structure="LL",  # DXY bearish
+            bars_since_bos=8,  # Recent BOS
+            dxy_chop_5m=False,  # No chop
+            chop_detected=False,  # No gold chop
+        )
+
+        # Create features with OHLC and ATR
+        features = pd.Series(
+            {
+                "open": 100.0,
+                "close": 105.0,
+                "high": 105.5,
+                "low": 99.5,
+                "atr": 3.0,
+            }
+        )
+
+        # Create DataFrame for micro structure
+        df = pd.DataFrame(
+            {
+                "high": [102, 104, 103],
+                "low": [98, 100, 101],  # HL pattern (ascending lows)
+            }
+        )
+
+        # Should detect continuation
+        result = detect_dxy_continuation(features, htf_bias, df)
+        assert result is True
+
+    def test_weak_correlation_rejects(self):
+        """Test that weak correlation rejects continuation."""
+        htf_bias = HTFBias(
+            bias="bullish",
+            direction="long",
+            score=8.5,
+            confidence="high",
+            dxy_corr_1m=-0.2,  # Too weak
+            dxy_corr_5m=-0.5,
+            dxy_structure="LL",
+            bars_since_bos=8,
+            dxy_chop_5m=False,
+            chop_detected=False,
+        )
+
+        features = pd.Series({"open": 100.0, "close": 105.0, "high": 105.5, "low": 99.5, "atr": 3.0})
+
+        result = detect_dxy_continuation(features, htf_bias)
+        assert result is False
+
+    def test_wrong_dxy_structure_rejects(self):
+        """Test that wrong DXY structure rejects continuation."""
+        htf_bias = HTFBias(
+            bias="bullish",
+            direction="long",
+            score=8.5,
+            confidence="high",
+            dxy_corr_1m=-0.4,
+            dxy_corr_5m=-0.5,
+            dxy_structure="HH",  # Wrong structure for long
+            bars_since_bos=8,
+            dxy_chop_5m=False,
+            chop_detected=False,
+        )
+
+        features = pd.Series({"open": 100.0, "close": 105.0, "high": 105.5, "low": 99.5, "atr": 3.0})
+
+        result = detect_dxy_continuation(features, htf_bias)
+        assert result is False
+
+    def test_stale_bos_rejects(self):
+        """Test that stale BOS rejects continuation."""
+        htf_bias = HTFBias(
+            bias="bullish",
+            direction="long",
+            score=8.5,
+            confidence="high",
+            dxy_corr_1m=-0.4,
+            dxy_corr_5m=-0.5,
+            dxy_structure="LL",
+            bars_since_bos=15,  # Too old
+            dxy_chop_5m=False,
+            chop_detected=False,
+        )
+
+        features = pd.Series({"open": 100.0, "close": 105.0, "high": 105.5, "low": 99.5, "atr": 3.0})
+
+        result = detect_dxy_continuation(features, htf_bias)
+        assert result is False
+
+    def test_dxy_chop_rejects(self):
+        """Test that DXY 5M chop rejects continuation."""
+        htf_bias = HTFBias(
+            bias="bullish",
+            direction="long",
+            score=8.5,
+            confidence="high",
+            dxy_corr_1m=-0.4,
+            dxy_corr_5m=-0.5,
+            dxy_structure="LL",
+            bars_since_bos=8,
+            dxy_chop_5m=True,  # Chop detected
+            chop_detected=False,
+        )
+
+        features = pd.Series({"open": 100.0, "close": 105.0, "high": 105.5, "low": 99.5, "atr": 3.0})
+
+        result = detect_dxy_continuation(features, htf_bias)
+        assert result is False
+
+    def test_gold_chop_rejects(self):
+        """Test that gold micro chop rejects continuation."""
+        htf_bias = HTFBias(
+            bias="bullish",
+            direction="long",
+            score=8.5,
+            confidence="high",
+            dxy_corr_1m=-0.4,
+            dxy_corr_5m=-0.5,
+            dxy_structure="LL",
+            bars_since_bos=8,
+            dxy_chop_5m=False,
+            chop_detected=True,  # Gold chop
+        )
+
+        features = pd.Series({"open": 100.0, "close": 105.0, "high": 105.5, "low": 99.5, "atr": 3.0})
+
+        result = detect_dxy_continuation(features, htf_bias)
+        assert result is False
+
+    def test_weak_displacement_rejects(self):
+        """Test that weak displacement rejects continuation."""
+        htf_bias = HTFBias(
+            bias="bullish",
+            direction="long",
+            score=8.5,
+            confidence="high",
+            dxy_corr_1m=-0.4,
+            dxy_corr_5m=-0.5,
+            dxy_structure="LL",
+            bars_since_bos=8,
+            dxy_chop_5m=False,
+            chop_detected=False,
+        )
+
+        # Small body = weak displacement
+        features = pd.Series(
+            {
+                "open": 100.0,
+                "close": 101.0,  # Small body
+                "high": 102.0,
+                "low": 99.0,
+                "atr": 3.0,  # Displacement = 1.0/3.0 = 0.33 < 1.2
+            }
+        )
+
+        result = detect_dxy_continuation(features, htf_bias)
+        assert result is False
+
+    def test_valid_continuation_short(self):
+        """Test valid DXY continuation for short setup."""
+        htf_bias = HTFBias(
+            bias="bearish",
+            direction="short",
+            score=8.5,
+            confidence="high",
+            dxy_corr_1m=-0.4,
+            dxy_corr_5m=-0.5,
+            dxy_structure="HH",  # DXY bullish
+            bars_since_bos=8,
+            dxy_chop_5m=False,
+            chop_detected=False,
+        )
+
+        features = pd.Series(
+            {
+                "open": 105.0,
+                "close": 100.0,
+                "high": 106.0,
+                "low": 99.5,
+                "atr": 3.0,
+            }
+        )
+
+        # LH pattern (descending highs)
+        df = pd.DataFrame(
+            {
+                "high": [104, 102, 101],  # LH pattern
+                "low": [98, 96, 95],
+            }
+        )
+
+        result = detect_dxy_continuation(features, htf_bias, df)
+        assert result is True
+
