@@ -92,6 +92,7 @@ def test_render_equity_chart_with_trades_all_none_pnl(sample_entry_execution):
             status="OPEN",
             duration_bars=None,
             invalidation_triggered=False,
+            ignore_first_retest_bar=False,
         ),
         Trade(
             trade_id="test-trade-002",
@@ -123,6 +124,7 @@ def test_render_equity_chart_with_trades_all_none_pnl(sample_entry_execution):
             status="OPEN",
             duration_bars=None,
             invalidation_triggered=False,
+            ignore_first_retest_bar=False,
         ),
     ]
 
@@ -181,6 +183,7 @@ def test_render_equity_chart_with_valid_pnl(sample_entry_execution):
             status="CLOSED_WIN",
             duration_bars=4,
             invalidation_triggered=False,
+            ignore_first_retest_bar=False,
         ),
     ]
 
@@ -245,6 +248,7 @@ def test_render_equity_chart_with_mixed_pnl_sequential_trade_numbers(sample_entr
             status="OPEN",
             duration_bars=None,
             invalidation_triggered=False,
+            ignore_first_retest_bar=False,
         ),
         Trade(
             trade_id="test-trade-002",
@@ -276,6 +280,7 @@ def test_render_equity_chart_with_mixed_pnl_sequential_trade_numbers(sample_entr
             status="CLOSED_WIN",
             duration_bars=5,
             invalidation_triggered=False,
+            ignore_first_retest_bar=False,
         ),
         Trade(
             trade_id="test-trade-003",
@@ -307,6 +312,7 @@ def test_render_equity_chart_with_mixed_pnl_sequential_trade_numbers(sample_entr
             status="CLOSED_WIN",
             duration_bars=5,
             invalidation_triggered=False,
+            ignore_first_retest_bar=False,
         ),
         Trade(
             trade_id="test-trade-004",
@@ -338,6 +344,7 @@ def test_render_equity_chart_with_mixed_pnl_sequential_trade_numbers(sample_entr
             status="CLOSED_WIN",
             duration_bars=5,
             invalidation_triggered=False,
+            ignore_first_retest_bar=False,
         ),
     ]
 

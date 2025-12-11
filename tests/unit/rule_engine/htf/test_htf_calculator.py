@@ -434,7 +434,9 @@ class TestHTFCalculatorConflictRules:
 
     @pytest.fixture
     def price_chop_data(self) -> pd.DataFrame:
-        """Create 15M price data with chop (large wicks)."""
+        """Create 15M price data with chop (large wicks, 5+ candles for new threshold)."""
+        # With new tolerant thresholds: wick_threshold=1.0, min_chop_candles=5
+        # Each candle has wicks > body to trigger chop
         return pd.DataFrame(
             {
                 "high": [2100.0, 2105.0, 2110.0, 2115.0, 2120.0],

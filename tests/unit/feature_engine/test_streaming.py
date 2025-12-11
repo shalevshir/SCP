@@ -65,7 +65,7 @@ def test_streaming_processor_initialization():
     assert processor.rsi_period == 14
     assert processor.ema_periods == [9, 20, 50]
     assert processor.dxy_window == 50
-    assert processor.swing_window == 5
+    assert processor.swing_window == 2  # Automatically set based on timeframe (1m=2)
     assert processor.bar_count == 0
 
 
@@ -239,12 +239,13 @@ def test_streaming_warmup_check(sample_candles):
         processor.update(gc, dxy)
 
         # Check warmup status
-        # Warmup requires max(50 (ema), 15 (rsi), 50 (dxy), 11 (structure)) = 50 bars
-        # Since bar_count starts at 1 after first update, we need >= 50 bar_count
+        # Warmup requires max(50 (ema), 15 (rsi), 50 (dxy), 7 (structure)) = 50
+        # Since bar_count starts at 1 after first update, need >= 50 bar_count
         expected_warmup = (i + 1) >= 50
-        assert (
-            processor.is_warmed_up() == expected_warmup
-        ), f"Warmup mismatch at bar {i}: expected {expected_warmup}, got {processor.is_warmed_up()}"
+        assert processor.is_warmed_up() == expected_warmup, (
+            f"Warmup mismatch at bar {i}: expected {expected_warmup}, "
+            f"got {processor.is_warmed_up()}"
+        )
 
 
 def test_streaming_reset():

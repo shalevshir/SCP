@@ -84,6 +84,7 @@ class TestTradeDataclass:
             status="OPEN",
             duration_bars=None,
             invalidation_triggered=False,
+        ignore_first_retest_bar=False,
         )
 
     def test_trade_has_required_attributes(self, sample_trade):
@@ -167,6 +168,7 @@ class TestTradeDataclass:
             status="OPEN",
             duration_bars=None,
             invalidation_triggered=False,
+        ignore_first_retest_bar=False,
         )
 
         assert trade.direction in ["long", "short"]
@@ -238,7 +240,7 @@ class TestCalculateStopLoss:
         self, long_entry_execution, confirmation_candle, bos_candle
     ):
         """Test SL for long continuation: min(confirmation_low, bos_low)."""
-        sl, rationale = calculate_stop_loss(
+        sl, rationale, _ = calculate_stop_loss(
             long_entry_execution, "long", confirmation_candle, bos_candle
         )
 
@@ -251,7 +253,7 @@ class TestCalculateStopLoss:
         self, long_entry_execution, confirmation_candle
     ):
         """Test SL for long continuation without BOS: uses confirmation low."""
-        sl, rationale = calculate_stop_loss(
+        sl, rationale, _ = calculate_stop_loss(
             long_entry_execution, "long", confirmation_candle, bos_candle=None
         )
 
@@ -286,7 +288,7 @@ class TestCalculateStopLoss:
             rejection_reason=None,
         )
 
-        sl, rationale = calculate_stop_loss(
+        sl, rationale, _ = calculate_stop_loss(
             short_entry, "short", confirmation_candle, bos_candle
         )
 
@@ -321,7 +323,7 @@ class TestCalculateStopLoss:
         )
 
         # For fade, confirmation_candle is the sweep candle
-        sl, rationale = calculate_stop_loss(
+        sl, rationale, _ = calculate_stop_loss(
             fade_entry, "long", confirmation_candle, bos_candle=None
         )
 
@@ -355,7 +357,7 @@ class TestCalculateStopLoss:
             rejection_reason=None,
         )
 
-        sl, rationale = calculate_stop_loss(
+        sl, rationale, _ = calculate_stop_loss(
             fade_entry, "short", confirmation_candle, bos_candle=None
         )
 
@@ -389,7 +391,7 @@ class TestCalculateStopLoss:
             rejection_reason=None,
         )
 
-        sl, rationale = calculate_stop_loss(
+        sl, rationale, _ = calculate_stop_loss(
             short_entry, "short", confirmation_candle, bos_candle=None
         )
 
@@ -424,7 +426,7 @@ class TestCalculateStopLoss:
             source="TEST",
         )
 
-        sl, rationale = calculate_stop_loss(
+        sl, rationale, _ = calculate_stop_loss(
             long_entry_execution, "long", confirmation_candle, bos_candle
         )
 
@@ -482,7 +484,7 @@ class TestCalculateStopLoss:
             source="TEST",
         )
 
-        sl, rationale = calculate_stop_loss(
+        sl, rationale, _ = calculate_stop_loss(
             short_entry, "short", confirmation_candle, bos_candle
         )
 
@@ -540,7 +542,7 @@ class TestCalculateStopLoss:
             source="TEST",
         )
 
-        sl, rationale = calculate_stop_loss(
+        sl, rationale, _ = calculate_stop_loss(
             short_entry, "short", confirmation_candle, bos_candle
         )
 
@@ -1019,6 +1021,7 @@ class TestCloseTrade:
             status="OPEN",
             duration_bars=None,
             invalidation_triggered=False,
+        ignore_first_retest_bar=False,
         )
 
     @pytest.fixture
@@ -1215,6 +1218,7 @@ class TestCloseTrade:
             status="OPEN",
             duration_bars=None,
             invalidation_triggered=False,
+        ignore_first_retest_bar=False,
         )
 
         exit_candle = Candle(
@@ -1270,12 +1274,12 @@ class TestCloseTrade:
         # Verify values match expected calculations
         # Gross: 15 points × $10/point = $1,500
         assert closed_trade.pnl_dollars == pytest.approx(1500.0)
-        # Slippage: 0.5 points / 0.1 tick_size = 5 ticks × $10 = -$50
-        assert closed_trade.slippage_cost == pytest.approx(-50.0)
+        # PATCH PART 5: Slippage now dynamic - default 2 ticks (no ATR provided) × $10 = -$20 (was -$50)
+        assert closed_trade.slippage_cost == pytest.approx(-20.0)
         # Commission: $5 × 2 (entry+exit) × 1 contract = -$10
         assert closed_trade.commission_cost == pytest.approx(-10.0)
-        # Net: $1,500 - $50 - $10 = $1,440
-        assert closed_trade.pnl_net == pytest.approx(1440.0)
+        # Net: $1,500 - $20 - $10 = $1,470
+        assert closed_trade.pnl_net == pytest.approx(1470.0)
 
     def test_close_trade_without_config_has_none_dollar_pnl(self, open_trade):
         """Test close_trade without config leaves dollar PnL as None."""
@@ -1361,6 +1365,7 @@ class TestCloseTrade:
             r_realized=None,
             duration_bars=None,
             invalidation_triggered=False,
+            ignore_first_retest_bar=False,
             pnl_dollars=None,
             pnl_net=None,
             slippage_cost=None,
@@ -1458,6 +1463,7 @@ class TestCloseTrade:
             status="OPEN",
             duration_bars=None,
             invalidation_triggered=False,
+        ignore_first_retest_bar=False,
         )
 
         # Exit at +3R (take profit)
@@ -1549,6 +1555,7 @@ class TestCloseTrade:
             status="OPEN",
             duration_bars=None,
             invalidation_triggered=False,
+        ignore_first_retest_bar=False,
         )
 
         # Exit at +2R (take profit)
@@ -1637,6 +1644,7 @@ class TestJSONSerialization:
             status="CLOSED_WIN",
             duration_bars=9,
             invalidation_triggered=False,
+        ignore_first_retest_bar=False,
         )
 
     def test_to_dict_returns_serializable_dict(self, sample_trade):
@@ -1746,6 +1754,7 @@ class TestJSONSerialization:
             status="OPEN",
             duration_bars=None,
             invalidation_triggered=False,
+        ignore_first_retest_bar=False,
         )
 
         trade_dict = to_dict(open_trade)
