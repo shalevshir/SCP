@@ -2139,7 +2139,7 @@ class TestDXYContinuationInvalidation:
             "dxy_corr_1m": 0.1,  # 1M micro correlation - weakened (was negative)
             "dxy_corr_5m": 0.1,  # 5M micro correlation - weakened
             "dxy_corr": 0.05,  # 50-period correlation - weakened
-            "dxy_structure_label": "HH",  # DXY bullish (bad for long gold)
+            "dxy_structure": "HH",  # DXY bullish (bad for long gold)
         }
         
         is_invalid, reason = checker.check_dxy_flip(
@@ -2205,7 +2205,7 @@ class TestDXYContinuationInvalidation:
             "dxy_corr_1m": 0.1,
             "dxy_corr_5m": 0.1,
             "dxy_corr": 0.05,
-            "dxy_structure_label": "LL",  # DXY bearish (bad for short gold)
+            "dxy_structure": "LL",  # DXY bearish (bad for short gold)
         }
         
         is_invalid, reason = checker.check_dxy_flip(
