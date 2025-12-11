@@ -260,7 +260,7 @@ class InvalidationChecker:
                 if self._fade_invalidation_count[trade_id] >= 2:
                     reason = (
                         f"VWAP invalidation (2-bar confirmed): "
-                        f"close {candle.close:.2f} {'<' if trade.direction == 'long' else '>'} "
+                        f"close {candle.close:.2f} {'>' if trade.direction == 'long' else '<'} "
                         f"VWAP {vwap:.2f}, slope {vwap_slope:.4f}"
                     )
                     logger.info(f"Trade {trade.trade_id} invalidated: {reason}")
