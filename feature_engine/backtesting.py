@@ -240,6 +240,9 @@ class BacktestProcessor:
                     "structure_conflict_flag": features.get("structure_conflict_flag"),
                     "last_swing_high": features.get("last_swing_high"),
                     "last_swing_low": features.get("last_swing_low"),
+                    "last_swing_high_idx": features.get("last_swing_high_idx"),
+                    "last_swing_low_idx": features.get("last_swing_low_idx"),
+                    "choch_detected": features.get("choch_detected"),
                     "choch_age": features.get("choch_age"),
                     # Note: bos_age will be added in Structure Engine v2.0 Part 2
                 }
@@ -359,6 +362,9 @@ class BacktestProcessor:
                     "structure_conflict_flag": features.get("structure_conflict_flag"),
                     "last_swing_high": features.get("last_swing_high"),
                     "last_swing_low": features.get("last_swing_low"),
+                    "last_swing_high_idx": features.get("last_swing_high_idx"),
+                    "last_swing_low_idx": features.get("last_swing_low_idx"),
+                    "choch_detected": features.get("choch_detected"),
                     "choch_age": features.get("choch_age"),
                     # Note: bos_age will be added in Structure Engine v2.0 Part 2
                 }

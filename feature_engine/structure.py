@@ -619,6 +619,7 @@ def compute_structure_context_batch(
         - last_swing_low: Last swing low price (forward-filled)
         - last_swing_high_idx: Bar index of last swing high
         - last_swing_low_idx: Bar index of last swing low
+        - choch_detected: Boolean CHoCH detected on this bar
         - choch_age: Bars since last CHoCH
         
     Note: BOS (Break of Structure) fields will be added in Structure Engine v2.0 Part 2
@@ -673,6 +674,7 @@ def compute_structure_context_batch(
             "last_swing_low": ctx.last_swing_low,
             "last_swing_high_idx": ctx.last_swing_high_idx,
             "last_swing_low_idx": ctx.last_swing_low_idx,
+            "choch_detected": ctx.choch_detected,
             "choch_age": ctx.choch_age,
         }
         for ctx in contexts

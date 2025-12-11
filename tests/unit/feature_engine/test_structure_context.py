@@ -3,7 +3,6 @@
 Following TDD: These tests define expected behavior before implementation.
 """
 
-import pytest
 import pandas as pd
 from feature_engine.structure import (
     StructureContext,
@@ -359,8 +358,23 @@ class TestStreamingBatchParity:
             batch_row = batch_result.iloc[i]
 
             # Compare key fields
-            assert streaming_ctx.last_structure_label == batch_row["last_structure_label"]
+            assert (
+                streaming_ctx.last_structure_label
+                == batch_row["last_structure_label"]
+            )
             assert streaming_ctx.trend_direction == batch_row["trend_direction"]
-            assert abs(streaming_ctx.structure_clarity - batch_row["structure_clarity"]) < 0.01
+            clarity_diff = abs(
+                streaming_ctx.structure_clarity - batch_row["structure_clarity"]
+            )
+            assert clarity_diff < 0.01
             assert streaming_ctx.is_chop == batch_row["is_chop"]
-            # Note: BOS fields not checked (to be added in Structure Engine v2.0 Part 2)
+            assert streaming_ctx.choch_detected == batch_row["choch_detected"]
+            assert (
+                streaming_ctx.last_swing_high_idx
+                == batch_row["last_swing_high_idx"]
+            )
+            assert (
+                streaming_ctx.last_swing_low_idx
+                == batch_row["last_swing_low_idx"]
+            )
+            # Note: BOS fields not checked (Structure Engine v2.0 Part 2)
