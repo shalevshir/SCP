@@ -480,6 +480,7 @@ class BacktestReplayLoop:
                     bos_candle=bos_candle,
                     risk_config=self.risk_config,
                     market_context=market_context,
+                    config=self.config,
                 )
 
                 # Add diagnostic context at entry
