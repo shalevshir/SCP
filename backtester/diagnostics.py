@@ -50,3 +50,4 @@ def add_nested_diag(trade: Any, section: str, key: str, value: Any) -> None:
     section_dict = trade.diagnostics.get(section, {})
     section_dict[key] = value
     trade.diagnostics[section] = section_dict
+

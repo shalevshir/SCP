@@ -291,3 +291,4 @@ def test_complex_diagnostics_structure(sample_trade):
     reconstructed = from_dict(trade_dict)
     assert reconstructed.diagnostics["entry_context"]["structure_label"] == "HH"
     assert reconstructed.diagnostics["rejection_during_trade"]["bar_1"]["wick_penetration"] == 0.6
+

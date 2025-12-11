@@ -161,3 +161,4 @@ class TestDXYContinuationValidation:
 
         # dxy_chop_ok should be True (not checked for non-continuation)
         assert validated_signal.validation_flags["chop_ok"] is True
+

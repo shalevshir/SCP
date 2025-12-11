@@ -596,3 +596,4 @@ class TestStreamingApproach:
         )
         
         assert callable(htf_bias_func)
+

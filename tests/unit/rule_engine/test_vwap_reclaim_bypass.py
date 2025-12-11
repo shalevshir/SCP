@@ -297,3 +297,4 @@ class TestChopValidationBySetupType:
 
         assert validated_signal.confidence == "Reject"
         assert validated_signal.validation_flags["chop_ok"] is False
+

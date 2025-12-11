@@ -48,6 +48,23 @@ class TestStructuralChopDensityFilter:
         
         assert is_structural_chop(labels, min_alternations=2) is False
 
+    def test_alternations_followed_by_trend_not_chop(self):
+        """Test that alternations followed by trend continuation should reset and not be chop.
+        
+        Bug reproduction: After reaching threshold, counter never resets on non-alternation.
+        Labels: ["LH", "HH", "LL", "HH", "HL", "HH"]
+        - LH→HH: non-alternation (H→H), count=0
+        - HH→LL: alternation, count=1
+        - LL→HH: alternation, count=2 (threshold reached)
+        - HH→HL: non-alternation (H→H), should reset count to 0
+        - HL→HH: non-alternation (H→H), count stays 0
+        Result: Should be False (not chop) because trend continuation breaks alternation pattern.
+        """
+        labels = ["LH", "HH", "LL", "HH", "HL", "HH"]
+        
+        # Should NOT be chop because trend continuation (HH→HL→HH) breaks alternation pattern
+        assert is_structural_chop(labels, min_alternations=2) is False
+
 
 class TestTolerantChopDetection:
     """Test detect_structure_chop() with tolerant logic."""
@@ -115,3 +132,4 @@ class TestTolerantChopDetection:
         result = detect_structure_chop(labels, lookback=3)
         # 2/3 bullish in last 3 = trend (not chop)
         assert result is False
+

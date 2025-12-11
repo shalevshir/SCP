@@ -518,3 +518,4 @@ class TestDXYContinuationInvalidation:
         is_invalid, reason = checker.check_dxy_flip(trade, candle, features)
 
         assert is_invalid is True  # Old logic triggers on correlation alone
+

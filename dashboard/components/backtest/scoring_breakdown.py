@@ -183,3 +183,4 @@ def render_scoring_breakdown(
 
     return fig
 
+

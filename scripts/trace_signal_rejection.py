@@ -145,3 +145,4 @@ if __name__ == "__main__":
     warmup_days = int(sys.argv[4]) if len(sys.argv) > 4 else 2
     
     trace_pipeline_with_logging(data_dir, start_date, end_date, warmup_days)
+

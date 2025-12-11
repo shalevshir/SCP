@@ -151,3 +151,4 @@ class TestNewFeaturesIntegration:
             # Should be non-negative
             assert lower_wick >= 0, f"Lower wick should be >= 0, got {lower_wick}"
             assert upper_wick >= 0, f"Upper wick should be >= 0, got {upper_wick}"
+

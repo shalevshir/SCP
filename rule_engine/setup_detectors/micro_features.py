@@ -171,3 +171,4 @@ def calculate_bars_since_pullback(
 
     logger.debug(f"No pullback found in last {lookback} bars for {direction} trade")
     return None
+

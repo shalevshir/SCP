@@ -59,8 +59,9 @@ def is_structural_chop(structure_labels: list[str | None], min_alternations: int
             alternation_count += 1
         else:
             # Reset count on non-alternation (trend continuation)
-            if alternation_count < min_alternations:
-                alternation_count = 0
+            # Always reset, regardless of current count, because trend continuation
+            # breaks the consecutive alternation pattern
+            alternation_count = 0
 
     return alternation_count >= min_alternations
 
@@ -143,101 +144,6 @@ def detect_structure_chop(
 
     # Mixed structure without clear trend = chop
     return True
-
-
-def calculate_structure_clarity(
-    structure_labels: list[str | None], lookback: int = 10
-) -> float:
-    """Calculate structure clarity score (0-1) based on swing sequence purity.
-
-    Clarity measures how consistent the recent structure labels are:
-    - 1.0 = All bullish (HH/HL) or all bearish (LH/LL)
-    - 0.5 = Mixed but with majority
-    - 0.0 = Complete chop (50/50 mix)
-
-    Args:
-        structure_labels: List of structure labels, most recent last
-        lookback: Number of recent labels to examine (default: 10)
-
-    Returns:
-        Float 0-1 indicating structure purity
-
-    Example:
-        >>> labels = ["HH", "HL", "HH", "HL", "HH"]
-        >>> calculate_structure_clarity(labels, lookback=5)
-        1.0  # All bullish
-
-        >>> labels = ["HH", "HL", "LH", "LL", "HH"]
-        >>> calculate_structure_clarity(labels, lookback=5)
-        0.2  # Mixed, 60% bullish vs 40% bearish = |0.6-0.4| = 0.2
-    """
-    # Filter to non-None labels and take last N
-    valid_labels = [label for label in structure_labels if label is not None]
-    recent = valid_labels[-lookback:] if len(valid_labels) > lookback else valid_labels
-
-    if len(recent) == 0:
-        return 0.0  # No data
-
-    bullish = {"HH", "HL"}
-    bearish = {"LH", "LL"}
-
-    bullish_count = sum(1 for label in recent if label in bullish)
-    bearish_count = sum(1 for label in recent if label in bearish)
-    total = bullish_count + bearish_count
-
-    if total == 0:
-        return 0.0
-
-    # Calculate purity: 1.0 = all one direction, 0.0 = 50/50 split
-    bullish_ratio = bullish_count / total
-    bearish_ratio = bearish_count / total
-
-    # Purity = abs difference from 50/50 * 2 (normalize to 0-1)
-    purity = abs(bullish_ratio - bearish_ratio)
-
-    return purity
-
-
-def calculate_bars_since_event(
-    event_series: pd.Series | None, current_timestamp: pd.Timestamp
-) -> int | None:
-    """Calculate number of bars since last event occurrence.
-
-    Args:
-        event_series: Series with event labels (non-None = event detected)
-        current_timestamp: Current timestamp to measure from
-
-    Returns:
-        Number of bars since last event, or None if no event found
-
-    Example:
-        >>> events = pd.Series([None, None, "BOS", None, None])
-        >>> events.index = pd.date_range("2025-01-01", periods=5, freq="1H")
-        >>> calculate_bars_since_event(events, events.index[-1])
-        2  # Event was 2 bars ago
-    """
-    if event_series is None or event_series.empty:
-        return None
-
-    # Find all events (non-None values)
-    event_mask = event_series.notna()
-    if not event_mask.any():
-        return None
-
-    # Get index of last event
-    last_event_idx = event_series[event_mask].index[-1]
-
-    # Count bars from last event to current
-    if last_event_idx not in event_series.index:
-        return None
-
-    try:
-        current_idx_pos = event_series.index.get_loc(current_timestamp)
-        last_event_idx_pos = event_series.index.get_loc(last_event_idx)
-        bars_since = current_idx_pos - last_event_idx_pos
-        return int(bars_since) if bars_since >= 0 else None
-    except KeyError:
-        return None
 
 
 def compute_htf_bias_multi_timeframe(

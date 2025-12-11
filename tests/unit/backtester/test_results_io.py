@@ -566,3 +566,4 @@ class TestBackwardsCompatibility:
         assert isinstance(loaded, BacktestResults)
         assert loaded.executions == []
         assert loaded.total_trades == 0
+

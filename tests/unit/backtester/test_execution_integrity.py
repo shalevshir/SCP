@@ -420,3 +420,4 @@ class TestSetupTypeHelpers:
         assert is_continuation(fade_trade) is False
         assert is_continuation(reclaim_trade) is False
         assert is_continuation(continuation_trade) is True
+

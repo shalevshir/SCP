@@ -213,3 +213,4 @@ class TestDXYContinuationDetector:
 
         result = detect_dxy_continuation(features, htf_bias, df)
         assert result is True
+
