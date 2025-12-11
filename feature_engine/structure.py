@@ -34,7 +34,8 @@ class StructureContext:
         structure_clarity: 0-1 swing sequence purity score
         is_chop: True if rapid alternations detected
         structure_conflict_flag: True if mixed signals present
-        last_bos_direction: Direction of last Break of Structure
+        bos_direction: Direction of last Break of Structure ("bullish"/"bearish")
+        bos_recent: True if BOS occurred within threshold bars
         bos_age: Bars since last BOS event
         choch_detected: True if CHoCH detected on this bar
         choch_direction: Direction of last CHoCH
@@ -57,7 +58,12 @@ class StructureContext:
     is_chop: bool = False
     structure_conflict_flag: bool = False
     
-    # CHoCH tracking (BOS tracking to be added in Structure Engine v2.0 Part 2)
+    # BOS tracking (Structure Engine v2.0 Part 2)
+    bos_direction: str | None = None  # "bullish" or "bearish"
+    bos_recent: bool = False          # True if BOS within threshold bars
+    bos_age: int | None = None        # Bars since last BOS event
+    
+    # CHoCH tracking
     choch_detected: bool = False
     choch_direction: str | None = None
     choch_age: int | None = None
@@ -97,8 +103,22 @@ class StructureContextTracker:
         # Label history for trend/clarity computation
         self.label_history: deque[str | None] = deque(maxlen=clarity_window)
         self.last_structure_label: str | None = None
+
+        # Track swing indices/values for BOS detection (Structure Engine v2.0 Part 2)
+        self.swing_high_indices: list[int] = []
+        self.swing_low_indices: list[int] = []
+        self.swing_high_values: dict[int, float] = {}  # idx -> high value
+        self.swing_low_values: dict[int, float] = {}   # idx -> low value
         
-        # CHoCH tracking (BOS tracking to be added in Structure Engine v2.0 Part 2)
+        # BOS tracking
+        self.last_bos_direction: str | None = None
+        self.last_bos_idx: int | None = None
+        # Track the highest swing high and lowest swing low we've broken
+        # to avoid triggering BOS repeatedly for the same level
+        self.highest_broken_swing_high: float | None = None
+        self.lowest_broken_swing_low: float | None = None
+        
+        # CHoCH tracking
         self.last_choch_direction: str | None = None
         self.last_choch_idx: int | None = None
         
@@ -132,19 +152,37 @@ class StructureContextTracker:
             self.last_structure_label = new_label
             self.label_history.append(new_label)
             
-            # Update swing indices
+            # Update swing indices and append to lists for BOS detection
             if new_label in ["HH", "LH"]:
                 self.last_swing_high_idx = self.bar_count - self.swing_window
                 self.last_swing_high = self.high_buffer[self.swing_window]
+                # Append to swing high indices list and store value
+                self.swing_high_indices.append(self.last_swing_high_idx)
+                self.swing_high_values[self.last_swing_high_idx] = self.last_swing_high
             elif new_label in ["HL", "LL"]:
                 self.last_swing_low_idx = self.bar_count - self.swing_window
                 self.last_swing_low = self.low_buffer[self.swing_window]
+                # Append to swing low indices list and store value
+                self.swing_low_indices.append(self.last_swing_low_idx)
+                self.swing_low_values[self.last_swing_low_idx] = self.last_swing_low
         
         # Compute derived metrics
         trend_direction, trend_confidence = self._compute_trend()
         structure_clarity = self._compute_clarity()
         is_chop = self._detect_chop()
         structure_conflict_flag = self._detect_conflict()
+        
+        # Detect BOS on this bar (must be done BEFORE calculating age)
+        # so that if a BOS is detected, last_bos_idx is updated and age will be 0
+        _ = self._detect_bos_event(close)
+
+        # Track BOS age (calculated AFTER detection so current BOS has age=0)
+        bos_age = None if self.last_bos_idx is None else (self.bar_count - self.last_bos_idx)
+        
+        # Determine if BOS is recent (within 15 bars threshold)
+        bos_recent = False
+        if bos_age is not None and bos_age <= 15:
+            bos_recent = True
         
         # Detect CHoCH on this bar (must be done BEFORE calculating age)
         # so that if a CHoCH is detected, last_choch_idx is updated and age will be 0
@@ -166,6 +204,9 @@ class StructureContextTracker:
             structure_clarity=structure_clarity,
             is_chop=is_chop,
             structure_conflict_flag=structure_conflict_flag,
+            bos_direction=self.last_bos_direction,
+            bos_recent=bos_recent,
+            bos_age=bos_age,
             choch_detected=choch_detected,
             choch_direction=self.last_choch_direction,
             choch_age=choch_age,
@@ -235,18 +276,25 @@ class StructureContextTracker:
         """
         if len(self.label_history) < 2:
             return "neutral", 0.0
-        
+
+
         # Get valid (non-None) labels
-        valid_labels = [l for l in self.label_history if l is not None]
+        valid_labels = [
+            label for label in self.label_history if label is not None
+        ]
         if len(valid_labels) < 2:
             return "neutral", 0.0
-        
+
         # Count bullish vs bearish labels
         bullish_labels = {"HH", "HL"}
         bearish_labels = {"LH", "LL"}
-        
-        bullish_count = sum(1 for l in valid_labels if l in bullish_labels)
-        bearish_count = sum(1 for l in valid_labels if l in bearish_labels)
+
+        bullish_count = sum(
+            1 for label in valid_labels if label in bullish_labels
+        )
+        bearish_count = sum(
+            1 for label in valid_labels if label in bearish_labels
+        )
         total = len(valid_labels)
         
         # Determine trend
@@ -267,8 +315,10 @@ class StructureContextTracker:
         """
         if len(self.label_history) < 3:
             return 0.0
-        
-        valid_labels = [l for l in self.label_history if l is not None]
+
+        valid_labels = [
+            label for label in self.label_history if label is not None
+        ]
         if len(valid_labels) < 3:
             return 0.0
         
@@ -308,8 +358,10 @@ class StructureContextTracker:
         """
         if len(self.label_history) < 4:
             return False
-        
-        valid_labels = [l for l in self.label_history if l is not None]
+
+        valid_labels = [
+            label for label in self.label_history if label is not None
+        ]
         if len(valid_labels) < 4:
             return False
         
@@ -342,13 +394,15 @@ class StructureContextTracker:
         # Simple conflict: both HH and LL in recent history
         if len(self.label_history) < 3:
             return False
-        
-        valid_labels = [l for l in self.label_history if l is not None]
+
+        valid_labels = [
+            label for label in self.label_history if label is not None
+        ]
         recent = valid_labels[-5:] if len(valid_labels) >= 5 else valid_labels
-        
+
         has_hh = "HH" in recent
         has_ll = "LL" in recent
-        
+
         return has_hh and has_ll
     
     def _detect_choch_event(self, new_label: str) -> bool:
@@ -366,7 +420,9 @@ class StructureContextTracker:
             return False
         
         # Get previous valid labels
-        valid_labels = [l for l in self.label_history if l is not None]
+        valid_labels = [
+            label for label in self.label_history if label is not None
+        ]
         if len(valid_labels) < 2:
             return False
         
@@ -382,6 +438,100 @@ class StructureContextTracker:
             self.last_choch_direction = "bullish" if new_label[0] == "H" else "bearish"
             return True
         
+        return False
+    
+    def _detect_bos_event(self, close: float) -> bool:
+        """Detect if current bar represents a BOS (Break of Structure) event.
+        
+        BOS occurs when close breaks beyond prior swing high/low (strict inequality).
+        Only triggers once per swing level - subsequent bars staying beyond the same
+        level do not re-trigger BOS.
+        
+        Args:
+            close: Current bar's close price
+        
+        Returns:
+            True if BOS detected on this bar
+        """
+        # Need at least one swing to detect BOS
+        if not self.swing_high_indices and not self.swing_low_indices:
+            return False
+        
+        # Check if breaks any PRIOR swing high (strict >)
+        # Only trigger if breaking beyond the highest swing we've already broken
+        breaks_high = False
+        highest_broken = (
+            self.highest_broken_swing_high
+            if self.highest_broken_swing_high is not None
+            else float("-inf")
+        )
+        
+        if self.swing_high_indices:
+            # Only consider swings that occurred before current bar
+            prior_swing_high_indices = [
+                idx for idx in self.swing_high_indices 
+                if idx < self.bar_count
+            ]
+            if prior_swing_high_indices:
+                # Check if close breaks ANY prior swing high not already broken
+                for idx in prior_swing_high_indices:
+                    swing_high_value = self.swing_high_values[idx]
+                    if close > swing_high_value and swing_high_value > highest_broken:
+                        breaks_high = True
+                        break
+        
+        # Check if breaks any PRIOR swing low (strict <)
+        # Only trigger if breaking beyond the lowest swing we've already broken
+        breaks_low = False
+        lowest_broken = (
+            self.lowest_broken_swing_low
+            if self.lowest_broken_swing_low is not None
+            else float("inf")
+        )
+        
+        if self.swing_low_indices:
+            # Only consider swings that occurred before current bar
+            prior_swing_low_indices = [
+                idx for idx in self.swing_low_indices 
+                if idx < self.bar_count
+            ]
+            if prior_swing_low_indices:
+                # Check if close breaks ANY prior swing low not already broken
+                for idx in prior_swing_low_indices:
+                    swing_low_value = self.swing_low_values[idx]
+                    if close < swing_low_value and swing_low_value < lowest_broken:
+                        breaks_low = True
+                        break
+        
+        # Apply labeling rules (same as rule_engine/htf/structure/bos.py)
+        if breaks_high and breaks_low:
+            # Ambiguous: breaks both directions → volatility/liquidity sweep
+            # Don't update BOS (return False)
+            return False
+        elif breaks_high:
+            # Bullish BOS detected - update tracking
+            self.last_bos_idx = self.bar_count
+            self.last_bos_direction = "bullish"
+            # Update highest broken level to prevent re-triggering
+            if self.highest_broken_swing_high is None:
+                self.highest_broken_swing_high = close
+            else:
+                self.highest_broken_swing_high = max(
+                    self.highest_broken_swing_high, close
+                )
+            return True
+        elif breaks_low:
+            # Bearish BOS detected - update tracking
+            self.last_bos_idx = self.bar_count
+            self.last_bos_direction = "bearish"
+            # Update lowest broken level to prevent re-triggering
+            if self.lowest_broken_swing_low is None:
+                self.lowest_broken_swing_low = close
+            else:
+                self.lowest_broken_swing_low = min(self.lowest_broken_swing_low, close)
+            return True
+        
+        # No BOS
         return False
 
 
@@ -620,10 +770,11 @@ def compute_structure_context_batch(
         - last_swing_low: Last swing low price (forward-filled)
         - last_swing_high_idx: Bar index of last swing high
         - last_swing_low_idx: Bar index of last swing low
+        - bos_direction: Direction of last BOS ("bullish"/"bearish")
+        - bos_recent: True if BOS within threshold bars
+        - bos_age: Bars since last BOS
         - choch_detected: Boolean CHoCH detected on this bar
         - choch_age: Bars since last CHoCH
-        
-    Note: BOS (Break of Structure) fields will be added in Structure Engine v2.0 Part 2
     
     Raises:
         ValueError: If required columns missing
@@ -675,6 +826,9 @@ def compute_structure_context_batch(
             "last_swing_low": ctx.last_swing_low,
             "last_swing_high_idx": ctx.last_swing_high_idx,
             "last_swing_low_idx": ctx.last_swing_low_idx,
+            "bos_direction": ctx.bos_direction,
+            "bos_recent": ctx.bos_recent,
+            "bos_age": ctx.bos_age,
             "choch_detected": ctx.choch_detected,
             "choch_age": ctx.choch_age,
         }
