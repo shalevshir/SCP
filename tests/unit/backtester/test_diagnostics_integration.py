@@ -213,11 +213,15 @@ def test_diagnostics_populated_on_tp_hit():
 
     # Create future candles that hit TP
     tp_price = trade.take_profit
+    # Ensure candle data is valid (high >= low, close between low and high)
+    # Bar 3: high must be >= tp_price to hit TP, low should be below tp_price, close at tp_price
+    bar3_low = min(tp_price - 1.0, 2659.0)  # Ensure low < tp_price
+    bar3_high = max(tp_price + 1.0, 2660.0)  # Ensure high >= tp_price
     future_candles = pd.DataFrame(
         {
-            "open": [2651.0, 2655.0, 2660.0],
-            "high": [2652.0, 2658.0, tp_price + 1.0],  # Bar 3 hits TP
-            "low": [2650.0, 2654.0, 2659.0],
+            "open": [2651.0, 2655.0, tp_price - 0.5],
+            "high": [2652.0, 2658.0, bar3_high],  # Bar 3 hits TP
+            "low": [2650.0, 2654.0, bar3_low],
             "close": [2651.5, 2657.0, tp_price],
             "volume": [100.0, 100.0, 100.0],
         },

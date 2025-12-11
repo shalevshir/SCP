@@ -31,8 +31,8 @@ MIN_RISK_TICKS = 10
 # Minimum stop-loss distance for VWAP_RECLAIM setups (SOP requirement)
 # VWAP_RECLAIM requires retest protection, so SL must be far enough
 # from entry to avoid premature stop-out during the retest phase
-# PATCH PART 4: Updated from 20 to 12 ticks per patch specification
-MIN_SL_TICKS_VWAP_RECLAIM = 12
+# Requirement: 20 ticks minimum for VWAP_RECLAIM
+MIN_SL_TICKS_VWAP_RECLAIM = 20
 
 # Minimum stop-loss distance for DXY_CONTINUATION setups
 # Continuation trades need structural breathing room to avoid micro-swing noise

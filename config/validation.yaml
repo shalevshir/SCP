@@ -58,8 +58,8 @@ seasons:
   # November-December Trend Window: Optimal trading conditions
   - name: "November-December Trend Window"
     months: [11, 12]  # November and December
-    window_start: "09:00"
-    window_end: "14:00"
+    window_start: "09:00"  # ILT (Israel Local Time)
+    window_end: "14:00"    # ILT (Israel Local Time)
     allowed_tiers:
       - "Conservative"
       - "EarlyMild"

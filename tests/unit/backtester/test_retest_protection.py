@@ -211,9 +211,10 @@ def test_vwap_reclaim_sl_works_after_first_bar():
 def test_non_vwap_reclaim_no_retest_protection():
     """Test that non-VWAP_RECLAIM setups don't get retest protection.
     
-    Scenario: VWAP_FADE long enters at 2650.0 with SL at 2649.0.
-              Bar 1: Price drops below SL.
-    Expected: Trade should stop out immediately on Bar 1 (no retest protection).
+    Scenario: VWAP_FADE long enters at 2650.0.
+              Bar 1: Close-based SL check (close above SL, no hit).
+              Bar 2: Wick-based SL check (wick hits SL, should exit).
+    Expected: Trade should stop out on Bar 2 (no retest protection, no grace period for SL/TP).
     """
     signal = Signal(
         timestamp=datetime(2025, 11, 1, 10, 30, tzinfo=UTC),
@@ -263,20 +264,20 @@ def test_non_vwap_reclaim_no_retest_protection():
         },
     )
     
-    # Future candles: Need 3 bars due to MIN_BARS_FADE = 3 grace period
-    # Bars 1-2 are grace period, bar 3 hits SL
+    # Future candles:
+    # Bar 1: close-based SL (close=2649.2 > SL, no hit)
+    # Bar 2: wick-based SL (low=2648.5 <= SL, hits)
     future_data = {
-        "open": [2649.5, 2649.0, 2649.0],
-        "high": [2650.0, 2649.5, 2649.5],
-        "low": [2649.0, 2648.5, 2648.5],  # All below SL, but only bar 3 checked
-        "close": [2649.2, 2648.8, 2648.8],
-        "volume": [100, 100, 100],
+        "open": [2649.5, 2649.0],
+        "high": [2650.0, 2649.5],
+        "low": [2649.0, 2648.5],  # Bar 2 wick hits SL
+        "close": [2649.2, 2648.8],  # Bar 1 close above SL, Bar 2 close below SL
+        "volume": [100, 100],
     }
     
     timestamps = [
         datetime(2025, 11, 1, 10, 32, tzinfo=UTC),
         datetime(2025, 11, 1, 10, 33, tzinfo=UTC),
-        datetime(2025, 11, 1, 10, 34, tzinfo=UTC),
     ]
     future_candles = pd.DataFrame(future_data, index=timestamps)
     
@@ -288,12 +289,13 @@ def test_non_vwap_reclaim_no_retest_protection():
         config=None,
     )
     
-    # Assert: Trade should stop out on Bar 3 (after 2-bar grace period)
-    # VWAP_FADE has 3-bar grace period (MIN_BARS_FADE = 3), so skip bars 1-2, check from bar 3
+    # Assert: Trade should stop out on Bar 2 (no grace period for FADE SL/TP)
+    # Bar 1 uses close-based SL (close > SL, no hit)
+    # Bar 2 uses wick-based SL (low <= SL, hits)
     assert closed_trade.exit_reason == "sl", (
-        f"VWAP_FADE should stop out on Bar 3 (after grace period). Got exit_reason={closed_trade.exit_reason}"
+        f"VWAP_FADE should stop out on Bar 2 (no retest protection). Got exit_reason={closed_trade.exit_reason}"
     )
-    assert closed_trade.duration_bars == 3, (
-        f"Trade should exit on Bar 3. Got duration_bars={closed_trade.duration_bars}"
+    assert closed_trade.duration_bars == 2, (
+        f"Trade should exit on Bar 2. Got duration_bars={closed_trade.duration_bars}"
     )
 

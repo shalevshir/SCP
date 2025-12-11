@@ -310,46 +310,40 @@ def simulate_trade_outcome(
         skip_invalidations = False
         
         if is_continuation(trade):
-            # CONTINUATION: skip both SL/TP and invalidations for 6 bars (strict protection)
-            skip_sl_tp = bars_elapsed < 6
-            skip_invalidations = bars_elapsed < 6
+            # CONTINUATION: skip both SL/TP and invalidations for first 6 bars (strict protection)
+            skip_sl_tp = bars_elapsed <= 6
+            skip_invalidations = bars_elapsed <= 6
             if skip_sl_tp:
                 logger.debug(
                     f"Trade {trade.trade_id}: CONTINUATION grace period active "
                     f"(bar {bars_elapsed}/6) - skipping SL/TP and invalidations"
                 )
         elif is_fade(trade):
-            # FADE: NEVER skip SL/TP (allow TP hits), but skip invalidations for 3 bars
-            # This allows multi-candle duration while still honoring TP targets
+            # FADE: NEVER skip SL/TP (allow TP hits and close-based SL on bar 1)
+            # But skip invalidations for 3 bars (grace period for invalidations only)
+            # This allows multi-candle duration while still honoring TP targets and SL checks
             skip_sl_tp = False
-            skip_invalidations = bars_elapsed < 3
+            skip_invalidations = bars_elapsed <= 3
             if skip_invalidations:
                 logger.debug(
                     f"Trade {trade.trade_id}: FADE invalidation grace active "
                     f"(bar {bars_elapsed}/3) - SL/TP allowed, invalidations skipped"
                 )
         elif is_reclaim(trade):
-            # RECLAIM: NEVER skip SL/TP, but skip invalidations for 2 bars (allow retest)
-            skip_sl_tp = False
-            skip_invalidations = bars_elapsed < 2
-            if skip_invalidations:
+            # RECLAIM: Skip SL/TP for first 2 bars (grace period), skip invalidations for 2 bars (allow retest)
+            skip_sl_tp = bars_elapsed <= 2
+            skip_invalidations = bars_elapsed <= 2
+            if skip_sl_tp:
                 logger.debug(
-                    f"Trade {trade.trade_id}: RECLAIM retest grace active "
-                    f"(bar {bars_elapsed}/2) - SL/TP allowed, invalidations skipped"
+                    f"Trade {trade.trade_id}: RECLAIM grace period active "
+                    f"(bar {bars_elapsed}/2) - skipping SL/TP and invalidations"
                 )
 
         # Exit Priority Order (per SOP):
         # 1. Stop Loss (highest priority)
-        # FIX #2: Skip SL check on first bar if retest protection is active
         # PATCH PART 2: Use skip_sl_tp flag for grace period
-        if retest_protection_active and bars_elapsed == 1:
-            # First bar with retest protection: skip SL check
-            logger.debug(
-                f"Trade {trade.trade_id} on first bar with retest protection - "
-                f"skipping SL check (setup={trade.setup_type})"
-            )
-            retest_protection_active = False  # Disable for subsequent bars
-        elif skip_sl_tp:
+        # Note: retest_protection_active is now handled by skip_sl_tp for RECLAIM
+        if skip_sl_tp:
             # Grace period: skip SL check
             pass
         else:

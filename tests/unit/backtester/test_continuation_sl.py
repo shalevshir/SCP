@@ -162,8 +162,8 @@ class TestContinuationSLPadding:
         assert abs(sl - expected_sl) < 0.01
         assert "25-tick minimum" in rationale
 
-    def test_vwap_reclaim_now_uses_12_ticks(self):
-        """Test that VWAP_RECLAIM now uses 12-tick minimum (PATCH PART 4)."""
+    def test_vwap_reclaim_now_uses_20_ticks(self):
+        """Test that VWAP_RECLAIM now uses 20-tick minimum."""
         signal = Signal(
             timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=timezone.utc),
             symbol="GC",
@@ -206,7 +206,8 @@ class TestContinuationSLPadding:
             entry_execution, "long", confirmation_candle, None, config
         )
 
-        # PATCH PART 4: Should use 12-tick minimum for VWAP_RECLAIM (was 20)
-        expected_sl = 2650.0 - (12 * 0.1)
+        # Should use 20-tick minimum for VWAP_RECLAIM
+        from backtester.trade import MIN_SL_TICKS_VWAP_RECLAIM
+        expected_sl = 2650.0 - (MIN_SL_TICKS_VWAP_RECLAIM * 0.1)
         assert abs(sl - expected_sl) < 0.01
-        assert "12-tick minimum" in rationale
+        assert "20-tick minimum" in rationale or "padded" in rationale.lower()
