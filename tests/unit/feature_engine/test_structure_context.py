@@ -586,6 +586,90 @@ class TestChochDetection:
                 f"prev_trend=bullish, bos_direction={ctx_choch.bos_direction}"
             )
 
+    def test_choch_should_not_fire_multiple_times_on_consecutive_bars(self):
+        """CHoCH should only trigger ONCE per trend reversal, not on every opposite-direction BOS.
+        
+        During strong moves that break multiple swing levels, multiple consecutive bars
+        can trigger BOS in the opposite direction. However, CHoCH should only fire on
+        the FIRST such BOS, not repeatedly on subsequent bars, as this keeps resetting
+        last_choch_idx and makes choch_age misleading.
+        
+        This test verifies that once a CHoCH is detected (e.g., bullish → bearish),
+        subsequent bearish BOS events do NOT trigger additional CHoCH events until
+        the trend actually establishes in the new direction and then reverses again.
+        """
+        tracker = StructureContextTracker(swing_window=2)
+
+        # Build clear bullish trend
+        tracker.update(high=100.0, low=98.0, close=99.0)  # Bar 0
+        tracker.update(high=102.0, low=100.0, close=101.0)  # Bar 1
+        tracker.update(high=106.0, low=102.0, close=105.0)  # Bar 2 - HH swing high at 106
+        tracker.update(high=104.0, low=100.0, close=102.0)  # Bar 3
+        tracker.update(high=103.0, low=99.0, close=100.0)  # Bar 4 - HH detected
+        
+        # Create pullback (HL swing low at 100)
+        tracker.update(high=102.0, low=100.0, close=101.0)  # Bar 5 - HL swing low at 100
+        tracker.update(high=104.0, low=101.0, close=103.0)  # Bar 6
+        tracker.update(high=105.0, low=102.0, close=104.0)  # Bar 7 - HL detected
+        
+        # Create another HH
+        tracker.update(high=110.0, low=104.0, close=109.0)  # Bar 8 - HH swing high at 110
+        tracker.update(high=108.0, low=104.0, close=106.0)  # Bar 9
+        tracker.update(high=107.0, low=103.0, close=105.0)  # Bar 10 - HH detected
+        
+        # Create another pullback (HL swing low at 103)
+        tracker.update(high=106.0, low=103.0, close=104.0)  # Bar 11 - HL swing low at 103
+        tracker.update(high=108.0, low=104.0, close=107.0)  # Bar 12
+        tracker.update(high=109.0, low=105.0, close=108.0)  # Bar 13 - HL detected
+        
+        # Create another HH to maintain strong bullish trend
+        tracker.update(high=115.0, low=108.0, close=114.0)  # Bar 14 - HH swing high at 115
+        tracker.update(high=113.0, low=109.0, close=111.0)  # Bar 15
+        ctx_bullish = tracker.update(high=112.0, low=108.0, close=110.0)  # Bar 16 - HH detected
+        
+        # Verify bullish trend with good clarity
+        assert ctx_bullish.trend_direction == "bullish"
+        assert ctx_bullish.structure_clarity >= 0.5
+        
+        # Now create bars that break multiple swing levels consecutively
+        # Bar 17: Breaks below swing low at 103 → First bearish BOS
+        # This SHOULD trigger CHoCH
+        ctx_bar17 = tracker.update(high=110.0, low=101.0, close=102.0)  # Bar 17 - breaks 103
+        
+        assert ctx_bar17.bos_age == 0, f"Should detect BOS (age=0). bos_age={ctx_bar17.bos_age}"
+        assert ctx_bar17.bos_direction == "bearish", f"Should be bearish BOS. direction={ctx_bar17.bos_direction}"
+        assert ctx_bar17.choch_detected is True, "First opposite-direction BOS should trigger CHoCH"
+        assert ctx_bar17.choch_direction == "bearish"
+        assert ctx_bar17.choch_age == 0
+        choch_idx_bar17 = tracker.last_choch_idx
+        
+        # Bar 18: Price continues down, breaks below swing low at 99.0 → Second bearish BOS
+        # This should NOT trigger CHoCH again (we already detected the reversal)
+        ctx_bar18 = tracker.update(high=103.0, low=96.0, close=97.0)  # Bar 18 - breaks 99.0
+        
+        # BOS should still trigger (breaking new swing level) - indicated by bos_age=0
+        assert ctx_bar18.bos_age == 0, "Should detect BOS when breaking new swing level (bos_age=0)"
+        assert ctx_bar18.bos_direction == "bearish"
+        
+        # But CHoCH should NOT trigger again
+        assert ctx_bar18.choch_detected is False, (
+            "Second consecutive opposite-direction BOS should NOT trigger CHoCH again. "
+            f"last_choch_idx should stay at {choch_idx_bar17}, but got {tracker.last_choch_idx}"
+        )
+        assert tracker.last_choch_idx == choch_idx_bar17, (
+            f"last_choch_idx should not change (stay at {choch_idx_bar17}), "
+            f"but got {tracker.last_choch_idx}"
+        )
+        assert ctx_bar18.choch_age == 1, f"choch_age should be 1, got {ctx_bar18.choch_age}"
+        
+        # Bar 19: Price continues down, breaking even more levels
+        # Still should NOT trigger CHoCH
+        ctx_bar19 = tracker.update(high=100.0, low=94.0, close=95.0)  # Bar 19
+        
+        assert ctx_bar19.choch_detected is False, "Third consecutive opposite-direction BOS should NOT trigger CHoCH"
+        assert tracker.last_choch_idx == choch_idx_bar17, "last_choch_idx should still not change"
+        assert ctx_bar19.choch_age == 2, f"choch_age should be 2, got {ctx_bar19.choch_age}"
+
 
 class TestLiquiditySweepDetection:
     """Test liquidity sweep detection and age calculation."""

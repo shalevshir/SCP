@@ -38,7 +38,7 @@ class StructureContext:
         bos_recent: True if BOS occurred within threshold bars
         bos_age: Bars since last BOS event
         choch_detected: True if CHoCH detected on this bar (requires: trend exists,
-            BOS in opposite direction, clarity >= 0.5)
+            BOS in opposite direction, clarity >= 0.5, no prior CHoCH in same direction)
         choch_direction: Direction of last CHoCH
         choch_age: Bars since last CHoCH event
         liquidity_sweep: True if liquidity sweep detected on this bar
@@ -460,6 +460,7 @@ class StructureContextTracker:
         1. Previous trend exists (not neutral)
         2. BOS in opposite direction from current trend
         3. Clarity >= 0.5 threshold
+        4. No CHoCH already detected in the same direction (prevents multiple triggers)
 
         Args:
             trend_direction: Current trend direction
@@ -486,11 +487,19 @@ class StructureContextTracker:
         # CHoCH: BOS in OPPOSITE direction from current trend
         if trend_direction == "bullish" and bos_direction == "bearish":
             # Was bullish, now breaking down → CHoCH to bearish
+            # Requirement 4: Only trigger if we haven't already detected bearish CHoCH
+            if self.last_choch_direction == "bearish":
+                # Already detected bearish CHoCH, don't trigger again
+                return False
             self.last_choch_idx = self.bar_count
             self.last_choch_direction = "bearish"
             return True
         elif trend_direction == "bearish" and bos_direction == "bullish":
             # Was bearish, now breaking up → CHoCH to bullish
+            # Requirement 4: Only trigger if we haven't already detected bullish CHoCH
+            if self.last_choch_direction == "bullish":
+                # Already detected bullish CHoCH, don't trigger again
+                return False
             self.last_choch_idx = self.bar_count
             self.last_choch_direction = "bullish"
             return True
