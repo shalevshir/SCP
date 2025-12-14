@@ -164,10 +164,11 @@ class StructureContextTracker:
         if len(self.high_buffer) >= self.swing_window * 2 + 1:
             new_label = self._detect_swing_label()
 
-        # Capture previous trend BEFORE adding new swing to history
-        # This is needed for CHoCH detection which should use the trend
+        # Capture previous state BEFORE adding new swing to history
+        # This is needed for CHoCH detection which should use the state
         # that existed before the current bar's swing was detected
         prev_trend_direction, _ = self._compute_trend()
+        prev_clarity = self._compute_clarity()
 
         # Update label tracking if new swing detected
         if new_label is not None:
@@ -208,15 +209,16 @@ class StructureContextTracker:
         if bos_age is not None and bos_age <= 15:
             bos_recent = True
 
-        # Detect CHoCH on this bar (must be done AFTER BOS and clarity computation)
+        # Detect CHoCH on this bar (must be done AFTER BOS detection)
         # CHoCH requires: previous trend, BOS in opposite direction, clarity >= threshold
-        # CRITICAL: Use prev_trend_direction (before new swing was added), not current trend
-        # This ensures CHoCH triggers based on the trend that existed before the bar's swing
+        # CRITICAL: Use prev_trend_direction and prev_clarity (before new swing was added)
+        # This ensures CHoCH triggers based on the complete state that existed before
+        # the current bar's swing was detected, maintaining consistent "previous state" semantics
         choch_detected = self._detect_choch_event(
             trend_direction=prev_trend_direction,
             bos_detected=bos_detected,
             bos_direction=self.last_bos_direction if bos_detected else None,
-            clarity=structure_clarity,
+            clarity=prev_clarity,
         )
 
         # Track CHoCH age (calculated AFTER detection so current CHoCH has age=0)

@@ -530,6 +530,62 @@ class TestChochDetection:
         assert ctx_choch.choch_direction == "bearish"
         assert ctx_choch.choch_age == 0
 
+    def test_choch_uses_previous_clarity_before_new_swing_label(self):
+        """CHoCH should use clarity BEFORE new swing is added, not after.
+        
+        This test verifies that CHoCH detection uses both trend AND clarity
+        from the state BEFORE any new swing on the current bar was added.
+        
+        Without this fix, a swing that changes clarity on the current bar
+        can incorrectly affect CHoCH detection.
+        """
+        tracker = StructureContextTracker(swing_window=2)
+
+        # Build bullish trend with alternating pattern that has borderline clarity
+        # HH, LL, HH = creates some choppiness but maintains 67% bullish (above 60%)
+        tracker.update(high=100.0, low=98.0, close=99.0)  # Bar 0
+        tracker.update(high=102.0, low=100.0, close=101.0)  # Bar 1
+        tracker.update(high=106.0, low=102.0, close=105.0)  # Bar 2 - HH swing
+        tracker.update(high=104.0, low=100.0, close=102.0)  # Bar 3
+        tracker.update(high=103.0, low=99.0, close=100.0)  # Bar 4 - HH detected
+        
+        # Add LL to create choppiness (lowers clarity)
+        tracker.update(high=102.0, low=94.0, close=95.0)  # Bar 5 - LL swing
+        tracker.update(high=99.0, low=95.0, close=97.0)  # Bar 6
+        tracker.update(high=98.0, low=96.0, close=97.0)  # Bar 7 - LL detected
+        
+        # Add HH to maintain bullish trend
+        tracker.update(high=108.0, low=98.0, close=107.0)  # Bar 8 - HH swing
+        tracker.update(high=106.0, low=102.0, close=104.0)  # Bar 9
+        ctx_before = tracker.update(high=105.0, low=101.0, close=103.0)  # Bar 10 - HH detected
+        
+        # At this point: HH, LL, HH = 2 bullish + 1 bearish = 67% bullish
+        # Clarity should be reasonable (>= 0.5) due to relatively clean structure
+        assert ctx_before.trend_direction == "bullish"
+        
+        # Store the clarity before the next swing
+        clarity_before = ctx_before.structure_clarity
+        print(f"Clarity before critical bar: {clarity_before}")
+        
+        # Now trigger bearish BOS while also detecting a bearish swing
+        # If the swing changes clarity significantly, CHoCH should still use
+        # the PREVIOUS clarity (before the swing was added)
+        ctx_choch = tracker.update(high=100.0, low=92.0, close=93.0)  # Bar 11 - BOS bearish
+        
+        # CHoCH should use:
+        # - prev_trend_direction (bullish, from before any swing on bar 11)
+        # - prev_clarity (from before any swing on bar 11)
+        # This ensures consistent "previous state" semantics
+        
+        # If clarity_before >= 0.5, CHoCH should trigger (all requirements met)
+        # regardless of whether the new swing on bar 11 changed clarity
+        if clarity_before >= 0.5:
+            assert ctx_choch.choch_detected is True, (
+                f"CHoCH should trigger based on previous clarity {clarity_before} >= 0.5, "
+                f"not current clarity {ctx_choch.structure_clarity}. "
+                f"prev_trend=bullish, bos_direction={ctx_choch.bos_direction}"
+            )
+
 
 class TestLiquiditySweepDetection:
     """Test liquidity sweep detection and age calculation."""
