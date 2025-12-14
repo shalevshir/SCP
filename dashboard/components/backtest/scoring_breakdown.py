@@ -26,9 +26,18 @@ def create_scoring_breakdown() -> dbc.Card:
                                         id="scoring-breakdown-filter",
                                         options=[
                                             {"label": "All", "value": "all"},
-                                            {"label": "VWAP_RECLAIM", "value": "VWAP_RECLAIM"},
-                                            {"label": "VWAP_FADE", "value": "VWAP_FADE"},
-                                            {"label": "DXY_CONTINUATION", "value": "DXY_CONTINUATION"},
+                                            {
+                                                "label": "VWAP_RECLAIM",
+                                                "value": "VWAP_RECLAIM",
+                                            },
+                                            {
+                                                "label": "VWAP_FADE",
+                                                "value": "VWAP_FADE",
+                                            },
+                                            {
+                                                "label": "DXY_CONTINUATION",
+                                                "value": "DXY_CONTINUATION",
+                                            },
                                         ],
                                         value="all",
                                         clearable=False,
@@ -143,7 +152,9 @@ def render_scoring_breakdown(
                 x=trade_ids,
                 y=factor_data[factor],
                 marker_color=factor_colors.get(factor, "#78909c"),
-                hovertemplate=f"{factor.replace('_', ' ').title()}: %{{y:.2f}}<extra></extra>",
+                hovertemplate=(
+                    f"{factor.replace('_', ' ').title()}: %{{y:.2f}}<extra></extra>"
+                ),
             )
         )
 
@@ -182,5 +193,3 @@ def render_scoring_breakdown(
     )
 
     return fig
-
-

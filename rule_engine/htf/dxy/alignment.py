@@ -51,7 +51,7 @@ def compute_dxy_alignment(
         >>> print(f"Aligned: {is_aligned}, Score: {score}, Reason: {rationale}")
     """
     rationale_parts = []
-    
+
     # 1. DXY structure matches direction (MANDATORY)
     # Longs → DXY LL/LH (bearish DXY structure = gold bullish)
     # Shorts → DXY HH/HL (bullish DXY structure = gold bearish)
@@ -60,10 +60,14 @@ def compute_dxy_alignment(
         rationale_parts.append("DXY structure: N/A (no swing detected)")
     elif trade_direction == "long" and dxy_structure in ["LL", "LH"]:
         structure_aligned = True
-        rationale_parts.append(f"DXY structure: {dxy_structure} (bearish, supports long)")
+        rationale_parts.append(
+            f"DXY structure: {dxy_structure} (bearish, supports long)"
+        )
     elif trade_direction == "short" and dxy_structure in ["HH", "HL"]:
         structure_aligned = True
-        rationale_parts.append(f"DXY structure: {dxy_structure} (bullish, supports short)")
+        rationale_parts.append(
+            f"DXY structure: {dxy_structure} (bullish, supports short)"
+        )
     else:
         rationale_parts.append(
             f"DXY structure: {dxy_structure} (conflicts with {trade_direction})"
@@ -87,7 +91,10 @@ def compute_dxy_alignment(
             )
         else:
             rationale_parts.append(
-                f"Micro corr: 1M={dxy_corr_1m:.2f}, 5M={dxy_corr_5m:.2f} (weak/positive)"
+                (
+                    f"Micro corr: 1M={dxy_corr_1m:.2f}, "
+                    f"5M={dxy_corr_5m:.2f} (weak/positive)"
+                )
             )
     else:
         rationale_parts.append("Micro corr: N/A (insufficient data)")
@@ -106,9 +113,11 @@ def compute_dxy_alignment(
         if dxy_corr_1h is not None and dxy_corr_1h < -0.25:
             htf_score += 0.25
             htf_parts.append(f"1H={dxy_corr_1h:.2f}")
-        
+
         if htf_parts:
-            rationale_parts.append(f"HTF corr: {', '.join(htf_parts)} (+{htf_score:.2f})")
+            rationale_parts.append(
+                f"HTF corr: {', '.join(htf_parts)} (+{htf_score:.2f})"
+            )
         else:
             rationale_parts.append("HTF corr: weak (no bonus)")
 
@@ -121,5 +130,3 @@ def compute_dxy_alignment(
         logger.debug(f"DXY NOT aligned: {rationale}")
 
     return is_aligned, htf_score, rationale
-
-
