@@ -565,7 +565,6 @@ class TestChochDetection:
         
         # Store the clarity before the next swing
         clarity_before = ctx_before.structure_clarity
-        print(f"Clarity before critical bar: {clarity_before}")
         
         # Now trigger bearish BOS while also detecting a bearish swing
         # If the swing changes clarity significantly, CHoCH should still use
