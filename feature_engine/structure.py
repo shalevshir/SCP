@@ -244,8 +244,11 @@ class StructureContextTracker:
             choch_direction=self.last_choch_direction,
             choch_age=choch_age,
             liquidity_sweep=sweep_detected,
-            sweep_direction=self.last_sweep_direction,
-            sweep_price=self.last_sweep_price,
+            # Only populate direction/price when sweep occurs on current bar
+            # This maintains semantic consistency: liquidity_sweep=True means
+            # sweep on THIS bar, and direction/price describe THIS bar's sweep
+            sweep_direction=self.last_sweep_direction if sweep_detected else None,
+            sweep_price=self.last_sweep_price if sweep_detected else None,
             sweep_age=sweep_age,
         )
 

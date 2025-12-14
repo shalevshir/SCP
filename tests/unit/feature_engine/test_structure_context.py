@@ -449,6 +449,70 @@ class TestLiquiditySweepDetection:
                     ctx.sweep_age == expected_age
                 ), f"Expected sweep_age={expected_age}, got {ctx.sweep_age}"
 
+    def test_sweep_direction_and_price_are_none_when_no_current_sweep(self):
+        """Test that sweep_direction and sweep_price are None when liquidity_sweep=False.
+
+        This test verifies correct semantic separation between:
+        - liquidity_sweep: True if sweep on CURRENT bar (current event)
+        - sweep_direction/sweep_price: Only populated when liquidity_sweep=True
+        - sweep_age: Tracks bars since LAST sweep (last event, always populated)
+
+        Bug: StructureContextTracker was mixing "current event" and "last event" semantics,
+        returning old sweep_direction/price even when liquidity_sweep=False.
+        """
+        tracker = StructureContextTracker(swing_window=2)
+
+        # Create swing high - pattern: lower, lower, PEAK, lower, lower
+        # Bar 2 will be swing high (106), detected at bar 4
+        tracker.update(high=100.0, low=98.0, close=99.0)  # Bar 0
+        tracker.update(high=102.0, low=100.0, close=101.0)  # Bar 1
+        tracker.update(high=106.0, low=102.0, close=105.0)  # Bar 2 - swing high
+        tracker.update(high=104.0, low=100.0, close=102.0)  # Bar 3
+        ctx_swing = tracker.update(high=103.0, low=99.0, close=100.0)  # Bar 4 - detection
+
+        # Verify swing high was detected
+        assert ctx_swing.last_swing_high is not None, "Swing high should be detected"
+        assert ctx_swing.last_swing_high == 106.0
+
+        # Continue a few more bars without sweeping
+        tracker.update(high=102.0, low=98.0, close=99.0)  # Bar 5
+        tracker.update(high=101.0, low=97.0, close=98.0)  # Bar 6
+
+        # Bar N: Sweep occurs (high > 106 but close < 106)
+        ctx_with_sweep = tracker.update(high=108.0, low=102.0, close=104.0)  # Bar 7
+
+        # Verify sweep detected
+        assert ctx_with_sweep.liquidity_sweep is True
+        assert ctx_with_sweep.sweep_direction == "bearish"
+        assert ctx_with_sweep.sweep_price == 106.0
+        assert ctx_with_sweep.sweep_age == 0
+
+        # Bar N+1: No sweep occurs (normal bar)
+        ctx_no_sweep = tracker.update(high=104.0, low=102.0, close=103.0)  # Bar 8
+
+        # Critical assertion: When no sweep on current bar, direction/price should be None
+        assert ctx_no_sweep.liquidity_sweep is False, (
+            "No sweep on this bar, liquidity_sweep should be False"
+        )
+        assert ctx_no_sweep.sweep_direction is None, (
+            "No sweep on current bar, sweep_direction should be None "
+            "(not carry forward old sweep direction)"
+        )
+        assert ctx_no_sweep.sweep_price is None, (
+            "No sweep on current bar, sweep_price should be None "
+            "(not carry forward old sweep price)"
+        )
+        # But age should track the last sweep
+        assert ctx_no_sweep.sweep_age == 1, "sweep_age should track bars since last sweep"
+
+        # Bar N+2: Still no sweep
+        ctx_no_sweep_2 = tracker.update(high=103.0, low=101.0, close=102.0)  # Bar 9
+
+        assert ctx_no_sweep_2.liquidity_sweep is False
+        assert ctx_no_sweep_2.sweep_direction is None
+        assert ctx_no_sweep_2.sweep_price is None
+        assert ctx_no_sweep_2.sweep_age == 2
+
 
 class TestNoLookaheadBias:
     """Test that StructureContext has no lookahead bias."""
