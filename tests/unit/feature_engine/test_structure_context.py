@@ -768,6 +768,91 @@ class TestChochDetection:
         assert ctx_choch2.choch_direction == "bearish"
         assert ctx_choch2.choch_age == 0
 
+    def test_guard_reset_clears_both_direction_and_idx_for_consistency(self):
+        """Guard reset should clear both last_choch_direction AND last_choch_idx for consistency.
+        
+        Bug: Guard reset sets last_choch_direction=None but leaves last_choch_idx intact.
+        This creates inconsistent StructureContext where:
+        - choch_direction=None (suggests no last CHoCH)
+        - choch_age=non-None (suggests there WAS a CHoCH X bars ago)
+        
+        This violates semantic coherence: if there's no last CHoCH (direction=None),
+        there should be no age calculation either (age=None).
+        
+        Fix: When resetting guard, also set last_choch_idx=None.
+        """
+        tracker = StructureContextTracker(swing_window=2)
+
+        # Phase 1: Build bullish trend and trigger bearish CHoCH
+        tracker.update(high=100.0, low=98.0, close=99.0)  # Bar 0
+        tracker.update(high=102.0, low=100.0, close=101.0)  # Bar 1
+        tracker.update(high=106.0, low=102.0, close=105.0)  # Bar 2 - HH swing
+        tracker.update(high=104.0, low=100.0, close=102.0)  # Bar 3
+        tracker.update(high=103.0, low=99.0, close=100.0)  # Bar 4 - HH detected
+        
+        tracker.update(high=102.0, low=96.0, close=97.0)  # Bar 5 - HL swing
+        tracker.update(high=100.0, low=97.0, close=99.0)  # Bar 6
+        tracker.update(high=101.0, low=98.0, close=100.0)  # Bar 7 - HL detected
+        
+        tracker.update(high=108.0, low=102.0, close=107.0)  # Bar 8 - HH swing
+        tracker.update(high=106.0, low=102.0, close=104.0)  # Bar 9
+        tracker.update(high=105.0, low=101.0, close=103.0)  # Bar 10 - HH detected
+        
+        # Trigger bearish CHoCH
+        ctx_choch = tracker.update(high=100.0, low=92.0, close=93.0)  # Bar 11 - BOS bearish
+        choch_bar = tracker.bar_count  # Capture actual CHoCH bar index
+        assert ctx_choch.choch_detected is True
+        assert ctx_choch.choch_direction == "bearish"
+        assert ctx_choch.choch_age == 0
+        assert tracker.last_choch_direction == "bearish"
+        assert tracker.last_choch_idx == choch_bar
+        
+        # Phase 2: Build sustained bullish trend (10+ bars) to trigger guard reset
+        tracker.update(high=98.0, low=94.0, close=95.0)  # Bar 12
+        tracker.update(high=100.0, low=95.0, close=99.0)  # Bar 13
+        tracker.update(high=110.0, low=100.0, close=109.0)  # Bar 14 - HH swing
+        tracker.update(high=108.0, low=101.0, close=105.0)  # Bar 15
+        tracker.update(high=107.0, low=102.0, close=106.0)  # Bar 16 - HH detected
+        
+        tracker.update(high=106.0, low=98.0, close=99.0)  # Bar 17 - HL swing
+        tracker.update(high=104.0, low=99.0, close=102.0)  # Bar 18
+        tracker.update(high=105.0, low=100.0, close=104.0)  # Bar 19 - HL detected
+        
+        tracker.update(high=120.0, low=105.0, close=119.0)  # Bar 20 - HH swing
+        tracker.update(high=118.0, low=106.0, close=115.0)  # Bar 21
+        ctx_after_reset = tracker.update(high=117.0, low=107.0, close=116.0)  # Bar 22 - HH detected
+        
+        # Verify: Guard reset should have happened (10+ bars, opposite trend, clarity >= 0.5)
+        assert tracker.bar_count - choch_bar >= 10, "Should be 10+ bars since CHoCH"
+        assert ctx_after_reset.trend_direction == "bullish", "Should have bullish trend"
+        assert ctx_after_reset.structure_clarity >= 0.5, "Should have sufficient clarity"
+        
+        # Bug verification: last_choch_direction reset but last_choch_idx still set
+        assert tracker.last_choch_direction is None, (
+            "Guard reset should clear last_choch_direction"
+        )
+        
+        # CRITICAL BUG: last_choch_idx should also be None after guard reset
+        # This is the core issue - if direction is None (no last CHoCH), then
+        # idx should also be None (no bar index to reference)
+        assert tracker.last_choch_idx is None, (
+            f"Guard reset should clear last_choch_idx for consistency, "
+            f"but got last_choch_idx={tracker.last_choch_idx}. "
+            f"Having direction=None but idx={tracker.last_choch_idx} creates "
+            f"inconsistent state where choch_direction=None but choch_age=non-None."
+        )
+        
+        # Verify: StructureContext should have consistent None values
+        assert ctx_after_reset.choch_direction is None, (
+            "choch_direction should be None after guard reset"
+        )
+        assert ctx_after_reset.choch_age is None, (
+            f"choch_age should be None after guard reset (consistent with direction=None), "
+            f"but got choch_age={ctx_after_reset.choch_age}. "
+            f"This inconsistency (direction=None, age={ctx_after_reset.choch_age}) "
+            f"violates semantic coherence and can confuse downstream logic."
+        )
+
 
 class TestNoiseZoneDetection:
     """Test ATR-based noise zone detection."""

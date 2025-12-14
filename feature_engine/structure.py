@@ -225,7 +225,11 @@ class StructureContextTracker:
                 if (self.last_choch_direction == "bearish" and trend_direction == "bullish") or \
                    (self.last_choch_direction == "bullish" and trend_direction == "bearish"):
                     # Sustained opposite trend established → reset guard
+                    # Clear both direction and idx for semantic consistency:
+                    # If there's no last CHoCH (direction=None), there should be
+                    # no bar index reference (idx=None) and no age calculation
                     self.last_choch_direction = None
+                    self.last_choch_idx = None
 
         # Detect BOS on this bar (must be done BEFORE calculating age)
         # so that if a BOS is detected, last_bos_idx is updated and age will be 0
