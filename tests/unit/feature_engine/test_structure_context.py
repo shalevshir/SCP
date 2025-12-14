@@ -260,28 +260,38 @@ class TestChochDetection:
     def test_choch_age_is_zero_when_choch_detected_on_current_bar(self):
         """Test that choch_age=0 when choch_detected=True on the current bar.
 
-        Bug fix: choch_age was calculated BEFORE _detect_choch_event, causing
-        it to reflect the previous CHoCH's age instead of 0 when a new CHoCH
-        is detected on the current bar.
+        With new CHoCH logic, requires:
+        - Previous trend exists (bullish)
+        - BOS in opposite direction (bearish)
+        - Clarity >= 0.5
         """
         tracker = StructureContextTracker(swing_window=2)
 
-        # Build up structure: start with bullish (HH)
-        # Bar 0-1: Build initial structure
+        # Build clear bullish trend with consistent HH/HL swings
+        # Pattern: Create higher highs to establish bullish trend
         tracker.update(high=100.0, low=98.0, close=99.0)  # Bar 0
         tracker.update(high=102.0, low=100.0, close=101.0)  # Bar 1
-        tracker.update(high=104.0, low=102.0, close=103.0)  # Bar 2 - potential HH
-
-        # Bar 3-4: Continue bullish
-        tracker.update(high=105.0, low=103.0, close=104.0)  # Bar 3
-        tracker.update(high=106.0, low=104.0, close=105.0)  # Bar 4
-
-        # Now create a bearish swing (LL) to trigger CHoCH (H→L transition)
-        # Bar 5-6: Create swing low
-        tracker.update(high=104.0, low=100.0, close=101.0)  # Bar 5
-        ctx_with_choch = tracker.update(
-            high=102.0, low=98.0, close=99.0
-        )  # Bar 6 - potential LL (CHoCH)
+        tracker.update(high=106.0, low=102.0, close=105.0)  # Bar 2 - HH swing high
+        tracker.update(high=104.0, low=100.0, close=102.0)  # Bar 3
+        tracker.update(high=103.0, low=99.0, close=100.0)  # Bar 4 - HH detected
+        
+        # Continue bullish trend with HL
+        tracker.update(high=102.0, low=96.0, close=97.0)  # Bar 5 - HL swing low
+        tracker.update(high=100.0, low=97.0, close=99.0)  # Bar 6
+        tracker.update(high=101.0, low=98.0, close=100.0)  # Bar 7 - HL detected
+        
+        # Add more bullish swings for clarity
+        tracker.update(high=108.0, low=102.0, close=107.0)  # Bar 8 - HH swing high
+        tracker.update(high=106.0, low=102.0, close=104.0)  # Bar 9
+        ctx_before = tracker.update(high=105.0, low=101.0, close=103.0)  # Bar 10 - HH detected
+        
+        # Verify we have bullish trend with good clarity
+        assert ctx_before.trend_direction == "bullish", f"Expected bullish trend, got {ctx_before.trend_direction}"
+        assert ctx_before.structure_clarity >= 0.5, f"Expected clarity >= 0.5, got {ctx_before.structure_clarity}"
+        
+        # Now trigger bearish BOS (break below prior swing low at 96)
+        # This should trigger CHoCH (bullish → bearish reversal)
+        ctx_with_choch = tracker.update(high=100.0, low=92.0, close=93.0)  # Bar 11 - BOS bearish
 
         # When CHoCH is detected on current bar, age should be 0
         if ctx_with_choch.choch_detected:
@@ -289,10 +299,12 @@ class TestChochDetection:
                 f"When choch_detected=True, choch_age should be 0, "
                 f"but got {ctx_with_choch.choch_age}"
             )
+            assert ctx_with_choch.choch_direction == "bearish", (
+                f"Expected bearish CHoCH, got {ctx_with_choch.choch_direction}"
+            )
 
-        # Continue to next bar - age should increment
-        ctx_next = tracker.update(high=101.0, low=97.0, close=98.0)  # Bar 7
-        if ctx_with_choch.choch_detected:
+            # Continue to next bar - age should increment
+            ctx_next = tracker.update(high=95.0, low=91.0, close=92.0)  # Bar 12
             # Age should now be 1 (one bar since CHoCH)
             assert ctx_next.choch_age == 1, (
                 f"One bar after CHoCH, choch_age should be 1, "
@@ -323,6 +335,339 @@ class TestChochDetection:
                 assert (
                     ctx.choch_age == expected_age
                 ), f"Expected choch_age={expected_age}, got {ctx.choch_age}"
+
+    def test_choch_requires_previous_trend(self):
+        """CHoCH should not trigger when no previous trend exists (neutral)."""
+        tracker = StructureContextTracker(swing_window=2)
+
+        # Create mixed structure that stays neutral (no clear trend)
+        # Need balanced swings: 2 HH/HL (bullish) + 2 LH/LL (bearish) = 50/50 = neutral
+        # Build 2 bullish swings
+        tracker.update(high=100.0, low=98.0, close=99.0)  # Bar 0
+        tracker.update(high=102.0, low=100.0, close=101.0)  # Bar 1
+        tracker.update(high=106.0, low=102.0, close=105.0)  # Bar 2 - HH swing
+        tracker.update(high=104.0, low=100.0, close=102.0)  # Bar 3
+        tracker.update(high=103.0, low=99.0, close=100.0)  # Bar 4 - HH detected
+        
+        tracker.update(high=102.0, low=96.0, close=97.0)  # Bar 5 - HL swing
+        tracker.update(high=100.0, low=97.0, close=99.0)  # Bar 6
+        tracker.update(high=101.0, low=98.0, close=100.0)  # Bar 7 - HL detected
+        
+        # Now add 2 bearish swings to balance
+        tracker.update(high=104.0, low=98.0, close=103.0)  # Bar 8 - LH swing
+        tracker.update(high=102.0, low=99.0, close=101.0)  # Bar 9
+        tracker.update(high=101.0, low=98.0, close=100.0)  # Bar 10 - LH detected
+        
+        tracker.update(high=102.0, low=94.0, close=95.0)  # Bar 11 - LL swing
+        tracker.update(high=99.0, low=95.0, close=97.0)  # Bar 12
+        ctx_neutral = tracker.update(high=98.0, low=96.0, close=97.0)  # Bar 13 - LL detected
+        
+        # Verify trend is neutral (2 bullish + 2 bearish = 50/50, below 60% threshold)
+        assert ctx_neutral.trend_direction == "neutral", (
+            f"Expected neutral trend, got {ctx_neutral.trend_direction} "
+            f"(clarity: {ctx_neutral.structure_clarity})"
+        )
+        
+        # Trigger BOS (break above 106)
+        ctx_after_bos = tracker.update(high=110.0, low=105.0, close=108.0)  # Bar 14 - BOS bullish
+        
+        # Should NOT detect CHoCH (no previous trend)
+        assert ctx_after_bos.choch_detected is False, "CHoCH should not trigger with neutral trend"
+
+    def test_choch_requires_bos_in_opposite_direction(self):
+        """CHoCH should not trigger on same-direction BOS (continuation)."""
+        tracker = StructureContextTracker(swing_window=2)
+
+        # Build clear bullish trend
+        tracker.update(high=100.0, low=98.0, close=99.0)  # Bar 0
+        tracker.update(high=102.0, low=100.0, close=101.0)  # Bar 1
+        tracker.update(high=106.0, low=102.0, close=105.0)  # Bar 2 - HH swing high
+        tracker.update(high=104.0, low=100.0, close=102.0)  # Bar 3
+        tracker.update(high=103.0, low=99.0, close=100.0)  # Bar 4 - HH detected
+        
+        # Add HL for bullish structure
+        tracker.update(high=102.0, low=96.0, close=97.0)  # Bar 5 - HL swing low
+        tracker.update(high=100.0, low=97.0, close=99.0)  # Bar 6
+        tracker.update(high=101.0, low=98.0, close=100.0)  # Bar 7 - HL detected
+        
+        # Add more HH swings
+        tracker.update(high=108.0, low=102.0, close=107.0)  # Bar 8 - HH swing high
+        tracker.update(high=106.0, low=102.0, close=104.0)  # Bar 9
+        ctx_before = tracker.update(high=105.0, low=101.0, close=103.0)  # Bar 10 - HH detected
+        
+        # Verify bullish trend
+        assert ctx_before.trend_direction == "bullish", f"Expected bullish trend, got {ctx_before.trend_direction}"
+        
+        # Trigger bullish BOS (same direction as trend - continuation)
+        ctx_after_bos = tracker.update(high=112.0, low=108.0, close=110.0)  # Bar 11 - BOS bullish
+        
+        # Should NOT detect CHoCH (same-direction BOS is continuation, not reversal)
+        assert ctx_after_bos.choch_detected is False, "CHoCH should not trigger on same-direction BOS"
+
+    def test_choch_requires_clarity_threshold(self):
+        """CHoCH should not trigger when clarity is too low (< 0.5)."""
+        tracker = StructureContextTracker(swing_window=2)
+
+        # Build trend with choppy/alternating structure to lower clarity
+        # Create rapid H→L→H→L alternations
+        tracker.update(high=100.0, low=98.0, close=99.0)  # Bar 0
+        tracker.update(high=102.0, low=100.0, close=101.0)  # Bar 1
+        tracker.update(high=106.0, low=102.0, close=105.0)  # Bar 2 - HH swing
+        tracker.update(high=104.0, low=100.0, close=102.0)  # Bar 3
+        tracker.update(high=103.0, low=99.0, close=100.0)  # Bar 4 - HH detected
+        
+        # Alternate with LL (lowers clarity)
+        tracker.update(high=102.0, low=94.0, close=95.0)  # Bar 5 - LL swing
+        tracker.update(high=99.0, low=95.0, close=97.0)  # Bar 6
+        tracker.update(high=98.0, low=96.0, close=97.0)  # Bar 7 - LL detected
+        
+        # Alternate back to HH
+        tracker.update(high=104.0, low=98.0, close=103.0)  # Bar 8 - HH swing
+        tracker.update(high=102.0, low=99.0, close=101.0)  # Bar 9
+        ctx_before = tracker.update(high=101.0, low=98.0, close=100.0)  # Bar 10 - HH detected
+        
+        # Should have low clarity due to alternations
+        # With alternating swings, clarity should be low
+        # (Note: actual clarity value depends on the exact pattern, but we'll trigger opposite BOS regardless)
+        
+        # Trigger bearish BOS (opposite direction)
+        ctx_after_bos = tracker.update(high=100.0, low=90.0, close=92.0)  # Bar 11 - BOS bearish
+        
+        # If clarity < 0.5, should NOT detect CHoCH
+        if ctx_after_bos.structure_clarity < 0.5:
+            assert ctx_after_bos.choch_detected is False, (
+                f"CHoCH should not trigger with clarity {ctx_after_bos.structure_clarity} < 0.5"
+            )
+
+    def test_choch_detected_with_all_requirements(self):
+        """CHoCH should trigger when all requirements met: trend, opposite BOS, clarity."""
+        tracker = StructureContextTracker(swing_window=2)
+
+        # Build clear bullish trend with high clarity (consistent HH/HL)
+        tracker.update(high=100.0, low=98.0, close=99.0)  # Bar 0
+        tracker.update(high=102.0, low=100.0, close=101.0)  # Bar 1
+        tracker.update(high=106.0, low=102.0, close=105.0)  # Bar 2 - HH swing high
+        tracker.update(high=104.0, low=100.0, close=102.0)  # Bar 3
+        tracker.update(high=103.0, low=99.0, close=100.0)  # Bar 4 - HH detected
+        
+        # Add HL (bullish pullback)
+        tracker.update(high=102.0, low=96.0, close=97.0)  # Bar 5 - HL swing low
+        tracker.update(high=100.0, low=97.0, close=99.0)  # Bar 6
+        tracker.update(high=101.0, low=98.0, close=100.0)  # Bar 7 - HL detected
+        
+        # Add more HH (continuation)
+        tracker.update(high=108.0, low=102.0, close=107.0)  # Bar 8 - HH swing high
+        tracker.update(high=106.0, low=102.0, close=104.0)  # Bar 9
+        ctx_before = tracker.update(high=105.0, low=101.0, close=103.0)  # Bar 10 - HH detected
+        
+        # Verify all requirements before CHoCH
+        assert ctx_before.trend_direction == "bullish", f"Expected bullish trend, got {ctx_before.trend_direction}"
+        assert ctx_before.structure_clarity >= 0.5, f"Expected clarity >= 0.5, got {ctx_before.structure_clarity}"
+        
+        # Trigger bearish BOS (opposite direction, breaks below swing low at 96)
+        ctx_choch = tracker.update(high=100.0, low=92.0, close=93.0)  # Bar 11 - BOS bearish
+        
+        # Should detect CHoCH (all requirements met)
+        assert ctx_choch.choch_detected is True, "CHoCH should trigger when all requirements met"
+        assert ctx_choch.choch_direction == "bearish", f"Expected bearish CHoCH, got {ctx_choch.choch_direction}"
+        assert ctx_choch.choch_age == 0, f"Expected choch_age=0, got {ctx_choch.choch_age}"
+
+    def test_choch_uses_previous_trend_before_new_swing_label(self):
+        """CHoCH should use trend BEFORE new swing is added, not after.
+        
+        This test verifies that when CHoCH detection runs, it uses the trend
+        direction that existed BEFORE any new swing on the current bar was added
+        to label_history, not the trend after the swing was added.
+        
+        Without this fix, if a swing detected on the current bar changes the trend
+        to neutral, CHoCH won't trigger even though it should based on the previous trend.
+        """
+        tracker = StructureContextTracker(swing_window=2)
+
+        # Build bullish trend with 5 bullish swings for strong clarity
+        # Pattern: HH, HL, HH, HL, HH = 5/5 = 100% bullish
+        tracker.update(high=100.0, low=98.0, close=99.0)  # Bar 0
+        tracker.update(high=102.0, low=100.0, close=101.0)  # Bar 1
+        tracker.update(high=106.0, low=102.0, close=105.0)  # Bar 2 - HH swing
+        tracker.update(high=104.0, low=100.0, close=102.0)  # Bar 3
+        tracker.update(high=103.0, low=99.0, close=100.0)  # Bar 4 - HH detected
+        
+        tracker.update(high=102.0, low=96.0, close=97.0)  # Bar 5 - HL swing
+        tracker.update(high=100.0, low=97.0, close=99.0)  # Bar 6
+        tracker.update(high=101.0, low=98.0, close=100.0)  # Bar 7 - HL detected
+        
+        tracker.update(high=108.0, low=102.0, close=107.0)  # Bar 8 - HH swing
+        tracker.update(high=106.0, low=102.0, close=104.0)  # Bar 9
+        tracker.update(high=105.0, low=101.0, close=103.0)  # Bar 10 - HH detected
+        
+        tracker.update(high=104.0, low=98.0, close=99.0)  # Bar 11 - HL swing
+        tracker.update(high=102.0, low=99.0, close=101.0)  # Bar 12
+        tracker.update(high=101.0, low=98.0, close=100.0)  # Bar 13 - HL detected
+        
+        tracker.update(high=110.0, low=102.0, close=109.0)  # Bar 14 - HH swing
+        tracker.update(high=108.0, low=104.0, close=106.0)  # Bar 15
+        ctx_bullish = tracker.update(high=107.0, low=103.0, close=105.0)  # Bar 16 - HH detected
+        
+        # Verify strong bullish trend
+        assert ctx_bullish.trend_direction == "bullish"
+        assert ctx_bullish.structure_clarity >= 0.5
+        
+        # Now trigger bearish BOS (break below swing low at 96)
+        # This should trigger CHoCH because:
+        # 1. Previous trend was bullish (verified above)
+        # 2. BOS is bearish (opposite direction)
+        # 3. Clarity is high (>= 0.5)
+        ctx_choch = tracker.update(high=100.0, low=92.0, close=93.0)  # Bar 17 - BOS bearish
+        
+        # CHoCH should be detected (regardless of whether a new swing was also detected on this bar)
+        assert ctx_choch.choch_detected is True, (
+            f"CHoCH should trigger when bullish trend + bearish BOS + sufficient clarity. "
+            f"Got: choch_detected={ctx_choch.choch_detected}, "
+            f"trend={ctx_choch.trend_direction}, "
+            f"bos_direction={ctx_choch.bos_direction}, "
+            f"clarity={ctx_choch.structure_clarity}"
+        )
+        assert ctx_choch.choch_direction == "bearish"
+        assert ctx_choch.choch_age == 0
+
+    def test_choch_uses_previous_clarity_before_new_swing_label(self):
+        """CHoCH should use clarity BEFORE new swing is added, not after.
+        
+        This test verifies that CHoCH detection uses both trend AND clarity
+        from the state BEFORE any new swing on the current bar was added.
+        
+        Without this fix, a swing that changes clarity on the current bar
+        can incorrectly affect CHoCH detection.
+        """
+        tracker = StructureContextTracker(swing_window=2)
+
+        # Build bullish trend with alternating pattern that has borderline clarity
+        # HH, LL, HH = creates some choppiness but maintains 67% bullish (above 60%)
+        tracker.update(high=100.0, low=98.0, close=99.0)  # Bar 0
+        tracker.update(high=102.0, low=100.0, close=101.0)  # Bar 1
+        tracker.update(high=106.0, low=102.0, close=105.0)  # Bar 2 - HH swing
+        tracker.update(high=104.0, low=100.0, close=102.0)  # Bar 3
+        tracker.update(high=103.0, low=99.0, close=100.0)  # Bar 4 - HH detected
+        
+        # Add LL to create choppiness (lowers clarity)
+        tracker.update(high=102.0, low=94.0, close=95.0)  # Bar 5 - LL swing
+        tracker.update(high=99.0, low=95.0, close=97.0)  # Bar 6
+        tracker.update(high=98.0, low=96.0, close=97.0)  # Bar 7 - LL detected
+        
+        # Add HH to maintain bullish trend
+        tracker.update(high=108.0, low=98.0, close=107.0)  # Bar 8 - HH swing
+        tracker.update(high=106.0, low=102.0, close=104.0)  # Bar 9
+        ctx_before = tracker.update(high=105.0, low=101.0, close=103.0)  # Bar 10 - HH detected
+        
+        # At this point: HH, LL, HH = 2 bullish + 1 bearish = 67% bullish
+        # Clarity should be reasonable (>= 0.5) due to relatively clean structure
+        assert ctx_before.trend_direction == "bullish"
+        
+        # Store the clarity before the next swing
+        clarity_before = ctx_before.structure_clarity
+        
+        # Now trigger bearish BOS while also detecting a bearish swing
+        # If the swing changes clarity significantly, CHoCH should still use
+        # the PREVIOUS clarity (before the swing was added)
+        ctx_choch = tracker.update(high=100.0, low=92.0, close=93.0)  # Bar 11 - BOS bearish
+        
+        # CHoCH should use:
+        # - prev_trend_direction (bullish, from before any swing on bar 11)
+        # - prev_clarity (from before any swing on bar 11)
+        # This ensures consistent "previous state" semantics
+        
+        # If clarity_before >= 0.5, CHoCH should trigger (all requirements met)
+        # regardless of whether the new swing on bar 11 changed clarity
+        if clarity_before >= 0.5:
+            assert ctx_choch.choch_detected is True, (
+                f"CHoCH should trigger based on previous clarity {clarity_before} >= 0.5, "
+                f"not current clarity {ctx_choch.structure_clarity}. "
+                f"prev_trend=bullish, bos_direction={ctx_choch.bos_direction}"
+            )
+
+    def test_choch_should_not_fire_multiple_times_on_consecutive_bars(self):
+        """CHoCH should only trigger ONCE per trend reversal, not on every opposite-direction BOS.
+        
+        During strong moves that break multiple swing levels, multiple consecutive bars
+        can trigger BOS in the opposite direction. However, CHoCH should only fire on
+        the FIRST such BOS, not repeatedly on subsequent bars, as this keeps resetting
+        last_choch_idx and makes choch_age misleading.
+        
+        This test verifies that once a CHoCH is detected (e.g., bullish → bearish),
+        subsequent bearish BOS events do NOT trigger additional CHoCH events until
+        the trend actually establishes in the new direction and then reverses again.
+        """
+        tracker = StructureContextTracker(swing_window=2)
+
+        # Build clear bullish trend
+        tracker.update(high=100.0, low=98.0, close=99.0)  # Bar 0
+        tracker.update(high=102.0, low=100.0, close=101.0)  # Bar 1
+        tracker.update(high=106.0, low=102.0, close=105.0)  # Bar 2 - HH swing high at 106
+        tracker.update(high=104.0, low=100.0, close=102.0)  # Bar 3
+        tracker.update(high=103.0, low=99.0, close=100.0)  # Bar 4 - HH detected
+        
+        # Create pullback (HL swing low at 100)
+        tracker.update(high=102.0, low=100.0, close=101.0)  # Bar 5 - HL swing low at 100
+        tracker.update(high=104.0, low=101.0, close=103.0)  # Bar 6
+        tracker.update(high=105.0, low=102.0, close=104.0)  # Bar 7 - HL detected
+        
+        # Create another HH
+        tracker.update(high=110.0, low=104.0, close=109.0)  # Bar 8 - HH swing high at 110
+        tracker.update(high=108.0, low=104.0, close=106.0)  # Bar 9
+        tracker.update(high=107.0, low=103.0, close=105.0)  # Bar 10 - HH detected
+        
+        # Create another pullback (HL swing low at 103)
+        tracker.update(high=106.0, low=103.0, close=104.0)  # Bar 11 - HL swing low at 103
+        tracker.update(high=108.0, low=104.0, close=107.0)  # Bar 12
+        tracker.update(high=109.0, low=105.0, close=108.0)  # Bar 13 - HL detected
+        
+        # Create another HH to maintain strong bullish trend
+        tracker.update(high=115.0, low=108.0, close=114.0)  # Bar 14 - HH swing high at 115
+        tracker.update(high=113.0, low=109.0, close=111.0)  # Bar 15
+        ctx_bullish = tracker.update(high=112.0, low=108.0, close=110.0)  # Bar 16 - HH detected
+        
+        # Verify bullish trend with good clarity
+        assert ctx_bullish.trend_direction == "bullish"
+        assert ctx_bullish.structure_clarity >= 0.5
+        
+        # Now create bars that break multiple swing levels consecutively
+        # Bar 17: Breaks below swing low at 103 → First bearish BOS
+        # This SHOULD trigger CHoCH
+        ctx_bar17 = tracker.update(high=110.0, low=101.0, close=102.0)  # Bar 17 - breaks 103
+        
+        assert ctx_bar17.bos_age == 0, f"Should detect BOS (age=0). bos_age={ctx_bar17.bos_age}"
+        assert ctx_bar17.bos_direction == "bearish", f"Should be bearish BOS. direction={ctx_bar17.bos_direction}"
+        assert ctx_bar17.choch_detected is True, "First opposite-direction BOS should trigger CHoCH"
+        assert ctx_bar17.choch_direction == "bearish"
+        assert ctx_bar17.choch_age == 0
+        choch_idx_bar17 = tracker.last_choch_idx
+        
+        # Bar 18: Price continues down, breaks below swing low at 99.0 → Second bearish BOS
+        # This should NOT trigger CHoCH again (we already detected the reversal)
+        ctx_bar18 = tracker.update(high=103.0, low=96.0, close=97.0)  # Bar 18 - breaks 99.0
+        
+        # BOS should still trigger (breaking new swing level) - indicated by bos_age=0
+        assert ctx_bar18.bos_age == 0, "Should detect BOS when breaking new swing level (bos_age=0)"
+        assert ctx_bar18.bos_direction == "bearish"
+        
+        # But CHoCH should NOT trigger again
+        assert ctx_bar18.choch_detected is False, (
+            "Second consecutive opposite-direction BOS should NOT trigger CHoCH again. "
+            f"last_choch_idx should stay at {choch_idx_bar17}, but got {tracker.last_choch_idx}"
+        )
+        assert tracker.last_choch_idx == choch_idx_bar17, (
+            f"last_choch_idx should not change (stay at {choch_idx_bar17}), "
+            f"but got {tracker.last_choch_idx}"
+        )
+        assert ctx_bar18.choch_age == 1, f"choch_age should be 1, got {ctx_bar18.choch_age}"
+        
+        # Bar 19: Price continues down, breaking even more levels
+        # Still should NOT trigger CHoCH
+        ctx_bar19 = tracker.update(high=100.0, low=94.0, close=95.0)  # Bar 19
+        
+        assert ctx_bar19.choch_detected is False, "Third consecutive opposite-direction BOS should NOT trigger CHoCH"
+        assert tracker.last_choch_idx == choch_idx_bar17, "last_choch_idx should still not change"
+        assert ctx_bar19.choch_age == 2, f"choch_age should be 2, got {ctx_bar19.choch_age}"
 
 
 class TestLiquiditySweepDetection:
