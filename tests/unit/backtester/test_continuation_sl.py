@@ -208,6 +208,7 @@ class TestContinuationSLPadding:
 
         # Should use 20-tick minimum for VWAP_RECLAIM
         from backtester.trade import MIN_SL_TICKS_VWAP_RECLAIM
+
         expected_sl = 2650.0 - (MIN_SL_TICKS_VWAP_RECLAIM * 0.1)
         assert abs(sl - expected_sl) < 0.01
         assert "20-tick minimum" in rationale or "padded" in rationale.lower()

@@ -3,7 +3,6 @@
 This module provides the price chart panel for the dashboard.
 """
 
-
 import dash_bootstrap_components as dbc
 import pandas as pd
 import plotly.graph_objects as go

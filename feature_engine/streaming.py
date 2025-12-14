@@ -56,17 +56,17 @@ class StreamingFeatureProcessor:
     @staticmethod
     def _get_buffer_size_for_timeframe(timeframe: str) -> int:
         """Determine appropriate buffer size based on timeframe.
-        
+
         Higher timeframes need larger buffers to capture enough swing points.
-        
+
         Args:
             timeframe: The timeframe string (e.g., "1m", "15m", "1h")
-            
+
         Returns:
             Buffer size in bars
         """
         tf_lower = timeframe.lower()
-        
+
         if "h" in tf_lower:  # 1h, 2h, 4h
             buffer_size = 100  # ~4 days for 1h
         elif "15m" in tf_lower:
@@ -75,10 +75,9 @@ class StreamingFeatureProcessor:
             buffer_size = 40  # ~3.3 hours
         else:  # 1m and others
             buffer_size = 30  # 30 minutes for 1m
-        
+
         logger.debug(
-            f"[StreamingProcessor] Buffer size for {timeframe}: "
-            f"{buffer_size} bars"
+            f"[StreamingProcessor] Buffer size for {timeframe}: " f"{buffer_size} bars"
         )
         return buffer_size
 
@@ -107,13 +106,13 @@ class StreamingFeatureProcessor:
         self.rsi_period = rsi_period
         self.ema_periods = ema_periods if ema_periods is not None else [9, 20, 50]
         self.dxy_window = dxy_window
-        
+
         # Automatically determine swing_window based on timeframe if not provided
         if swing_window is None:
             self.swing_window = get_swing_window_for_timeframe(timeframe)
         else:
             self.swing_window = swing_window
-            
+
         self.session_reset = session_reset
 
         # EMA state: {period: current_ema_value}
@@ -158,7 +157,7 @@ class StreamingFeatureProcessor:
             swing_window=self.swing_window,
             clarity_window=clarity_window,
         )
-        
+
         logger.info(
             f"[StreamingFeatureProcessor] Initialized: timeframe={timeframe}, "
             f"swing_window={self.swing_window}, clarity_window={clarity_window}"
@@ -338,7 +337,7 @@ class StreamingFeatureProcessor:
             low=gc_bar.low,
             close=gc_bar.close,
         )
-        
+
         # Add GC structure fields to features
         features["structure_label"] = gc_structure_ctx.last_structure_label
         # Alias for compatibility
@@ -358,6 +357,10 @@ class StreamingFeatureProcessor:
         features["bos_age"] = gc_structure_ctx.bos_age
         features["choch_detected"] = gc_structure_ctx.choch_detected
         features["choch_age"] = gc_structure_ctx.choch_age
+        features["liquidity_sweep"] = gc_structure_ctx.liquidity_sweep
+        features["sweep_direction"] = gc_structure_ctx.sweep_direction
+        features["sweep_price"] = gc_structure_ctx.sweep_price
+        features["sweep_age"] = gc_structure_ctx.sweep_age
 
         # === 7. DXY Structure Context ===
         # Update DXY structure tracker
@@ -366,7 +369,7 @@ class StreamingFeatureProcessor:
             low=dxy_bar.low,
             close=dxy_bar.close,
         )
-        
+
         # Add DXY structure fields to features
         features["dxy_structure_label"] = dxy_structure_ctx.last_structure_label
         features["dxy_trend_direction"] = dxy_structure_ctx.trend_direction
@@ -402,7 +405,7 @@ class StreamingFeatureProcessor:
         self.micro_corr_gc_buffer.clear()
         self.micro_corr_dxy_buffer.clear()
         self.volume_buffer.clear()
-        
+
         # Reset structure trackers
         clarity_window = 10
         self.structure_tracker = StructureContextTracker(
@@ -413,7 +416,7 @@ class StreamingFeatureProcessor:
             swing_window=self.swing_window,
             clarity_window=clarity_window,
         )
-        
+
         self.vwap_pv_sum = 0.0
         self.vwap_v_sum = 0.0
         self.vwap_current_session = None

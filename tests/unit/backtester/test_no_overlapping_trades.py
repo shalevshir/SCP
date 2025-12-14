@@ -36,12 +36,13 @@ class TestNoOverlappingTrades:
     def test_simulated_exits_dict_exists(self):
         """Test that the _simulated_exits dict is part of BacktestReplayLoop."""
         from backtester.replay_loop import BacktestReplayLoop
-        
+
         # The class should have _simulated_exits as an attribute
         # We can verify this by checking the source code has been updated
         import inspect
+
         source = inspect.getsource(BacktestReplayLoop)
-        
+
         assert "_simulated_exits" in source, (
             "BacktestReplayLoop should have _simulated_exits attribute for "
             "tracking simulated trade exits"
@@ -114,14 +115,14 @@ class TestNoOverlappingTrades:
             source="BACKTEST",
         )
         closed_trade = close_trade(trade, mock_close_candle, "tp", None)
-        
+
         # Verify the closed trade has exit timestamp
         assert closed_trade.exit_timestamp == exit_ts
-        
+
         # Key assertion: Current bar 7 is BEFORE exit bar 10
         current_ts = sample_gc_df.index[7]
         assert current_ts < exit_ts, "Current bar should be before exit"
-        
+
         # In the fixed code, trade stays active until current_ts >= exit_ts
         # So at bar 7, trade should still block new entries
         # At bar 10+, trade can be removed and new entries allowed
@@ -130,19 +131,22 @@ class TestNoOverlappingTrades:
         """Verify the completed trades list has no time-overlapping trades."""
         # This is a sanity check for trade results
         # Two trades cannot have overlapping time windows
-        
+
         # Trade 1: entry at T0, exit at T5
         # Trade 2: entry at T3 would be blocked if Trade 1 is still active
-        
+
         # For a valid backtest:
         # - Trade 2 can only start after Trade 1 exits
         # - So Trade 2 entry >= Trade 1 exit
-        
+
         trades = [
             {"entry": datetime(2025, 1, 6, 10, 0), "exit": datetime(2025, 1, 6, 10, 5)},
-            {"entry": datetime(2025, 1, 6, 10, 6), "exit": datetime(2025, 1, 6, 10, 10)},
+            {
+                "entry": datetime(2025, 1, 6, 10, 6),
+                "exit": datetime(2025, 1, 6, 10, 10),
+            },
         ]
-        
+
         # Check no overlap
         for i, t1 in enumerate(trades):
             for j, t2 in enumerate(trades):
@@ -153,4 +157,3 @@ class TestNoOverlappingTrades:
                     f"Trade {j} starts before trade {i} ends: "
                     f"t2.entry={t2['entry']} < t1.exit={t1['exit']}"
                 )
-

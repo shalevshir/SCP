@@ -511,7 +511,9 @@ class TestFeatureParity:
         assert len(backtest_features) == len(inc_features)
 
         # Compare VWAP values (exact match expected)
-        for i, (bt_feat, inc_feat) in enumerate(zip(backtest_features, inc_features, strict=False)):
+        for i, (bt_feat, inc_feat) in enumerate(
+            zip(backtest_features, inc_features, strict=False)
+        ):
             assert (
                 abs(bt_feat["vwap"] - inc_feat["vwap"]) < 0.01
             ), f"VWAP mismatch at index {i}: backtest={bt_feat['vwap']}, incremental={inc_feat['vwap']}"
@@ -561,7 +563,9 @@ class TestFeatureParity:
                 inc_features.append(features)
 
         # Compare RSI values (within tolerance)
-        for i, (bt_feat, inc_feat) in enumerate(zip(backtest_features, inc_features, strict=False)):
+        for i, (bt_feat, inc_feat) in enumerate(
+            zip(backtest_features, inc_features, strict=False)
+        ):
             if bt_feat["rsi"] is not None and inc_feat["rsi"] is not None:
                 assert (
                     abs(bt_feat["rsi"] - inc_feat["rsi"]) < 0.5
@@ -612,7 +616,9 @@ class TestFeatureParity:
                 inc_features.append(features)
 
         # Compare EMA values (within tight tolerance)
-        for i, (bt_feat, inc_feat) in enumerate(zip(backtest_features, inc_features, strict=False)):
+        for i, (bt_feat, inc_feat) in enumerate(
+            zip(backtest_features, inc_features, strict=False)
+        ):
             for period in [9, 20, 50]:
                 ema_key = f"ema_{period}"
                 assert (
@@ -664,7 +670,9 @@ class TestFeatureParity:
                 inc_features.append(features)
 
         # Compare DXY correlation values (within tolerance)
-        for i, (bt_feat, inc_feat) in enumerate(zip(backtest_features, inc_features, strict=False)):
+        for i, (bt_feat, inc_feat) in enumerate(
+            zip(backtest_features, inc_features, strict=False)
+        ):
             if bt_feat["dxy_corr"] is not None and inc_feat["dxy_corr"] is not None:
                 assert (
                     abs(bt_feat["dxy_corr"] - inc_feat["dxy_corr"]) < 0.05

@@ -30,7 +30,7 @@ def empty_results():
 
 def test_render_price_chart_with_none_gc_df(empty_results):
     """Test that render_price_chart_with_markers handles None gc_df gracefully.
-    
+
     This reproduces the bug where passing gc_df=None causes AttributeError
     when the function tries to call gc_df.empty without checking for None first.
     """
@@ -40,7 +40,7 @@ def test_render_price_chart_with_none_gc_df(empty_results):
         gc_df=None,
         selected_trade_id=None,
     )
-    
+
     # Should return a valid figure with "No price data available" message
     assert fig is not None
     assert len(fig.layout.annotations) > 0
@@ -51,13 +51,13 @@ def test_render_price_chart_with_empty_gc_df(empty_results):
     """Test that render_price_chart_with_markers handles empty DataFrame."""
     empty_df = pd.DataFrame(columns=["open", "high", "low", "close", "volume"])
     empty_df.index = pd.DatetimeIndex([])
-    
+
     fig = render_price_chart_with_markers(
         results=empty_results,
         gc_df=empty_df,
         selected_trade_id=None,
     )
-    
+
     # Should return a valid figure with "No price data available" message
     assert fig is not None
     assert len(fig.layout.annotations) > 0
@@ -66,7 +66,7 @@ def test_render_price_chart_with_empty_gc_df(empty_results):
 
 def test_render_price_chart_with_none_pnl_in_hovertemplate():
     """Test that hovertemplate handles None pnl gracefully.
-    
+
     This reproduces the bug where formatting selected_trade.pnl:.2f
     causes TypeError if pnl is None.
     """
@@ -82,7 +82,7 @@ def test_render_price_chart_with_none_pnl_in_hovertemplate():
         },
         index=dates,
     )
-    
+
     # Create a trade with exit_timestamp and exit_price but None pnl
     trade = MagicMock()
     trade.trade_id = "test-trade-123"
@@ -96,12 +96,12 @@ def test_render_price_chart_with_none_pnl_in_hovertemplate():
     trade.exit_price = 2710.0
     trade.pnl = None  # This is the bug trigger
     trade.exit_reason = "TIME"
-    
+
     signal = MagicMock()
     signal.score = 8.5
     trade.entry_execution = MagicMock()
     trade.entry_execution.signal = signal
-    
+
     results = BacktestResults(
         trades=[trade],
         executions=[],
@@ -112,14 +112,14 @@ def test_render_price_chart_with_none_pnl_in_hovertemplate():
         losing_trades=0,
         average_r=0.0,
     )
-    
+
     # This should not raise TypeError
     fig = render_price_chart_with_markers(
         results=results,
         gc_df=gc_df,
         selected_trade_id="test-trade-123",
     )
-    
+
     # Should return a valid figure
     assert fig is not None
     # Verify the hovertemplate doesn't crash (check that figure was created)
@@ -128,7 +128,7 @@ def test_render_price_chart_with_none_pnl_in_hovertemplate():
 
 def test_render_trade_details_with_none_exit_price():
     """Test that render_trade_details handles None exit_price gracefully.
-    
+
     This reproduces the bug where checking only exit_timestamp but then
     formatting exit_price:.2f causes TypeError if exit_price is None.
     """
@@ -146,17 +146,17 @@ def test_render_trade_details_with_none_exit_price():
     trade.pnl = None
     trade.r_realized = None
     trade.exit_reason = "INVALIDATION"
-    
+
     signal = MagicMock()
     signal.score = 8.5
     signal.confidence = "HIGH"
     signal.factors = {"vwap": 2.0, "structure": 1.5}
     trade.entry_execution = MagicMock()
     trade.entry_execution.signal = signal
-    
+
     # This should not raise TypeError
     result = render_trade_details(trade)
-    
+
     # Should return a valid HTML div
     assert result is not None
     # The result should be a dbc.Card, which is a list/component

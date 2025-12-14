@@ -41,7 +41,11 @@ def render_metrics_panel(results: BacktestResults) -> list:
     )
 
     # Color coding for win rate
-    win_rate_color = "success" if results.win_rate >= 60 else "warning" if results.win_rate >= 50 else "danger"
+    win_rate_color = (
+        "success"
+        if results.win_rate >= 60
+        else "warning" if results.win_rate >= 50 else "danger"
+    )
 
     cards = [
         # Row 1: Core Metrics
@@ -69,10 +73,17 @@ def render_metrics_panel(results: BacktestResults) -> list:
                         [
                             dbc.CardBody(
                                 [
-                                    html.H6("Total Trades", className="text-muted mb-1"),
-                                    html.H3(f"{results.total_trades}", className="mb-0"),
+                                    html.H6(
+                                        "Total Trades", className="text-muted mb-1"
+                                    ),
+                                    html.H3(
+                                        f"{results.total_trades}", className="mb-0"
+                                    ),
                                     html.Small(
-                                        f"{results.winning_trades}W / {results.losing_trades}L",
+                                        (
+                                            f"{results.winning_trades}W / "
+                                            f"{results.losing_trades}L"
+                                        ),
                                         className="text-muted",
                                     ),
                                 ]
@@ -129,7 +140,10 @@ def render_metrics_panel(results: BacktestResults) -> list:
                                         "Max Consecutive Losses",
                                         className="text-muted mb-1",
                                     ),
-                                    html.H4(f"{results.max_consecutive_losses}", className="mb-0"),
+                                    html.H4(
+                                        f"{results.max_consecutive_losses}",
+                                        className="mb-0",
+                                    ),
                                 ]
                             )
                         ],
@@ -160,7 +174,9 @@ def render_metrics_panel(results: BacktestResults) -> list:
                                         "Session Resets",
                                         className="text-muted mb-1",
                                     ),
-                                    html.H4(f"{results.session_resets}", className="mb-0"),
+                                    html.H4(
+                                        f"{results.session_resets}", className="mb-0"
+                                    ),
                                 ]
                             )
                         ],
@@ -187,7 +203,8 @@ def render_metrics_panel(results: BacktestResults) -> list:
                                                 className="mb-1",
                                             )
                                             for setup, count in sorted(
-                                                setup_counts.items(), key=lambda x: -x[1]
+                                                setup_counts.items(),
+                                                key=lambda x: -x[1],
                                             )
                                         ],
                                         className="mb-0",
@@ -204,5 +221,3 @@ def render_metrics_panel(results: BacktestResults) -> list:
     ]
 
     return cards
-
-

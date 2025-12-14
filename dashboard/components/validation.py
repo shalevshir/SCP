@@ -5,7 +5,6 @@ This module provides SOP-compliant validation status for dashboard indicators.
 Architecture: Zero code duplication - calls existing validation from rule_engine.
 """
 
-
 import pandas as pd
 from common.logger import get_logger
 from rule_engine.config_loader import load_scoring_config

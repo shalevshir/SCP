@@ -175,7 +175,10 @@ def validate_reclaim_prerequisites(htf_bias: HTFBias) -> tuple[bool, str | None]
 
     # Check 2: Structure clarity (lowered threshold)
     if htf_bias.structure_clarity < 0.5:
-        return False, f"Structure clarity too low: {htf_bias.structure_clarity:.2f} < 0.5"
+        return (
+            False,
+            f"Structure clarity too low: {htf_bias.structure_clarity:.2f} < 0.5",
+        )
 
     # Check 3: Recent BOS
     if not htf_bias.bos_detected:
@@ -189,4 +192,3 @@ def validate_reclaim_prerequisites(htf_bias: HTFBias) -> tuple[bool, str | None]
 
     # All prerequisites met
     return True, None
-

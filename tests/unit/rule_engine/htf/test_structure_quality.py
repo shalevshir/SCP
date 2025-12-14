@@ -261,4 +261,3 @@ class TestCalculateBarsSinceEvent:
 
         # Assert: Most recent BOS is at index 2, current is index 4
         assert bars_since == 2
-

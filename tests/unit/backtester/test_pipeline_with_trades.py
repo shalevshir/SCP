@@ -308,13 +308,18 @@ class TestGetFutureCandles:
         # Entry at 2650.5, confirmation_candle.low is 2649.6 (only 9 ticks)
         # So SL should be expanded to 2648.5 (20 ticks = 2.0 points)
         from backtester.trade import MIN_SL_TICKS_VWAP_RECLAIM
-        expected_min_sl = entry.entry_price - (MIN_SL_TICKS_VWAP_RECLAIM * 0.1)  # 20 ticks * 0.1
+
+        expected_min_sl = entry.entry_price - (
+            MIN_SL_TICKS_VWAP_RECLAIM * 0.1
+        )  # 20 ticks * 0.1
         assert trade.stop_loss <= expected_min_sl, (
             f"VWAP_RECLAIM SL should be at least {MIN_SL_TICKS_VWAP_RECLAIM} ticks below entry. "
             f"Got {trade.stop_loss}, expected <={expected_min_sl}"
         )
         # Verify it's the padded value
-        assert trade.stop_loss == 2648.5, f"Expected padded SL 2648.5, got {trade.stop_loss}"
+        assert (
+            trade.stop_loss == 2648.5
+        ), f"Expected padded SL 2648.5, got {trade.stop_loss}"
 
     def test_htf_alignment_correctly_compares_bullish_long_and_bearish_short(
         self, sample_gc_data, sample_dxy_data, market_state, risk_config
@@ -753,7 +758,7 @@ class TestDailyPnLTracking:
                 status="STOPPED_OUT",
                 duration_bars=3,
                 invalidation_triggered=False,
-            ignore_first_retest_bar=False,
+                ignore_first_retest_bar=False,
             )
 
             # Record loss
@@ -797,7 +802,7 @@ class TestDailyPnLTracking:
             status="CLOSED_WIN",
             duration_bars=3,
             invalidation_triggered=False,
-        ignore_first_retest_bar=False,
+            ignore_first_retest_bar=False,
         )
 
         checker.record_trade_outcome(winning_trade, won=True)
@@ -854,7 +859,7 @@ class TestDailyPnLTracking:
             status="STOPPED_OUT",
             duration_bars=5,
             invalidation_triggered=False,
-        ignore_first_retest_bar=False,
+            ignore_first_retest_bar=False,
         )
 
         # Record loss - should increment streak
@@ -893,7 +898,7 @@ class TestDailyPnLTracking:
             status="CLOSED_LOSS",
             duration_bars=5,
             invalidation_triggered=False,
-        ignore_first_retest_bar=False,
+            ignore_first_retest_bar=False,
         )
 
         # Record breakeven - should NOT increment streak
@@ -935,7 +940,7 @@ class TestDailyPnLTracking:
             status="CLOSED_LOSS",
             duration_bars=5,
             invalidation_triggered=False,
-        ignore_first_retest_bar=False,
+            ignore_first_retest_bar=False,
         )
 
         # Another breakeven - still should NOT increment
@@ -976,7 +981,7 @@ class TestDailyPnLTracking:
             status="CLOSED_WIN",
             duration_bars=5,
             invalidation_triggered=False,
-        ignore_first_retest_bar=False,
+            ignore_first_retest_bar=False,
         )
 
         # Win should reset streak

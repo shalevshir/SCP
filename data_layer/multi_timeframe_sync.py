@@ -314,9 +314,7 @@ class MultiTimeframeSyncLayer:
                     and isinstance(htf_5m_gc_series, pd.Series)
                     and isinstance(htf_5m_dxy_series, pd.Series)
                 ):
-                    htf_5m_gc_bar = self._series_to_candle(
-                        htf_5m_gc_series, "GC", "5m"
-                    )
+                    htf_5m_gc_bar = self._series_to_candle(htf_5m_gc_series, "GC", "5m")
                     htf_5m_dxy_bar = self._series_to_candle(
                         htf_5m_dxy_series, "DXY", "5m"
                     )

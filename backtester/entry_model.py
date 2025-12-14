@@ -62,7 +62,7 @@ def execute_entry_at_next_open(
     - Only A+ confidence signals are executed
     - Graceful handling of missing data (end of dataset)
     - Full determinism (no randomness or slippage)
-    
+
     PATCH PART 6: Execution audit verified - no hidden blockers.
     Only valid rejection reasons are:
     1. Signal confidence != "A+"

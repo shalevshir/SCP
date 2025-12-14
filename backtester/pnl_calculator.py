@@ -17,28 +17,28 @@ logger = get_logger(__name__)
 
 def compute_slippage(atr: float | None = None, order_type: str = "market") -> int:
     """PATCH PART 5: Compute slippage based on volatility with realistic ATR thresholds.
-    
+
     This function provides dynamic slippage estimation based on ATR (Average True Range)
     using thresholds calibrated for realistic market impact. Replaces unrealistic fixed
     slippage values.
-    
+
     Args:
         atr: Average True Range in price points (e.g., 0.8 = 8 ticks for GC).
              If None, uses default for normal conditions.
         order_type: Order type ("market" or "limit"). Limit orders have no slippage.
-        
+
     Returns:
         Slippage in ticks (0-4 range)
-        
+
     Example:
         >>> # Calm market: ATR = 0.7 points
         >>> slippage = compute_slippage(0.7, order_type="market")
         >>> print(slippage)  # 1 tick
-        >>> 
+        >>>
         >>> # Normal market: ATR = 1.2 points
         >>> slippage = compute_slippage(1.2, order_type="market")
         >>> print(slippage)  # 2 ticks
-        >>> 
+        >>>
         >>> # High volatility: ATR = 2.0 points
         >>> slippage = compute_slippage(2.0, order_type="market")
         >>> print(slippage)  # 4 ticks
@@ -49,44 +49,44 @@ def compute_slippage(atr: float | None = None, order_type: str = "market") -> in
     """
     if order_type == "limit":
         return 0
-    
+
     if atr is None:
         # Default: 2 ticks in normal conditions when ATR not available
         return 2
-    
+
     # PATCH PART 5: Updated ATR thresholds for realistic slippage
-    if atr < 0.8:       # Calm market (< 8 ticks)
+    if atr < 0.8:  # Calm market (< 8 ticks)
         return 1
-    elif atr < 1.6:     # Normal market (< 16 ticks)
+    elif atr < 1.6:  # Normal market (< 16 ticks)
         return 2
-    else:               # High volatility (>= 16 ticks)
+    else:  # High volatility (>= 16 ticks)
         return 4
 
 
 def compute_slippage_ticks(atr_5: float | None = None, tick_size: float = 0.1) -> int:
     """Compute slippage based on market volatility.
-    
+
     Provides dynamic slippage estimation based on ATR (Average True Range) to
     simulate realistic market impact. In calm markets, slippage is minimal (1 tick),
     while in volatile markets it can be up to 4-5 ticks.
-    
+
     Args:
         atr_5: 5-period ATR (Average True Range) in price points.
                If None, uses default slippage for normal conditions.
         tick_size: Tick size for the instrument (e.g., 0.1 for GC)
-        
+
     Returns:
         Slippage in ticks (1-5 range)
-        
+
     Example:
         >>> # Calm market: ATR = 2.0 points = 20 ticks
         >>> slippage = compute_slippage_ticks(2.0, 0.1)
         >>> print(slippage)  # 1 tick
-        >>> 
+        >>>
         >>> # Normal market: ATR = 5.0 points = 50 ticks
         >>> slippage = compute_slippage_ticks(5.0, 0.1)
         >>> print(slippage)  # 2 ticks
-        >>> 
+        >>>
         >>> # Volatile market: ATR = 10.0 points = 100 ticks
         >>> slippage = compute_slippage_ticks(10.0, 0.1)
         >>> print(slippage)  # 4 ticks
@@ -94,16 +94,16 @@ def compute_slippage_ticks(atr_5: float | None = None, tick_size: float = 0.1) -
     if atr_5 is None:
         # Default: 2 ticks in normal conditions when ATR not available
         return 2
-    
+
     # Convert ATR from price points to ticks
     atr_ticks = atr_5 / tick_size
-    
+
     # Dynamic slippage based on volatility bands
-    if atr_ticks < 30:      # Calm market (ATR < 3.0 points for GC)
+    if atr_ticks < 30:  # Calm market (ATR < 3.0 points for GC)
         return 1
-    elif atr_ticks < 80:    # Normal market (ATR < 8.0 points for GC)
+    elif atr_ticks < 80:  # Normal market (ATR < 8.0 points for GC)
         return 2
-    else:                   # High volatility (ATR >= 8.0 points for GC)
+    else:  # High volatility (ATR >= 8.0 points for GC)
         return 4
 
 

@@ -107,7 +107,9 @@ def render_equity_chart(
                 cumulative_dollars.append(running_dollars)
 
             timestamps.append(trade.exit_timestamp or trade.entry_timestamp)
-            trade_numbers.append(trade_counter)  # Use sequential counter, not enumerate index
+            trade_numbers.append(
+                trade_counter
+            )  # Use sequential counter, not enumerate index
 
     # Calculate drawdown
     if display_mode == "points":
@@ -212,4 +214,3 @@ def render_equity_chart(
     fig.update_yaxes(title_text="Drawdown", row=2, col=1)
 
     return fig
-

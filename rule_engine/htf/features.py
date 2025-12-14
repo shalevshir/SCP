@@ -7,7 +7,6 @@ Streaming approach: Maintains state and updates incrementally as new HTF bars ar
 Vectorized approach: Pre-computes all HTF features at once for efficiency.
 """
 
-
 import pandas as pd
 from common.logger import get_logger
 from common.types import Candle
@@ -68,7 +67,7 @@ class StreamingHTFFeatureComputer:
         dxy_window_1h = max(20, dxy_window // 2)  # Minimum 20 bars
         dxy_window_15m = max(25, int(dxy_window // 1.5))  # Minimum 25 bars
         dxy_window_5m = max(30, int(dxy_window // 1.25))  # Minimum 30 bars
-        
+
         self.processor_1h = StreamingFeatureProcessor(
             timeframe="1h",
             rsi_period=rsi_period,
@@ -162,7 +161,7 @@ class StreamingHTFFeatureComputer:
                 )
                 self.last_1h_timestamp = htf_1h_timestamp
                 # Log at INFO level for visibility
-                structure_val = self.features_1h.get('structure_label', 'N/A')
+                structure_val = self.features_1h.get("structure_label", "N/A")
                 # Note: structure_buffer no longer exists (replaced with StructureContextTracker)
                 logger.info(
                     f"Updated 1h features at {htf_1h_timestamp} "
@@ -308,7 +307,7 @@ def compute_htf_features_vectorized(
         )
         features_1h_df["structure_label"] = structure_labels_1h
         features_1h_df["structure_type"] = structure_labels_1h
-        
+
         # Log structure label distribution
         valid_labels = structure_labels_1h.dropna()
         logger.info(

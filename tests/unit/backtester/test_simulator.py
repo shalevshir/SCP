@@ -102,7 +102,7 @@ class TestCheckTPHit:
             status="OPEN",
             duration_bars=None,
             invalidation_triggered=False,
-        ignore_first_retest_bar=False,
+            ignore_first_retest_bar=False,
         )
 
     @pytest.fixture
@@ -160,7 +160,7 @@ class TestCheckTPHit:
             status="OPEN",
             duration_bars=None,
             invalidation_triggered=False,
-        ignore_first_retest_bar=False,
+            ignore_first_retest_bar=False,
         )
 
     def test_long_tp_hit_when_high_reaches_target(self, long_trade):
@@ -269,7 +269,7 @@ class TestCheckSLHit:
             status="OPEN",
             duration_bars=None,
             invalidation_triggered=False,
-        ignore_first_retest_bar=False,
+            ignore_first_retest_bar=False,
         )
 
     @pytest.fixture
@@ -327,7 +327,7 @@ class TestCheckSLHit:
             status="OPEN",
             duration_bars=None,
             invalidation_triggered=False,
-        ignore_first_retest_bar=False,
+            ignore_first_retest_bar=False,
         )
 
     def test_long_sl_hit_when_low_reaches_stop(self, long_trade):
@@ -460,7 +460,7 @@ class TestSimulateTradeOutcome:
             status="OPEN",
             duration_bars=None,
             invalidation_triggered=False,
-        ignore_first_retest_bar=False,
+            ignore_first_retest_bar=False,
         )
 
     @pytest.fixture
@@ -518,7 +518,7 @@ class TestSimulateTradeOutcome:
             status="OPEN",
             duration_bars=None,
             invalidation_triggered=False,
-        ignore_first_retest_bar=False,
+            ignore_first_retest_bar=False,
         )
 
     def test_basic_tp_hit(self, long_continuation_trade):
@@ -598,7 +598,9 @@ class TestSimulateTradeOutcome:
         assert closed_trade.status == "STOPPED_OUT"
         assert closed_trade.r_realized == pytest.approx(-1.0)
         # FIX #5: VWAP_RECLAIM has 2-bar grace period, so SL hits on bar 3
-        assert closed_trade.duration_bars == 3  # Hits SL on 3rd bar (after 2-bar grace period)
+        assert (
+            closed_trade.duration_bars == 3
+        )  # Hits SL on 3rd bar (after 2-bar grace period)
 
     def test_sl_priority_over_tp(self, long_continuation_trade):
         """Test SL takes priority when both hit in same candle."""
@@ -1058,7 +1060,7 @@ class TestSimulateTradeOutcome:
 
 class TestGracePeriodLogic:
     """Test grace period logic for VWAP_RECLAIM and DXY_CONTINUATION setups.
-    
+
     Specification-based tests for FIX #5: Minimum trade duration grace period.
     """
 
@@ -1180,7 +1182,7 @@ class TestGracePeriodLogic:
 
     def test_vwap_reclaim_sl_not_checked_during_first_2_bars(self, vwap_reclaim_trade):
         """VWAP_RECLAIM: SL not checked during first 2 bars (grace period).
-        
+
         Specification: MIN_BARS_RECLAIM = 3 (skip bars 1-2, check from bar 3)
         During bars 1-2, SL hits should be ignored.
         """
@@ -1221,13 +1223,13 @@ class TestGracePeriodLogic:
 
         # Should NOT have hit SL during grace period (bars 1-2)
         # Trade should still be open or hit another exit condition
-        assert closed_trade.exit_reason != "sl", (
-            "SL should not trigger during 2-bar grace period for VWAP_RECLAIM"
-        )
+        assert (
+            closed_trade.exit_reason != "sl"
+        ), "SL should not trigger during 2-bar grace period for VWAP_RECLAIM"
 
     def test_vwap_reclaim_sl_checked_after_grace_period_ends(self, vwap_reclaim_trade):
         """VWAP_RECLAIM: SL IS checked after grace period ends (bar 3+).
-        
+
         Specification: After MIN_BARS_RECLAIM (3 bars), SL checks resume.
         """
         # Create 3 candles where SL is hit on bar 3 (after grace period)
@@ -1270,7 +1272,7 @@ class TestGracePeriodLogic:
 
     def test_vwap_reclaim_tp_not_checked_during_grace_period(self, vwap_reclaim_trade):
         """VWAP_RECLAIM: TP also not checked during grace period.
-        
+
         Specification: Both SL and TP checks are skipped during grace period.
         """
         # Create 3 candles where TP is hit on bar 2 (during grace period)
@@ -1312,13 +1314,15 @@ class TestGracePeriodLogic:
         # Trade should either timeout or exit on different condition
         # But if it exits, it should not be at bar 2
         if closed_trade.exit_reason == "tp":
-            assert closed_trade.duration_bars > 2, (
-                "TP should not trigger during 2-bar grace period"
-            )
+            assert (
+                closed_trade.duration_bars > 2
+            ), "TP should not trigger during 2-bar grace period"
 
-    def test_dxy_continuation_sl_not_checked_during_first_6_bars(self, dxy_continuation_trade):
+    def test_dxy_continuation_sl_not_checked_during_first_6_bars(
+        self, dxy_continuation_trade
+    ):
         """DXY_CONTINUATION: SL not checked during first 6 bars (grace period).
-        
+
         Specification: MIN_BARS_CONTINUATION = 7 (skip bars 1-6, check from bar 7)
         During bars 1-6, SL hits should be ignored.
         """
@@ -1328,37 +1332,43 @@ class TestGracePeriodLogic:
             ts = datetime(2025, 1, 1, 10, 2 + i, tzinfo=UTC)
             if i < 6:
                 # Bars 1-6: SL hit (but grace period protects)
-                candles_data.append({
-                    "timestamp": ts,
-                    "open": 2648.0 - i,
-                    "high": 2649.0 - i,
-                    "low": 2644.0 - i,  # Below SL (2645.0)
-                    "close": 2646.0 - i,
-                    "volume": 100,
-                })
+                candles_data.append(
+                    {
+                        "timestamp": ts,
+                        "open": 2648.0 - i,
+                        "high": 2649.0 - i,
+                        "low": 2644.0 - i,  # Below SL (2645.0)
+                        "close": 2646.0 - i,
+                        "volume": 100,
+                    }
+                )
             else:
                 # Bar 7: Price recovers
-                candles_data.append({
-                    "timestamp": ts,
-                    "open": 2646.0,
-                    "high": 2652.0,
-                    "low": 2645.5,
-                    "close": 2650.0,
-                    "volume": 100,
-                })
+                candles_data.append(
+                    {
+                        "timestamp": ts,
+                        "open": 2646.0,
+                        "high": 2652.0,
+                        "low": 2645.5,
+                        "close": 2650.0,
+                        "volume": 100,
+                    }
+                )
 
         future_candles = pd.DataFrame(candles_data).set_index("timestamp")
 
         closed_trade = simulate_trade_outcome(dxy_continuation_trade, future_candles)
 
         # Should NOT have hit SL during grace period (bars 1-5)
-        assert closed_trade.exit_reason != "sl", (
-            "SL should not trigger during 6-bar grace period for DXY_CONTINUATION"
-        )
+        assert (
+            closed_trade.exit_reason != "sl"
+        ), "SL should not trigger during 6-bar grace period for DXY_CONTINUATION"
 
-    def test_dxy_continuation_sl_checked_after_grace_period_ends(self, dxy_continuation_trade):
+    def test_dxy_continuation_sl_checked_after_grace_period_ends(
+        self, dxy_continuation_trade
+    ):
         """DXY_CONTINUATION: SL IS checked after grace period ends (bar 7+).
-        
+
         Specification: After MIN_BARS_CONTINUATION (7 bars total, skip 1-6), SL checks resume.
         """
         # Create 7 candles where SL is hit on bar 7
@@ -1367,24 +1377,28 @@ class TestGracePeriodLogic:
             ts = datetime(2025, 1, 1, 10, 2 + i, tzinfo=UTC)
             if i < 6:
                 # Bars 1-6: Grace period (price safe)
-                candles_data.append({
-                    "timestamp": ts,
-                    "open": 2650.0,
-                    "high": 2652.0,
-                    "low": 2649.0,
-                    "close": 2651.0,
-                    "volume": 100,
-                })
+                candles_data.append(
+                    {
+                        "timestamp": ts,
+                        "open": 2650.0,
+                        "high": 2652.0,
+                        "low": 2649.0,
+                        "close": 2651.0,
+                        "volume": 100,
+                    }
+                )
             else:
                 # Bar 7: SL hit (grace period ended)
-                candles_data.append({
-                    "timestamp": ts,
-                    "open": 2651.0,
-                    "high": 2651.0,
-                    "low": 2644.0,  # Below SL (2645.0)
-                    "close": 2644.5,
-                    "volume": 100,
-                })
+                candles_data.append(
+                    {
+                        "timestamp": ts,
+                        "open": 2651.0,
+                        "high": 2651.0,
+                        "low": 2644.0,  # Below SL (2645.0)
+                        "close": 2644.5,
+                        "volume": 100,
+                    }
+                )
 
         future_candles = pd.DataFrame(candles_data).set_index("timestamp")
 
@@ -1397,7 +1411,7 @@ class TestGracePeriodLogic:
 
 class TestRetestProtectionLogic:
     """Test retest protection logic (ignore_first_retest_bar flag).
-    
+
     Specification-based tests for FIX #2: Retest protection for VWAP_RECLAIM.
     """
 
@@ -1517,9 +1531,11 @@ class TestRetestProtectionLogic:
             ignore_first_retest_bar=False,  # Retest protection DISABLED
         )
 
-    def test_sl_not_checked_on_first_bar_with_retest_protection(self, trade_with_retest_protection):
+    def test_sl_not_checked_on_first_bar_with_retest_protection(
+        self, trade_with_retest_protection
+    ):
         """Retest protection: SL not checked on first bar when flag is True.
-        
+
         Specification: "Skip SL check on first bar if retest protection is active"
         """
         # Create 3 candles where SL is hit on bar 1
@@ -1555,16 +1571,20 @@ class TestRetestProtectionLogic:
             ]
         ).set_index("timestamp")
 
-        closed_trade = simulate_trade_outcome(trade_with_retest_protection, future_candles)
-
-        # Should NOT have hit SL on bar 1 (retest protection active)
-        assert closed_trade.exit_reason != "sl" or closed_trade.duration_bars > 1, (
-            "SL should not trigger on first bar with retest protection"
+        closed_trade = simulate_trade_outcome(
+            trade_with_retest_protection, future_candles
         )
 
-    def test_sl_checked_on_second_bar_after_retest_protection_ends(self, trade_with_retest_protection):
+        # Should NOT have hit SL on bar 1 (retest protection active)
+        assert (
+            closed_trade.exit_reason != "sl" or closed_trade.duration_bars > 1
+        ), "SL should not trigger on first bar with retest protection"
+
+    def test_sl_checked_on_second_bar_after_retest_protection_ends(
+        self, trade_with_retest_protection
+    ):
         """Retest protection + grace period interaction: SL checked after BOTH end.
-        
+
         Specification: Retest protection (bar 1) + grace period (bars 1-2) = skip bars 1-2, check from bar 3.
         """
         # Create 3 candles where SL is hit on bar 3 (after both protections end)
@@ -1600,15 +1620,19 @@ class TestRetestProtectionLogic:
             ]
         ).set_index("timestamp")
 
-        closed_trade = simulate_trade_outcome(trade_with_retest_protection, future_candles)
+        closed_trade = simulate_trade_outcome(
+            trade_with_retest_protection, future_candles
+        )
 
         # Should hit SL on bar 3 (after retest protection bar 1 + grace period bars 1-2)
         assert closed_trade.exit_reason == "sl"
         assert closed_trade.duration_bars == 3
 
-    def test_sl_checked_normally_without_retest_protection(self, trade_without_retest_protection):
+    def test_sl_checked_normally_without_retest_protection(
+        self, trade_without_retest_protection
+    ):
         """Without retest protection: SL checked after grace period.
-        
+
         Specification: VWAP_FADE has 2-bar grace period (bars 1-2), then SL checks start.
         Retest protection flag (ignore_first_retest_bar) is separate from grace period.
         """
@@ -1645,15 +1669,19 @@ class TestRetestProtectionLogic:
             ]
         ).set_index("timestamp")
 
-        closed_trade = simulate_trade_outcome(trade_without_retest_protection, future_candles)
+        closed_trade = simulate_trade_outcome(
+            trade_without_retest_protection, future_candles
+        )
 
         # Should hit SL on bar 3 (after 2-bar grace period)
         assert closed_trade.exit_reason == "sl"
         assert closed_trade.duration_bars == 3
 
-    def test_retest_protection_does_not_affect_tp_checks(self, trade_with_retest_protection):
+    def test_retest_protection_does_not_affect_tp_checks(
+        self, trade_with_retest_protection
+    ):
         """Retest protection: Only affects SL, not TP checks (but grace period affects both).
-        
+
         Specification: Retest protection is for SL only, but grace period skips both SL and TP.
         With VWAP_FADE having 2-bar grace period, TP is checked from bar 3.
         """
@@ -1690,7 +1718,9 @@ class TestRetestProtectionLogic:
             ]
         ).set_index("timestamp")
 
-        closed_trade = simulate_trade_outcome(trade_with_retest_protection, future_candles)
+        closed_trade = simulate_trade_outcome(
+            trade_with_retest_protection, future_candles
+        )
 
         # TP should trigger on bar 3 (after grace period ends)
         assert closed_trade.exit_reason == "tp"
@@ -1699,7 +1729,7 @@ class TestRetestProtectionLogic:
 
 class TestGracePeriodAndRetestProtectionInteraction:
     """Test interaction between grace period and retest protection.
-    
+
     When both are active, test that they work together correctly.
     """
 
@@ -1761,9 +1791,11 @@ class TestGracePeriodAndRetestProtectionInteraction:
             ignore_first_retest_bar=True,  # Also has retest protection
         )
 
-    def test_grace_period_takes_precedence_over_retest_protection(self, trade_with_both_protections):
+    def test_grace_period_takes_precedence_over_retest_protection(
+        self, trade_with_both_protections
+    ):
         """Grace period takes precedence: SL not checked during bars 1-3 regardless of retest flag.
-        
+
         Specification: Grace period check happens AFTER retest protection check.
         If grace period is active, SL is skipped.
         """
@@ -1800,7 +1832,9 @@ class TestGracePeriodAndRetestProtectionInteraction:
             ]
         ).set_index("timestamp")
 
-        closed_trade = simulate_trade_outcome(trade_with_both_protections, future_candles)
+        closed_trade = simulate_trade_outcome(
+            trade_with_both_protections, future_candles
+        )
 
         # Should hit SL on bar 3 (after 2-bar grace period ends)
         assert closed_trade.exit_reason == "sl"
@@ -1870,11 +1904,12 @@ class TestInvalidDataHandling:
 
     def test_invalid_trade_with_zero_risk_closes_immediately(self, valid_long_trade):
         """Trade with zero risk (entry == SL) closes immediately with invalid_setup.
-        
+
         Specification: "Trade {trade.trade_id} is invalid (zero risk or NaN values)"
         """
         # Create invalid trade with entry == SL
         import dataclasses
+
         invalid_trade = dataclasses.replace(
             valid_long_trade,
             trade_id="invalid-zero-risk",
@@ -1882,58 +1917,64 @@ class TestInvalidDataHandling:
             stop_loss=2645.0,  # Same as entry = zero risk
             risk_amount=0.0,
         )
-        
+
         # Any future candles (doesn't matter, trade is invalid)
         future_candles = pd.DataFrame(
-            [{
-                "timestamp": datetime(2025, 1, 1, 10, 2, tzinfo=UTC),
-                "open": 2645.0,
-                "high": 2646.0,
-                "low": 2644.0,
-                "close": 2645.5,
-                "volume": 100,
-            }]
+            [
+                {
+                    "timestamp": datetime(2025, 1, 1, 10, 2, tzinfo=UTC),
+                    "open": 2645.0,
+                    "high": 2646.0,
+                    "low": 2644.0,
+                    "close": 2645.5,
+                    "volume": 100,
+                }
+            ]
         ).set_index("timestamp")
-        
+
         closed_trade = simulate_trade_outcome(invalid_trade, future_candles)
-        
+
         # Should close immediately with invalid_setup
         assert closed_trade.exit_reason == "invalid_setup"
         assert closed_trade.exit_price == invalid_trade.entry_price
 
     def test_invalid_trade_with_nan_sl_closes_immediately(self, valid_long_trade):
         """Trade with NaN SL closes immediately with invalid_setup.
-        
+
         Specification: "Trade {trade.trade_id} has NaN or Inf in critical fields"
         """
         import dataclasses
+
         invalid_trade = dataclasses.replace(
             valid_long_trade,
             trade_id="invalid-nan-sl",
-            stop_loss=float('nan'),
+            stop_loss=float("nan"),
         )
-        
+
         future_candles = pd.DataFrame(
-            [{
-                "timestamp": datetime(2025, 1, 1, 10, 2, tzinfo=UTC),
-                "open": 2650.0,
-                "high": 2651.0,
-                "low": 2649.0,
-                "close": 2650.5,
-                "volume": 100,
-            }]
+            [
+                {
+                    "timestamp": datetime(2025, 1, 1, 10, 2, tzinfo=UTC),
+                    "open": 2650.0,
+                    "high": 2651.0,
+                    "low": 2649.0,
+                    "close": 2650.5,
+                    "volume": 100,
+                }
+            ]
         ).set_index("timestamp")
-        
+
         closed_trade = simulate_trade_outcome(invalid_trade, future_candles)
-        
+
         assert closed_trade.exit_reason == "invalid_setup"
 
     def test_already_closed_trade_returns_unchanged(self, valid_long_trade):
         """Trade that is already closed returns unchanged.
-        
+
         Specification: "Trade {trade.trade_id} is already closed (status={trade.status})"
         """
         import dataclasses
+
         closed_trade_input = dataclasses.replace(
             valid_long_trade,
             status="CLOSED_WIN",
@@ -1942,33 +1983,35 @@ class TestInvalidDataHandling:
             exit_reason="tp",
             pnl=15.0,
         )
-        
+
         future_candles = pd.DataFrame(
-            [{
-                "timestamp": datetime(2025, 1, 1, 10, 2, tzinfo=UTC),
-                "open": 2650.0,
-                "high": 2651.0,
-                "low": 2649.0,
-                "close": 2650.5,
-                "volume": 100,
-            }]
+            [
+                {
+                    "timestamp": datetime(2025, 1, 1, 10, 2, tzinfo=UTC),
+                    "open": 2650.0,
+                    "high": 2651.0,
+                    "low": 2649.0,
+                    "close": 2650.5,
+                    "volume": 100,
+                }
+            ]
         ).set_index("timestamp")
-        
+
         result = simulate_trade_outcome(closed_trade_input, future_candles)
-        
+
         # Should return unchanged
         assert result is closed_trade_input
         assert result.exit_reason == "tp"  # Original exit reason preserved
 
     def test_empty_future_candles_closes_at_entry(self, valid_long_trade):
         """Trade with empty future_candles closes at entry with end_of_data.
-        
+
         Specification: "No future candles for trade {trade.trade_id}"
         """
         empty_candles = pd.DataFrame().set_index(pd.DatetimeIndex([]))
-        
+
         closed_trade = simulate_trade_outcome(valid_long_trade, empty_candles)
-        
+
         # Should close at entry price
         assert closed_trade.exit_reason == "end_of_data"
         assert closed_trade.exit_price == valid_long_trade.entry_price
@@ -1976,7 +2019,7 @@ class TestInvalidDataHandling:
 
     def test_candle_with_nan_is_skipped(self, valid_long_trade):
         """Candle with NaN values is skipped and doesn't count toward timeout.
-        
+
         Specification: "Skipping candle with NaN/Inf values at {timestamp}"
         """
         # Create candles where some have NaN
@@ -1994,26 +2037,29 @@ class TestInvalidDataHandling:
                 # Bar 2: NaN (should be skipped, not counted)
                 {
                     "timestamp": datetime(2025, 1, 1, 10, 3, tzinfo=UTC),
-                    "open": float('nan'),
+                    "open": float("nan"),
                     "high": 2651.0,
                     "low": 2649.0,
                     "close": 2650.5,
                     "volume": 100,
                 },
                 # Bars 3-10: Valid (to reach timeout for VWAP_FADE)
-                *[{
-                    "timestamp": datetime(2025, 1, 1, 10, 3 + i, tzinfo=UTC),
-                    "open": 2650.0,
-                    "high": 2651.0,
-                    "low": 2649.0,
-                    "close": 2650.5,
-                    "volume": 100,
-                } for i in range(1, 10)],
+                *[
+                    {
+                        "timestamp": datetime(2025, 1, 1, 10, 3 + i, tzinfo=UTC),
+                        "open": 2650.0,
+                        "high": 2651.0,
+                        "low": 2649.0,
+                        "close": 2650.5,
+                        "volume": 100,
+                    }
+                    for i in range(1, 10)
+                ],
             ]
         ).set_index("timestamp")
-        
+
         closed_trade = simulate_trade_outcome(valid_long_trade, future_candles)
-        
+
         # Should timeout after 10 VALID candles (bar 2 with NaN not counted)
         assert closed_trade.exit_reason == "timeout"
         # Duration should be 11 because we skip the NaN candle but time still passes
@@ -2021,7 +2067,7 @@ class TestInvalidDataHandling:
 
     def test_candle_with_inf_is_skipped(self, valid_long_trade):
         """Candle with Inf values is skipped and doesn't count toward timeout.
-        
+
         Specification: "Skipping candle with NaN/Inf values at {timestamp}"
         """
         # Create candles where one has Inf
@@ -2040,24 +2086,27 @@ class TestInvalidDataHandling:
                 {
                     "timestamp": datetime(2025, 1, 1, 10, 3, tzinfo=UTC),
                     "open": 2650.0,
-                    "high": float('inf'),
+                    "high": float("inf"),
                     "low": 2649.0,
                     "close": 2650.5,
                     "volume": 100,
                 },
                 # More bars...
-                *[{
-                    "timestamp": datetime(2025, 1, 1, 10, 3 + i, tzinfo=UTC),
-                    "open": 2650.0,
-                    "high": 2651.0,
-                    "low": 2649.0,
-                    "close": 2650.5,
-                    "volume": 100,
-                } for i in range(1, 10)],
+                *[
+                    {
+                        "timestamp": datetime(2025, 1, 1, 10, 3 + i, tzinfo=UTC),
+                        "open": 2650.0,
+                        "high": 2651.0,
+                        "low": 2649.0,
+                        "close": 2650.5,
+                        "volume": 100,
+                    }
+                    for i in range(1, 10)
+                ],
             ]
         ).set_index("timestamp")
-        
+
         closed_trade = simulate_trade_outcome(valid_long_trade, future_candles)
-        
+
         # Should timeout after valid candles only
         assert closed_trade.exit_reason == "timeout"

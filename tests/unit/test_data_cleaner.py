@@ -8,7 +8,6 @@ Following TDD: These tests define the behavior we need:
 4. Remove duplicate timestamps
 """
 
-
 import pandas as pd
 from scripts.clean_csv_data import (
     clean_csv_data,

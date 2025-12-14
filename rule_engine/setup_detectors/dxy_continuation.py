@@ -56,7 +56,10 @@ def detect_dxy_continuation(
 
     if not (corr_1m < -0.3 and corr_5m < -0.3):
         logger.debug(
-            f"DXY continuation rejected: weak correlation (1m={corr_1m:.2f}, 5m={corr_5m:.2f})"
+            (
+                f"DXY continuation rejected: weak correlation "
+                f"(1m={corr_1m:.2f}, 5m={corr_5m:.2f})"
+            )
         )
         return False
 
@@ -81,9 +84,7 @@ def detect_dxy_continuation(
             )
             return False
     else:
-        logger.debug(
-            f"DXY continuation rejected: invalid direction {direction}"
-        )
+        logger.debug(f"DXY continuation rejected: invalid direction {direction}")
         return False
 
     # 3. Gold BOS recency check
@@ -130,7 +131,12 @@ def detect_dxy_continuation(
 
     if all(
         v is not None
-        for v in [current_candle_open, current_candle_close, current_candle_high, current_candle_low]
+        for v in [
+            current_candle_open,
+            current_candle_close,
+            current_candle_high,
+            current_candle_low,
+        ]
     ):
         # Calculate ATR from features if available
         atr = features.get("atr")
@@ -140,8 +146,11 @@ def detect_dxy_continuation(
             atr = candle_range if candle_range > 0 else 1.0
 
         displacement = calculate_displacement_strength(
-            current_candle_open, current_candle_close,
-            current_candle_high, current_candle_low, atr
+            current_candle_open,
+            current_candle_close,
+            current_candle_high,
+            current_candle_low,
+            atr,
         )
 
         if displacement < 1.2:
@@ -176,4 +185,3 @@ def detect_dxy_continuation(
         f"direction={direction}"
     )
     return True
-

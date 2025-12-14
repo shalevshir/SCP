@@ -290,7 +290,10 @@ def test_complex_diagnostics_structure(sample_trade):
     # Verify roundtrip
     reconstructed = from_dict(trade_dict)
     assert reconstructed.diagnostics["entry_context"]["structure_label"] == "HH"
-    assert reconstructed.diagnostics["rejection_during_trade"]["bar_1"]["wick_penetration"] == 0.6
+    assert (
+        reconstructed.diagnostics["rejection_during_trade"]["bar_1"]["wick_penetration"]
+        == 0.6
+    )
 
 
 def test_add_diag_handles_none_diagnostics(sample_trade):
@@ -318,4 +321,3 @@ def test_add_nested_diag_handles_none_diagnostics(sample_trade):
     # Verify diagnostic was added
     assert sample_trade.diagnostics is not None
     assert sample_trade.diagnostics["entry_context"]["vwap"] == 2650.5
-

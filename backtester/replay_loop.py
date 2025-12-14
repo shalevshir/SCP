@@ -226,11 +226,12 @@ class BacktestReplayLoop:
         self._max_consecutive_losses: int = 0
         self._pdll_hit_count: int = 0
         self._session_reset_count: int = 0
-        
+
         # Structure label statistics for diagnostics
         from collections import Counter
+
         self._structure_stats: Counter = Counter()
-        
+
         # Track simulated exits to prevent overlapping trades
         self._simulated_exits: dict[str, datetime] = {}
 
@@ -371,8 +372,8 @@ class BacktestReplayLoop:
             return None
 
         # Step 3: Compute HTF bias FIRST (must happen every bar to accumulate HTF data)
-        # This must run BEFORE active trade check AND guardrails check so streaming 
-        # HTF processor gets updated even when trades are active or outside trading 
+        # This must run BEFORE active trade check AND guardrails check so streaming
+        # HTF processor gets updated even when trades are active or outside trading
         # hours - needed for structure detection warmup
         try:
             htf_bias = self._htf_bias_func(features, validation_context)
@@ -385,7 +386,9 @@ class BacktestReplayLoop:
 
         # Track structure label statistics for diagnostics
         structure_label = features.get("structure_label", "NA")
-        if structure_label is None or (isinstance(structure_label, float) and pd.isna(structure_label)):
+        if structure_label is None or (
+            isinstance(structure_label, float) and pd.isna(structure_label)
+        ):
             structure_label = "NA"
         self._structure_stats[str(structure_label)] += 1
 
@@ -485,37 +488,79 @@ class BacktestReplayLoop:
 
                 # Add diagnostic context at entry
                 from backtester.diagnostics import add_nested_diag
-                
+
                 # Get features for entry candle
                 if features is not None:
                     # Structure features
-                    add_nested_diag(trade, "entry_context", "structure_label", features.get("structure_label"))
-                    add_nested_diag(trade, "entry_context", "micro_bos", features.get("micro_bos"))
-                    add_nested_diag(trade, "entry_context", "liquidity_sweep", features.get("liquidity_sweep"))
-                    
+                    add_nested_diag(
+                        trade,
+                        "entry_context",
+                        "structure_label",
+                        features.get("structure_label"),
+                    )
+                    add_nested_diag(
+                        trade, "entry_context", "micro_bos", features.get("micro_bos")
+                    )
+                    add_nested_diag(
+                        trade,
+                        "entry_context",
+                        "liquidity_sweep",
+                        features.get("liquidity_sweep"),
+                    )
+
                     # VWAP features
-                    add_nested_diag(trade, "entry_context", "vwap", features.get("vwap"))
-                    add_nested_diag(trade, "entry_context", "vwap_deviation", features.get("vwap_deviation"))
-                    add_nested_diag(trade, "entry_context", "vwap_slope", features.get("vwap_slope"))
-                    
+                    add_nested_diag(
+                        trade, "entry_context", "vwap", features.get("vwap")
+                    )
+                    add_nested_diag(
+                        trade,
+                        "entry_context",
+                        "vwap_deviation",
+                        features.get("vwap_deviation"),
+                    )
+                    add_nested_diag(
+                        trade, "entry_context", "vwap_slope", features.get("vwap_slope")
+                    )
+
                     # Indicators
                     add_nested_diag(trade, "entry_context", "rsi", features.get("rsi"))
-                    add_nested_diag(trade, "entry_context", "atr_5", features.get("atr_5"))
-                    
+                    add_nested_diag(
+                        trade, "entry_context", "atr_5", features.get("atr_5")
+                    )
+
                     # Volume
-                    add_nested_diag(trade, "entry_context", "volume", features.get("volume"))
-                    add_nested_diag(trade, "entry_context", "volume_sma_20", features.get("volume_sma_20"))
-                    
+                    add_nested_diag(
+                        trade, "entry_context", "volume", features.get("volume")
+                    )
+                    add_nested_diag(
+                        trade,
+                        "entry_context",
+                        "volume_sma_20",
+                        features.get("volume_sma_20"),
+                    )
+
                     # Rejection candle raw components (if available)
-                    add_nested_diag(trade, "entry_context", "rejection_candle_raw", {
-                        "wick_penetration": features.get("wick_penetration"),
-                        "close_vs_vwap_diff": features.get("close_vs_vwap_diff"),
-                        "direction_valid": features.get("rejection_direction_valid"),
-                    })
-                
+                    add_nested_diag(
+                        trade,
+                        "entry_context",
+                        "rejection_candle_raw",
+                        {
+                            "wick_penetration": features.get("wick_penetration"),
+                            "close_vs_vwap_diff": features.get("close_vs_vwap_diff"),
+                            "direction_valid": features.get(
+                                "rejection_direction_valid"
+                            ),
+                        },
+                    )
+
                 # Log factor-level scoring if available on the signal object
                 if hasattr(execution.signal, "factors") and execution.signal.factors:
-                    add_nested_diag(trade, "entry_context", "scoring_factors", execution.signal.factors)
+                    add_nested_diag(
+                        trade,
+                        "entry_context",
+                        "scoring_factors",
+                        execution.signal.factors,
+                    )
 
                 # Add to active trades
                 self._active_trades[trade.trade_id] = trade
@@ -935,7 +980,7 @@ class BacktestReplayLoop:
         logger.info(f"Previous session date: {self._session_date}")
         logger.info(f"Previous daily PnL: {self._daily_pnl:.2f}")
         logger.info(f"Previous trades today: {self._trades_today}")
-        
+
         # Log structure label distribution from previous session
         if self._session_date is not None and self._structure_stats:
             total_candles = sum(self._structure_stats.values())
@@ -947,7 +992,7 @@ class BacktestReplayLoop:
                 count = self._structure_stats.get(label, 0)
                 pct = (count / total_candles * 100) if total_candles > 0 else 0
                 logger.info(f"  {label}: {count} ({pct:.1f}%)")
-        
+
         logger.info("=" * 60)
 
         # Reset daily state
@@ -956,7 +1001,7 @@ class BacktestReplayLoop:
         self._trades_today = 0
         self._session_date = current_date
         self._session_reset_count += 1
-        
+
         # Reset structure statistics for new session
         self._structure_stats.clear()
 

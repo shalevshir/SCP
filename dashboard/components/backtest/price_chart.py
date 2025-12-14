@@ -90,7 +90,11 @@ def render_price_chart_with_markers(
     # Add candlesticks
     fig.add_trace(
         go.Candlestick(
-            x=gc_df.index if isinstance(gc_df.index, pd.DatetimeIndex) else gc_df["timestamp"],
+            x=(
+                gc_df.index
+                if isinstance(gc_df.index, pd.DatetimeIndex)
+                else gc_df["timestamp"]
+            ),
             open=gc_df["open"],
             high=gc_df["high"],
             low=gc_df["low"],
@@ -113,7 +117,9 @@ def render_price_chart_with_markers(
             closest_idx = gc_df.index.get_indexer([entry_time], method="nearest")[0]
             if closest_idx >= 0:
                 marker_color = "#26a69a" if trade.direction == "long" else "#ef5350"
-                marker_symbol = "triangle-up" if trade.direction == "long" else "triangle-down"
+                marker_symbol = (
+                    "triangle-up" if trade.direction == "long" else "triangle-down"
+                )
 
                 fig.add_trace(
                     go.Scatter(
@@ -133,7 +139,9 @@ def render_price_chart_with_markers(
                             f"Setup: {trade.setup_type}<br>"
                             f"Score: {trade.entry_execution.signal.score:.1f}<extra></extra>"
                         ),
-                        showlegend=(trade == results.trades[0]),  # Only show legend for first
+                        showlegend=(
+                            trade == results.trades[0]
+                        ),  # Only show legend for first
                     )
                 )
 
@@ -167,7 +175,9 @@ def render_price_chart_with_markers(
                 exit_price = selected_trade.exit_price
 
                 if isinstance(gc_df.index, pd.DatetimeIndex):
-                    closest_idx = gc_df.index.get_indexer([exit_time], method="nearest")[0]
+                    closest_idx = gc_df.index.get_indexer(
+                        [exit_time], method="nearest"
+                    )[0]
                     if closest_idx >= 0:
                         exit_color = (
                             "#26a69a"
@@ -245,7 +255,8 @@ def render_trade_details(trade: Trade | None) -> html.Div:
                                     html.Strong("Exit: "),
                                     (
                                         f"{trade.exit_price:.2f} @ {trade.exit_timestamp.strftime('%Y-%m-%d %H:%M:%S')}"
-                                        if trade.exit_timestamp and trade.exit_price is not None
+                                        if trade.exit_timestamp
+                                        and trade.exit_price is not None
                                         else "Open"
                                     ),
                                     html.Br(),
@@ -298,4 +309,3 @@ def render_trade_details(trade: Trade | None) -> html.Div:
             ),
         ]
     )
-

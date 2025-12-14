@@ -16,12 +16,12 @@ class TestMinimumRiskValidation:
 
     def test_minimum_sl_enforcement_prevents_micro_risk(self):
         """Test that minimum SL enforcement prevents micro-risk trades.
-        
+
         Updated: All setups now have minimum SL enforcement:
         - VWAP_FADE: 15-tick minimum
         - VWAP_RECLAIM: 20-tick minimum
         - DXY_CONTINUATION: 15-tick minimum
-        
+
         Micro-risk scenarios are auto-corrected, not rejected.
         """
         # Arrange: Signal and entry with tiny risk
@@ -210,4 +210,3 @@ class TestMinimumRiskValidation:
         # Risk will be >= 20 ticks due to minimum enforcement
         risk_ticks = abs(trade.entry_price - trade.stop_loss) / 0.1
         assert risk_ticks >= MIN_RISK_TICKS
-

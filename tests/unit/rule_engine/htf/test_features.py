@@ -117,7 +117,9 @@ class TestStreamingHTFFeatureComputer:
             htf_1h=(htf_1h_gc, htf_1h_dxy),
         )
 
-        features_5m, features_15m, features_1h = htf_computer.update_from_sync_bar(sync_bar)
+        features_5m, features_15m, features_1h = htf_computer.update_from_sync_bar(
+            sync_bar
+        )
 
         # Features should be computed (may be empty if not warmed up)
         assert isinstance(features_15m, pd.Series)
@@ -160,7 +162,9 @@ class TestStreamingHTFFeatureComputer:
             htf_1h=None,
         )
 
-        features_5m, features_15m, features_1h = htf_computer.update_from_sync_bar(sync_bar)
+        features_5m, features_15m, features_1h = htf_computer.update_from_sync_bar(
+            sync_bar
+        )
 
         # Features should still be returned (may be empty)
         assert isinstance(features_15m, pd.Series)

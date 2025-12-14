@@ -304,22 +304,29 @@ class TestHTFBiasParity:
         for key in dict1:
             val1 = dict1[key]
             val2 = dict2[key]
-            
+
             # Handle None values
             if val1 is None or val2 is None:
                 assert val1 == val2, f"Field {key} mismatch: {val1} != {val2}"
             # Handle floats
             elif isinstance(val1, float) and isinstance(val2, float):
-                assert val1 == pytest.approx(val2, abs=0.01), f"Field {key} mismatch: {val1} != {val2}"
+                assert val1 == pytest.approx(
+                    val2, abs=0.01
+                ), f"Field {key} mismatch: {val1} != {val2}"
             # Handle numpy arrays (convert to list for comparison)
-            elif hasattr(val1, '__array__') or hasattr(val2, '__array__'):
+            elif hasattr(val1, "__array__") or hasattr(val2, "__array__"):
                 import numpy as np
+
                 arr1 = np.asarray(val1) if not isinstance(val1, np.ndarray) else val1
                 arr2 = np.asarray(val2) if not isinstance(val2, np.ndarray) else val2
-                np.testing.assert_array_equal(arr1, arr2, err_msg=f"Field {key} mismatch")
+                np.testing.assert_array_equal(
+                    arr1, arr2, err_msg=f"Field {key} mismatch"
+                )
             # Handle Timestamps
             elif isinstance(val1, pd.Timestamp) or isinstance(val2, pd.Timestamp):
-                assert pd.Timestamp(val1) == pd.Timestamp(val2), f"Field {key} mismatch: {val1} != {val2}"
+                assert pd.Timestamp(val1) == pd.Timestamp(
+                    val2
+                ), f"Field {key} mismatch: {val1} != {val2}"
             # Handle other types
             else:
                 assert val1 == val2, f"Field {key} mismatch: {val1} != {val2}"

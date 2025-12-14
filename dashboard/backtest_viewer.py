@@ -114,8 +114,14 @@ class BacktestResultsViewer:
                 # Price chart and Scoring breakdown
                 dbc.Row(
                     [
-                        dbc.Col([create_price_chart_with_markers()], width=6, className="mb-4"),
-                        dbc.Col([create_scoring_breakdown()], width=6, className="mb-4"),
+                        dbc.Col(
+                            [create_price_chart_with_markers()],
+                            width=6,
+                            className="mb-4",
+                        ),
+                        dbc.Col(
+                            [create_scoring_breakdown()], width=6, className="mb-4"
+                        ),
                     ]
                 ),
             ],
@@ -245,8 +251,9 @@ class BacktestResultsViewer:
                     )
 
                 df = pd.DataFrame(rows)
-                return dcc.send_data_frame(df.to_csv, "backtest_trades.csv", index=False)
-
+                return dcc.send_data_frame(
+                    df.to_csv, "backtest_trades.csv", index=False
+                )
 
     def run(self, host: str = "0.0.0.0", port: int = 8051, debug: bool = False) -> None:
         """Run the dashboard server.
@@ -258,4 +265,3 @@ class BacktestResultsViewer:
         """
         logger.info(f"Starting backtest results viewer on {host}:{port}")
         self.app.run_server(host=host, port=port, debug=debug)
-

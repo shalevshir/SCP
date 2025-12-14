@@ -72,9 +72,9 @@ class TestTradeTableNumericConditionalStyling:
         pnl_value = row["PnL (pts)"]
 
         # Should be raw float, not formatted string
-        assert isinstance(pnl_value, float), (
-            f"PnL (pts) should be float for filter queries, got {type(pnl_value)}"
-        )
+        assert isinstance(
+            pnl_value, float
+        ), f"PnL (pts) should be float for filter queries, got {type(pnl_value)}"
         assert pnl_value == 15.5
 
     def test_render_table_with_negative_pnl_has_numeric_column(self) -> None:
@@ -87,9 +87,9 @@ class TestTradeTableNumericConditionalStyling:
 
         # Should be raw float for proper < 0 comparison
         pnl_value = row["PnL (pts)"]
-        assert isinstance(pnl_value, float), (
-            f"PnL (pts) should be float for filter queries, got {type(pnl_value)}"
-        )
+        assert isinstance(
+            pnl_value, float
+        ), f"PnL (pts) should be float for filter queries, got {type(pnl_value)}"
         assert pnl_value == -8.25
 
     def test_render_table_with_none_pnl_handles_gracefully(self) -> None:
@@ -102,9 +102,9 @@ class TestTradeTableNumericConditionalStyling:
 
         # Should be None (not "N/A" string) so filter queries skip it
         pnl_value = row["PnL (pts)"]
-        assert pnl_value is None, (
-            f"None PnL should stay None, not be converted to '{pnl_value}'"
-        )
+        assert (
+            pnl_value is None
+        ), f"None PnL should stay None, not be converted to '{pnl_value}'"
 
     def test_columns_have_numeric_type_for_pnl_columns(self) -> None:
         """PnL, R, and Score columns should have numeric type for proper filtering."""
@@ -157,19 +157,21 @@ class TestTradeTableConditionalStyles:
 
         # Find row background styles (not column-specific)
         row_styles = [
-            s for s in style_conditionals
-            if "column_id" not in s.get("if", {})
-            and "backgroundColor" in s
+            s
+            for s in style_conditionals
+            if "column_id" not in s.get("if", {}) and "backgroundColor" in s
         ]
 
-        assert len(row_styles) >= 2, (
-            f"Should have row background styles for win/loss, got {len(row_styles)}"
-        )
+        assert (
+            len(row_styles) >= 2
+        ), f"Should have row background styles for win/loss, got {len(row_styles)}"
 
         # Check we have both positive and negative PnL styles
         filter_queries = [s["if"]["filter_query"] for s in row_styles]
         assert any("< 0" in q for q in filter_queries), "Missing losing trade row style"
-        assert any("> 0" in q for q in filter_queries), "Missing winning trade row style"
+        assert any(
+            "> 0" in q for q in filter_queries
+        ), "Missing winning trade row style"
 
     def test_style_data_conditional_uses_proper_column_reference(self) -> None:
         """Filter queries should reference {PnL (pts)} column properly."""
@@ -183,9 +185,9 @@ class TestTradeTableConditionalStyles:
             query = style.get("if", {}).get("filter_query", "")
             if "PnL" in query:
                 # Should be {PnL (pts)} not '{PnL (pts)}'
-                assert "{PnL" in query, (
-                    f"Filter query should use {{column}} format, got: {query}"
-                )
+                assert (
+                    "{PnL" in query
+                ), f"Filter query should use {{column}} format, got: {query}"
 
 
 class TestTradeTableFiltering:
@@ -220,7 +222,6 @@ class TestTradeTableFiltering:
         result = render_trade_table(results)
 
         # Should return html.Div, not DataTable
-        assert not hasattr(result, "data"), (
-            "Empty results should return Div, not DataTable"
-        )
-
+        assert not hasattr(
+            result, "data"
+        ), "Empty results should return Div, not DataTable"

@@ -16,9 +16,11 @@ from rule_engine import (
 from rule_engine.htf.types import HTFBias
 
 
-def create_htf_bias_from_context(context: dict, setup_type: str = "VWAP_RECLAIM") -> HTFBias:
+def create_htf_bias_from_context(
+    context: dict, setup_type: str = "VWAP_RECLAIM"
+) -> HTFBias:
     """Helper to create HTFBias from context dict for integration tests.
-    
+
     Creates an HTFBias with all required fields for setup detection to work.
     """
     bias = context.get("htf_bias", "neutral")
@@ -33,11 +35,11 @@ def create_htf_bias_from_context(context: dict, setup_type: str = "VWAP_RECLAIM"
         confidence = "low"
 
     # Set up required fields based on setup type
-    # For VWAP_RECLAIM: liquidity_sweep_detected, structure_clarity >= 0.5, 
+    # For VWAP_RECLAIM: liquidity_sweep_detected, structure_clarity >= 0.5,
     #                   bos_detected, bars_since_bos <= 15
     # For DXY_CONTINUATION: dxy_corr_1m < -0.3, dxy_corr_5m < -0.3,
     #                       dxy_structure, bars_since_bos <= 10, no chop
-    
+
     return HTFBias(
         bias=bias,
         direction=direction,
@@ -53,7 +55,9 @@ def create_htf_bias_from_context(context: dict, setup_type: str = "VWAP_RECLAIM"
         # DXY fields for DXY_CONTINUATION
         dxy_corr_1m=-0.5,  # Strong inverse correlation
         dxy_corr_5m=-0.5,  # Strong inverse correlation
-        dxy_structure="LL" if direction == "long" else "HH",  # DXY bearish for gold longs
+        dxy_structure=(
+            "LL" if direction == "long" else "HH"
+        ),  # DXY bearish for gold longs
         dxy_chop_5m=False,
         chop_detected=False,
     )
@@ -198,13 +202,13 @@ class TestRuleEngineIntegration:
 
     def test_different_setup_types(self) -> None:
         """Test scoring different setup types.
-        
+
         Note: Setup type detection follows this priority order in determine_setup_type:
         1. VWAP_FADE: RSI extreme (<30 or >70) AND VWAP deviation > 0.5%
         2. DXY_CONTINUATION: Strong inverse correlation, DXY structure, BOS recency
         3. VWAP_RECLAIM: Liquidity sweep, structure clarity, BOS detected
-        
-        With the comprehensive HTFBias (which includes all DXY fields), 
+
+        With the comprehensive HTFBias (which includes all DXY fields),
         DXY_CONTINUATION may match first if conditions are met.
         """
         # VWAP_FADE setup - RSI extreme with VWAP deviation (checked first)

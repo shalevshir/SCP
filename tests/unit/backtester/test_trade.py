@@ -84,7 +84,7 @@ class TestTradeDataclass:
             status="OPEN",
             duration_bars=None,
             invalidation_triggered=False,
-        ignore_first_retest_bar=False,
+            ignore_first_retest_bar=False,
         )
 
     def test_trade_has_required_attributes(self, sample_trade):
@@ -168,7 +168,7 @@ class TestTradeDataclass:
             status="OPEN",
             duration_bars=None,
             invalidation_triggered=False,
-        ignore_first_retest_bar=False,
+            ignore_first_retest_bar=False,
         )
 
         assert trade.direction in ["long", "short"]
@@ -1021,7 +1021,7 @@ class TestCloseTrade:
             status="OPEN",
             duration_bars=None,
             invalidation_triggered=False,
-        ignore_first_retest_bar=False,
+            ignore_first_retest_bar=False,
         )
 
     @pytest.fixture
@@ -1218,7 +1218,7 @@ class TestCloseTrade:
             status="OPEN",
             duration_bars=None,
             invalidation_triggered=False,
-        ignore_first_retest_bar=False,
+            ignore_first_retest_bar=False,
         )
 
         exit_candle = Candle(
@@ -1463,7 +1463,7 @@ class TestCloseTrade:
             status="OPEN",
             duration_bars=None,
             invalidation_triggered=False,
-        ignore_first_retest_bar=False,
+            ignore_first_retest_bar=False,
         )
 
         # Exit at +3R (take profit)
@@ -1555,7 +1555,7 @@ class TestCloseTrade:
             status="OPEN",
             duration_bars=None,
             invalidation_triggered=False,
-        ignore_first_retest_bar=False,
+            ignore_first_retest_bar=False,
         )
 
         # Exit at +2R (take profit)
@@ -1644,7 +1644,7 @@ class TestJSONSerialization:
             status="CLOSED_WIN",
             duration_bars=9,
             invalidation_triggered=False,
-        ignore_first_retest_bar=False,
+            ignore_first_retest_bar=False,
         )
 
     def test_to_dict_returns_serializable_dict(self, sample_trade):
@@ -1754,7 +1754,7 @@ class TestJSONSerialization:
             status="OPEN",
             duration_bars=None,
             invalidation_triggered=False,
-        ignore_first_retest_bar=False,
+            ignore_first_retest_bar=False,
         )
 
         trade_dict = to_dict(open_trade)

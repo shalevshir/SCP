@@ -71,7 +71,9 @@ class TestDXYChopDetection:
         self, simple_chop_data: pd.DataFrame
     ) -> None:
         """Test that 3+ consecutive chop candles trigger chop condition."""
-        result = detect_dxy_chop(simple_chop_data, wick_threshold=0.5, min_chop_candles=3)
+        result = detect_dxy_chop(
+            simple_chop_data, wick_threshold=0.5, min_chop_candles=3
+        )
 
         # First 2 candles should be False (need 3 consecutive)
         assert not result.iloc[0]
@@ -117,7 +119,9 @@ class TestDXYChopDetection:
         self, mixed_chop_data: pd.DataFrame
     ) -> None:
         """Test that non-chop candle interrupts and resets the count."""
-        result = detect_dxy_chop(mixed_chop_data, wick_threshold=0.5, min_chop_candles=3)
+        result = detect_dxy_chop(
+            mixed_chop_data, wick_threshold=0.5, min_chop_candles=3
+        )
 
         # Candles 0-1: chop but only 2 (not enough)
         assert not result.iloc[0]
@@ -144,7 +148,9 @@ class TestDXYChopDetection:
         result_low = detect_dxy_chop(simple_chop_data, wick_threshold=0.1)
         assert result_low.iloc[2:].all()  # Most candles meet threshold
 
-    def test_detect_chop_custom_min_candles(self, simple_chop_data: pd.DataFrame) -> None:
+    def test_detect_chop_custom_min_candles(
+        self, simple_chop_data: pd.DataFrame
+    ) -> None:
         """Test chop detection with custom minimum consecutive candles."""
         # Need 5 consecutive chop candles
         result = detect_dxy_chop(simple_chop_data, min_chop_candles=5)
@@ -306,7 +312,9 @@ class TestDXYChopDetection:
     def test_detect_chop_index_preserved(self, simple_chop_data: pd.DataFrame) -> None:
         """Test that result preserves input DataFrame index."""
         # Set custom index
-        simple_chop_data.index = pd.date_range("2025-01-01", periods=len(simple_chop_data), freq="1H")
+        simple_chop_data.index = pd.date_range(
+            "2025-01-01", periods=len(simple_chop_data), freq="1H"
+        )
 
         result = detect_dxy_chop(simple_chop_data)
 
@@ -374,4 +382,3 @@ class TestDXYChopDetection:
         # Candles 5-6: 3rd and 4th consecutive chop, should trigger
         assert result.iloc[5]
         assert result.iloc[6]
-

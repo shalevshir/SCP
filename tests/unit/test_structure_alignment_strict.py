@@ -21,12 +21,14 @@ class TestStructureAlignmentStrict:
 
     def test_perfect_structure_gets_full_score(self):
         """Test perfect structure alignment gets full points."""
-        features = pd.Series({
-            'close': 2655.0,
-            'vwap': 2650.0,
-            'ema_9': 2652.0,
-            'ema_20': 2650.0,
-        })
+        features = pd.Series(
+            {
+                "close": 2655.0,
+                "vwap": 2650.0,
+                "ema_9": 2652.0,
+                "ema_20": 2650.0,
+            }
+        )
 
         htf_bias = HTFBias(
             bias="bullish",
@@ -41,17 +43,21 @@ class TestStructureAlignmentStrict:
         )
 
         max_points = 2.5
-        score = calculate_structure_alignment(features, htf_bias, max_points, "DXY_CONTINUATION")
+        score = calculate_structure_alignment(
+            features, htf_bias, max_points, "DXY_CONTINUATION"
+        )
 
         # Should get full points for perfect structure
         assert score == max_points
 
     def test_reject_choppy_structure(self):
         """Test rejection when chop_detected is True."""
-        features = pd.Series({
-            'close': 2655.0,
-            'vwap': 2650.0,
-        })
+        features = pd.Series(
+            {
+                "close": 2655.0,
+                "vwap": 2650.0,
+            }
+        )
 
         htf_bias = HTFBias(
             bias="bullish",
@@ -65,16 +71,20 @@ class TestStructureAlignmentStrict:
         )
 
         max_points = 2.5
-        score = calculate_structure_alignment(features, htf_bias, max_points, "DXY_CONTINUATION")
+        score = calculate_structure_alignment(
+            features, htf_bias, max_points, "DXY_CONTINUATION"
+        )
 
         assert score == 0.0  # Hard rejection
 
     def test_reject_no_recent_bos(self):
         """Test rejection when no BOS detected."""
-        features = pd.Series({
-            'close': 2655.0,
-            'vwap': 2650.0,
-        })
+        features = pd.Series(
+            {
+                "close": 2655.0,
+                "vwap": 2650.0,
+            }
+        )
 
         htf_bias = HTFBias(
             bias="bullish",
@@ -88,16 +98,20 @@ class TestStructureAlignmentStrict:
         )
 
         max_points = 2.5
-        score = calculate_structure_alignment(features, htf_bias, max_points, "DXY_CONTINUATION")
+        score = calculate_structure_alignment(
+            features, htf_bias, max_points, "DXY_CONTINUATION"
+        )
 
         assert score == 0.0  # Hard rejection
 
     def test_reject_stale_bos(self):
         """Test rejection when BOS is too old (>15 bars)."""
-        features = pd.Series({
-            'close': 2655.0,
-            'vwap': 2650.0,
-        })
+        features = pd.Series(
+            {
+                "close": 2655.0,
+                "vwap": 2650.0,
+            }
+        )
 
         htf_bias = HTFBias(
             bias="bullish",
@@ -111,16 +125,20 @@ class TestStructureAlignmentStrict:
         )
 
         max_points = 2.5
-        score = calculate_structure_alignment(features, htf_bias, max_points, "DXY_CONTINUATION")
+        score = calculate_structure_alignment(
+            features, htf_bias, max_points, "DXY_CONTINUATION"
+        )
 
         assert score == 0.0  # Hard rejection
 
     def test_reject_low_structure_clarity(self):
         """Test rejection when structure clarity is low (<0.6)."""
-        features = pd.Series({
-            'close': 2655.0,
-            'vwap': 2650.0,
-        })
+        features = pd.Series(
+            {
+                "close": 2655.0,
+                "vwap": 2650.0,
+            }
+        )
 
         htf_bias = HTFBias(
             bias="bullish",
@@ -134,16 +152,20 @@ class TestStructureAlignmentStrict:
         )
 
         max_points = 2.5
-        score = calculate_structure_alignment(features, htf_bias, max_points, "DXY_CONTINUATION")
+        score = calculate_structure_alignment(
+            features, htf_bias, max_points, "DXY_CONTINUATION"
+        )
 
         assert score == 0.0  # Hard rejection
 
     def test_reject_no_liquidity_sweep(self):
         """Test rejection when no liquidity sweep detected."""
-        features = pd.Series({
-            'close': 2655.0,
-            'vwap': 2650.0,
-        })
+        features = pd.Series(
+            {
+                "close": 2655.0,
+                "vwap": 2650.0,
+            }
+        )
 
         htf_bias = HTFBias(
             bias="bullish",
@@ -157,18 +179,22 @@ class TestStructureAlignmentStrict:
         )
 
         max_points = 2.5
-        score = calculate_structure_alignment(features, htf_bias, max_points, "DXY_CONTINUATION")
+        score = calculate_structure_alignment(
+            features, htf_bias, max_points, "DXY_CONTINUATION"
+        )
 
         assert score == 0.0  # Hard rejection
 
     def test_direction_mismatch_still_rejects(self):
         """Test rejection when direction doesn't match HTF bias."""
-        features = pd.Series({
-            'close': 2645.0,  # Below VWAP
-            'vwap': 2650.0,
-            'ema_9': 2648.0,
-            'ema_20': 2650.0,
-        })
+        features = pd.Series(
+            {
+                "close": 2645.0,  # Below VWAP
+                "vwap": 2650.0,
+                "ema_9": 2648.0,
+                "ema_20": 2650.0,
+            }
+        )
 
         htf_bias = HTFBias(
             bias="bullish",
@@ -182,18 +208,22 @@ class TestStructureAlignmentStrict:
         )
 
         max_points = 2.5
-        score = calculate_structure_alignment(features, htf_bias, max_points, "DXY_CONTINUATION")
+        score = calculate_structure_alignment(
+            features, htf_bias, max_points, "DXY_CONTINUATION"
+        )
 
         assert score == 0.0  # Direction mismatch rejects
 
     def test_moderate_structure_gets_partial_score(self):
         """Test moderate structure quality gets partial points."""
-        features = pd.Series({
-            'close': 2655.0,
-            'vwap': 2650.0,
-            'ema_9': 2652.0,
-            'ema_20': 2650.0,
-        })
+        features = pd.Series(
+            {
+                "close": 2655.0,
+                "vwap": 2650.0,
+                "ema_9": 2652.0,
+                "ema_20": 2650.0,
+            }
+        )
 
         htf_bias = HTFBias(
             bias="bullish",
@@ -208,8 +238,9 @@ class TestStructureAlignmentStrict:
         )
 
         max_points = 2.5
-        score = calculate_structure_alignment(features, htf_bias, max_points, "DXY_CONTINUATION")
+        score = calculate_structure_alignment(
+            features, htf_bias, max_points, "DXY_CONTINUATION"
+        )
 
         # Should get partial points (not 0, not max)
         assert 0 < score < max_points
-

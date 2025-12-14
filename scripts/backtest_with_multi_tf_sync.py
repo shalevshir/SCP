@@ -100,7 +100,7 @@ def main() -> None:
     project_root = Path(__file__).parent.parent
     config = load_config(project_root / "config" / "core.yaml")
     setup_logging(config.system)
-    
+
     parser = build_arg_parser()
     args = parser.parse_args()
 

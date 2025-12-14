@@ -152,7 +152,7 @@ def main() -> None:
     # Initialize logging first
     config = load_config(PROJECT_ROOT / "config" / "core.yaml")
     setup_logging(config.system)
-    
+
     args = parse_args()
 
     logger.info("=" * 60)

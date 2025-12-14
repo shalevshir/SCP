@@ -370,4 +370,3 @@ class TestHTFVWAPCalculator:
         # Original columns should be preserved
         assert "symbol" in result.columns
         assert "open" in result.columns
-

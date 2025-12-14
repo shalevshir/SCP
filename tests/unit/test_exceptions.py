@@ -1,6 +1,5 @@
 """Tests for exception hierarchy."""
 
-
 from common.exceptions import (
     AppError,
     ConfigError,

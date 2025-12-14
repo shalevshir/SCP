@@ -120,9 +120,7 @@ class ReplayEngine:
         # - Incremental feature computation (no lookahead)
         # - Session resets
         # - Validation context building
-        yield from self._processor.iterate_with_context(
-            gc_df, dxy_df
-        )
+        yield from self._processor.iterate_with_context(gc_df, dxy_df)
 
         logger.info("Replay complete")
 

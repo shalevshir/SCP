@@ -371,12 +371,12 @@ def calculate_structure_alignment(
     if setup_type == "VWAP_RECLAIM":
         # Skip chop and clarity hard rejections
         # VWAP_RECLAIM can work during micro chop (reclaim is structural, not momentum)
-        
+
         # Still require liquidity sweep (prerequisite validates this)
         if not htf_bias.liquidity_sweep_detected:
             logger.debug("VWAP_RECLAIM structure: no liquidity sweep")
             return max_points * 0.3  # Reduced but not zero
-        
+
         # Still require recent BOS
         if htf_bias.bars_since_bos is None or htf_bias.bars_since_bos > 15:
             logger.debug(
@@ -384,26 +384,26 @@ def calculate_structure_alignment(
                 f"(bars_since_bos={htf_bias.bars_since_bos})"
             )
             return max_points * 0.3  # Reduced but not zero
-        
+
         # Calculate score for VWAP_RECLAIM (tolerant scoring)
         score = max_points * 0.5  # Minimum base (50%)
-        
+
         # Bonus for high clarity (but not required)
         if htf_bias.structure_clarity >= 0.7:
             score += max_points * 0.3
         elif htf_bias.structure_clarity >= 0.5:
             score += max_points * 0.15
-        
+
         # Bonus for very recent BOS
         if htf_bias.bars_since_bos <= 10:
             score += max_points * 0.2
-        
+
         logger.debug(
             f"VWAP_RECLAIM structure (tolerant): clarity={htf_bias.structure_clarity:.2f}, "
             f"bars_since_bos={htf_bias.bars_since_bos}, "
             f"sweep={htf_bias.liquidity_sweep_detected}, score={score:.2f}/{max_points}"
         )
-        
+
         return min(score, max_points)
 
     # STRICT REQUIREMENTS for DXY_CONTINUATION and VWAP_FADE
@@ -681,7 +681,7 @@ def calculate_rejection_candle(
     Example:
         For HTF bullish (long direction), VWAP_FADE bounces from oversold
         → look for LOWER wick rejection + close near VWAP + bullish close
-        
+
         For HTF bearish (short direction), VWAP_FADE pulls back from overbought
         → look for UPPER wick rejection + close near VWAP + bearish close
     """

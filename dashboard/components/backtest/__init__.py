@@ -33,5 +33,3 @@ __all__ = [
     "create_scoring_breakdown",
     "render_scoring_breakdown",
 ]
-
-
