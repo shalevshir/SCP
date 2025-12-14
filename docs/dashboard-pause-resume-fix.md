@@ -101,3 +101,4 @@ Both tests pass, confirming the fix works correctly.
 - Thread safety is maintained through existing lock mechanisms (`self._lock`)
 
 
+
