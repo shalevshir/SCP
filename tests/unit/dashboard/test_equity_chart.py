@@ -56,7 +56,7 @@ def sample_entry_execution():
 
 def test_render_equity_chart_with_trades_all_none_pnl(sample_entry_execution):
     """Test that render_equity_chart handles trades with all None PnL values.
-    
+
     This reproduces the bug where if all trades have pnl=None, the equity_series
     will be empty, and accessing equity_series[0] at line 119 will raise IndexError.
     """
@@ -209,9 +209,11 @@ def test_render_equity_chart_with_valid_pnl(sample_entry_execution):
         assert "No PnL data available" not in str(fig.layout.annotations)
 
 
-def test_render_equity_chart_with_mixed_pnl_sequential_trade_numbers(sample_entry_execution):
+def test_render_equity_chart_with_mixed_pnl_sequential_trade_numbers(
+    sample_entry_execution,
+):
     """Test that trade_numbers are sequential (1, 2, 3) even when some trades have None PnL.
-    
+
     This verifies the fix for the bug where enumerate index was used instead of
     a separate counter, causing gaps in trade_numbers when trades with pnl=None
     were skipped.
@@ -364,22 +366,23 @@ def test_render_equity_chart_with_mixed_pnl_sequential_trade_numbers(sample_entr
 
     assert fig is not None
     assert len(fig.data) > 0
-    
+
     # Extract trade_numbers from the first trace (equity curve)
     equity_trace = fig.data[0]
     # Convert to list (x and y may be array, tuple, or list)
     trade_numbers = list(equity_trace.x)
     cumulative_pnl = list(equity_trace.y)
-    
+
     # Verify trade_numbers are sequential starting from 1
     # Even though first trade was skipped, numbers should be [1, 2, 3], not [2, 3, 4]
     assert trade_numbers == [1, 2, 3], (
         f"Expected trade_numbers to be [1, 2, 3], got {trade_numbers}. "
         "This indicates the enumerate index bug is still present."
     )
-    
-    # Verify cumulative PnL values are correct
-    assert cumulative_pnl == [15.0, 35.0, 60.0], (
-        f"Expected cumulative PnL to be [15.0, 35.0, 60.0], got {cumulative_pnl}"
-    )
 
+    # Verify cumulative PnL values are correct
+    assert cumulative_pnl == [
+        15.0,
+        35.0,
+        60.0,
+    ], f"Expected cumulative PnL to be [15.0, 35.0, 60.0], got {cumulative_pnl}"

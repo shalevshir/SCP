@@ -155,4 +155,3 @@ def detect_displacement_candle(
     )
 
     return is_displacement
-

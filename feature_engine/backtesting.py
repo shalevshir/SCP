@@ -86,7 +86,7 @@ class BacktestProcessor:
         self.rsi_period = rsi_period
         self.ema_periods = ema_periods if ema_periods is not None else [9, 20, 50]
         self.dxy_window = dxy_window
-        
+
         # Automatically determine swing_window based on timeframe if not provided
         if swing_window is None:
             self.swing_window = get_swing_window_for_timeframe(timeframe)
@@ -99,7 +99,7 @@ class BacktestProcessor:
             logger.info(
                 f"Using explicit swing_window={self.swing_window} for {timeframe}"
             )
-        
+
         self.enable_validation = enable_validation
 
         # Calculate warmup period if not provided
@@ -247,6 +247,10 @@ class BacktestProcessor:
                     "bos_age": features.get("bos_age"),
                     "choch_detected": features.get("choch_detected"),
                     "choch_age": features.get("choch_age"),
+                    "liquidity_sweep": features.get("liquidity_sweep"),
+                    "sweep_direction": features.get("sweep_direction"),
+                    "sweep_price": features.get("sweep_price"),
+                    "sweep_age": features.get("sweep_age"),
                 }
             )
 
@@ -371,6 +375,10 @@ class BacktestProcessor:
                     "bos_age": features.get("bos_age"),
                     "choch_detected": features.get("choch_detected"),
                     "choch_age": features.get("choch_age"),
+                    "liquidity_sweep": features.get("liquidity_sweep"),
+                    "sweep_direction": features.get("sweep_direction"),
+                    "sweep_price": features.get("sweep_price"),
+                    "sweep_age": features.get("sweep_age"),
                 }
             )
 
@@ -452,13 +460,13 @@ class BacktestProcessor:
             features[["high", "low", "close"]],
             swing_window=self.swing_window,
         )
-        
+
         # Merge structure context fields into features
         for col in structure_context.columns:
             # Don't overwrite structure_label (keep sparse version for compatibility)
             if col not in ["last_structure_label"]:
                 features[col] = structure_context[col]
-        
+
         # Add last_structure_label separately (continuous version)
         features["last_structure_label"] = structure_context["last_structure_label"]
 

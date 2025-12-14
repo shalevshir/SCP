@@ -16,7 +16,9 @@ from rule_engine.htf.types import HTFBias
 logger = get_logger(__name__)
 
 
-def is_structural_chop(structure_labels: list[str | None], min_alternations: int = 2) -> bool:
+def is_structural_chop(
+    structure_labels: list[str | None], min_alternations: int = 2
+) -> bool:
     """Detect structural chop based on consecutive alternation density.
 
     Only marks chop when there are min_alternations or more consecutive
@@ -183,19 +185,17 @@ def compute_htf_bias_multi_timeframe(
     # === 1H STRUCTURE (Primary Signal, 3 points) ===
     # Get structure label, handling None values properly
     structure_1h = features_1h.get("structure_label")
-    is_none_or_nan_1h = (
-        structure_1h is None
-        or (isinstance(structure_1h, float) and pd.isna(structure_1h))
+    is_none_or_nan_1h = structure_1h is None or (
+        isinstance(structure_1h, float) and pd.isna(structure_1h)
     )
     if is_none_or_nan_1h:
         structure_1h = features_1h.get("structure_type")
-    is_none_or_nan_1h = (
-        structure_1h is None
-        or (isinstance(structure_1h, float) and pd.isna(structure_1h))
+    is_none_or_nan_1h = structure_1h is None or (
+        isinstance(structure_1h, float) and pd.isna(structure_1h)
     )
     if is_none_or_nan_1h:
         structure_1h = ""
-    
+
     # Debug logging for structure detection
     # Log at INFO level when structure is valid for visibility
     is_valid_structure = structure_1h in ("HH", "HL", "LH", "LL")
@@ -243,15 +243,13 @@ def compute_htf_bias_multi_timeframe(
     # === 15M STRUCTURE (Confirmation, 2 points) ===
     # Get structure label, handling None values properly
     structure_15m = features_15m.get("structure_label")
-    is_none_or_nan = (
-        structure_15m is None
-        or (isinstance(structure_15m, float) and pd.isna(structure_15m))
+    is_none_or_nan = structure_15m is None or (
+        isinstance(structure_15m, float) and pd.isna(structure_15m)
     )
     if is_none_or_nan:
         structure_15m = features_15m.get("structure_type")
-    is_none_or_nan = (
-        structure_15m is None
-        or (isinstance(structure_15m, float) and pd.isna(structure_15m))
+    is_none_or_nan = structure_15m is None or (
+        isinstance(structure_15m, float) and pd.isna(structure_15m)
     )
     if is_none_or_nan:
         structure_15m = ""
@@ -456,7 +454,7 @@ def compute_htf_bias(
                 low_close = (df_15m["low"] - df_15m["close"].shift(1)).abs()
                 true_range = high_low.combine(high_close, max).combine(low_close, max)
                 atr_15m = true_range.rolling(window=14).mean().iloc[-1]
-            
+
             # Use tolerant thresholds with ATR filtering
             if detect_price_chop_15m(df_15m, atr=atr_15m):
                 conflict_detected = True
@@ -633,9 +631,7 @@ def compute_htf_bias(
 
     # Extract DXY structure label (from 5M features)
     dxy_structure = (
-        features_5m.get("dxy_structure_label")
-        if features_5m is not None
-        else None
+        features_5m.get("dxy_structure_label") if features_5m is not None else None
     )
 
     # Detect 5M chop
@@ -654,7 +650,7 @@ def compute_htf_bias(
     dxy_alignment = False
     dxy_alignment_score = 0.0
     dxy_alignment_rationale = "N/A"
-    
+
     if original_bias != "neutral":
         original_direction = "long" if original_bias == "bullish" else "short"
         (
@@ -691,7 +687,9 @@ def compute_htf_bias(
 
     # If we have structure labels, calculate clarity and chop
     if structure_labels_list:
-        structure_clarity = calculate_structure_clarity(structure_labels_list, lookback=10)
+        structure_clarity = calculate_structure_clarity(
+            structure_labels_list, lookback=10
+        )
         chop_detected_flag = detect_structure_chop(structure_labels_list, lookback=10)
 
         logger.debug(
@@ -929,6 +927,10 @@ def calculate_bars_since_event(
         # For integer indexes, calculate position difference directly
         # Use the last position in the series as current position
         current_idx = len(events) - 1
-        event_idx = events.index.get_loc(last_event_idx) if hasattr(events.index, 'get_loc') else list(events.index).index(last_event_idx)
+        event_idx = (
+            events.index.get_loc(last_event_idx)
+            if hasattr(events.index, "get_loc")
+            else list(events.index).index(last_event_idx)
+        )
         bars_since = current_idx - event_idx
         return int(bars_since)

@@ -52,7 +52,7 @@ class TestDXYContinuationValidation:
 
     def test_gold_micro_chop_rejects_continuation(self):
         """Test that gold micro chop rejects DXY_CONTINUATION setups.
-        
+
         This test verifies the bug fix: chop_detected (gold micro chop)
         should also reject continuation setups, not just dxy_chop_5m.
         """
@@ -161,4 +161,3 @@ class TestDXYContinuationValidation:
 
         # dxy_chop_ok should be True (not checked for non-continuation)
         assert validated_signal.validation_flags["chop_ok"] is True
-

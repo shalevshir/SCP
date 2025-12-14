@@ -21,7 +21,7 @@ UTC = ZoneInfo("UTC")
 
 def test_htf_invalidation_not_triggered_by_candle_color():
     """Test that HTF invalidation is NOT triggered by candle color change.
-    
+
     Scenario: Long trade enters with HTF bullish structure (HH/HL).
               HTF candle turns bearish (red) but structure remains intact (still HH/HL).
     Expected: No HTF invalidation.
@@ -41,7 +41,7 @@ def test_htf_invalidation_not_triggered_by_candle_color():
         validation_flags={},
         enforcer_tier="EarlyMild",
     )
-    
+
     entry_execution = EntryExecution(
         signal_timestamp=signal.timestamp,
         entry_timestamp=datetime(2025, 11, 1, 10, 31, tzinfo=UTC),
@@ -50,7 +50,7 @@ def test_htf_invalidation_not_triggered_by_candle_color():
         executed=True,
         rejection_reason=None,
     )
-    
+
     trade = Trade(
         trade_id="test-htf-001",
         symbol="GC",
@@ -83,7 +83,7 @@ def test_htf_invalidation_not_triggered_by_candle_color():
         invalidation_triggered=False,
         ignore_first_retest_bar=False,
     )
-    
+
     # Current candle: HTF still has HH/HL structure, just red candle
     current_candle = Candle(
         timestamp=datetime(2025, 11, 1, 10, 32, tzinfo=UTC),
@@ -96,15 +96,15 @@ def test_htf_invalidation_not_triggered_by_candle_color():
         timeframe="1m",
         source="TEST",
     )
-    
+
     # HTF context: Structure still intact (HH/HL), just candle color changed
     htf_context = {
         "structure_label": "HL",  # Still bullish swing (HL is part of HH/HL pattern)
         "htf_bias": "bullish",  # Still bullish structure
     }
-    
+
     checker = InvalidationChecker()
-    
+
     # Act: Check HTF invalidation
     # Pass htf_context as features dict
     should_exit, reason = checker.check_htf_structure_invalidation(
@@ -112,7 +112,7 @@ def test_htf_invalidation_not_triggered_by_candle_color():
         candle=current_candle,
         features=htf_context,
     )
-    
+
     # Assert: Should NOT invalidate due to candle color alone
     # Structure is still HH/HL (same as entry), so no invalidation
     assert should_exit is False, (
@@ -123,7 +123,7 @@ def test_htf_invalidation_not_triggered_by_candle_color():
 
 def test_htf_invalidation_triggered_by_structure_break():
     """Test that HTF invalidation IS triggered by true structure break.
-    
+
     Scenario: Long trade enters with HTF bullish structure (HH/HL).
               HTF structure breaks to LH/LL (bearish).
     Expected: HTF invalidation triggered.
@@ -142,7 +142,7 @@ def test_htf_invalidation_triggered_by_structure_break():
         validation_flags={},
         enforcer_tier="EarlyMild",
     )
-    
+
     entry_execution = EntryExecution(
         signal_timestamp=signal.timestamp,
         entry_timestamp=datetime(2025, 11, 1, 10, 31, tzinfo=UTC),
@@ -151,7 +151,7 @@ def test_htf_invalidation_triggered_by_structure_break():
         executed=True,
         rejection_reason=None,
     )
-    
+
     trade = Trade(
         trade_id="test-htf-002",
         symbol="GC",
@@ -184,7 +184,7 @@ def test_htf_invalidation_triggered_by_structure_break():
         invalidation_triggered=False,
         ignore_first_retest_bar=False,
     )
-    
+
     current_candle = Candle(
         timestamp=datetime(2025, 11, 1, 10, 32, tzinfo=UTC),
         open=2648.0,
@@ -196,15 +196,15 @@ def test_htf_invalidation_triggered_by_structure_break():
         timeframe="1m",
         source="TEST",
     )
-    
+
     # HTF context: Structure broken to LH/LL (bearish)
     htf_context = {
         "structure_label": "LL",  # Bearish swing (lower low)
         "htf_bias": "bearish",  # Structure break
     }
-    
+
     checker = InvalidationChecker()
-    
+
     # Act: Check HTF invalidation
     # Pass htf_context as features dict
     should_exit, reason = checker.check_htf_structure_invalidation(
@@ -212,7 +212,7 @@ def test_htf_invalidation_triggered_by_structure_break():
         candle=current_candle,
         features=htf_context,
     )
-    
+
     # Assert: Should invalidate on structure break
     # Entry was HH/HL (bullish), now LH/LL (bearish) - this is a break
     assert should_exit is True, (
@@ -221,4 +221,3 @@ def test_htf_invalidation_triggered_by_structure_break():
         f"Got should_exit={should_exit}"
     )
     assert "htf" in reason.lower(), f"Reason should mention HTF: {reason}"
-

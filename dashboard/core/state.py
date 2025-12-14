@@ -288,9 +288,7 @@ class DashboardState:
             return hash(str(sorted(d.items())))
 
     @staticmethod
-    def _eq_dict(
-        d1: dict[str, object] | None, d2: dict[str, object] | None
-    ) -> bool:
+    def _eq_dict(d1: dict[str, object] | None, d2: dict[str, object] | None) -> bool:
         """Compare two dicts for equality.
 
         Args:

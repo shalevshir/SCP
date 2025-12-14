@@ -45,10 +45,19 @@ def create_htf_bias_from_context(context: dict) -> HTFBias:
         structure_clarity=structure_clarity,
         bars_since_bos=bars_since_bos,
         chop_detected=chop_detected,
-        vwap_trend_confirmed=context.get("vwap_trend_confirmed", True),  # Assume confirmed for tests
+        vwap_trend_confirmed=context.get(
+            "vwap_trend_confirmed", True
+        ),  # Assume confirmed for tests
         # Add required fields for VWAP_RECLAIM validation
         liquidity_sweep_detected=context.get("liquidity_sweep_detected", True),
-        liquidity_sweep_type=context.get("liquidity_sweep_type", "bullish" if bias == "bullish" else "bearish" if bias == "bearish" else None),
+        liquidity_sweep_type=context.get(
+            "liquidity_sweep_type",
+            (
+                "bullish"
+                if bias == "bullish"
+                else "bearish" if bias == "bearish" else None
+            ),
+        ),
         bos_detected=context.get("bos_detected", True),
     )
 
@@ -368,7 +377,7 @@ class TestClassifyConfidence:
 
     def test_classify_fade_threshold_aligned_with_continuations(self) -> None:
         """Test VWAP_FADE threshold aligned at 8 (same as continuations).
-        
+
         Originally set at 9, but factors rejection_candle & volume_spike rarely
         trigger on historical data, so threshold kept at 8 for practical trading.
         """
@@ -514,7 +523,9 @@ class TestScoringScenariosFromSpec:
         # Difference includes dxy_corr factor weight + DXY alignment bonus
         # Actual difference depends on config weights (may vary)
         score_diff = signal_strong.score - signal_weak.score
-        assert 0.3 <= score_diff <= 3.0  # Flexible range due to HTF adjustments and config
+        assert (
+            0.3 <= score_diff <= 3.0
+        )  # Flexible range due to HTF adjustments and config
 
     def test_yaml_weight_modification_impact(self) -> None:
         """Test that modifying YAML weights changes signal scores appropriately."""
@@ -858,7 +869,9 @@ class TestEnhancedStructureAlignment:
         )
 
         max_points = 2.5
-        score = calculate_structure_alignment(features, htf_bias, max_points, "VWAP_RECLAIM")
+        score = calculate_structure_alignment(
+            features, htf_bias, max_points, "VWAP_RECLAIM"
+        )
 
         # Should get full points: clarity (40%) + recent BOS (30%) + no chop (30%) = 100%
         expected = max_points
@@ -892,7 +905,9 @@ class TestEnhancedStructureAlignment:
         )
 
         max_points = 2.5
-        score = calculate_structure_alignment(features, htf_bias, max_points, "VWAP_RECLAIM")
+        score = calculate_structure_alignment(
+            features, htf_bias, max_points, "VWAP_RECLAIM"
+        )
 
         # VWAP_RECLAIM with stale BOS (35 bars) gets reduced score (30% of max)
         # Note: VWAP_RECLAIM has tolerant scoring, so even with stale BOS it gets something
@@ -927,7 +942,9 @@ class TestEnhancedStructureAlignment:
         )
 
         max_points = 2.5
-        score = calculate_structure_alignment(features, htf_bias, max_points, "VWAP_RECLAIM")
+        score = calculate_structure_alignment(
+            features, htf_bias, max_points, "VWAP_RECLAIM"
+        )
 
         # Should get full points: clarity (40%) + recent BOS (30%) + no chop (30%) = 100%
         # CHoCH is NOT rewarded here (penalized in adjust_score_with_htf instead)
@@ -1233,7 +1250,7 @@ class TestCalculateRejectionCandle:
         # Moderate wick (3 > 2 but < 4) + VWAP proximity + wrong body direction → No points
         # (close 2648 < open 2650 = bearish, but need bullish for long fade)
         assert score == 0.0
-    
+
     def test_rejection_candle_strong_wick_only_one_confirmation(self) -> None:
         """Test strong wick with only 1 confirmation gives half points."""
         from rule_engine.scoring import calculate_rejection_candle

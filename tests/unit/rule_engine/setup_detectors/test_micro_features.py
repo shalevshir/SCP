@@ -182,4 +182,3 @@ class TestBarsSincePullback:
 
         bars = calculate_bars_since_pullback(df, "long")
         assert bars is None
-

@@ -853,7 +853,7 @@ class TestSessionEnd:
 
     def test_session_end_at_13_00_ilt(self, long_trade):
         """Test session end detection at 13:00 ILT.
-        
+
         FIX #6: Session end should NOT close trades.
         Trades run to TP/SL regardless of session time.
         """
@@ -897,7 +897,7 @@ class TestSessionEnd:
 
     def test_session_end_at_13_00_ilt_summer(self, long_trade):
         """Test session end detection at 13:00 ILT during summer (IDT).
-        
+
         FIX #6: Session end should NOT close trades.
         """
         checker = InvalidationChecker()
@@ -1256,7 +1256,7 @@ class TestHTFStructureInvalidation:
         self, long_trade_bullish_bias
     ):
         """Test long trade with bullish bias NOT invalidated by LH (tightened logic).
-        
+
         Updated: LH no longer triggers invalidation for longs (only LL does).
         This reduces noise from intermediate structure labels.
         """
@@ -1390,7 +1390,7 @@ class TestHTFStructureInvalidation:
         self, short_trade_bearish_bias
     ):
         """Test short trade with bearish bias NOT invalidated by HL (tightened logic).
-        
+
         Updated: HL no longer triggers invalidation for shorts (only HH does).
         This reduces noise from intermediate structure labels.
         """
@@ -1928,71 +1928,71 @@ class TestSanitizeFloat:
 
     def test_sanitizes_none_to_none(self):
         """None input returns None.
-        
+
         Specification: "if value is None: return None"
         """
         from backtester.invalidations import _sanitize_float
-        
+
         result = _sanitize_float(None)
         assert result is None
 
     def test_sanitizes_valid_float(self):
         """Valid float returns the float value.
-        
+
         Specification: Convert to finite float if possible.
         """
         from backtester.invalidations import _sanitize_float
-        
+
         result = _sanitize_float(3.14)
         assert result == 3.14
 
     def test_sanitizes_nan_to_none(self):
         """NaN input returns None.
-        
+
         Specification: "if math.isnan(numeric_value) ... return None"
         """
         from backtester.invalidations import _sanitize_float
-        
-        result = _sanitize_float(float('nan'))
+
+        result = _sanitize_float(float("nan"))
         assert result is None
 
     def test_sanitizes_inf_to_none(self):
         """Inf input returns None.
-        
+
         Specification: "if math.isinf(numeric_value) ... return None"
         """
         from backtester.invalidations import _sanitize_float
-        
-        result = _sanitize_float(float('inf'))
+
+        result = _sanitize_float(float("inf"))
         assert result is None
 
     def test_sanitizes_negative_inf_to_none(self):
         """Negative inf input returns None.
-        
+
         Specification: Inf values (positive or negative) return None.
         """
         from backtester.invalidations import _sanitize_float
-        
-        result = _sanitize_float(float('-inf'))
+
+        result = _sanitize_float(float("-inf"))
         assert result is None
 
     def test_sanitizes_invalid_type_to_none(self):
         """Invalid type (non-convertible) returns None.
-        
+
         Specification: "except (TypeError, ValueError): return None"
         """
         from backtester.invalidations import _sanitize_float
-        
+
         result = _sanitize_float("not_a_number")
         assert result is None
 
     def test_sanitizes_string_number_to_float(self):
         """String containing valid number converts to float.
-        
+
         Specification: Should convert string numbers to float if possible.
         """
         from backtester.invalidations import _sanitize_float
-        
+
         result = _sanitize_float("3.14")
         assert result == 3.14
 
@@ -2120,11 +2120,11 @@ class TestDXYContinuationInvalidation:
         self, long_dxy_continuation_trade
     ):
         """Long DXY_CONTINUATION invalidated when correlation weakens AND DXY turns bullish.
-        
+
         Specification: "corr_1m > -0.1 and corr_5m > -0.1 and dxy_structure in ('HH', 'HL')"
         """
         checker = InvalidationChecker()
-        
+
         candle = make_candle(
             timestamp=datetime(2025, 1, 1, 10, 5, tzinfo=UTC),
             open=2650.0,
@@ -2132,7 +2132,7 @@ class TestDXYContinuationInvalidation:
             low=2649.0,
             close=2650.5,
         )
-        
+
         # Features showing correlation flip and structure break
         # FIX: Use correct keys expected by invalidation checker
         features = {
@@ -2141,11 +2141,11 @@ class TestDXYContinuationInvalidation:
             "dxy_corr": 0.05,  # 50-period correlation - weakened
             "dxy_structure": "HH",  # DXY bullish (bad for long gold)
         }
-        
+
         is_invalid, reason = checker.check_dxy_flip(
             long_dxy_continuation_trade, candle, features=features
         )
-        
+
         # Should be invalidated
         assert is_invalid is True
         assert "DXY continuation invalidated" in reason
@@ -2155,11 +2155,11 @@ class TestDXYContinuationInvalidation:
         self, long_dxy_continuation_trade
     ):
         """Long DXY_CONTINUATION NOT invalidated by correlation alone (needs structure too).
-        
+
         Specification: Requires BOTH correlation flip AND structure break.
         """
         checker = InvalidationChecker()
-        
+
         candle = make_candle(
             timestamp=datetime(2025, 1, 1, 10, 5, tzinfo=UTC),
             open=2650.0,
@@ -2167,7 +2167,7 @@ class TestDXYContinuationInvalidation:
             low=2649.0,
             close=2650.5,
         )
-        
+
         # Correlation weakened but structure still bearish
         features = {
             "dxy_corr_1m": 0.1,
@@ -2175,11 +2175,11 @@ class TestDXYContinuationInvalidation:
             "dxy_corr": 0.05,
             "dxy_structure_label": "LL",  # DXY still bearish (OK for long gold)
         }
-        
+
         is_invalid, reason = checker.check_dxy_flip(
             long_dxy_continuation_trade, candle, features=features
         )
-        
+
         # Should NOT be invalidated
         assert is_invalid is False
 
@@ -2187,11 +2187,11 @@ class TestDXYContinuationInvalidation:
         self, short_dxy_continuation_trade
     ):
         """Short DXY_CONTINUATION invalidated when correlation weakens AND DXY turns bearish.
-        
+
         Specification: For short: "corr_1m > -0.1 and corr_5m > -0.1 and dxy_structure in ('LH', 'LL')"
         """
         checker = InvalidationChecker()
-        
+
         candle = make_candle(
             timestamp=datetime(2025, 1, 1, 10, 5, tzinfo=UTC),
             open=2650.0,
@@ -2199,7 +2199,7 @@ class TestDXYContinuationInvalidation:
             low=2649.0,
             close=2650.5,
         )
-        
+
         # Features showing correlation flip and structure break
         features = {
             "dxy_corr_1m": 0.1,
@@ -2207,11 +2207,11 @@ class TestDXYContinuationInvalidation:
             "dxy_corr": 0.05,
             "dxy_structure": "LL",  # DXY bearish (bad for short gold)
         }
-        
+
         is_invalid, reason = checker.check_dxy_flip(
             short_dxy_continuation_trade, candle, features=features
         )
-        
+
         # Should be invalidated
         assert is_invalid is True
         assert "DXY continuation invalidated" in reason
@@ -2220,11 +2220,11 @@ class TestDXYContinuationInvalidation:
         self, long_dxy_continuation_trade
     ):
         """DXY_CONTINUATION not invalidated when features missing.
-        
+
         Specification: "if corr_1m is None or corr_5m is None: return False"
         """
         checker = InvalidationChecker()
-        
+
         candle = make_candle(
             timestamp=datetime(2025, 1, 1, 10, 5, tzinfo=UTC),
             open=2650.0,
@@ -2232,16 +2232,16 @@ class TestDXYContinuationInvalidation:
             low=2649.0,
             close=2650.5,
         )
-        
+
         # Missing correlation features
         features = {
             "dxy_structure_label": "HH",
         }
-        
+
         is_invalid, reason = checker.check_dxy_flip(
             long_dxy_continuation_trade, candle, features=features
         )
-        
+
         # Should NOT be invalidated (missing data)
         assert is_invalid is False
 
@@ -2309,7 +2309,7 @@ class TestMultipleInvalidations:
 
     def test_check_all_returns_first_invalidation_found(self, long_reclaim_trade):
         """check_all() returns first invalidation found.
-        
+
         Specification: Invalidations are checked in priority order.
         """
         checker = InvalidationChecker()
@@ -2322,7 +2322,7 @@ class TestMultipleInvalidations:
             close=2650.5,
         )
         checker.update_state(long_reclaim_trade, candle_before)
-        
+
         # Candle at session end time
         candle = make_candle(
             timestamp=datetime(2025, 1, 1, 13, 0, tzinfo=UTC),
@@ -2331,25 +2331,25 @@ class TestMultipleInvalidations:
             low=2649.0,
             close=2650.5,
         )
-        
+
         # Features with multiple invalidation triggers
         features = {
             "vwap": 2655.0,  # Above price = VWAP invalidation for long
             "dxy_corr": 0.5,  # Positive = DXY flip for long
         }
-        
+
         # Should return first invalidation (priority order)
         is_invalid, reason = checker.check_all(
             long_reclaim_trade, candle, bars_elapsed=5, features=features
         )
-        
+
         # Should be invalidated
         assert is_invalid is True
         assert reason is not None
 
     def test_check_all_with_no_features_handles_gracefully(self, long_reclaim_trade):
         """check_all() with no features handles gracefully without crashing.
-        
+
         Specification: FIX #6 - Session end no longer invalidates trades.
         This tests that check_all doesn't crash with None features.
         """
@@ -2363,7 +2363,7 @@ class TestMultipleInvalidations:
             close=2650.5,
         )
         checker.update_state(long_reclaim_trade, candle_before)
-        
+
         # Candle mid-session
         candle = make_candle(
             timestamp=datetime(2025, 1, 1, 11, 0, tzinfo=UTC),
@@ -2372,12 +2372,12 @@ class TestMultipleInvalidations:
             low=2649.0,
             close=2650.5,
         )
-        
+
         # No features - should not crash
         is_invalid, reason = checker.check_all(
             long_reclaim_trade, candle, bars_elapsed=5, features=None
         )
-        
+
         # Should return a boolean without crashing
         assert isinstance(is_invalid, bool)
 
@@ -2445,7 +2445,7 @@ class TestInvalidationEdgeCases:
 
     def test_check_all_with_features_as_dict(self, generic_trade):
         """check_all() handles features as dict (not just None).
-        
+
         Specification: features parameter is dict | None.
         """
         checker = InvalidationChecker()
@@ -2458,7 +2458,7 @@ class TestInvalidationEdgeCases:
             close=2650.5,
         )
         checker.update_state(generic_trade, candle_before)
-        
+
         candle = make_candle(
             timestamp=datetime(2025, 1, 1, 10, 5, tzinfo=UTC),
             open=2650.0,
@@ -2466,24 +2466,24 @@ class TestInvalidationEdgeCases:
             low=2649.0,
             close=2650.5,
         )
-        
+
         features_dict = {
             "vwap": 2648.0,
             "dxy_corr": -0.7,
             "structure_label": "HH",
         }
-        
+
         # Should not raise
         is_invalid, reason = checker.check_all(
             generic_trade, candle, bars_elapsed=5, features=features_dict
         )
-        
+
         # Should return a boolean
         assert isinstance(is_invalid, bool)
 
     def test_invalidation_with_numpy_values_in_features(self, generic_trade):
         """Invalidation handles numpy values in features.
-        
+
         Specification: Features may come from pandas/numpy and have numpy types.
         """
         checker = InvalidationChecker()
@@ -2496,7 +2496,7 @@ class TestInvalidationEdgeCases:
             close=2650.5,
         )
         checker.update_state(generic_trade, candle_before)
-        
+
         candle = make_candle(
             timestamp=datetime(2025, 1, 1, 10, 5, tzinfo=UTC),
             open=2650.0,
@@ -2504,19 +2504,19 @@ class TestInvalidationEdgeCases:
             low=2649.0,
             close=2650.5,
         )
-        
+
         # Features with numpy types
         features = {
             "vwap": np.float64(2648.0),
             "dxy_corr": np.float64(-0.7),
             "structure_label": "HH",
         }
-        
+
         # Should not raise
         is_invalid, reason = checker.check_all(
             generic_trade, candle, bars_elapsed=5, features=features
         )
-        
+
         assert isinstance(is_invalid, bool)
 
 
@@ -2583,11 +2583,11 @@ class TestSetupWindowExpiration:
 
     def test_vwap_fade_window_expires_when_vwap_reclaimed(self, long_fade_trade):
         """VWAP_FADE window expires when VWAP is reclaimed.
-        
+
         Specification: "if state['vwap_reclaimed']: return True, 'Setup window expired'"
         """
         checker = InvalidationChecker()
-        
+
         # Update state to mark VWAP as reclaimed
         candle1 = make_candle(
             timestamp=datetime(2025, 1, 1, 10, 2, tzinfo=UTC),
@@ -2598,7 +2598,7 @@ class TestSetupWindowExpiration:
         )
         features1 = {"vwap": 2649.0}  # Below price = reclaimed
         checker.update_state(long_fade_trade, candle1, features=features1)
-        
+
         # Now check if window expired
         candle2 = make_candle(
             timestamp=datetime(2025, 1, 1, 10, 5, tzinfo=UTC),
@@ -2607,11 +2607,11 @@ class TestSetupWindowExpiration:
             low=2649.0,
             close=2650.5,
         )
-        
+
         is_invalid, reason = checker.check_setup_window_expired(
             long_fade_trade, candle2
         )
-        
+
         # Should be invalidated (window expired)
         assert is_invalid is True
         assert "window expired" in reason.lower()

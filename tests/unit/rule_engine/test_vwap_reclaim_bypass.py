@@ -35,7 +35,7 @@ class TestReclaimPrerequisitesLoosened:
         )
 
         is_valid, reason = validate_reclaim_prerequisites(htf_bias)
-        
+
         assert is_valid is True
         assert reason is None
 
@@ -54,7 +54,7 @@ class TestReclaimPrerequisitesLoosened:
         )
 
         is_valid, reason = validate_reclaim_prerequisites(htf_bias)
-        
+
         assert is_valid is True
         assert reason is None
 
@@ -73,7 +73,7 @@ class TestReclaimPrerequisitesLoosened:
         )
 
         is_valid, reason = validate_reclaim_prerequisites(htf_bias)
-        
+
         assert is_valid is False
         assert "sweep" in reason.lower()
 
@@ -92,7 +92,7 @@ class TestReclaimPrerequisitesLoosened:
         )
 
         is_valid, reason = validate_reclaim_prerequisites(htf_bias)
-        
+
         assert is_valid is False
         assert "stale" in reason.lower()
 
@@ -103,7 +103,7 @@ class TestReclaimBypassesStructureRejections:
     def test_reclaim_scores_with_chop(self):
         """Test VWAP_RECLAIM scores > 0 even with chop detected."""
         features = pd.Series({"close": 2650.0, "vwap": 2645.0})
-        
+
         htf_bias = HTFBias(
             bias="bullish",
             direction="long",
@@ -117,7 +117,7 @@ class TestReclaimBypassesStructureRejections:
         )
 
         score = calculate_structure_alignment(features, htf_bias, 2.5, "VWAP_RECLAIM")
-        
+
         # Should get minimum base score (50% = 1.25), not 0
         assert score >= 1.25
         assert score > 0.0
@@ -125,7 +125,7 @@ class TestReclaimBypassesStructureRejections:
     def test_reclaim_scores_with_low_clarity(self):
         """Test VWAP_RECLAIM scores > 0 with clarity below 0.6."""
         features = pd.Series({"close": 2650.0, "vwap": 2645.0})
-        
+
         htf_bias = HTFBias(
             bias="bullish",
             direction="long",
@@ -139,7 +139,7 @@ class TestReclaimBypassesStructureRejections:
         )
 
         score = calculate_structure_alignment(features, htf_bias, 2.5, "VWAP_RECLAIM")
-        
+
         # Should get minimum base score, not 0
         assert score >= 1.25
         assert score > 0.0
@@ -147,7 +147,7 @@ class TestReclaimBypassesStructureRejections:
     def test_continuation_still_rejected_by_chop(self):
         """Test DXY_CONTINUATION still has strict chop rejection."""
         features = pd.Series({"close": 2650.0, "vwap": 2645.0})
-        
+
         htf_bias = HTFBias(
             bias="bullish",
             direction="long",
@@ -160,15 +160,17 @@ class TestReclaimBypassesStructureRejections:
             chop_detected=True,  # Chop present
         )
 
-        score = calculate_structure_alignment(features, htf_bias, 2.5, "DXY_CONTINUATION")
-        
+        score = calculate_structure_alignment(
+            features, htf_bias, 2.5, "DXY_CONTINUATION"
+        )
+
         # Should be rejected (0 score)
         assert score == 0.0
 
     def test_fade_still_rejected_by_low_clarity(self):
         """Test VWAP_FADE still has strict clarity rejection."""
         features = pd.Series({"close": 2650.0, "vwap": 2645.0})
-        
+
         htf_bias = HTFBias(
             bias="bullish",
             direction="long",
@@ -182,7 +184,7 @@ class TestReclaimBypassesStructureRejections:
         )
 
         score = calculate_structure_alignment(features, htf_bias, 2.5, "VWAP_FADE")
-        
+
         # Should be rejected (0 score)
         assert score == 0.0
 
@@ -297,4 +299,3 @@ class TestChopValidationBySetupType:
 
         assert validated_signal.confidence == "Reject"
         assert validated_signal.validation_flags["chop_ok"] is False
-

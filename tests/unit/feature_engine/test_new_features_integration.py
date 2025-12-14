@@ -51,9 +51,15 @@ class TestNewFeaturesIntegration:
         # Check that values are reasonable (not all NaN)
         last_features = features_list[-1]
         assert not pd.isna(last_features["atr"]), "ATR should have value"
-        assert not pd.isna(last_features["upper_wick_pct"]), "upper_wick_pct should have value"
-        assert not pd.isna(last_features["lower_wick_pct"]), "lower_wick_pct should have value"
-        assert not pd.isna(last_features["close_vwap_diff"]), "close_vwap_diff should have value"
+        assert not pd.isna(
+            last_features["upper_wick_pct"]
+        ), "upper_wick_pct should have value"
+        assert not pd.isna(
+            last_features["lower_wick_pct"]
+        ), "lower_wick_pct should have value"
+        assert not pd.isna(
+            last_features["close_vwap_diff"]
+        ), "close_vwap_diff should have value"
 
     def test_new_features_in_entry_context_iteration(self):
         """Test that new features work in iterate_with_entry_context."""
@@ -114,12 +120,14 @@ class TestNewFeaturesIntegration:
         last_features = features_list[-1][0]
 
         # ATR should be in reasonable range (2-10 for this data)
-        assert 0.5 < last_features["atr"] < 10.0, f"ATR out of range: {last_features['atr']}"
+        assert (
+            0.5 < last_features["atr"] < 10.0
+        ), f"ATR out of range: {last_features['atr']}"
 
     def test_wick_percentages_with_real_candle_shapes(self):
         """Test wick percentages with various realistic candle shapes."""
         timestamps = pd.date_range("2025-01-01 10:00", periods=50, freq="1min")
-        
+
         # Create diverse candle shapes with changing prices
         gc_df = pd.DataFrame(
             {
@@ -138,17 +146,16 @@ class TestNewFeaturesIntegration:
 
         # Check that wick percentages are computed
         assert len(features_list) > 0, "Should have features"
-        
+
         # Check last few candles have valid wick data
         for features, _ in features_list[-5:]:
             lower_wick = features["lower_wick_pct"]
             upper_wick = features["upper_wick_pct"]
-            
+
             # Should not be NaN
             assert not pd.isna(lower_wick), "Lower wick should not be NaN"
             assert not pd.isna(upper_wick), "Upper wick should not be NaN"
-            
+
             # Should be non-negative
             assert lower_wick >= 0, f"Lower wick should be >= 0, got {lower_wick}"
             assert upper_wick >= 0, f"Upper wick should be >= 0, got {upper_wick}"
-

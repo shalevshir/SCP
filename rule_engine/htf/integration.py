@@ -53,7 +53,7 @@ def validate_signal_with_htf(
     if htf_bias is None:
         logger.debug("HTF bias is None, allowing signal with caution")
         return True, ""
-    
+
     # Rule 1: Reject if conflict detected
     if htf_bias.conflict_detected:
         reason = f"HTF conflict detected: {htf_bias.conflict_reason}"

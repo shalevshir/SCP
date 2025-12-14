@@ -12,12 +12,12 @@ from rule_engine.signal import Signal
 
 class TestDXYContinuationFeatureKeyBugFix:
     """Test that check_dxy_flip uses correct feature keys from feature engine.
-    
+
     Bug: The check_dxy_flip function expects specific feature keys:
     - dxy_corr_1m (1-minute correlation)
     - dxy_corr_5m (5-minute correlation)
     - dxy_structure (DXY structure label)
-    
+
     This caused the entire DXY_CONTINUATION invalidation code path to be dead code
     since all .get() calls returned None.
     """
@@ -102,12 +102,12 @@ class TestDXYContinuationFeatureKeyBugFix:
         self, checker, long_continuation_trade, sample_candle
     ):
         """Test that invalidation triggers when using REAL feature keys.
-        
+
         The feature engine produces:
         - dxy_corr_micro (5-period micro correlation)
         - dxy_corr (50-period correlation)
         - dxy_structure_label (DXY structure label)
-        
+
         This test verifies the bug fix by using these real keys.
         """
         # Features using the REAL keys from feature_engine/streaming.py
@@ -425,7 +425,7 @@ class TestDXYContinuationInvalidation:
 
     def test_short_continuation_invalidated_correctly(self):
         """Test short continuation invalidated when correlation weakens and structure flips.
-        
+
         Short continuation entered with strong inverse correlation (-0.4)
         should be invalidated when correlation weakens toward zero (-0.05)
         AND DXY structure turns bearish (LH/LL).
@@ -514,7 +514,7 @@ class TestDXYContinuationInvalidation:
 
     def test_short_continuation_not_invalidated_by_strong_correlation(self):
         """Test short continuation NOT invalidated when correlation remains strong.
-        
+
         This verifies the bug fix: shorts should NOT be invalidated when
         correlation becomes MORE negative (e.g., -0.4 -> -0.8), only when
         it weakens toward zero.
@@ -681,4 +681,3 @@ class TestDXYContinuationInvalidation:
         is_invalid, reason = checker.check_dxy_flip(trade, candle, features)
 
         assert is_invalid is True  # Old logic triggers on correlation alone
-

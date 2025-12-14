@@ -116,9 +116,7 @@ def calculate_displacement_strength(
     return displacement
 
 
-def calculate_bars_since_pullback(
-    df: pd.DataFrame, direction: str
-) -> Optional[int]:
+def calculate_bars_since_pullback(df: pd.DataFrame, direction: str) -> Optional[int]:
     """Count bars since last valid pullback structure.
 
     Scans recent candles backwards to find the most recent pullback
@@ -171,4 +169,3 @@ def calculate_bars_since_pullback(
 
     logger.debug(f"No pullback found in last {lookback} bars for {direction} trade")
     return None
-

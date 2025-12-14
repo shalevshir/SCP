@@ -131,7 +131,7 @@ def check_sl_hit(trade: Trade, candle: Candle, use_close: bool = False) -> bool:
             return candle.close <= trade.stop_loss
         else:
             return candle.close >= trade.stop_loss
-    
+
     # WICK-BASED (strict - default)
     if trade.direction == "long":
         return candle.low <= trade.stop_loss
@@ -243,7 +243,7 @@ def simulate_trade_outcome(
         return close_trade(trade, exit_candle, "end_of_data", config)
 
     bars_elapsed = 0
-    
+
     # FIX #2: Track retest protection for VWAP_RECLAIM
     # If trade has retest protection enabled, we skip SL check on first bar
     retest_protection_active = trade.ignore_first_retest_bar
@@ -277,7 +277,7 @@ def simulate_trade_outcome(
 
         # Log rejection-candle diagnostics during trade lifetime (per-bar tracking)
         from backtester.diagnostics import add_nested_diag
-        
+
         # Extract features for this candle if available
         candle_features = None
         if future_features is not None and timestamp in future_features.index:
@@ -292,23 +292,28 @@ def simulate_trade_outcome(
                 candle_features = (
                     dict(feature_row) if hasattr(feature_row, "__iter__") else None
                 )
-        
+
         # Add per-bar rejection diagnostics if features available
         if candle_features is not None:
             key = f"bar_{bars_elapsed}"
-            add_nested_diag(trade, "rejection_during_trade", key, {
-                "upper_wick_pct": candle_features.get("upper_wick_pct"),
-                "lower_wick_pct": candle_features.get("lower_wick_pct"),
-                "close_vwap_diff": candle_features.get("close_vwap_diff"),
-                "close_vwap_pct": candle_features.get("close_vwap_pct"),
-                "direction_valid": candle_features.get("rejection_direction_valid"),
-            })
+            add_nested_diag(
+                trade,
+                "rejection_during_trade",
+                key,
+                {
+                    "upper_wick_pct": candle_features.get("upper_wick_pct"),
+                    "lower_wick_pct": candle_features.get("lower_wick_pct"),
+                    "close_vwap_diff": candle_features.get("close_vwap_diff"),
+                    "close_vwap_pct": candle_features.get("close_vwap_pct"),
+                    "direction_valid": candle_features.get("rejection_direction_valid"),
+                },
+            )
 
         # PATCH PART 2: Setup-specific grace periods with separate SL/TP and invalidation flags
         # This prevents contamination: FADE shouldn't skip SL/TP, but should skip early invalidations
         skip_sl_tp = False
         skip_invalidations = False
-        
+
         if is_continuation(trade):
             # CONTINUATION: skip both SL/TP and invalidations for first 6 bars (strict protection)
             skip_sl_tp = bars_elapsed <= 6
@@ -353,22 +358,26 @@ def simulate_trade_outcome(
                 logger.debug(
                     f"Trade {trade.trade_id}: FADE bar 1 - using close-based SL"
                 )
-            
+
             if check_sl_hit(trade, candle, use_close=use_close_sl):
                 # Add SL hit diagnostics before closing
                 from backtester.diagnostics import add_nested_diag
-                
+
                 add_nested_diag(trade, "sl_hit_context", "sl_level", trade.stop_loss)
                 add_nested_diag(trade, "sl_hit_context", "candle_low", candle.low)
                 add_nested_diag(trade, "sl_hit_context", "candle_high", candle.high)
                 add_nested_diag(trade, "sl_hit_context", "candle_close", candle.close)
                 add_nested_diag(trade, "sl_hit_context", "bars_elapsed", bars_elapsed)
-                add_nested_diag(trade, "sl_hit_context", "used_close_based_sl", use_close_sl)
-                
+                add_nested_diag(
+                    trade, "sl_hit_context", "used_close_based_sl", use_close_sl
+                )
+
                 # ATR at SL hit (if features are passed in this scope)
                 if candle_features is not None:
-                    add_nested_diag(trade, "sl_hit_context", "atr_5", candle_features.get("atr_5"))
-                
+                    add_nested_diag(
+                        trade, "sl_hit_context", "atr_5", candle_features.get("atr_5")
+                    )
+
                 logger.info(
                     f"Trade {trade.trade_id} hit SL at {trade.stop_loss} "
                     f"(bars={bars_elapsed}, close_based={use_close_sl})"
@@ -380,13 +389,13 @@ def simulate_trade_outcome(
         if not skip_sl_tp and check_tp_hit(trade, candle):
             # Add TP hit diagnostics before closing
             from backtester.diagnostics import add_nested_diag
-            
+
             add_nested_diag(trade, "tp_hit_context", "tp_level", trade.take_profit)
             add_nested_diag(trade, "tp_hit_context", "candle_high", candle.high)
             add_nested_diag(trade, "tp_hit_context", "candle_low", candle.low)
             add_nested_diag(trade, "tp_hit_context", "candle_close", candle.close)
             add_nested_diag(trade, "tp_hit_context", "bars_elapsed", bars_elapsed)
-            
+
             logger.info(
                 f"Trade {trade.trade_id} hit TP at {trade.take_profit} "
                 f"(bars={bars_elapsed})"

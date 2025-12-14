@@ -89,7 +89,7 @@ def detect_price_chop_15m(
 ) -> bool:
     """Detect if 15M price action is in chop mode (tolerant version).
 
-    Chop is defined as sustained wick-to-wick behavior where wicks are large 
+    Chop is defined as sustained wick-to-wick behavior where wicks are large
     relative to the candle body, indicating ranging/indecisive market conditions.
 
     Tolerant thresholds (post-fix):
@@ -156,7 +156,7 @@ def detect_price_chop_15m(
         candle_range = df_15m["high"] - df_15m["low"]
         min_candle_size = atr * min_candle_size_ratio
         is_noise_candle = candle_range < min_candle_size
-        
+
         noise_count = is_noise_candle.sum()
         if noise_count > 0:
             logger.debug(

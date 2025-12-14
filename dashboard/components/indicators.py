@@ -3,7 +3,6 @@
 This module provides the indicator and HTF bias panels for the dashboard.
 """
 
-
 import dash_bootstrap_components as dbc
 import pandas as pd
 from dash import html

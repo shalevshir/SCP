@@ -17,7 +17,7 @@ from validation.session_validator import SessionConstraints
 
 def create_htf_bias_from_market_state(market_state: dict) -> HTFBias:
     """Helper to create HTFBias from market_state dict for e2e tests.
-    
+
     Creates an HTFBias with all required fields for setup detection to work.
     """
     bias = market_state.get("htf_bias", "neutral")
@@ -56,7 +56,9 @@ def create_htf_bias_from_market_state(market_state: dict) -> HTFBias:
         # DXY fields for DXY_CONTINUATION
         dxy_corr_1m=-0.5,  # Strong inverse correlation
         dxy_corr_5m=-0.5,  # Strong inverse correlation
-        dxy_structure="LL" if direction == "long" else "HH",  # DXY bearish for gold longs
+        dxy_structure=(
+            "LL" if direction == "long" else "HH"
+        ),  # DXY bearish for gold longs
         dxy_chop_5m=False,
         chop_detected=False,
     )
@@ -328,7 +330,7 @@ class TestE2EValidationPipeline:
             dxy_corr_5m=None,
             dxy_structure=None,
         )
-        
+
         signal = process_features_with_validation(
             features,
             htf_bias,

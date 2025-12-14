@@ -74,58 +74,62 @@ def detect_date_range_from_csv(data_dir: Path) -> tuple[datetime, datetime]:
         data_dir / "GC_ohlcv-1m.csv",
         data_dir / "glbx_ohlcv_1m.csv",
     ]
-    
+
     gc_file = None
     for f in gc_files:
         if f.exists():
             gc_file = f
             break
-    
+
     if gc_file is None:
         raise FileNotFoundError(
             f"Could not find GC 1m CSV file in {data_dir}. "
             f"Expected one of: {[str(f) for f in gc_files]}"
         )
-    
+
     logger.info(f"Detecting date range from {gc_file}...")
-    
+
     try:
         # Efficient method: read first row and last row only
         # Read first row
         df_first = pd.read_csv(gc_file, nrows=1)
-        
+
         if df_first.empty:
             raise ValueError(f"CSV file {gc_file} has no data rows")
-        
+
         # Get first timestamp
         if "ts_event" not in df_first.columns:
             raise ValueError(f"CSV file {gc_file} missing 'ts_event' column")
-        
-        first_ts = pd.to_datetime(df_first["ts_event"].iloc[0], utc=True).to_pydatetime()
-        
+
+        first_ts = pd.to_datetime(
+            df_first["ts_event"].iloc[0], utc=True
+        ).to_pydatetime()
+
         # For last row, read last N rows (efficient for large files)
         # Read last 100 rows to handle any trailing empty lines
         try:
             df_last = pd.read_csv(gc_file, usecols=["ts_event"]).tail(100)
             df_last["ts_event"] = pd.to_datetime(df_last["ts_event"], utc=True)
             df_last = df_last.sort_values("ts_event")
-            
+
             # Get the actual last non-null timestamp
             last_ts = df_last["ts_event"].dropna().iloc[-1].to_pydatetime()
         except Exception:
             # Fallback: read entire file (slower but reliable)
-            logger.warning("Could not detect last timestamp efficiently, reading full file...")
+            logger.warning(
+                "Could not detect last timestamp efficiently, reading full file..."
+            )
             df = pd.read_csv(gc_file, usecols=["ts_event"])
             df["ts_event"] = pd.to_datetime(df["ts_event"], utc=True)
             df = df.sort_values("ts_event")
             last_ts = df["ts_event"].iloc[-1].to_pydatetime()
-        
+
         logger.info(
             f"Detected date range: {first_ts.isoformat()} to {last_ts.isoformat()}"
         )
-        
+
         return first_ts, last_ts
-        
+
     except Exception as e:
         # Final fallback: read entire file
         logger.warning(f"Date detection failed, reading full file: {e}")
@@ -133,17 +137,17 @@ def detect_date_range_from_csv(data_dir: Path) -> tuple[datetime, datetime]:
             df = pd.read_csv(gc_file, usecols=["ts_event"])
             df["ts_event"] = pd.to_datetime(df["ts_event"], utc=True)
             df = df.sort_values("ts_event")
-            
+
             if df.empty:
                 raise ValueError(f"CSV file {gc_file} has no data")
-            
+
             first_ts = df["ts_event"].iloc[0].to_pydatetime()
             last_ts = df["ts_event"].iloc[-1].to_pydatetime()
-            
+
             logger.info(
                 f"Detected date range: {first_ts.isoformat()} to {last_ts.isoformat()}"
             )
-            
+
             return first_ts, last_ts
         except Exception as e2:
             raise ValueError(
@@ -156,7 +160,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Run backtest and launch results viewer"
     )
-    
+
     # Data loading
     parser.add_argument(
         "--data-dir",
@@ -164,7 +168,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default=Path("data/gc_dx_ohlcv"),
         help="Directory containing GC/DX CSV files (default: data/gc_dx_ohlcv)",
     )
-    
+
     # Date range (for new backtest)
     parser.add_argument(
         "--start",
@@ -176,14 +180,14 @@ def build_arg_parser() -> argparse.ArgumentParser:
         type=parse_iso_datetime,
         help="End datetime (ISO-8601, e.g., 2025-07-31T13:00:00Z). If not provided, uses last timestamp from CSV files.",
     )
-    
+
     # Load existing results
     parser.add_argument(
         "--load",
         type=Path,
         help="Load existing results from JSON file",
     )
-    
+
     # Backtest parameters
     parser.add_argument(
         "--buffer-phase",
@@ -206,7 +210,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default="streaming",
         help="HTF feature computation approach (default: streaming)",
     )
-    
+
     # Output
     parser.add_argument(
         "--output-dir",
@@ -219,7 +223,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
         type=Path,
         help="Output filename for results JSON (default: auto-generated)",
     )
-    
+
     # Viewer options
     parser.add_argument(
         "--view",
@@ -239,7 +243,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default=8051,
         help="Port for results viewer (default: 8051)",
     )
-    
+
     return parser
 
 
@@ -302,7 +306,7 @@ def run_backtest(
         "scaling": 1000.0,
         "institutional": 1200.0,
     }
-    
+
     max_contracts_map = {
         "startup": 1,
         "growth": 1,
@@ -354,7 +358,9 @@ def run_backtest(
     return results, output_file
 
 
-def load_gc_data_for_viewer(data_dir: Path, start: datetime, end: datetime) -> pd.DataFrame | None:
+def load_gc_data_for_viewer(
+    data_dir: Path, start: datetime, end: datetime
+) -> pd.DataFrame | None:
     """Load GC data for price chart visualization.
 
     Args:
@@ -370,7 +376,7 @@ def load_gc_data_for_viewer(data_dir: Path, start: datetime, end: datetime) -> p
 
         loader = HistoricalDataLoader(data_dir)
         data = loader.load(["GC"], "1m", start, end)
-        
+
         if "GC" in data and not data["GC"].empty:
             df = data["GC"]
             # Ensure timestamp column exists for chart
@@ -383,7 +389,7 @@ def load_gc_data_for_viewer(data_dir: Path, start: datetime, end: datetime) -> p
             return df
     except Exception as e:
         logger.warning(f"Could not load GC data for viewer: {e}")
-    
+
     return None
 
 
@@ -393,7 +399,7 @@ def main() -> None:
     project_root = Path(__file__).parent.parent
     config = load_config(project_root / "config" / "core.yaml")
     setup_logging(config.system)
-    
+
     parser = build_arg_parser()
     args = parser.parse_args()
 
@@ -438,7 +444,7 @@ def main() -> None:
 
         # Ensure output directory exists
         args.output_dir.mkdir(parents=True, exist_ok=True)
-        
+
         # Run backtest
         results, output_file = run_backtest(
             data_dir=args.data_dir,
@@ -447,20 +453,23 @@ def main() -> None:
             buffer_phase=args.buffer_phase,
             tier_active=args.tier_active,
             htf_approach=args.htf_approach,
-            output_file=args.output_file or (args.output_dir / f"backtest_results_{args.start.strftime('%Y%m%d')}_{args.end.strftime('%Y%m%d')}.json"),
+            output_file=args.output_file
+            or (
+                args.output_dir
+                / f"backtest_results_{args.start.strftime('%Y%m%d')}_{args.end.strftime('%Y%m%d')}.json"
+            ),
         )
 
         # Launch viewer if requested
         if args.view:
             logger.info("\nLaunching results viewer...")
-            
+
             # Try to load GC data for price chart
             gc_df = load_gc_data_for_viewer(args.data_dir, args.start, args.end)
-            
+
             viewer = BacktestResultsViewer(results, gc_df=gc_df)
             viewer.run(port=args.port)
 
 
 if __name__ == "__main__":
     main()
-

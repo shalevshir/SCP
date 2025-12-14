@@ -64,7 +64,9 @@ class TestDXYContinuationDetector:
             chop_detected=False,
         )
 
-        features = pd.Series({"open": 100.0, "close": 105.0, "high": 105.5, "low": 99.5, "atr": 3.0})
+        features = pd.Series(
+            {"open": 100.0, "close": 105.0, "high": 105.5, "low": 99.5, "atr": 3.0}
+        )
 
         result = detect_dxy_continuation(features, htf_bias)
         assert result is False
@@ -84,7 +86,9 @@ class TestDXYContinuationDetector:
             chop_detected=False,
         )
 
-        features = pd.Series({"open": 100.0, "close": 105.0, "high": 105.5, "low": 99.5, "atr": 3.0})
+        features = pd.Series(
+            {"open": 100.0, "close": 105.0, "high": 105.5, "low": 99.5, "atr": 3.0}
+        )
 
         result = detect_dxy_continuation(features, htf_bias)
         assert result is False
@@ -104,7 +108,9 @@ class TestDXYContinuationDetector:
             chop_detected=False,
         )
 
-        features = pd.Series({"open": 100.0, "close": 105.0, "high": 105.5, "low": 99.5, "atr": 3.0})
+        features = pd.Series(
+            {"open": 100.0, "close": 105.0, "high": 105.5, "low": 99.5, "atr": 3.0}
+        )
 
         result = detect_dxy_continuation(features, htf_bias)
         assert result is False
@@ -124,7 +130,9 @@ class TestDXYContinuationDetector:
             chop_detected=False,
         )
 
-        features = pd.Series({"open": 100.0, "close": 105.0, "high": 105.5, "low": 99.5, "atr": 3.0})
+        features = pd.Series(
+            {"open": 100.0, "close": 105.0, "high": 105.5, "low": 99.5, "atr": 3.0}
+        )
 
         result = detect_dxy_continuation(features, htf_bias)
         assert result is False
@@ -144,7 +152,9 @@ class TestDXYContinuationDetector:
             chop_detected=True,  # Gold chop
         )
 
-        features = pd.Series({"open": 100.0, "close": 105.0, "high": 105.5, "low": 99.5, "atr": 3.0})
+        features = pd.Series(
+            {"open": 100.0, "close": 105.0, "high": 105.5, "low": 99.5, "atr": 3.0}
+        )
 
         result = detect_dxy_continuation(features, htf_bias)
         assert result is False
@@ -213,4 +223,3 @@ class TestDXYContinuationDetector:
 
         result = detect_dxy_continuation(features, htf_bias, df)
         assert result is True
-

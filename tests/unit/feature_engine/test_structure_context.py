@@ -30,6 +30,10 @@ class TestStructureContextDataclass:
             choch_detected=False,
             choch_direction=None,
             choch_age=None,
+            liquidity_sweep=False,
+            sweep_direction=None,
+            sweep_price=None,
+            sweep_age=None,
         )
 
         assert ctx.last_structure_label == "HH"
@@ -45,7 +49,10 @@ class TestStructureContextDataclass:
         assert ctx.choch_detected is False
         assert ctx.choch_direction is None
         assert ctx.choch_age is None
-        # Note: BOS fields removed (to be added in Structure Engine v2.0 Part 2)
+        assert ctx.liquidity_sweep is False
+        assert ctx.sweep_direction is None
+        assert ctx.sweep_price is None
+        assert ctx.sweep_age is None
 
 
 class TestStructureContextTracker:
@@ -318,6 +325,131 @@ class TestChochDetection:
                 ), f"Expected choch_age={expected_age}, got {ctx.choch_age}"
 
 
+class TestLiquiditySweepDetection:
+    """Test liquidity sweep detection and age calculation."""
+
+    def test_sweep_detected_when_high_breaks_swing_high_but_close_doesnt(self):
+        """Test bearish sweep (high breaks swing high, close doesn't)."""
+        tracker = StructureContextTracker(swing_window=2)
+
+        # Create swing high - pattern: lower, lower, PEAK, lower, lower
+        # Bar 2 will be swing high (106), detected at bar 4
+        tracker.update(high=100.0, low=98.0, close=99.0)  # Bar 0
+        tracker.update(high=102.0, low=100.0, close=101.0)  # Bar 1
+        tracker.update(high=106.0, low=102.0, close=105.0)  # Bar 2 - swing high
+        tracker.update(high=104.0, low=100.0, close=102.0)  # Bar 3
+        ctx_swing = tracker.update(
+            high=103.0, low=99.0, close=100.0
+        )  # Bar 4 - detection
+
+        # Verify swing high was detected
+        assert ctx_swing.last_swing_high is not None, "Swing high should be detected"
+        assert ctx_swing.last_swing_high == 106.0
+
+        # Continue a few more bars
+        tracker.update(high=102.0, low=98.0, close=99.0)  # Bar 5
+        tracker.update(high=101.0, low=97.0, close=98.0)  # Bar 6
+
+        # Now sweep high: high > 106 but close < 106
+        ctx_sweep = tracker.update(high=108.0, low=102.0, close=104.0)  # Bar 7
+
+        # Should detect bearish sweep
+        assert ctx_sweep.liquidity_sweep is True
+        assert ctx_sweep.sweep_direction == "bearish"
+        assert ctx_sweep.sweep_price == 106.0
+        assert ctx_sweep.sweep_age == 0
+
+    def test_sweep_detected_when_low_breaks_swing_low_but_close_doesnt(self):
+        """Test bullish sweep (low breaks swing low, close doesn't)."""
+        tracker = StructureContextTracker(swing_window=2)
+
+        # Create swing low - pattern: higher, higher, TROUGH, higher, higher
+        # Bar 2 will be swing low (94), detected at bar 4
+        tracker.update(high=102.0, low=100.0, close=101.0)  # Bar 0
+        tracker.update(high=101.0, low=98.0, close=99.0)  # Bar 1
+        tracker.update(high=100.0, low=94.0, close=95.0)  # Bar 2 - swing low
+        tracker.update(high=99.0, low=96.0, close=98.0)  # Bar 3
+        ctx_swing = tracker.update(
+            high=100.0, low=97.0, close=99.0
+        )  # Bar 4 - detection
+
+        # Verify swing low was detected
+        assert ctx_swing.last_swing_low is not None, "Swing low should be detected"
+        assert ctx_swing.last_swing_low == 94.0
+
+        # Continue a few more bars
+        tracker.update(high=101.0, low=98.0, close=100.0)  # Bar 5
+        tracker.update(high=102.0, low=99.0, close=101.0)  # Bar 6
+
+        # Now sweep low: low < 94 but close > 94
+        ctx_sweep = tracker.update(high=100.0, low=92.0, close=96.0)  # Bar 7
+
+        # Should detect bullish sweep
+        assert ctx_sweep.liquidity_sweep is True
+        assert ctx_sweep.sweep_direction == "bullish"
+        assert ctx_sweep.sweep_price == 94.0
+        assert ctx_sweep.sweep_age == 0
+
+    def test_sweep_rejected_when_both_directions_swept(self):
+        """Test that ambiguous sweeps (both directions) are rejected."""
+        tracker = StructureContextTracker(swing_window=2)
+
+        # Build structure with both swing high and low
+        tracker.update(high=100.0, low=98.0, close=99.0)  # Bar 0
+        tracker.update(high=105.0, low=100.0, close=104.0)  # Bar 1 - swing high at 105
+        tracker.update(high=102.0, low=99.0, close=100.0)  # Bar 2
+        tracker.update(high=101.0, low=95.0, close=96.0)  # Bar 3 - swing low at 95
+        tracker.update(high=100.0, low=96.0, close=98.0)  # Bar 4
+
+        # Ambiguous sweep: breaks both high and low
+        ctx_sweep = tracker.update(high=107.0, low=93.0, close=100.0)  # Bar 5
+
+        # Should NOT detect sweep (ambiguous)
+        assert ctx_sweep.liquidity_sweep is False
+
+    def test_sweep_age_is_zero_when_sweep_detected_on_current_bar(self):
+        """Test that sweep_age=0 when liquidity_sweep=True on current bar."""
+        tracker = StructureContextTracker(swing_window=2)
+
+        # Build structure
+        tracker.update(high=100.0, low=98.0, close=99.0)
+        tracker.update(high=105.0, low=100.0, close=104.0)
+        tracker.update(high=102.0, low=99.0, close=100.0)
+        tracker.update(high=101.0, low=98.0, close=99.0)
+        tracker.update(high=100.0, low=97.0, close=98.0)
+
+        # Sweep high
+        ctx_sweep = tracker.update(high=107.0, low=102.0, close=103.0)
+
+        # Age should be 0 on detection bar
+        if ctx_sweep.liquidity_sweep:
+            assert ctx_sweep.sweep_age == 0
+
+    def test_sweep_age_increments_after_detection(self):
+        """Test that sweep_age increments correctly after sweep detection."""
+        tracker = StructureContextTracker(swing_window=2)
+
+        # Build structure and trigger sweep
+        tracker.update(high=100.0, low=98.0, close=99.0)
+        tracker.update(high=105.0, low=100.0, close=104.0)
+        tracker.update(high=102.0, low=99.0, close=100.0)
+        tracker.update(high=101.0, low=98.0, close=99.0)
+        tracker.update(high=100.0, low=97.0, close=98.0)
+
+        # Sweep
+        ctx_sweep = tracker.update(high=107.0, low=102.0, close=103.0)
+
+        if ctx_sweep.liquidity_sweep:
+            assert ctx_sweep.sweep_age == 0
+
+            # Age should increment each bar
+            for expected_age in range(1, 4):
+                ctx = tracker.update(high=102.0, low=100.0, close=101.0)
+                assert (
+                    ctx.sweep_age == expected_age
+                ), f"Expected sweep_age={expected_age}, got {ctx.sweep_age}"
+
+
 class TestNoLookaheadBias:
     """Test that StructureContext has no lookahead bias."""
 
@@ -376,9 +508,16 @@ class TestBatchComputation:
             "structure_conflict_flag",
             "last_swing_high",
             "last_swing_low",
+            "bos_direction",
+            "bos_recent",
+            "bos_age",
+            "choch_detected",
+            "choch_age",
+            "liquidity_sweep",
+            "sweep_direction",
+            "sweep_price",
+            "sweep_age",
         ]
-
-        # Note: bos_age not included (to be added in Structure Engine v2.0 Part 2)
 
         for col in expected_columns:
             assert col in result.columns, f"Missing column: {col}"

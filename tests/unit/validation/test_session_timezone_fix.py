@@ -74,7 +74,9 @@ class TestSessionTimezoneAlignment:
         result = self.validator.evaluate(timestamp_utc)
 
         # Should be allowed: exactly at 09:00 ILT (start of window)
-        assert result.session_ok, "Trading should be allowed at 09:00 ILT (window start)"
+        assert (
+            result.session_ok
+        ), "Trading should be allowed at 09:00 ILT (window start)"
         assert result.reason is None
 
     def test_session_blocks_at_14_00_ilt_winter(self) -> None:
@@ -86,7 +88,9 @@ class TestSessionTimezoneAlignment:
         result = self.validator.evaluate(timestamp_utc)
 
         # Should be blocked: at 14:00 ILT (end of window, exclusive)
-        assert not result.session_ok, "Trading should be blocked at 14:00 ILT (window end)"
+        assert (
+            not result.session_ok
+        ), "Trading should be blocked at 14:00 ILT (window end)"
         assert result.reason == "outside_window"
 
     def test_session_allows_at_13_59_ilt_winter(self) -> None:
@@ -134,7 +138,9 @@ class TestSessionTimezoneAlignment:
         result = self.validator.evaluate(timestamp_utc)
 
         # Should be blocked: outside 09:00-14:00 ILT window
-        assert not result.session_ok, "Trading should be blocked after 14:00 ILT in summer"
+        assert (
+            not result.session_ok
+        ), "Trading should be blocked after 14:00 ILT in summer"
         assert result.reason == "outside_window"
 
     def test_session_dst_summer_within_window(self) -> None:
@@ -148,4 +154,3 @@ class TestSessionTimezoneAlignment:
         # Should be allowed: within 09:00-14:00 ILT window
         assert result.session_ok, "Trading should be allowed at 12:30 ILT in summer"
         assert result.reason is None
-

@@ -37,7 +37,9 @@ class TestCalculateStructureAlignment:
         max_points = 2.5
 
         # Act
-        score = calculate_structure_alignment(features, htf_bias, max_points, "DXY_CONTINUATION")
+        score = calculate_structure_alignment(
+            features, htf_bias, max_points, "DXY_CONTINUATION"
+        )
 
         # Assert: Should get full points (40% + 30% + 30% = 100%)
         assert score == max_points
@@ -65,7 +67,9 @@ class TestCalculateStructureAlignment:
         max_points = 2.5
 
         # Act
-        score = calculate_structure_alignment(features, htf_bias, max_points, "DXY_CONTINUATION")
+        score = calculate_structure_alignment(
+            features, htf_bias, max_points, "DXY_CONTINUATION"
+        )
 
         # Assert: Chop detected returns 0 for strict setups (DXY_CONTINUATION)
         assert score == 0.0
@@ -93,7 +97,9 @@ class TestCalculateStructureAlignment:
         max_points = 2.5
 
         # Act
-        score = calculate_structure_alignment(features, htf_bias, max_points, "DXY_CONTINUATION")
+        score = calculate_structure_alignment(
+            features, htf_bias, max_points, "DXY_CONTINUATION"
+        )
 
         # Assert: Stale BOS (>15 bars) returns 0 for strict setups
         assert score == 0.0
@@ -121,7 +127,9 @@ class TestCalculateStructureAlignment:
         max_points = 2.5
 
         # Act
-        score = calculate_structure_alignment(features, htf_bias, max_points, "DXY_CONTINUATION")
+        score = calculate_structure_alignment(
+            features, htf_bias, max_points, "DXY_CONTINUATION"
+        )
 
         # Assert: Low clarity (<0.6) returns 0 for strict setups
         assert score == 0.0
@@ -149,7 +157,9 @@ class TestCalculateStructureAlignment:
         max_points = 2.5
 
         # Act
-        score = calculate_structure_alignment(features, htf_bias, max_points, "DXY_CONTINUATION")
+        score = calculate_structure_alignment(
+            features, htf_bias, max_points, "DXY_CONTINUATION"
+        )
 
         # Assert: Should get 0 points (fails all checks)
         assert score == 0.0
@@ -177,7 +187,9 @@ class TestCalculateStructureAlignment:
         max_points = 2.5
 
         # Act
-        score = calculate_structure_alignment(features, htf_bias, max_points, "DXY_CONTINUATION")
+        score = calculate_structure_alignment(
+            features, htf_bias, max_points, "DXY_CONTINUATION"
+        )
 
         # Assert: Direction mismatch = 0 points
         assert score == 0.0
@@ -205,7 +217,9 @@ class TestCalculateStructureAlignment:
         max_points = 2.5
 
         # Act
-        score = calculate_structure_alignment(features, htf_bias, max_points, "DXY_CONTINUATION")
+        score = calculate_structure_alignment(
+            features, htf_bias, max_points, "DXY_CONTINUATION"
+        )
 
         # Assert: Moderate clarity (0.5 < 0.6) returns 0 for strict setups
         assert score == 0.0
@@ -233,8 +247,9 @@ class TestCalculateStructureAlignment:
         max_points = 2.5
 
         # Act
-        score = calculate_structure_alignment(features, htf_bias, max_points, "DXY_CONTINUATION")
+        score = calculate_structure_alignment(
+            features, htf_bias, max_points, "DXY_CONTINUATION"
+        )
 
         # Assert: BOS > 15 bars returns 0 for strict setups
         assert score == 0.0
-

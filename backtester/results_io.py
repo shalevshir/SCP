@@ -181,5 +181,3 @@ def load_results(filepath: str | Path) -> BacktestResults:
     )
 
     return results
-
-

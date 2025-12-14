@@ -3,7 +3,6 @@
 This module provides the signal display panel for the dashboard.
 """
 
-
 import dash_bootstrap_components as dbc
 from dash import html
 from rule_engine.signal import Signal

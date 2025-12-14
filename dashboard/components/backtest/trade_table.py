@@ -26,9 +26,18 @@ def create_trade_table() -> dbc.Card:
                                         id="trade-table-filter-setup",
                                         options=[
                                             {"label": "All", "value": "all"},
-                                            {"label": "VWAP_RECLAIM", "value": "VWAP_RECLAIM"},
-                                            {"label": "VWAP_FADE", "value": "VWAP_FADE"},
-                                            {"label": "DXY_CONTINUATION", "value": "DXY_CONTINUATION"},
+                                            {
+                                                "label": "VWAP_RECLAIM",
+                                                "value": "VWAP_RECLAIM",
+                                            },
+                                            {
+                                                "label": "VWAP_FADE",
+                                                "value": "VWAP_FADE",
+                                            },
+                                            {
+                                                "label": "DXY_CONTINUATION",
+                                                "value": "DXY_CONTINUATION",
+                                            },
                                         ],
                                         value="all",
                                         clearable=False,
@@ -39,7 +48,9 @@ def create_trade_table() -> dbc.Card:
                             ),
                             dbc.Col(
                                 [
-                                    html.Label("Filter by Direction:", className="me-2"),
+                                    html.Label(
+                                        "Filter by Direction:", className="me-2"
+                                    ),
                                     dcc.Dropdown(
                                         id="trade-table-filter-direction",
                                         options=[
@@ -99,7 +110,9 @@ def render_trade_table(
     if setup_filter != "all":
         filtered_trades = [t for t in filtered_trades if t.setup_type == setup_filter]
     if direction_filter != "all":
-        filtered_trades = [t for t in filtered_trades if t.direction == direction_filter]
+        filtered_trades = [
+            t for t in filtered_trades if t.direction == direction_filter
+        ]
 
     # Build DataFrame
     rows = []
@@ -119,7 +132,9 @@ def render_trade_table(
                 "PnL (pts)": trade.pnl if trade.pnl is not None else None,
                 "PnL ($)": trade.pnl_net if trade.pnl_net is not None else None,
                 "R": trade.r_realized if trade.r_realized is not None else None,
-                "Duration": f"{trade.duration_bars} bars" if trade.duration_bars else "N/A",
+                "Duration": (
+                    f"{trade.duration_bars} bars" if trade.duration_bars else "N/A"
+                ),
                 "Exit Reason": trade.exit_reason or "N/A",
                 "Score": signal.score,
                 "Confidence": signal.confidence,
@@ -234,4 +249,3 @@ def render_trade_table(
     )
 
     return table
-

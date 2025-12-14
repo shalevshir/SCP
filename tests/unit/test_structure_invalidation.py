@@ -154,4 +154,3 @@ class TestStructureInvalidation:
 
         assert is_invalidated is False
         assert reason is None
-

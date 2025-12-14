@@ -71,10 +71,10 @@ def make_trade(
     """Helper to create test trades."""
     if entry_timestamp is None:
         entry_timestamp = datetime(2025, 1, 1, 10, 0, tzinfo=UTC)
-    
+
     signal = make_signal(entry_timestamp, setup_type, direction)
     entry_execution = make_entry_execution(signal, entry_timestamp, entry_price)
-    
+
     return Trade(
         trade_id="test-001",
         symbol="GC",
@@ -143,7 +143,7 @@ class TestFadeBar1UsesCloseBasedSL:
             stop_loss=2645.0,
             take_profit=2670.0,
         )
-        
+
         # Bar 1: wick touches SL (low=2644), but close above SL (close=2651)
         candle = make_candle(
             timestamp=trade.entry_timestamp + timedelta(minutes=1),
@@ -152,17 +152,22 @@ class TestFadeBar1UsesCloseBasedSL:
             low=2644.0,  # Wick touches SL
             close=2651.0,  # Close ABOVE SL
         )
-        
-        future_candles = pd.DataFrame([{
-            "open": candle.open,
-            "high": candle.high,
-            "low": candle.low,
-            "close": candle.close,
-            "volume": candle.volume,
-        }], index=[candle.timestamp])
-        
+
+        future_candles = pd.DataFrame(
+            [
+                {
+                    "open": candle.open,
+                    "high": candle.high,
+                    "low": candle.low,
+                    "close": candle.close,
+                    "volume": candle.volume,
+                }
+            ],
+            index=[candle.timestamp],
+        )
+
         result = simulate_trade_outcome(trade, future_candles)
-        
+
         # Should NOT hit SL (either remains OPEN or closes for other reasons, but NOT sl)
         assert result.exit_reason != "sl", (
             f"FADE bar 1 should not hit SL when wick touches SL but close is above. "
@@ -179,7 +184,7 @@ class TestFadeBar1UsesCloseBasedSL:
             stop_loss=2655.0,
             take_profit=2635.0,
         )
-        
+
         # Bar 1: wick touches SL (high=2656), but close below SL (close=2649)
         candle = make_candle(
             timestamp=trade.entry_timestamp + timedelta(minutes=1),
@@ -188,17 +193,22 @@ class TestFadeBar1UsesCloseBasedSL:
             low=2648.0,
             close=2649.0,  # Close BELOW SL
         )
-        
-        future_candles = pd.DataFrame([{
-            "open": candle.open,
-            "high": candle.high,
-            "low": candle.low,
-            "close": candle.close,
-            "volume": candle.volume,
-        }], index=[candle.timestamp])
-        
+
+        future_candles = pd.DataFrame(
+            [
+                {
+                    "open": candle.open,
+                    "high": candle.high,
+                    "low": candle.low,
+                    "close": candle.close,
+                    "volume": candle.volume,
+                }
+            ],
+            index=[candle.timestamp],
+        )
+
         result = simulate_trade_outcome(trade, future_candles)
-        
+
         # Should NOT hit SL (either remains OPEN or closes for other reasons, but NOT sl)
         assert result.exit_reason != "sl", (
             f"FADE short bar 1 should not hit SL when wick touches SL but close is below. "
@@ -219,7 +229,7 @@ class TestFadeBar1SLHitOnlyOnCloseBreach:
             stop_loss=2645.0,
             take_profit=2670.0,
         )
-        
+
         # Bar 1: close breaches SL (close=2644)
         candle = make_candle(
             timestamp=trade.entry_timestamp + timedelta(minutes=1),
@@ -228,17 +238,22 @@ class TestFadeBar1SLHitOnlyOnCloseBreach:
             low=2643.0,
             close=2644.0,  # Close BELOW SL
         )
-        
-        future_candles = pd.DataFrame([{
-            "open": candle.open,
-            "high": candle.high,
-            "low": candle.low,
-            "close": candle.close,
-            "volume": candle.volume,
-        }], index=[candle.timestamp])
-        
+
+        future_candles = pd.DataFrame(
+            [
+                {
+                    "open": candle.open,
+                    "high": candle.high,
+                    "low": candle.low,
+                    "close": candle.close,
+                    "volume": candle.volume,
+                }
+            ],
+            index=[candle.timestamp],
+        )
+
         result = simulate_trade_outcome(trade, future_candles)
-        
+
         # Should hit SL
         assert result.exit_reason == "sl", (
             f"FADE bar 1 should hit SL when close breaches SL. "
@@ -255,7 +270,7 @@ class TestFadeBar1SLHitOnlyOnCloseBreach:
             stop_loss=2655.0,
             take_profit=2635.0,
         )
-        
+
         # Bar 1: close breaches SL (close=2656)
         candle = make_candle(
             timestamp=trade.entry_timestamp + timedelta(minutes=1),
@@ -264,17 +279,22 @@ class TestFadeBar1SLHitOnlyOnCloseBreach:
             low=2649.0,
             close=2656.0,  # Close ABOVE SL
         )
-        
-        future_candles = pd.DataFrame([{
-            "open": candle.open,
-            "high": candle.high,
-            "low": candle.low,
-            "close": candle.close,
-            "volume": candle.volume,
-        }], index=[candle.timestamp])
-        
+
+        future_candles = pd.DataFrame(
+            [
+                {
+                    "open": candle.open,
+                    "high": candle.high,
+                    "low": candle.low,
+                    "close": candle.close,
+                    "volume": candle.volume,
+                }
+            ],
+            index=[candle.timestamp],
+        )
+
         result = simulate_trade_outcome(trade, future_candles)
-        
+
         # Should hit SL
         assert result.exit_reason == "sl", (
             f"FADE short bar 1 should hit SL when close breaches SL. "
@@ -295,7 +315,7 @@ class TestFadeBar2UsesWickBasedSL:
             stop_loss=2645.0,
             take_profit=2670.0,
         )
-        
+
         # Bar 1: safe (close above SL)
         bar1 = make_candle(
             timestamp=trade.entry_timestamp + timedelta(minutes=1),
@@ -304,7 +324,7 @@ class TestFadeBar2UsesWickBasedSL:
             low=2649.0,
             close=2651.0,
         )
-        
+
         # Bar 2: wick touches SL (low=2644), close above SL (close=2652)
         bar2 = make_candle(
             timestamp=trade.entry_timestamp + timedelta(minutes=2),
@@ -313,32 +333,37 @@ class TestFadeBar2UsesWickBasedSL:
             low=2644.0,  # Wick touches SL
             close=2652.0,  # Close ABOVE SL
         )
-        
-        future_candles = pd.DataFrame([
-            {
-                "open": bar1.open,
-                "high": bar1.high,
-                "low": bar1.low,
-                "close": bar1.close,
-                "volume": bar1.volume,
-            },
-            {
-                "open": bar2.open,
-                "high": bar2.high,
-                "low": bar2.low,
-                "close": bar2.close,
-                "volume": bar2.volume,
-            },
-        ], index=[bar1.timestamp, bar2.timestamp])
-        
+
+        future_candles = pd.DataFrame(
+            [
+                {
+                    "open": bar1.open,
+                    "high": bar1.high,
+                    "low": bar1.low,
+                    "close": bar1.close,
+                    "volume": bar1.volume,
+                },
+                {
+                    "open": bar2.open,
+                    "high": bar2.high,
+                    "low": bar2.low,
+                    "close": bar2.close,
+                    "volume": bar2.volume,
+                },
+            ],
+            index=[bar1.timestamp, bar2.timestamp],
+        )
+
         result = simulate_trade_outcome(trade, future_candles)
-        
+
         # Should hit SL on bar 2 (wick-based)
         assert result.exit_reason == "sl", (
             f"FADE bar 2 should use wick-based SL and hit on wick. "
             f"Got status={result.status}, exit_reason={result.exit_reason}"
         )
-        assert result.duration_bars == 2, f"Expected exit on bar 2, got bar {result.duration_bars}"
+        assert (
+            result.duration_bars == 2
+        ), f"Expected exit on bar 2, got bar {result.duration_bars}"
 
 
 class TestContinuationSLUnchanged:
@@ -354,26 +379,28 @@ class TestContinuationSLUnchanged:
             stop_loss=2645.0,
             take_profit=2675.0,
         )
-        
+
         # Create 6 bars, all with wick touching SL
         future_candles_data = []
         for i in range(6):
-            timestamp = trade.entry_timestamp + timedelta(minutes=i+1)
-            future_candles_data.append({
-                "open": 2650.0,
-                "high": 2651.0,
-                "low": 2644.0,  # Wick touches SL every bar
-                "close": 2650.0,
-                "volume": 1000,
-            })
-        
+            timestamp = trade.entry_timestamp + timedelta(minutes=i + 1)
+            future_candles_data.append(
+                {
+                    "open": 2650.0,
+                    "high": 2651.0,
+                    "low": 2644.0,  # Wick touches SL every bar
+                    "close": 2650.0,
+                    "volume": 1000,
+                }
+            )
+
         future_candles = pd.DataFrame(
             future_candles_data,
-            index=[trade.entry_timestamp + timedelta(minutes=i+1) for i in range(6)]
+            index=[trade.entry_timestamp + timedelta(minutes=i + 1) for i in range(6)],
         )
-        
+
         result = simulate_trade_outcome(trade, future_candles)
-        
+
         # Should NOT hit SL during first 5 bars (bars_elapsed < 6)
         # Bar 6 is allowed to hit SL (bars_elapsed == 6, skip_sl_tp = 6 < 6 = False)
         if result.duration_bars < 6:
@@ -397,7 +424,7 @@ class TestReclaimSLUnchanged:
             take_profit=2665.0,
             ignore_first_retest_bar=True,  # Retest protection enabled
         )
-        
+
         # Bar 1: wick touches SL
         candle = make_candle(
             timestamp=trade.entry_timestamp + timedelta(minutes=1),
@@ -406,20 +433,24 @@ class TestReclaimSLUnchanged:
             low=2644.0,  # Wick touches SL
             close=2650.0,
         )
-        
-        future_candles = pd.DataFrame([{
-            "open": candle.open,
-            "high": candle.high,
-            "low": candle.low,
-            "close": candle.close,
-            "volume": candle.volume,
-        }], index=[candle.timestamp])
-        
+
+        future_candles = pd.DataFrame(
+            [
+                {
+                    "open": candle.open,
+                    "high": candle.high,
+                    "low": candle.low,
+                    "close": candle.close,
+                    "volume": candle.volume,
+                }
+            ],
+            index=[candle.timestamp],
+        )
+
         result = simulate_trade_outcome(trade, future_candles)
-        
+
         # Should NOT hit SL on bar 1 due to retest protection
         assert result.exit_reason != "sl", (
             f"RECLAIM with retest protection should skip SL on bar 1. "
             f"Got status={result.status}, exit_reason={result.exit_reason}"
         )
-
