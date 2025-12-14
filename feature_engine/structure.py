@@ -33,12 +33,14 @@ class StructureContext:
         trend_confidence: 0-1 confidence based on label consistency
         structure_clarity: 0-1 swing sequence purity score
         is_chop: True if rapid alternations detected
+        is_noise_zone: True if ATR indicates tight/noisy range
         structure_conflict_flag: True if mixed signals present
         bos_direction: Direction of last Break of Structure ("bullish"/"bearish")
         bos_recent: True if BOS occurred within threshold bars
         bos_age: Bars since last BOS event
         choch_detected: True if CHoCH detected on this bar (requires: trend exists,
-            BOS in opposite direction, clarity >= 0.5, no prior CHoCH in same direction)
+            BOS in opposite direction, clarity >= 0.5, no recent CHoCH in same direction.
+            Guard resets when opposite trend establishes with clarity >= 0.5)
         choch_direction: Direction of last CHoCH
         choch_age: Bars since last CHoCH event
         liquidity_sweep: True if liquidity sweep detected on this bar
@@ -62,6 +64,7 @@ class StructureContext:
     # Structure quality
     structure_clarity: float = 0.0
     is_chop: bool = False
+    is_noise_zone: bool = False  # ATR-based noise detection
     structure_conflict_flag: bool = False
 
     # BOS tracking (Structure Engine v2.0 Part 2)
@@ -101,6 +104,12 @@ class StructureContextTracker:
         maxlen = swing_window * 2 + 1
         self.high_buffer: deque[float] = deque(maxlen=maxlen)
         self.low_buffer: deque[float] = deque(maxlen=maxlen)
+
+        # ATR buffer for noise detection (use 14-period ATR)
+        self.atr_window = 14
+        self.high_buffer_atr: deque[float] = deque(maxlen=self.atr_window)
+        self.low_buffer_atr: deque[float] = deque(maxlen=self.atr_window)
+        self.close_buffer_atr: deque[float] = deque(maxlen=self.atr_window)
 
         # Track previous swing values for label determination
         self.prev_swing_high: float | None = None
@@ -159,6 +168,11 @@ class StructureContextTracker:
         self.high_buffer.append(high)
         self.low_buffer.append(low)
 
+        # Add to ATR buffers for noise detection
+        self.high_buffer_atr.append(high)
+        self.low_buffer_atr.append(low)
+        self.close_buffer_atr.append(close)
+
         # Detect swing point at center of buffer
         new_label = None
         if len(self.high_buffer) >= self.swing_window * 2 + 1:
@@ -193,7 +207,24 @@ class StructureContextTracker:
         trend_direction, trend_confidence = self._compute_trend()
         structure_clarity = self._compute_clarity()
         is_chop = self._detect_chop()
+        is_noise_zone = self._detect_noise_zone()
         structure_conflict_flag = self._detect_conflict()
+
+        # Reset CHoCH direction guard when sustained opposite trend establishes
+        # This prevents the guard from permanently blocking valid CHoCH signals after
+        # market structure resets and rebuilds in the opposite direction
+        # Requirements: opposite trend + sufficient clarity + enough bars elapsed (10+)
+        TREND_RESET_CLARITY_THRESHOLD = 0.5
+        TREND_RESET_MIN_BARS = 10
+        if self.last_choch_direction is not None and \
+           self.last_choch_idx is not None and \
+           structure_clarity >= TREND_RESET_CLARITY_THRESHOLD:
+            bars_since_choch = self.bar_count - self.last_choch_idx
+            if bars_since_choch >= TREND_RESET_MIN_BARS:
+                if (self.last_choch_direction == "bearish" and trend_direction == "bullish") or \
+                   (self.last_choch_direction == "bullish" and trend_direction == "bearish"):
+                    # Sustained opposite trend established → reset guard
+                    self.last_choch_direction = None
 
         # Detect BOS on this bar (must be done BEFORE calculating age)
         # so that if a BOS is detected, last_bos_idx is updated and age will be 0
@@ -249,6 +280,7 @@ class StructureContextTracker:
             trend_confidence=trend_confidence,
             structure_clarity=structure_clarity,
             is_chop=is_chop,
+            is_noise_zone=is_noise_zone,
             structure_conflict_flag=structure_conflict_flag,
             bos_direction=self.last_bos_direction,
             bos_recent=bos_recent,
@@ -445,6 +477,61 @@ class StructureContextTracker:
 
         return has_hh and has_ll
 
+    def _detect_noise_zone(self) -> bool:
+        """Detect if current structure is in a noise zone (tight range, low volatility).
+
+        Uses ATR (Average True Range) to identify periods where price action is too
+        tight/choppy for reliable structure analysis. Noise zones typically indicate:
+        - Consolidation/ranging markets
+        - Low volatility periods
+        - Unreliable swing formations
+
+        Logic:
+        - Calculate 14-period ATR
+        - Calculate average price (midpoint of high/low over ATR window)
+        - If ATR < 0.3% of average price → noise zone
+
+        Returns:
+            True if in noise zone (unreliable structure)
+        """
+        # Need at least 14 bars for ATR calculation
+        if len(self.high_buffer_atr) < self.atr_window:
+            return False
+
+        # Calculate True Range for each bar in buffer
+        true_ranges = []
+        for i in range(1, len(self.high_buffer_atr)):
+            high = self.high_buffer_atr[i]
+            low = self.low_buffer_atr[i]
+            prev_close = self.close_buffer_atr[i - 1]
+
+            # True Range = max(high-low, abs(high-prev_close), abs(low-prev_close))
+            tr = max(high - low, abs(high - prev_close), abs(low - prev_close))
+            true_ranges.append(tr)
+
+        # Calculate ATR (simple moving average of True Ranges)
+        if not true_ranges:
+            return False
+
+        atr = sum(true_ranges) / len(true_ranges)
+
+        # Calculate average price (midpoint) over the window
+        avg_high = sum(self.high_buffer_atr) / len(self.high_buffer_atr)
+        avg_low = sum(self.low_buffer_atr) / len(self.low_buffer_atr)
+        avg_price = (avg_high + avg_low) / 2
+
+        # Noise threshold: ATR < 0.3% of average price
+        # (adjust threshold based on asset characteristics)
+        NOISE_THRESHOLD_PCT = 0.003  # 0.3%
+
+        if avg_price == 0:
+            return False
+
+        atr_pct = atr / avg_price
+
+        # Noise zone if ATR is below threshold (tight range)
+        return atr_pct < NOISE_THRESHOLD_PCT
+
     def _detect_choch_event(
         self,
         trend_direction: Literal["bullish", "bearish", "neutral"],
@@ -460,7 +547,8 @@ class StructureContextTracker:
         1. Previous trend exists (not neutral)
         2. BOS in opposite direction from current trend
         3. Clarity >= 0.5 threshold
-        4. No CHoCH already detected in the same direction (prevents multiple triggers)
+        4. No recent CHoCH in the same direction (prevents consecutive triggers)
+           Note: Guard resets when opposite trend establishes (in update() method)
 
         Args:
             trend_direction: Current trend direction
@@ -884,6 +972,7 @@ def compute_structure_context_batch(
         - trend_confidence: 0-1 confidence score
         - structure_clarity: 0-1 purity score
         - is_chop: Boolean chop flag
+        - is_noise_zone: Boolean noise zone flag (ATR-based)
         - structure_conflict_flag: Boolean conflict flag
         - last_swing_high: Last swing high price (forward-filled)
         - last_swing_low: Last swing low price (forward-filled)
@@ -945,6 +1034,7 @@ def compute_structure_context_batch(
                 "trend_confidence": ctx.trend_confidence,
                 "structure_clarity": ctx.structure_clarity,
                 "is_chop": ctx.is_chop,
+                "is_noise_zone": ctx.is_noise_zone,
                 "structure_conflict_flag": ctx.structure_conflict_flag,
                 "last_swing_high": ctx.last_swing_high,
                 "last_swing_low": ctx.last_swing_low,
