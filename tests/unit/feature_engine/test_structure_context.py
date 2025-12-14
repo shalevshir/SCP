@@ -472,6 +472,64 @@ class TestChochDetection:
         assert ctx_choch.choch_direction == "bearish", f"Expected bearish CHoCH, got {ctx_choch.choch_direction}"
         assert ctx_choch.choch_age == 0, f"Expected choch_age=0, got {ctx_choch.choch_age}"
 
+    def test_choch_uses_previous_trend_before_new_swing_label(self):
+        """CHoCH should use trend BEFORE new swing is added, not after.
+        
+        This test verifies that when CHoCH detection runs, it uses the trend
+        direction that existed BEFORE any new swing on the current bar was added
+        to label_history, not the trend after the swing was added.
+        
+        Without this fix, if a swing detected on the current bar changes the trend
+        to neutral, CHoCH won't trigger even though it should based on the previous trend.
+        """
+        tracker = StructureContextTracker(swing_window=2)
+
+        # Build bullish trend with 5 bullish swings for strong clarity
+        # Pattern: HH, HL, HH, HL, HH = 5/5 = 100% bullish
+        tracker.update(high=100.0, low=98.0, close=99.0)  # Bar 0
+        tracker.update(high=102.0, low=100.0, close=101.0)  # Bar 1
+        tracker.update(high=106.0, low=102.0, close=105.0)  # Bar 2 - HH swing
+        tracker.update(high=104.0, low=100.0, close=102.0)  # Bar 3
+        tracker.update(high=103.0, low=99.0, close=100.0)  # Bar 4 - HH detected
+        
+        tracker.update(high=102.0, low=96.0, close=97.0)  # Bar 5 - HL swing
+        tracker.update(high=100.0, low=97.0, close=99.0)  # Bar 6
+        tracker.update(high=101.0, low=98.0, close=100.0)  # Bar 7 - HL detected
+        
+        tracker.update(high=108.0, low=102.0, close=107.0)  # Bar 8 - HH swing
+        tracker.update(high=106.0, low=102.0, close=104.0)  # Bar 9
+        tracker.update(high=105.0, low=101.0, close=103.0)  # Bar 10 - HH detected
+        
+        tracker.update(high=104.0, low=98.0, close=99.0)  # Bar 11 - HL swing
+        tracker.update(high=102.0, low=99.0, close=101.0)  # Bar 12
+        tracker.update(high=101.0, low=98.0, close=100.0)  # Bar 13 - HL detected
+        
+        tracker.update(high=110.0, low=102.0, close=109.0)  # Bar 14 - HH swing
+        tracker.update(high=108.0, low=104.0, close=106.0)  # Bar 15
+        ctx_bullish = tracker.update(high=107.0, low=103.0, close=105.0)  # Bar 16 - HH detected
+        
+        # Verify strong bullish trend
+        assert ctx_bullish.trend_direction == "bullish"
+        assert ctx_bullish.structure_clarity >= 0.5
+        
+        # Now trigger bearish BOS (break below swing low at 96)
+        # This should trigger CHoCH because:
+        # 1. Previous trend was bullish (verified above)
+        # 2. BOS is bearish (opposite direction)
+        # 3. Clarity is high (>= 0.5)
+        ctx_choch = tracker.update(high=100.0, low=92.0, close=93.0)  # Bar 17 - BOS bearish
+        
+        # CHoCH should be detected (regardless of whether a new swing was also detected on this bar)
+        assert ctx_choch.choch_detected is True, (
+            f"CHoCH should trigger when bullish trend + bearish BOS + sufficient clarity. "
+            f"Got: choch_detected={ctx_choch.choch_detected}, "
+            f"trend={ctx_choch.trend_direction}, "
+            f"bos_direction={ctx_choch.bos_direction}, "
+            f"clarity={ctx_choch.structure_clarity}"
+        )
+        assert ctx_choch.choch_direction == "bearish"
+        assert ctx_choch.choch_age == 0
+
 
 class TestLiquiditySweepDetection:
     """Test liquidity sweep detection and age calculation."""

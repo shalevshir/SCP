@@ -164,6 +164,11 @@ class StructureContextTracker:
         if len(self.high_buffer) >= self.swing_window * 2 + 1:
             new_label = self._detect_swing_label()
 
+        # Capture previous trend BEFORE adding new swing to history
+        # This is needed for CHoCH detection which should use the trend
+        # that existed before the current bar's swing was detected
+        prev_trend_direction, _ = self._compute_trend()
+
         # Update label tracking if new swing detected
         if new_label is not None:
             self.last_structure_label = new_label
@@ -183,7 +188,7 @@ class StructureContextTracker:
                 self.swing_low_indices.append(self.last_swing_low_idx)
                 self.swing_low_values[self.last_swing_low_idx] = self.last_swing_low
 
-        # Compute derived metrics
+        # Compute derived metrics (using CURRENT label_history after new swing added)
         trend_direction, trend_confidence = self._compute_trend()
         structure_clarity = self._compute_clarity()
         is_chop = self._detect_chop()
@@ -205,8 +210,10 @@ class StructureContextTracker:
 
         # Detect CHoCH on this bar (must be done AFTER BOS and clarity computation)
         # CHoCH requires: previous trend, BOS in opposite direction, clarity >= threshold
+        # CRITICAL: Use prev_trend_direction (before new swing was added), not current trend
+        # This ensures CHoCH triggers based on the trend that existed before the bar's swing
         choch_detected = self._detect_choch_event(
-            trend_direction=trend_direction,
+            trend_direction=prev_trend_direction,
             bos_detected=bos_detected,
             bos_direction=self.last_bos_direction if bos_detected else None,
             clarity=structure_clarity,
