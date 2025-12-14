@@ -805,17 +805,56 @@ class TestNoiseZoneDetection:
         ), "Should not detect noise zone in trending market"
 
     def test_noise_zone_requires_full_atr_window(self):
-        """Test that noise zone requires 14 bars for ATR calculation."""
+        """Test that noise zone requires 15 bars for 14-period ATR calculation."""
         tracker = StructureContextTracker(swing_window=2)
 
-        # First 13 bars - not enough for ATR
-        for i in range(13):
+        # First 14 bars - not enough for 14-period ATR (need 15 total)
+        for i in range(14):
             ctx = tracker.update(high=100.05, low=99.95, close=100.0)
 
-        # Should be False (not enough data)
+        # Should be False (not enough data yet)
         assert (
             ctx.is_noise_zone is False
-        ), "Should not detect noise zone without full ATR window"
+        ), "Should not detect noise zone without full ATR window (need 15 bars)"
+
+    def test_atr_requires_15_bars_not_14(self):
+        """Test that 14-period ATR requires 15 bars, not 14.
+
+        Bug: Current implementation accepts 14 bars but only computes 13 TR values
+        because loop starts at index 1 (range(1, 14) = 13 iterations).
+        
+        Standard ATR semantics:
+        - 14-period ATR needs 15 bars total
+        - Bar 0: establishes initial close
+        - Bars 1-14: produce 14 True Range values
+        - Average those 14 values = 14-period ATR
+        """
+        tracker = StructureContextTracker(swing_window=2)
+        
+        # Create 14 bars with extremely tight range (0.02% of price)
+        # This range is tight enough to trigger noise zone detection
+        for i in range(14):
+            ctx_14 = tracker.update(high=100.01, low=99.99, close=100.0)
+        
+        # With 14 bars total:
+        # Bug: ATR calculated from 13 TR values → is_noise_zone=True
+        # Fix: ATR not calculated (need 15 bars) → is_noise_zone=False
+        
+        assert ctx_14.is_noise_zone is False, (
+            "With only 14 bars, ATR should NOT be calculated yet "
+            "(need 15 bars: 1 initial close + 14 TR values for 14-period ATR). "
+            "Bug: current implementation accepts 14 bars but only uses 13 TR values."
+        )
+        
+        # Add 15th bar (still tight range)
+        ctx_15 = tracker.update(high=100.01, low=99.99, close=100.0)
+        
+        # With 15 bars total:
+        # Now we have 14 proper TR values → ATR calculated → is_noise_zone=True
+        assert ctx_15.is_noise_zone is True, (
+            "With 15 bars, ATR should be calculated using 14 TR values, "
+            "and tight range should trigger noise zone detection."
+        )
 
 
 class TestLiquiditySweepDetection:

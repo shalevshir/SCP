@@ -106,10 +106,11 @@ class StructureContextTracker:
         self.low_buffer: deque[float] = deque(maxlen=maxlen)
 
         # ATR buffer for noise detection (use 14-period ATR)
+        # Need atr_window+1 bars: 1 for initial close, then atr_window bars for TR calculation
         self.atr_window = 14
-        self.high_buffer_atr: deque[float] = deque(maxlen=self.atr_window)
-        self.low_buffer_atr: deque[float] = deque(maxlen=self.atr_window)
-        self.close_buffer_atr: deque[float] = deque(maxlen=self.atr_window)
+        self.high_buffer_atr: deque[float] = deque(maxlen=self.atr_window + 1)
+        self.low_buffer_atr: deque[float] = deque(maxlen=self.atr_window + 1)
+        self.close_buffer_atr: deque[float] = deque(maxlen=self.atr_window + 1)
 
         # Track previous swing values for label determination
         self.prev_swing_high: float | None = None
@@ -487,15 +488,16 @@ class StructureContextTracker:
         - Unreliable swing formations
 
         Logic:
-        - Calculate 14-period ATR
+        - Calculate 14-period ATR (requires 15 bars: 1 initial + 14 TR values)
         - Calculate average price (midpoint of high/low over ATR window)
         - If ATR < 0.3% of average price → noise zone
 
         Returns:
             True if in noise zone (unreliable structure)
         """
-        # Need at least 14 bars for ATR calculation
-        if len(self.high_buffer_atr) < self.atr_window:
+        # Need at least atr_window+1 bars for proper N-period ATR calculation
+        # (1 bar for initial close, then N bars to compute N True Range values)
+        if len(self.high_buffer_atr) < self.atr_window + 1:
             return False
 
         # Calculate True Range for each bar in buffer
