@@ -37,7 +37,8 @@ class StructureContext:
         bos_direction: Direction of last Break of Structure ("bullish"/"bearish")
         bos_recent: True if BOS occurred within threshold bars
         bos_age: Bars since last BOS event
-        choch_detected: True if CHoCH detected on this bar
+        choch_detected: True if CHoCH detected on this bar (requires: trend exists,
+            BOS in opposite direction, clarity >= 0.5)
         choch_direction: Direction of last CHoCH
         choch_age: Bars since last CHoCH event
         liquidity_sweep: True if liquidity sweep detected on this bar
@@ -190,7 +191,7 @@ class StructureContextTracker:
 
         # Detect BOS on this bar (must be done BEFORE calculating age)
         # so that if a BOS is detected, last_bos_idx is updated and age will be 0
-        _ = self._detect_bos_event(close)
+        bos_detected = self._detect_bos_event(close)
 
         # Track BOS age (calculated AFTER detection so current BOS has age=0)
         bos_age = (
@@ -202,11 +203,14 @@ class StructureContextTracker:
         if bos_age is not None and bos_age <= 15:
             bos_recent = True
 
-        # Detect CHoCH on this bar (must be done BEFORE calculating age)
-        # so that if a CHoCH is detected, last_choch_idx is updated and age will be 0
-        choch_detected = False
-        if new_label is not None:
-            choch_detected = self._detect_choch_event(new_label)
+        # Detect CHoCH on this bar (must be done AFTER BOS and clarity computation)
+        # CHoCH requires: previous trend, BOS in opposite direction, clarity >= threshold
+        choch_detected = self._detect_choch_event(
+            trend_direction=trend_direction,
+            bos_detected=bos_detected,
+            bos_direction=self.last_bos_direction if bos_detected else None,
+            clarity=structure_clarity,
+        )
 
         # Track CHoCH age (calculated AFTER detection so current CHoCH has age=0)
         choch_age = (
@@ -432,37 +436,57 @@ class StructureContextTracker:
 
         return has_hh and has_ll
 
-    def _detect_choch_event(self, new_label: str) -> bool:
-        """Detect if new label represents a CHoCH event.
+    def _detect_choch_event(
+        self,
+        trend_direction: Literal["bullish", "bearish", "neutral"],
+        bos_detected: bool,
+        bos_direction: str | None,
+        clarity: float,
+    ) -> bool:
+        """Detect if current bar represents a CHoCH event.
 
         CHoCH = Change of Character (trend reversal signal)
 
+        CHoCH requires:
+        1. Previous trend exists (not neutral)
+        2. BOS in opposite direction from current trend
+        3. Clarity >= 0.5 threshold
+
         Args:
-            new_label: Newly detected structure label
+            trend_direction: Current trend direction
+            bos_detected: Whether BOS detected on this bar
+            bos_direction: Direction of BOS if detected
+            clarity: Structure clarity score (0-1)
 
         Returns:
             True if CHoCH detected
         """
-        if len(self.label_history) < 2:
+        # Requirement 1: Previous trend must exist (not neutral)
+        if trend_direction == "neutral":
             return False
 
-        # Get previous valid labels
-        valid_labels = [label for label in self.label_history if label is not None]
-        if len(valid_labels) < 2:
+        # Requirement 2: BOS must have occurred
+        if not bos_detected or bos_direction is None:
             return False
 
-        # Check if trend changed
-        prev_label = valid_labels[-2]  # Second to last (new_label is last)
+        # Requirement 3: Clarity must be sufficient
+        CLARITY_THRESHOLD = 0.5
+        if clarity < CLARITY_THRESHOLD:
+            return False
 
-        # CHoCH: H→L or L→H transition
-        if (prev_label[0] == "H" and new_label[0] == "L") or (
-            prev_label[0] == "L" and new_label[0] == "H"
-        ):
-            # Update CHoCH tracking
+        # CHoCH: BOS in OPPOSITE direction from current trend
+        if trend_direction == "bullish" and bos_direction == "bearish":
+            # Was bullish, now breaking down → CHoCH to bearish
             self.last_choch_idx = self.bar_count
-            self.last_choch_direction = "bullish" if new_label[0] == "H" else "bearish"
+            self.last_choch_direction = "bearish"
+            return True
+        elif trend_direction == "bearish" and bos_direction == "bullish":
+            # Was bearish, now breaking up → CHoCH to bullish
+            self.last_choch_idx = self.bar_count
+            self.last_choch_direction = "bullish"
             return True
 
+        # Same-direction BOS (continuation, not reversal) or no BOS
         return False
 
     def _detect_bos_event(self, close: float) -> bool:
