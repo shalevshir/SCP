@@ -79,6 +79,10 @@ class TestScoreSignal:
                 "ema_20": 2645.0,
                 "ema_50": 2640.0,
                 "dxy_corr": -0.75,
+                # Structure fields required by enhanced validation
+                "bos_direction": "bullish",
+                "choch_detected": False,
+                "structure_conflict_flag": False,
             }
         )
 
@@ -112,6 +116,10 @@ class TestScoreSignal:
                 "ema_20": 2645.0,
                 "ema_50": 2650.0,
                 "dxy_corr": -0.75,
+                # Structure fields required by enhanced validation
+                "bos_direction": "bearish",
+                "choch_detected": False,
+                "structure_conflict_flag": False,
             }
         )
 
@@ -143,6 +151,10 @@ class TestScoreSignal:
                 "ema_20": 2647.0,  # Partial alignment - 1 pt
                 "ema_50": 2652.0,
                 "dxy_corr": -0.55,  # Weak correlation - 0 pts
+                # Structure fields required by enhanced validation
+                "bos_direction": "bullish",
+                "choch_detected": False,
+                "structure_conflict_flag": False,
             }
         )
 
@@ -208,6 +220,10 @@ class TestScoreSignal:
                 "ema_20": 2645.0,
                 "ema_50": 2640.0,
                 "dxy_corr": -0.75,
+                # Structure fields required by enhanced validation
+                "bos_direction": "bullish",
+                "choch_detected": False,
+                "structure_conflict_flag": False,
             }
         )
 
@@ -239,6 +255,10 @@ class TestScoreSignal:
                 "ema_20": 2645.0,
                 "ema_50": 2640.0,
                 "dxy_corr": -0.75,
+                # Structure fields required by enhanced validation
+                "bos_direction": "bullish",
+                "choch_detected": False,
+                "structure_conflict_flag": False,
             }
         )
 
@@ -270,6 +290,10 @@ class TestDetermineSetupType:
                 "vwap": 2645.0,
                 "rsi": 55.0,
                 "dxy_corr": -0.75,
+                # Structure fields required by enhanced validation
+                "bos_direction": "bullish",
+                "choch_detected": False,
+                "structure_conflict_flag": False,
             }
         )
 
@@ -288,6 +312,10 @@ class TestDetermineSetupType:
                 "vwap": 2645.0,
                 "rsi": 45.0,
                 "dxy_corr": -0.75,
+                # Structure fields required by enhanced validation
+                "bos_direction": "bearish",
+                "choch_detected": False,
+                "structure_conflict_flag": False,
             }
         )
 
@@ -299,19 +327,30 @@ class TestDetermineSetupType:
         assert setup_type == "VWAP_RECLAIM"
 
     def test_determine_vwap_fade_long(self) -> None:
-        """Test identifying VWAP_FADE setup."""
+        """Test identifying VWAP_FADE setup with strict requirements."""
         features = pd.Series(
             {
-                "close": 2600.0,
+                "open": 2600.0,
+                "high": 2610.0,
+                "low": 2580.0,  # Strong lower wick
+                "close": 2605.0,  # 1.6% above VWAP
                 "vwap": 2645.0,
                 "rsi": 28.0,  # Oversold
                 "dxy_corr": -0.75,
+                # Structure fields required by VWAP_FADE detector
+                "structure_clarity": 0.7,
+                "is_chop": False,
+                "choch_detected": True,
+                "trend_confidence": 0.4,
+                "last_structure_label": "LH",
             }
         )
 
-        context = {"htf_direction": "long"}
+        context = {"htf_direction": "long", "htf_bias": "bullish"}
+        htf_bias = create_htf_bias_from_context(context)
+        htf_bias.liquidity_sweep_detected = True  # Required for VWAP_FADE
 
-        setup_type = determine_setup_type(features, context)
+        setup_type = determine_setup_type(features, htf_bias)
 
         assert setup_type == "VWAP_FADE"
 
@@ -407,6 +446,10 @@ class TestScoringScenariosFromSpec:
                 "ema_20": 2645.0,
                 "ema_50": 2640.0,
                 "dxy_corr": -0.75,
+                # Structure fields required by enhanced validation
+                "bos_direction": "bullish",
+                "choch_detected": False,
+                "structure_conflict_flag": False,
             }
         )
 
@@ -440,6 +483,10 @@ class TestScoringScenariosFromSpec:
                 "ema_20": 2645.0,
                 "ema_50": 2640.0,
                 "dxy_corr": -0.65,
+                # Structure fields required by enhanced validation
+                "bos_direction": "bullish",
+                "choch_detected": False,
+                "structure_conflict_flag": False,
             }
         )
 
@@ -500,6 +547,10 @@ class TestScoringScenariosFromSpec:
             "ema_9": 2648.0,
             "ema_20": 2645.0,
             "ema_50": 2640.0,
+            # Structure fields required by enhanced validation
+            "bos_direction": "bullish",
+            "choch_detected": False,
+            "structure_conflict_flag": False,
         }
 
         context = {
@@ -541,6 +592,10 @@ class TestScoringScenariosFromSpec:
                 "ema_20": 2645.0,
                 "ema_50": 2640.0,
                 "dxy_corr": -0.75,
+                # Structure fields required by enhanced validation
+                "bos_direction": "bullish",
+                "choch_detected": False,
+                "structure_conflict_flag": False,
             }
         )
 
@@ -969,6 +1024,10 @@ class TestFullConfluenceScoring:
                 "ema_20": 2645.0,
                 "ema_50": 2640.0,  # Full EMA stack
                 "dxy_corr": -0.75,  # Strong inverse correlation
+                # Structure fields required by enhanced validation
+                "bos_direction": "bullish",
+                "choch_detected": False,
+                "structure_conflict_flag": False,
             }
         )
 
@@ -1022,6 +1081,10 @@ class TestFullConfluenceScoring:
                 "ema_20": 2647.0,  # Partial EMA alignment
                 "ema_50": 2652.0,
                 "dxy_corr": -0.55,  # Weak correlation (negative)
+                # Structure fields required by enhanced validation
+                "bos_direction": "bullish",
+                "choch_detected": False,
+                "structure_conflict_flag": False,
             }
         )
 
