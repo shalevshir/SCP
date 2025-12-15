@@ -129,10 +129,34 @@ def detect_dxy_continuation(
         logger.debug("DXY continuation rejected: rapid alternations (is_chop=True)")
         return False
 
+    # 5b. Noise zone check (ATR-based tight range detection)
+    is_noise_zone = features.get("is_noise_zone", False)
+    if is_noise_zone:
+        logger.debug("DXY continuation rejected: noise zone detected (is_noise_zone=True)")
+        return False
+
     # Also check DXY 5M chop from HTF bias
     if htf_bias.dxy_chop_5m:
         logger.debug("DXY continuation rejected: DXY 5M in chop")
         return False
+
+    # 5c. Gold structure label alignment (trend-following setup)
+    # Long continuations need bullish gold structure (HH or HL)
+    # Short continuations need bearish gold structure (LH or LL)
+    last_structure_label = features.get("last_structure_label")
+    if last_structure_label is not None:
+        if direction == "long" and last_structure_label not in ("HH", "HL"):
+            logger.debug(
+                f"DXY continuation rejected: gold structure {last_structure_label} "
+                f"contradicts long direction (need HH or HL)"
+            )
+            return False
+        elif direction == "short" and last_structure_label not in ("LH", "LL"):
+            logger.debug(
+                f"DXY continuation rejected: gold structure {last_structure_label} "
+                f"contradicts short direction (need LH or LL)"
+            )
+            return False
 
     # 6. Displacement candle check
     # Get current candle from features
