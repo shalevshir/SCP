@@ -81,6 +81,10 @@ class TestRuleEngineIntegration:
                 "ema_20": 2645.0,
                 "ema_50": 2640.0,
                 "dxy_corr": -0.75,
+                # Structure fields required by enhanced validation
+                "bos_direction": "bullish",
+                "choch_detected": False,
+                "structure_conflict_flag": False,
             }
         )
 
@@ -134,6 +138,10 @@ class TestRuleEngineIntegration:
                 "ema_20": 2645.0,
                 "ema_50": 2640.0,
                 "dxy_corr": -0.75,
+                # Structure fields required by enhanced validation
+                "bos_direction": "bullish",
+                "choch_detected": False,
+                "structure_conflict_flag": False,
             }
         )
 
@@ -173,6 +181,10 @@ class TestRuleEngineIntegration:
                     "ema_20": 2645.0,
                     "ema_50": 2640.0,
                     "dxy_corr": -0.75,
+                    # Structure fields required by enhanced validation
+                    "bos_direction": "bullish",
+                    "choch_detected": False,
+                    "structure_conflict_flag": False,
                 }
             )
 
@@ -217,13 +229,22 @@ class TestRuleEngineIntegration:
                 "timestamp": datetime(2025, 1, 1, 11, 0, tzinfo=UTC),
                 "symbol": "GC",
                 "timeframe": "1m",
-                "close": 2600.0,  # Far from VWAP
+                "open": 2600.0,
+                "high": 2610.0,
+                "low": 2580.0,  # Strong lower wick for fade
+                "close": 2605.0,  # Far from VWAP
                 "vwap": 2645.0,
                 "rsi": 28.0,  # Oversold (<30)
                 "ema_9": 2610.0,
                 "ema_20": 2615.0,
                 "ema_50": 2620.0,
                 "dxy_corr": -0.75,
+                # Structure fields required by VWAP_FADE detector
+                "structure_clarity": 0.7,
+                "is_chop": False,
+                "choch_detected": True,
+                "trend_confidence": 0.4,
+                "last_structure_label": "LH",
             }
         )
 
@@ -235,6 +256,7 @@ class TestRuleEngineIntegration:
         }
 
         htf_bias = create_htf_bias_from_context(context)
+        htf_bias.liquidity_sweep_detected = True  # Required for VWAP_FADE
         signal_fade = score_signal(features_fade, htf_bias, context)
         assert signal_fade.setup_type == "VWAP_FADE"
 
@@ -252,6 +274,9 @@ class TestRuleEngineIntegration:
                 "ema_20": 2647.0,
                 "ema_50": 2645.0,
                 "dxy_corr": -0.85,
+                # Structure fields required by DXY_CONTINUATION detector
+                "structure_clarity": 0.7,
+                "is_chop": False,
             }
         )
 
@@ -290,6 +315,10 @@ class TestRuleEngineIntegration:
                 "ema_20": 2645.0,
                 "ema_50": 2640.0,
                 "dxy_corr": -0.75,
+                # Structure fields required by enhanced validation
+                "bos_direction": "bullish",
+                "choch_detected": False,
+                "structure_conflict_flag": False,
             }
         )
 

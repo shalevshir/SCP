@@ -34,6 +34,8 @@ class TestDXYContinuationDetector:
                 "high": 105.5,
                 "low": 99.5,
                 "atr": 3.0,
+                "structure_clarity": 0.7,  # Required for continuation
+                "is_chop": False,  # No chop
             }
         )
 
@@ -210,6 +212,8 @@ class TestDXYContinuationDetector:
                 "high": 106.0,
                 "low": 99.5,
                 "atr": 3.0,
+                "structure_clarity": 0.7,  # Required for continuation
+                "is_chop": False,  # No chop
             }
         )
 

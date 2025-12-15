@@ -83,6 +83,10 @@ class TestE2EValidationPipeline:
                 "ema_50": 2640.0,
                 "dxy_corr": -0.75,
                 "structure_type": "HH",
+                # Structure fields required by enhanced validation
+                "bos_direction": "bullish",
+                "choch_detected": False,
+                "structure_conflict_flag": False,
             }
         )
 
@@ -154,6 +158,10 @@ class TestE2EValidationPipeline:
                 "ema_50": 2641.0,
                 "dxy_corr": -0.65,  # Weak correlation
                 "structure_type": "LL",  # Bearish structure (wrong for long)
+                # Structure fields required by enhanced validation
+                "bos_direction": "bearish",
+                "choch_detected": False,
+                "structure_conflict_flag": False,
             }
         )
 
@@ -223,6 +231,10 @@ class TestE2EValidationPipeline:
                 "ema_50": 2640.0,
                 "dxy_corr": -0.75,
                 "structure_type": "HH",
+                # Structure fields required by enhanced validation
+                "bos_direction": "bullish",
+                "choch_detected": False,
+                "structure_conflict_flag": False,
             }
         )
 
@@ -285,6 +297,10 @@ class TestE2EValidationPipeline:
                 "ema_50": 2640.0,
                 "dxy_corr": None,  # DXY unavailable
                 "structure_type": "HH",
+                # Structure fields required by enhanced validation
+                "bos_direction": "bullish",
+                "choch_detected": False,
+                "structure_conflict_flag": False,
             }
         )
 
@@ -365,6 +381,10 @@ class TestE2EValidationPipeline:
                 "ema_50": 2640.0,
                 "dxy_corr": -0.75,
                 "structure_type": "HH",
+                # Structure fields required by enhanced validation
+                "bos_direction": "bullish",
+                "choch_detected": False,
+                "structure_conflict_flag": False,
             }
         )
 
