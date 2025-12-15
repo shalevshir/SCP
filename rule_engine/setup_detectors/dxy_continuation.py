@@ -96,6 +96,15 @@ def detect_dxy_continuation(
         )
         return False
 
+    # 3.5. Structure clarity check (use structure fields directly)
+    structure_clarity = features.get("structure_clarity", 0.0)
+    if structure_clarity < 0.5:
+        logger.debug(
+            f"DXY continuation rejected: low clarity "
+            f"(clarity={structure_clarity:.2f}, need >= 0.5)"
+        )
+        return False
+
     # 4. Micro pullback structure (requires DataFrame)
     if df is not None and len(df) >= 3:
         micro_structure = detect_micro_pullback(df, direction)
@@ -113,13 +122,16 @@ def detect_dxy_continuation(
             "DXY continuation: skipping micro pullback check (no DataFrame provided)"
         )
 
-    # 5. Chop filters: reject if either DXY 5M or gold micro chop detected
-    if htf_bias.dxy_chop_5m:
-        logger.debug("DXY continuation rejected: DXY 5M in chop")
+    # 5. Chop filters: Use structure fields directly for more granular control
+    # Check is_chop from features (rapid alternations)
+    is_chop = features.get("is_chop", False)
+    if is_chop:
+        logger.debug("DXY continuation rejected: rapid alternations (is_chop=True)")
         return False
 
-    if htf_bias.chop_detected:
-        logger.debug("DXY continuation rejected: Gold micro chop detected")
+    # Also check DXY 5M chop from HTF bias
+    if htf_bias.dxy_chop_5m:
+        logger.debug("DXY continuation rejected: DXY 5M in chop")
         return False
 
     # 6. Displacement candle check
