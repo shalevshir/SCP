@@ -357,6 +357,7 @@ class StreamingFeatureProcessor:
         features["bos_recent"] = gc_structure_ctx.bos_recent
         features["bos_age"] = gc_structure_ctx.bos_age
         features["choch_detected"] = gc_structure_ctx.choch_detected
+        features["choch_direction"] = gc_structure_ctx.choch_direction
         features["choch_age"] = gc_structure_ctx.choch_age
         features["liquidity_sweep"] = gc_structure_ctx.liquidity_sweep
         features["sweep_direction"] = gc_structure_ctx.sweep_direction
