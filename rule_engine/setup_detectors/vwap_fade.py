@@ -106,8 +106,11 @@ def detect_vwap_fade(
         logger.debug("VWAP_FADE rejected: chop detected (is_chop=True)")
         return False
 
-    # Note: is_noise_zone check would go here if available
-    # Current implementation skips this check
+    # 4b. No noise zone requirement (ATR-based tight range detection)
+    is_noise_zone = features.get("is_noise_zone", False)
+    if is_noise_zone:
+        logger.debug("VWAP_FADE rejected: noise zone detected (is_noise_zone=True)")
+        return False
 
     # 5. CHoCH or trend-weakening requirement
     choch_detected = features.get("choch_detected", False)

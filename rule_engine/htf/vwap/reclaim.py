@@ -232,5 +232,11 @@ def validate_reclaim_prerequisites(
         if structure_conflict:
             return False, "Structure conflict detected (mixed HH/LL signals)"
 
+        # Check 6: Reject during noise zone (ATR-based tight range)
+        # Note: VWAP_RECLAIM allows micro chop but not noise zones
+        is_noise_zone = features.get("is_noise_zone", False)
+        if is_noise_zone:
+            return False, "Noise zone detected (ATR too tight for reliable structure)"
+
     # All prerequisites met
     return True, None
