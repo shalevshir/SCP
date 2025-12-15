@@ -347,6 +347,7 @@ class StreamingFeatureProcessor:
         features["trend_confidence"] = gc_structure_ctx.trend_confidence
         features["structure_clarity"] = gc_structure_ctx.structure_clarity
         features["is_chop"] = gc_structure_ctx.is_chop
+        features["is_noise_zone"] = gc_structure_ctx.is_noise_zone
         features["structure_conflict_flag"] = gc_structure_ctx.structure_conflict_flag
         features["last_swing_high"] = gc_structure_ctx.last_swing_high
         features["last_swing_low"] = gc_structure_ctx.last_swing_low

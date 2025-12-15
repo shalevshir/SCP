@@ -45,6 +45,7 @@ class TestStructureContextDataclass:
         assert ctx.trend_confidence == 0.8
         assert ctx.structure_clarity == 0.9
         assert ctx.is_chop is False
+        assert ctx.is_noise_zone is False
         assert ctx.structure_conflict_flag is False
         assert ctx.choch_detected is False
         assert ctx.choch_direction is None
@@ -669,6 +670,277 @@ class TestChochDetection:
         assert tracker.last_choch_idx == choch_idx_bar17, "last_choch_idx should still not change"
         assert ctx_bar19.choch_age == 2, f"choch_age should be 2, got {ctx_bar19.choch_age}"
 
+    def test_choch_can_trigger_same_direction_after_trend_reset(self):
+        """CHoCH should be able to trigger in the same direction after sustained opposite trend.
+        
+        Bug: last_choch_direction acts as a permanent lock that only clears via opposite CHoCH.
+        This suppresses valid CHoCH signals when:
+        1. First CHoCH in direction A fires (sets last_choch_direction = A)
+        2. Market builds sustained trend in opposite direction (10+ bars, clarity >= 0.5)
+        3. Guard should reset, allowing future CHoCH in direction A
+        
+        Simplified scenario:
+        - Bullish trend → bearish CHoCH (sets last_choch_direction = "bearish")
+        - Build strong bullish trend for 10+ bars (should reset guard to None)
+        - Trigger another bearish CHoCH (should work, not blocked)
+        """
+        tracker = StructureContextTracker(swing_window=2)
+
+        # === Phase 1: Build bullish trend and trigger bearish CHoCH ===
+        tracker.update(high=100.0, low=98.0, close=99.0)  # Bar 0
+        tracker.update(high=102.0, low=100.0, close=101.0)  # Bar 1
+        tracker.update(high=106.0, low=102.0, close=105.0)  # Bar 2 - HH swing
+        tracker.update(high=104.0, low=100.0, close=102.0)  # Bar 3
+        tracker.update(high=103.0, low=99.0, close=100.0)  # Bar 4 - HH detected
+        
+        tracker.update(high=102.0, low=96.0, close=97.0)  # Bar 5 - HL swing
+        tracker.update(high=100.0, low=97.0, close=99.0)  # Bar 6
+        tracker.update(high=101.0, low=98.0, close=100.0)  # Bar 7 - HL detected
+        
+        tracker.update(high=108.0, low=102.0, close=107.0)  # Bar 8 - HH swing
+        tracker.update(high=106.0, low=102.0, close=104.0)  # Bar 9
+        ctx_bullish = tracker.update(high=105.0, low=101.0, close=103.0)  # Bar 10 - HH detected
+        
+        assert ctx_bullish.trend_direction == "bullish"
+        assert ctx_bullish.structure_clarity >= 0.5
+        
+        # Trigger first bearish CHoCH
+        ctx_choch1 = tracker.update(high=100.0, low=92.0, close=93.0)  # Bar 11 - BOS bearish
+        assert ctx_choch1.choch_detected is True, "First bearish CHoCH should trigger"
+        assert ctx_choch1.choch_direction == "bearish"
+        assert tracker.last_choch_direction == "bearish", "last_choch_direction set to bearish"
+        first_choch_bar = 11
+        
+        # === Phase 2: Build sustained bullish trend (10+ bars to trigger guard reset) ===
+        # Create strong bullish structure with multiple HH/HL swings
+        # Bar 12-16: First HH swing
+        tracker.update(high=98.0, low=94.0, close=95.0)  # Bar 12
+        tracker.update(high=100.0, low=95.0, close=99.0)  # Bar 13
+        tracker.update(high=110.0, low=100.0, close=109.0)  # Bar 14 - HH swing at 110
+        tracker.update(high=108.0, low=101.0, close=105.0)  # Bar 15
+        ctx_14 = tracker.update(high=107.0, low=102.0, close=106.0)  # Bar 16 - HH detected
+        
+        # Bar 17-21: HL swing
+        tracker.update(high=106.0, low=98.0, close=99.0)  # Bar 17 - HL swing at 98
+        tracker.update(high=104.0, low=99.0, close=102.0)  # Bar 18
+        ctx_19 = tracker.update(high=105.0, low=100.0, close=104.0)  # Bar 19 - HL detected
+        
+        # Bar 20-24: Another HH swing (to strengthen bullish trend)
+        tracker.update(high=120.0, low=105.0, close=119.0)  # Bar 20 - HH swing at 120
+        tracker.update(high=118.0, low=106.0, close=115.0)  # Bar 21
+        ctx_22 = tracker.update(high=117.0, low=107.0, close=116.0)  # Bar 22 - HH detected
+        
+        # Verify: 10+ bars elapsed since CHoCH (bar 22 is 11 bars after bar 11)
+        assert tracker.bar_count - first_choch_bar >= 10, "Should be 10+ bars since first CHoCH"
+        
+        # Verify: Bullish trend established with good clarity
+        assert ctx_22.trend_direction == "bullish", (
+            f"Should have bullish trend, got {ctx_22.trend_direction}"
+        )
+        assert ctx_22.structure_clarity >= 0.5, (
+            f"Should have clarity >= 0.5, got {ctx_22.structure_clarity}"
+        )
+        
+        # Verify: Guard should be reset (last_choch_direction → None)
+        assert tracker.last_choch_direction is None, (
+            f"Guard should be reset after 10+ bars with opposite trend, "
+            f"but last_choch_direction={tracker.last_choch_direction}"
+        )
+        
+        # === Phase 3: Trigger SECOND bearish CHoCH (should NOT be blocked) ===
+        # Break below swing low at 98 → bearish BOS
+        # Use a clear downward bar entirely below the swing low
+        ctx_choch2 = tracker.update(high=100.0, low=90.0, close=91.0)  # Bar 23 - BOS bearish (breaks 98)
+        
+        # This should trigger CHoCH because:
+        # 1. We have a bullish trend (verified above)
+        # 2. BOS is bearish (opposite direction)
+        # 3. Clarity is sufficient (>= 0.5)
+        # 4. Guard was reset (last_choch_direction was None before this bar)
+        assert ctx_choch2.choch_detected is True, (
+            f"Second bearish CHoCH should trigger after guard reset. "
+            f"Got: choch_detected={ctx_choch2.choch_detected}, "
+            f"trend={ctx_choch2.trend_direction}, "
+            f"bos_direction={ctx_choch2.bos_direction}, "
+            f"clarity={ctx_choch2.structure_clarity}, "
+            f"last_choch_direction={tracker.last_choch_direction}"
+        )
+        assert ctx_choch2.choch_direction == "bearish"
+        assert ctx_choch2.choch_age == 0
+
+    def test_guard_reset_clears_both_direction_and_idx_for_consistency(self):
+        """Guard reset should clear both last_choch_direction AND last_choch_idx for consistency.
+        
+        Bug: Guard reset sets last_choch_direction=None but leaves last_choch_idx intact.
+        This creates inconsistent StructureContext where:
+        - choch_direction=None (suggests no last CHoCH)
+        - choch_age=non-None (suggests there WAS a CHoCH X bars ago)
+        
+        This violates semantic coherence: if there's no last CHoCH (direction=None),
+        there should be no age calculation either (age=None).
+        
+        Fix: When resetting guard, also set last_choch_idx=None.
+        """
+        tracker = StructureContextTracker(swing_window=2)
+
+        # Phase 1: Build bullish trend and trigger bearish CHoCH
+        tracker.update(high=100.0, low=98.0, close=99.0)  # Bar 0
+        tracker.update(high=102.0, low=100.0, close=101.0)  # Bar 1
+        tracker.update(high=106.0, low=102.0, close=105.0)  # Bar 2 - HH swing
+        tracker.update(high=104.0, low=100.0, close=102.0)  # Bar 3
+        tracker.update(high=103.0, low=99.0, close=100.0)  # Bar 4 - HH detected
+        
+        tracker.update(high=102.0, low=96.0, close=97.0)  # Bar 5 - HL swing
+        tracker.update(high=100.0, low=97.0, close=99.0)  # Bar 6
+        tracker.update(high=101.0, low=98.0, close=100.0)  # Bar 7 - HL detected
+        
+        tracker.update(high=108.0, low=102.0, close=107.0)  # Bar 8 - HH swing
+        tracker.update(high=106.0, low=102.0, close=104.0)  # Bar 9
+        tracker.update(high=105.0, low=101.0, close=103.0)  # Bar 10 - HH detected
+        
+        # Trigger bearish CHoCH
+        ctx_choch = tracker.update(high=100.0, low=92.0, close=93.0)  # Bar 11 - BOS bearish
+        choch_bar = tracker.bar_count  # Capture actual CHoCH bar index
+        assert ctx_choch.choch_detected is True
+        assert ctx_choch.choch_direction == "bearish"
+        assert ctx_choch.choch_age == 0
+        assert tracker.last_choch_direction == "bearish"
+        assert tracker.last_choch_idx == choch_bar
+        
+        # Phase 2: Build sustained bullish trend (10+ bars) to trigger guard reset
+        tracker.update(high=98.0, low=94.0, close=95.0)  # Bar 12
+        tracker.update(high=100.0, low=95.0, close=99.0)  # Bar 13
+        tracker.update(high=110.0, low=100.0, close=109.0)  # Bar 14 - HH swing
+        tracker.update(high=108.0, low=101.0, close=105.0)  # Bar 15
+        tracker.update(high=107.0, low=102.0, close=106.0)  # Bar 16 - HH detected
+        
+        tracker.update(high=106.0, low=98.0, close=99.0)  # Bar 17 - HL swing
+        tracker.update(high=104.0, low=99.0, close=102.0)  # Bar 18
+        tracker.update(high=105.0, low=100.0, close=104.0)  # Bar 19 - HL detected
+        
+        tracker.update(high=120.0, low=105.0, close=119.0)  # Bar 20 - HH swing
+        tracker.update(high=118.0, low=106.0, close=115.0)  # Bar 21
+        ctx_after_reset = tracker.update(high=117.0, low=107.0, close=116.0)  # Bar 22 - HH detected
+        
+        # Verify: Guard reset should have happened (10+ bars, opposite trend, clarity >= 0.5)
+        assert tracker.bar_count - choch_bar >= 10, "Should be 10+ bars since CHoCH"
+        assert ctx_after_reset.trend_direction == "bullish", "Should have bullish trend"
+        assert ctx_after_reset.structure_clarity >= 0.5, "Should have sufficient clarity"
+        
+        # Bug verification: last_choch_direction reset but last_choch_idx still set
+        assert tracker.last_choch_direction is None, (
+            "Guard reset should clear last_choch_direction"
+        )
+        
+        # CRITICAL BUG: last_choch_idx should also be None after guard reset
+        # This is the core issue - if direction is None (no last CHoCH), then
+        # idx should also be None (no bar index to reference)
+        assert tracker.last_choch_idx is None, (
+            f"Guard reset should clear last_choch_idx for consistency, "
+            f"but got last_choch_idx={tracker.last_choch_idx}. "
+            f"Having direction=None but idx={tracker.last_choch_idx} creates "
+            f"inconsistent state where choch_direction=None but choch_age=non-None."
+        )
+        
+        # Verify: StructureContext should have consistent None values
+        assert ctx_after_reset.choch_direction is None, (
+            "choch_direction should be None after guard reset"
+        )
+        assert ctx_after_reset.choch_age is None, (
+            f"choch_age should be None after guard reset (consistent with direction=None), "
+            f"but got choch_age={ctx_after_reset.choch_age}. "
+            f"This inconsistency (direction=None, age={ctx_after_reset.choch_age}) "
+            f"violates semantic coherence and can confuse downstream logic."
+        )
+
+
+class TestNoiseZoneDetection:
+    """Test ATR-based noise zone detection."""
+
+    def test_noise_zone_detected_in_tight_range(self):
+        """Test noise zone detection when ATR is very low (tight range)."""
+        tracker = StructureContextTracker(swing_window=2)
+
+        # Create tight range (all bars within 0.1% range)
+        base_price = 100.0
+        for i in range(20):
+            high = base_price + 0.05
+            low = base_price - 0.05
+            close = base_price
+            ctx = tracker.update(high=high, low=low, close=close)
+
+        # Should detect noise zone (ATR very small relative to price)
+        assert ctx.is_noise_zone is True, "Should detect noise zone in tight range"
+
+    def test_noise_zone_not_detected_in_trending_market(self):
+        """Test no noise zone in trending market with normal volatility."""
+        tracker = StructureContextTracker(swing_window=2)
+
+        # Create trending market with normal ranges (1-2% bars)
+        for i in range(20):
+            base = 100.0 + i * 0.5  # Trending up
+            high = base + 1.0  # ~1% range
+            low = base - 0.5
+            close = base + 0.3
+            ctx = tracker.update(high=high, low=low, close=close)
+
+        # Should NOT detect noise zone
+        assert (
+            ctx.is_noise_zone is False
+        ), "Should not detect noise zone in trending market"
+
+    def test_noise_zone_requires_full_atr_window(self):
+        """Test that noise zone requires 15 bars for 14-period ATR calculation."""
+        tracker = StructureContextTracker(swing_window=2)
+
+        # First 14 bars - not enough for 14-period ATR (need 15 total)
+        for i in range(14):
+            ctx = tracker.update(high=100.05, low=99.95, close=100.0)
+
+        # Should be False (not enough data yet)
+        assert (
+            ctx.is_noise_zone is False
+        ), "Should not detect noise zone without full ATR window (need 15 bars)"
+
+    def test_atr_requires_15_bars_not_14(self):
+        """Test that 14-period ATR requires 15 bars, not 14.
+
+        Bug: Current implementation accepts 14 bars but only computes 13 TR values
+        because loop starts at index 1 (range(1, 14) = 13 iterations).
+        
+        Standard ATR semantics:
+        - 14-period ATR needs 15 bars total
+        - Bar 0: establishes initial close
+        - Bars 1-14: produce 14 True Range values
+        - Average those 14 values = 14-period ATR
+        """
+        tracker = StructureContextTracker(swing_window=2)
+        
+        # Create 14 bars with extremely tight range (0.02% of price)
+        # This range is tight enough to trigger noise zone detection
+        for i in range(14):
+            ctx_14 = tracker.update(high=100.01, low=99.99, close=100.0)
+        
+        # With 14 bars total:
+        # Bug: ATR calculated from 13 TR values → is_noise_zone=True
+        # Fix: ATR not calculated (need 15 bars) → is_noise_zone=False
+        
+        assert ctx_14.is_noise_zone is False, (
+            "With only 14 bars, ATR should NOT be calculated yet "
+            "(need 15 bars: 1 initial close + 14 TR values for 14-period ATR). "
+            "Bug: current implementation accepts 14 bars but only uses 13 TR values."
+        )
+        
+        # Add 15th bar (still tight range)
+        ctx_15 = tracker.update(high=100.01, low=99.99, close=100.0)
+        
+        # With 15 bars total:
+        # Now we have 14 proper TR values → ATR calculated → is_noise_zone=True
+        assert ctx_15.is_noise_zone is True, (
+            "With 15 bars, ATR should be calculated using 14 TR values, "
+            "and tight range should trigger noise zone detection."
+        )
+
 
 class TestLiquiditySweepDetection:
     """Test liquidity sweep detection and age calculation."""
@@ -914,6 +1186,7 @@ class TestBatchComputation:
             "trend_confidence",
             "structure_clarity",
             "is_chop",
+            "is_noise_zone",
             "structure_conflict_flag",
             "last_swing_high",
             "last_swing_low",
