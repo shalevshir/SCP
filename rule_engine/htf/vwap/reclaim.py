@@ -148,18 +148,23 @@ def detect_vwap_reclaim(
     return True, state
 
 
-def validate_reclaim_prerequisites(htf_bias: HTFBias) -> tuple[bool, str | None]:
+def validate_reclaim_prerequisites(
+    htf_bias: HTFBias, features: pd.Series | None = None
+) -> tuple[bool, str | None]:
     """Validate HTF bias meets reclaim prerequisites (loosened for SOP compliance).
 
     Prerequisites (loosened to reduce over-filtering):
     1. Liquidity sweep detected
     2. Structure clarity >= 0.5 (lowered from 0.7)
     3. BOS detected recently (within 15 bars)
+    4. BOS or CHoCH aligns with trade direction (if features provided)
+    5. No excessive structure conflict (if features provided)
 
     Note: Removed chop check - VWAP_RECLAIM should work during gold micro chop per SOP.
 
     Args:
         htf_bias: HTFBias object to validate
+        features: Optional feature series for additional validation checks
 
     Returns:
         Tuple of (is_valid, rejection_reason)
@@ -189,6 +194,43 @@ def validate_reclaim_prerequisites(htf_bias: HTFBias) -> tuple[bool, str | None]
 
     if htf_bias.bars_since_bos > 15:
         return False, f"BOS too stale: {htf_bias.bars_since_bos} bars ago (>15)"
+
+    # Enhanced checks if features are provided
+    if features is not None:
+        # Check 4: BOS or CHoCH alignment with trade direction
+        bos_direction = features.get("bos_direction")
+        choch_detected = features.get("choch_detected", False)
+        choch_direction = features.get("choch_direction")
+
+        direction = htf_bias.direction
+
+        # Either BOS or CHoCH should align with trade direction
+        if direction == "long":
+            has_bullish_signal = (bos_direction == "bullish") or (
+                choch_detected and choch_direction == "bullish"
+            )
+            if not has_bullish_signal:
+                return (
+                    False,
+                    f"No bullish BOS/CHoCH for long reclaim "
+                    f"(bos={bos_direction}, choch={choch_direction})",
+                )
+        elif direction == "short":
+            has_bearish_signal = (bos_direction == "bearish") or (
+                choch_detected and choch_direction == "bearish"
+            )
+            if not has_bearish_signal:
+                return (
+                    False,
+                    f"No bearish BOS/CHoCH for short reclaim "
+                    f"(bos={bos_direction}, choch={choch_direction})",
+                )
+
+        # Check 5: Reject if excessive structure conflict
+        # Note: VWAP_RECLAIM can work during micro chop, but not during conflict
+        structure_conflict = features.get("structure_conflict_flag", False)
+        if structure_conflict:
+            return False, "Structure conflict detected (mixed HH/LL signals)"
 
     # All prerequisites met
     return True, None

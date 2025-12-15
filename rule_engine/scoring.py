@@ -205,8 +205,10 @@ def determine_setup_type(features: pd.Series, htf_bias: HTFBias) -> str:
     # Calculate VWAP deviation percentage
     vwap_dev = abs((close - vwap) / vwap * 100) if vwap != 0 else 0
 
-    # VWAP_FADE: Extreme RSI with large VWAP deviation
-    if (rsi < 30 or rsi > 70) and vwap_dev > 0.5:
+    # VWAP_FADE: Strict structure-based validation
+    from rule_engine.setup_detectors.vwap_fade import detect_vwap_fade
+
+    if detect_vwap_fade(features, htf_bias, df=None):
         return "VWAP_FADE"
 
     # DXY_CONTINUATION: Strict multi-factor validation
@@ -219,7 +221,7 @@ def determine_setup_type(features: pd.Series, htf_bias: HTFBias) -> str:
     # Import here to avoid circular dependency
     from rule_engine.htf.vwap.reclaim import validate_reclaim_prerequisites
 
-    is_valid, reason = validate_reclaim_prerequisites(htf_bias)
+    is_valid, reason = validate_reclaim_prerequisites(htf_bias, features)
 
     if is_valid:
         return "VWAP_RECLAIM"
