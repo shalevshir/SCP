@@ -16,26 +16,71 @@ from rule_engine.htf.conflicts import (
 
 
 class TestStructureConflictDetection:
-    """Test structure conflict detection between 1H and 15M."""
+    """Test structure conflict detection between 1H and 15M.
+    
+    Only STRONG momentum opposition triggers conflict:
+    - HH + LL = conflict (strong bullish vs strong bearish)
+    - LL + HH = conflict (strong bearish vs strong bullish)
+    
+    Retracements are allowed (not conflicts):
+    - HL + LL = normal bullish retracement
+    - LH + HH = normal bearish retracement
+    """
 
-    def test_bullish_1h_bearish_15m_conflict(self) -> None:
-        """Test that bullish 1H + bearish 15M triggers conflict."""
+    def test_strong_bullish_vs_strong_bearish_conflict(self) -> None:
+        """Test that HH + LL triggers conflict (strong momentum opposition)."""
         is_conflict, reason = detect_structure_conflict(
             structure_1h="HH",
-            structure_15m="LH",
+            structure_15m="LL",
         )
         assert is_conflict is True
         assert reason is not None
         assert "conflict" in reason.lower()
 
-    def test_bearish_1h_bullish_15m_conflict(self) -> None:
-        """Test that bearish 1H + bullish 15M triggers conflict."""
+    def test_strong_bearish_vs_strong_bullish_conflict(self) -> None:
+        """Test that LL + HH triggers conflict (strong momentum opposition)."""
         is_conflict, reason = detect_structure_conflict(
-            structure_1h="LH",
+            structure_1h="LL",
             structure_15m="HH",
         )
         assert is_conflict is True
         assert reason is not None
+
+    def test_bullish_retracement_no_conflict(self) -> None:
+        """Test that HL + LL is allowed (normal bullish retracement)."""
+        is_conflict, reason = detect_structure_conflict(
+            structure_1h="HL",
+            structure_15m="LL",
+        )
+        assert is_conflict is False
+        assert reason is None
+
+    def test_bearish_retracement_no_conflict(self) -> None:
+        """Test that LH + HH is allowed (normal bearish retracement)."""
+        is_conflict, reason = detect_structure_conflict(
+            structure_1h="LH",
+            structure_15m="HH",
+        )
+        assert is_conflict is False
+        assert reason is None
+
+    def test_hh_lh_no_conflict(self) -> None:
+        """Test that HH + LH is allowed (15M pullback in bullish trend)."""
+        is_conflict, reason = detect_structure_conflict(
+            structure_1h="HH",
+            structure_15m="LH",
+        )
+        assert is_conflict is False
+        assert reason is None
+
+    def test_ll_hl_no_conflict(self) -> None:
+        """Test that LL + HL is allowed (15M pullback in bearish trend)."""
+        is_conflict, reason = detect_structure_conflict(
+            structure_1h="LL",
+            structure_15m="HL",
+        )
+        assert is_conflict is False
+        assert reason is None
 
     def test_bullish_1h_bullish_15m_no_conflict(self) -> None:
         """Test that both bullish structures don't conflict."""

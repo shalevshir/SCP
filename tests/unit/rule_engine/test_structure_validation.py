@@ -15,11 +15,15 @@ from rule_engine.setup_detectors.dxy_continuation import detect_dxy_continuation
 from rule_engine.setup_detectors.vwap_fade import detect_vwap_fade
 
 
-class TestNoiseZoneRejection:
-    """Test that all setup types are rejected during noise zones."""
+class TestStructuralChopHandling:
+    """Test that structural chop is handled via score penalty, not hard rejection.
+    
+    Per Shir Capital SOP: Noise means structural disorder, not low volatility.
+    ATR compression is a supporting filter, not a primary gate.
+    """
 
-    def test_vwap_fade_rejected_in_noise_zone(self):
-        """Test that VWAP_FADE is rejected when is_noise_zone=True."""
+    def test_vwap_fade_not_rejected_by_low_atr_alone(self):
+        """Test that VWAP_FADE is NOT rejected by low ATR alone."""
         features = pd.Series({
             "open": 100.0,
             "high": 102.0,
@@ -29,7 +33,8 @@ class TestNoiseZoneRejection:
             "rsi": 25.0,
             "structure_clarity": 0.7,
             "is_chop": False,
-            "is_noise_zone": True,  # Noise zone active
+            "is_structural_chop": False,  # No structural chop
+            "atr_compression_ratio": 0.3,  # Low ATR but clean structure
             "choch_detected": True,
             "trend_confidence": 0.4,
             "last_structure_label": "LH",
@@ -43,39 +48,12 @@ class TestNoiseZoneRejection:
             liquidity_sweep_detected=True,
         )
 
+        # Should pass - low ATR alone doesn't block trades
         result = detect_vwap_fade(features, htf_bias)
-        assert result is False
+        assert result is True, "Low ATR alone should not reject VWAP_FADE"
 
-    def test_vwap_fade_passes_without_noise_zone(self):
-        """Test that VWAP_FADE passes when is_noise_zone=False."""
-        features = pd.Series({
-            "open": 100.0,
-            "high": 102.0,
-            "low": 96.0,
-            "close": 100.6,
-            "vwap": 100.0,
-            "rsi": 25.0,
-            "structure_clarity": 0.7,
-            "is_chop": False,
-            "is_noise_zone": False,  # No noise zone
-            "choch_detected": True,
-            "trend_confidence": 0.4,
-            "last_structure_label": "LH",
-        })
-
-        htf_bias = HTFBias(
-            bias="bullish",
-            direction="long",
-            score=8.0,
-            confidence="high",
-            liquidity_sweep_detected=True,
-        )
-
-        result = detect_vwap_fade(features, htf_bias)
-        assert result is True
-
-    def test_dxy_continuation_rejected_in_noise_zone(self):
-        """Test that DXY_CONTINUATION is rejected when is_noise_zone=True."""
+    def test_dxy_continuation_not_rejected_by_low_atr_alone(self):
+        """Test that DXY_CONTINUATION is NOT rejected by low ATR alone."""
         features = pd.Series({
             "open": 100.0,
             "close": 105.0,
@@ -84,7 +62,8 @@ class TestNoiseZoneRejection:
             "atr": 3.0,
             "structure_clarity": 0.7,
             "is_chop": False,
-            "is_noise_zone": True,  # Noise zone active
+            "is_structural_chop": False,  # No structural chop
+            "atr_compression_ratio": 0.3,  # Low ATR but clean structure
             "last_structure_label": "HH",
         })
 
@@ -106,51 +85,18 @@ class TestNoiseZoneRejection:
             "low": [98, 100, 101],
         })
 
+        # Should pass - low ATR alone doesn't block trades
         result = detect_dxy_continuation(features, htf_bias, df)
-        assert result is False
+        assert result is True, "Low ATR alone should not reject DXY_CONTINUATION"
 
-    def test_dxy_continuation_passes_without_noise_zone(self):
-        """Test that DXY_CONTINUATION passes when is_noise_zone=False."""
-        features = pd.Series({
-            "open": 100.0,
-            "close": 105.0,
-            "high": 105.5,
-            "low": 99.5,
-            "atr": 3.0,
-            "structure_clarity": 0.7,
-            "is_chop": False,
-            "is_noise_zone": False,  # No noise zone
-            "last_structure_label": "HH",
-        })
-
-        htf_bias = HTFBias(
-            bias="bullish",
-            direction="long",
-            score=8.5,
-            confidence="high",
-            dxy_corr_1m=-0.4,
-            dxy_corr_5m=-0.5,
-            dxy_structure="LL",
-            bars_since_bos=8,
-            dxy_chop_5m=False,
-            chop_detected=False,
-        )
-
-        df = pd.DataFrame({
-            "high": [102, 104, 103],
-            "low": [98, 100, 101],
-        })
-
-        result = detect_dxy_continuation(features, htf_bias, df)
-        assert result is True
-
-    def test_vwap_reclaim_rejected_in_noise_zone(self):
-        """Test that VWAP_RECLAIM is rejected when is_noise_zone=True."""
+    def test_vwap_reclaim_not_rejected_by_low_atr_alone(self):
+        """Test that VWAP_RECLAIM is NOT rejected by low ATR alone."""
         features = pd.Series({
             "bos_direction": "bullish",
             "choch_detected": False,
             "structure_conflict_flag": False,
-            "is_noise_zone": True,  # Noise zone active
+            "is_structural_chop": False,  # No structural chop
+            "atr_compression_ratio": 0.3,  # Low ATR but clean structure
         })
 
         htf_bias = HTFBias(
@@ -165,33 +111,9 @@ class TestNoiseZoneRejection:
             chop_detected=False,
         )
 
+        # Should pass - low ATR alone doesn't block trades
         is_valid, reason = validate_reclaim_prerequisites(htf_bias, features)
-        assert is_valid is False
-        assert "Noise zone" in reason
-
-    def test_vwap_reclaim_passes_without_noise_zone(self):
-        """Test that VWAP_RECLAIM passes when is_noise_zone=False."""
-        features = pd.Series({
-            "bos_direction": "bullish",
-            "choch_detected": False,
-            "structure_conflict_flag": False,
-            "is_noise_zone": False,  # No noise zone
-        })
-
-        htf_bias = HTFBias(
-            bias="bullish",
-            direction="long",
-            score=8.0,
-            confidence="high",
-            bos_detected=True,
-            structure_clarity=0.8,
-            bars_since_bos=5,
-            liquidity_sweep_detected=True,
-            chop_detected=False,
-        )
-
-        is_valid, reason = validate_reclaim_prerequisites(htf_bias, features)
-        assert is_valid is True
+        assert is_valid is True, "Low ATR alone should not reject VWAP_RECLAIM"
         assert reason is None
 
 

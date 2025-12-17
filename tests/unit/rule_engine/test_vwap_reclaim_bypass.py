@@ -10,7 +10,7 @@ import pandas as pd
 import pytest
 from datetime import datetime, timezone
 
-from rule_engine.htf.types import HTFBias
+from rule_engine.htf.types import ChopSeverity, HTFBias
 from rule_engine.htf.vwap.reclaim import validate_reclaim_prerequisites
 from rule_engine.scoring import calculate_structure_alignment
 from rule_engine.signal import Signal
@@ -87,7 +87,7 @@ class TestReclaimPrerequisitesLoosened:
             liquidity_sweep_detected=True,
             structure_clarity=0.7,
             bos_detected=True,
-            bars_since_bos=20,  # Too old
+            bars_since_bos=25,  # Too old (limit is now 20)
             chop_detected=False,
         )
 
@@ -215,6 +215,8 @@ class TestChopValidationBySetupType:
             score=8.0,
             confidence="high",
             chop_detected=True,  # Gold chop
+            chop_severity=ChopSeverity.HARD_CHOP,  # Required for validation rejection
+            liquidity_sweep_detected=False,  # No sweep = blocked in HARD_CHOP
             dxy_chop_5m=False,
             dxy_alignment=True,
             conflict_detected=False,
@@ -265,7 +267,11 @@ class TestChopValidationBySetupType:
         assert validated_signal.validation_flags["chop_ok"] is True
 
     def test_continuation_still_rejected_by_gold_chop(self):
-        """Test DXY_CONTINUATION still rejected by gold chop."""
+        """Test DXY_CONTINUATION still rejected by gold chop.
+        
+        Note: validation layer uses chop_severity, not chop_detected.
+        DXY_CONTINUATION is blocked on ANY chop severity (SOFT or HARD).
+        """
         signal = Signal(
             timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=timezone.utc),
             symbol="GC",
@@ -287,6 +293,7 @@ class TestChopValidationBySetupType:
             score=8.0,
             confidence="high",
             chop_detected=True,  # Gold chop
+            chop_severity=ChopSeverity.SOFT_CHOP,  # Required for validation rejection
             dxy_chop_5m=False,
             dxy_alignment=True,
             conflict_detected=False,

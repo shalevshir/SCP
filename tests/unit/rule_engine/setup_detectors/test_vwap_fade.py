@@ -66,30 +66,39 @@ class TestVWAPFadeDetector:
         assert detect_vwap_fade(features, htf_bias) is False
 
     def test_fade_requires_clarity_threshold(self):
-        """Test that fade requires structure clarity >= 0.6."""
+        """Test that fade requires structure clarity >= 0.4 (loosened threshold)."""
         features = self.create_base_features("long")
         htf_bias = self.create_base_htf_bias("long")
         
-        # With sufficient clarity: should pass
-        features["structure_clarity"] = 0.7
+        # With sufficient clarity (>= 0.4): should pass
+        features["structure_clarity"] = 0.6
         assert detect_vwap_fade(features, htf_bias) is True
         
-        # Below threshold: should fail
-        features["structure_clarity"] = 0.5
+        # At threshold (0.4): should pass (threshold is inclusive)
+        features["structure_clarity"] = 0.4
+        assert detect_vwap_fade(features, htf_bias) is True
+        
+        # Below threshold (< 0.4): should fail
+        features["structure_clarity"] = 0.3
         assert detect_vwap_fade(features, htf_bias) is False
 
     def test_fade_blocked_by_chop(self):
-        """Test that fade is blocked by chop detection."""
+        """Test fade chop handling.
+        
+        UPDATED: VWAP_FADE is now explicitly allowed during chop (preferred environment).
+        The is_chop check was removed from detect_vwap_fade().
+        Validation layer handles HARD_CHOP confirmation requirement.
+        """
         features = self.create_base_features("long")
         htf_bias = self.create_base_htf_bias("long")
         
-        # Without chop: should pass
+        # NEW BEHAVIOR: is_chop flag no longer blocks VWAP_FADE
         features["is_chop"] = False
         assert detect_vwap_fade(features, htf_bias) is True
         
-        # With chop: should fail
         features["is_chop"] = True
-        assert detect_vwap_fade(features, htf_bias) is False
+        # Still passes - chop doesn't block fades anymore
+        assert detect_vwap_fade(features, htf_bias) is True
 
     def test_fade_requires_choch_or_weakening(self):
         """Test that fade requires CHoCH or trend weakening signal."""
@@ -146,41 +155,47 @@ class TestVWAPFadeDetector:
         assert detect_vwap_fade(features, htf_bias) is False
 
     def test_fade_requires_rsi_extreme(self):
-        """Test that fade requires RSI extreme (<30 or >70)."""
+        """Test that fade requires RSI extreme (loosened: < 40 for long, > 60 for short)."""
         features = self.create_base_features("long")
         htf_bias = self.create_base_htf_bias("long")
         
-        # Oversold (< 30): should pass
+        # Oversold (< 40): should pass
         features["rsi"] = 25.0
         assert detect_vwap_fade(features, htf_bias) is True
         
-        # Overbought (> 70): should pass
-        features["rsi"] = 75.0
+        # Just below threshold (39): should pass
+        features["rsi"] = 39.0
         assert detect_vwap_fade(features, htf_bias) is True
         
         # Neutral RSI: should fail
         features["rsi"] = 50.0
         assert detect_vwap_fade(features, htf_bias) is False
         
-        # Borderline: should fail
+        # Borderline (35 is < 40): should pass now
         features["rsi"] = 35.0
-        assert detect_vwap_fade(features, htf_bias) is False
+        assert detect_vwap_fade(features, htf_bias) is True
 
     def test_fade_requires_vwap_deviation(self):
-        """Test that fade requires significant VWAP deviation (>0.5%)."""
+        """Test that fade requires significant VWAP deviation (>0.25%, loosened from 0.5%)."""
         features = self.create_base_features("long")
         htf_bias = self.create_base_htf_bias("long")
         
         # Sufficient deviation: should pass
         features["close"] = 100.6
         features["vwap"] = 100.0
-        # Deviation = 0.6%, > 0.5%
+        # Deviation = 0.6%, > 0.25%
+        assert detect_vwap_fade(features, htf_bias) is True
+        
+        # At threshold: should pass
+        features["close"] = 100.26
+        features["vwap"] = 100.0
+        # Deviation = 0.26%, > 0.25%
         assert detect_vwap_fade(features, htf_bias) is True
         
         # Insufficient deviation: should fail
-        features["close"] = 100.3
+        features["close"] = 100.2
         features["vwap"] = 100.0
-        # Deviation = 0.3%, < 0.5%
+        # Deviation = 0.2%, < 0.25%
         assert detect_vwap_fade(features, htf_bias) is False
 
     def test_fade_passes_all_requirements(self):
@@ -226,15 +241,16 @@ class TestVWAPFadeDetector:
         assert detect_vwap_fade(features, htf_bias) is False
         features["low"] = 96.0
         
-        # Low clarity
-        features["structure_clarity"] = 0.4
+        # Low clarity (< 0.4 threshold)
+        features["structure_clarity"] = 0.3
         assert detect_vwap_fade(features, htf_bias) is False
         features["structure_clarity"] = 0.7
         
-        # Chop detected
-        features["is_chop"] = True
-        assert detect_vwap_fade(features, htf_bias) is False
-        features["is_chop"] = False
+        # Chop detected - UPDATED: Chop no longer blocks VWAP_FADE
+        # features["is_chop"] = True
+        # assert detect_vwap_fade(features, htf_bias) is False
+        # features["is_chop"] = False
+        # (Chop check removed from detect_vwap_fade per chop refactor)
         
         # Wrong structure label
         features["last_structure_label"] = "HH"
@@ -246,8 +262,8 @@ class TestVWAPFadeDetector:
         assert detect_vwap_fade(features, htf_bias) is False
         features["rsi"] = 25.0
         
-        # Insufficient VWAP deviation
-        features["close"] = 100.3
+        # Insufficient VWAP deviation (< 0.25%)
+        features["close"] = 100.2  # 0.2% deviation
         assert detect_vwap_fade(features, htf_bias) is False
 
     def test_fade_rejects_invalid_direction(self):
