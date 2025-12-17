@@ -47,6 +47,15 @@ confidence:
   watch: 6.0       # Score 6.0-7.9 -> Watch (monitor only)
   reject: 0.0      # Score < 6.0 -> Reject (invalid)
 
+# VWAP_RECLAIM expansion gate configuration
+# Controls entry timing by requiring expansion signals before execution
+vwap_reclaim:
+  expansion_gate:
+    bos_recency_threshold: 10      # bars - BOS must be within this for full readiness
+    range_expansion_ratio: 1.5     # current range vs median - signals volatility expansion
+    atr_expansion_threshold: 0.7   # ATR ratio must exceed this - signals rising volatility
+    displacement_body_ratio: 2.0   # body vs average body - signals strong momentum
+
 # SOP validation requirements
 validation:
   # DXY correlation threshold for Gold trades

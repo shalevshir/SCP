@@ -17,7 +17,7 @@ default_session:
   allowed_setups:
     - "VWAP_RECLAIM"
     - "DXY_CONTINUATION"
-  min_score: 8.0
+  min_score: 6.5
   max_losses: 2
   dxy_correlation_max: -0.6  # Must be below this threshold (more negative)
 
@@ -34,7 +34,7 @@ seasons:
     allowed_setups:
       - "VWAP_RECLAIM"
       - "DXY_CONTINUATION"
-    min_score: 9.0  # Higher threshold
+    min_score: 7.5  # Higher threshold
     max_losses: 1   # Halt after 1 loss
     dxy_correlation_max: -0.7  # Stricter DXY requirement
 
@@ -51,7 +51,7 @@ seasons:
       - "VWAP_RECLAIM"
       - "DXY_CONTINUATION"
       - "VWAP_FADE"
-    min_score: 8.5
+    min_score: 7.0
     max_losses: 2
     dxy_correlation_max: -0.6
 
@@ -69,7 +69,7 @@ seasons:
       - "VWAP_RECLAIM"
       - "DXY_CONTINUATION"
       - "VWAP_FADE"
-    min_score: 8.0
+    min_score: 6.5
     max_losses: 2
     dxy_correlation_max: -0.6
 

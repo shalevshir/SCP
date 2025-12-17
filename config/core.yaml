@@ -39,4 +39,5 @@ backtest:
   commission_per_trade: 5
   slippage_points: 0.5
   mock_strategy: true
+  max_concurrent_trades: 1  # Maximum number of trades allowed at the same time
 
