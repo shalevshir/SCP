@@ -157,3 +157,5 @@ class TestNoOverlappingTrades:
                     f"Trade {j} starts before trade {i} ends: "
                     f"t2.entry={t2['entry']} < t1.exit={t1['exit']}"
                 )
+
+
