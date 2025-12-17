@@ -11,7 +11,7 @@ from __future__ import annotations
 import pandas as pd
 from common.logger import get_logger
 
-from rule_engine.htf.types import HTFBias
+from rule_engine.htf.types import ChopSeverity, HTFBias
 
 logger = get_logger(__name__)
 
@@ -196,6 +196,13 @@ def compute_htf_bias_multi_timeframe(
     if is_none_or_nan_1h:
         structure_1h = ""
 
+    # #region agent log
+    import json as _json
+    _log_path = "/Users/shalev/Code/SCP/.cursor/debug.log"
+    _log_data = {"location": "calculator.py:compute_htf_bias_multi_timeframe:entry", "message": "HTF bias multi-timeframe entry", "hypothesisId": "A", "timestamp": int(pd.Timestamp.now().timestamp() * 1000), "sessionId": "debug-session", "data": {"structure_1h_raw": str(features_1h.get("structure_label")), "structure_1h_type_raw": str(features_1h.get("structure_type")), "structure_1h_final": str(structure_1h), "features_1h_empty": features_1h.empty if hasattr(features_1h, 'empty') else False, "features_15m_empty": features_15m.empty if hasattr(features_15m, 'empty') else False}}
+    with open(_log_path, "a") as _f: _f.write(_json.dumps(_log_data) + "\n")
+    # #endregion
+
     # Debug logging for structure detection
     # Log at INFO level when structure is valid for visibility
     is_valid_structure = structure_1h in ("HH", "HL", "LH", "LL")
@@ -331,8 +338,10 @@ def compute_htf_bias_multi_timeframe(
     # Cap score at 10
     total_score = min(total_score, 10.0)
 
-    logger.debug(
-        f"HTF Bias: {htf_bias} (1h: {structure_1h}, 15m: {structure_15m}, "
+    # Log at INFO level for debugging the neutral bias issue
+    logger.info(
+        f"HTF Bias calc: {htf_bias}/{htf_direction} "
+        f"(1h: {structure_1h}, 15m: {structure_15m}, "
         f"bullish={bullish_signals}, bearish={bearish_signals}, "
         f"score={total_score:.1f})"
     )
@@ -393,6 +402,13 @@ def compute_htf_bias(
     # Use legacy logic to compute base bias and score
     bias, direction, score = compute_htf_bias_multi_timeframe(features_1h, features_15m)
 
+    # #region agent log
+    import json as _json
+    _log_path = "/Users/shalev/Code/SCP/.cursor/debug.log"
+    _log_data = {"location": "calculator.py:compute_htf_bias:after_legacy", "message": "HTF bias computed from legacy function", "hypothesisId": "A", "timestamp": int(pd.Timestamp.now().timestamp() * 1000), "sessionId": "debug-session", "data": {"bias": bias, "direction": direction, "score": float(score), "features_1h_structure": features_1h.get("structure_label") or features_1h.get("structure_type"), "features_15m_structure": features_15m.get("structure_label") or features_15m.get("structure_type"), "features_1h_keys": list(features_1h.keys()) if hasattr(features_1h, 'keys') else [], "features_15m_keys": list(features_15m.keys()) if hasattr(features_15m, 'keys') else [], "features_1h_ema_9": float(features_1h.get("ema_9", 0)) if features_1h.get("ema_9") else None, "features_1h_ema_20": float(features_1h.get("ema_20", 0)) if features_1h.get("ema_20") else None, "features_1h_ema_50": float(features_1h.get("ema_50", 0)) if features_1h.get("ema_50") else None}}
+    with open(_log_path, "a") as _f: _f.write(_json.dumps(_log_data) + "\n")
+    # #endregion
+
     # Store original bias before any neutralization for conflict detection
     original_bias = bias
     original_score = score
@@ -442,8 +458,13 @@ def compute_htf_bias(
         conflict_detected = True
         conflict_reason = reason
 
-    # Rule 2: 15M price chop (with ATR filtering for noise)
-    if not conflict_detected and df_15m is not None and len(df_15m) > 0:
+    # Rule 2: 15M price chop - now using severity classification (setup-aware)
+    # Chop no longer forces conflict_detected = True globally
+    # Instead, we classify severity and let setup-specific validation handle it
+    chop_severity = ChopSeverity.NONE
+    chop_consecutive_count = 0
+    
+    if df_15m is not None and len(df_15m) > 0:
         try:
             # Compute ATR from df_15m for noise filtering
             atr_15m = None
@@ -455,13 +476,23 @@ def compute_htf_bias(
                 true_range = high_low.combine(high_close, max).combine(low_close, max)
                 atr_15m = true_range.rolling(window=14).mean().iloc[-1]
 
-            # Use tolerant thresholds with ATR filtering
-            if detect_price_chop_15m(df_15m, atr=atr_15m):
-                conflict_detected = True
-                conflict_reason = "15M price action in chop"
+            # Classify chop severity instead of binary detection
+            from rule_engine.htf.conflicts import classify_chop_severity
+            
+            chop_severity, chop_consecutive_count = classify_chop_severity(
+                df_15m, atr=atr_15m
+            )
+            
+            logger.debug(
+                f"15M chop classification: severity={chop_severity.value}, "
+                f"consecutive={chop_consecutive_count}"
+            )
+            
+            # Note: We no longer force conflict_detected = True here
+            # Setup-specific validation will handle chop appropriately
         except Exception as e:
-            logger.error(f"Error detecting 15M price chop: {e}")
-            # Continue without chop detection
+            logger.error(f"Error classifying 15M chop severity: {e}")
+            # Continue with NONE severity (no chop detected)
 
     # Rule 3: Liquidity sweep against trend
     # IMPORTANT: Use original_bias (before DXY chop neutralization)
@@ -531,35 +562,72 @@ def compute_htf_bias(
 
     # === POPULATE MISSING FIELDS ===
 
-    # 1. BOS/CHoCH detection from 1H data
+    # 1. BOS/CHoCH detection - primary source: streaming features, fallback: df_1h
     bos_detected = False
     choch_detected = False
     bos_series = None
     choch_series = None
-    if df_1h is not None and len(df_1h) > 0:
-        try:
-            swing_highs_1h, swing_lows_1h = detect_swings(df_1h, lookback=5)
+    bars_since_bos_from_features = None
+    bars_since_choch_from_features = None
 
-            # Detect BOS events
-            bos_series = detect_bos(df_1h, swing_highs_1h, swing_lows_1h)
-            # Check if any BOS detected in recent bars
-            if len(bos_series) > 0 and pd.notna(bos_series.iloc[-1]):
-                bos_detected = True
+    # First, try to get from streaming features (always available if computed)
+    bos_recent = features_1h.get("bos_recent")
+    bos_age = features_1h.get("bos_age")
+    if bos_recent is not None and not pd.isna(bos_recent) and bos_recent:
+        bos_detected = True
+        if bos_age is not None and not pd.isna(bos_age):
+            bars_since_bos_from_features = int(bos_age)
+        logger.debug(f"BOS detected from streaming features: bos_recent={bos_recent}, bos_age={bos_age}")
 
-            # Detect CHoCH events
-            choch_series = detect_choch(df_1h, swing_highs_1h, swing_lows_1h)
-            # Check if any CHoCH detected in recent bars
-            if len(choch_series) > 0 and pd.notna(choch_series.iloc[-1]):
-                choch_detected = True
+    choch_from_features = features_1h.get("choch_detected")
+    choch_age = features_1h.get("choch_age")
+    if choch_from_features is not None and not pd.isna(choch_from_features) and choch_from_features:
+        choch_detected = True
+        if choch_age is not None and not pd.isna(choch_age):
+            bars_since_choch_from_features = int(choch_age)
+        logger.debug(f"CHoCH detected from streaming features: choch_detected={choch_from_features}, choch_age={choch_age}")
 
-        except Exception as e:
-            logger.error(f"Error detecting BOS/CHoCH: {e}")
-            # Continue without BOS/CHoCH detection
+    # Fallback: try df_1h detection if streaming features didn't find BOS/CHoCH
+    # This is useful when we have sufficient historical candles
+    if not bos_detected or not choch_detected:
+        if df_1h is not None and len(df_1h) > 10:  # Need enough bars for swing detection
+            try:
+                swing_highs_1h, swing_lows_1h = detect_swings(df_1h, lookback=5)
 
-    # 2. Liquidity sweep detection from sweep_events_15m
+                if not bos_detected:
+                    # Detect BOS events
+                    bos_series = detect_bos(df_1h, swing_highs_1h, swing_lows_1h)
+                    # Check if any BOS detected in recent bars
+                    if len(bos_series) > 0 and pd.notna(bos_series.iloc[-1]):
+                        bos_detected = True
+                        logger.debug(f"BOS detected from df_1h (len={len(df_1h)})")
+
+                if not choch_detected:
+                    # Detect CHoCH events
+                    choch_series = detect_choch(df_1h, swing_highs_1h, swing_lows_1h)
+                    # Check if any CHoCH detected in recent bars
+                    if len(choch_series) > 0 and pd.notna(choch_series.iloc[-1]):
+                        choch_detected = True
+                        logger.debug(f"CHoCH detected from df_1h (len={len(df_1h)})")
+
+            except Exception as e:
+                logger.error(f"Error detecting BOS/CHoCH from df_1h: {e}")
+                # Continue without df-based detection
+
+    # 2. Liquidity sweep detection - primary: streaming features, fallback: sweep_events_15m
     liquidity_sweep_detected = False
     liquidity_sweep_type = None
-    if sweep_events_15m is not None and len(sweep_events_15m) > 0:
+
+    # First, try streaming features
+    sweep_from_features = features_1h.get("liquidity_sweep")
+    sweep_dir_from_features = features_1h.get("sweep_direction")
+    if sweep_from_features is not None and not pd.isna(sweep_from_features) and sweep_from_features:
+        liquidity_sweep_detected = True
+        liquidity_sweep_type = sweep_dir_from_features
+        logger.debug(f"Liquidity sweep from streaming features: {sweep_from_features}, dir={sweep_dir_from_features}")
+
+    # Fallback: sweep_events_15m (from df-based detection)
+    if not liquidity_sweep_detected and sweep_events_15m is not None and len(sweep_events_15m) > 0:
         try:
             # Get the most recent sweep event
             latest_sweep = sweep_events_15m.iloc[-1]
@@ -570,6 +638,7 @@ def compute_htf_bias(
                     liquidity_sweep_type = "bearish"  # Sweep high = bearish sweep
                 elif latest_sweep == "sweep_low":
                     liquidity_sweep_type = "bullish"  # Sweep low = bullish sweep
+                logger.debug(f"Liquidity sweep from sweep_events_15m: {latest_sweep}")
         except Exception as e:
             logger.error(f"Error extracting liquidity sweep: {e}")
             # Continue without sweep detection
@@ -669,38 +738,67 @@ def compute_htf_bias(
         logger.info(f"DXY alignment: {dxy_alignment} | {dxy_alignment_rationale}")
 
     # 6. Calculate structure quality metrics
+    # Primary source: streaming features (always available), fallback: df-based calculation
     structure_clarity = 0.0
-    chop_detected_flag = False
+    chop_detected_flag = (chop_severity != ChopSeverity.NONE)  # Backward compatibility
     bars_since_bos_val = None
     bars_since_choch_val = None
 
-    # Build list of structure labels from available data
-    structure_labels_list: list[str | None] = []
+    # First try streaming features for structure_clarity
+    streaming_clarity = features_1h.get("structure_clarity")
+    if streaming_clarity is not None and not pd.isna(streaming_clarity):
+        structure_clarity = float(streaming_clarity)
+        logger.debug(f"Structure clarity from streaming features: {structure_clarity:.2f}")
+    else:
+        # Fallback: calculate from df_1h if available
+        structure_labels_list: list[str | None] = []
 
-    # Extract structure labels from DataFrames if available
-    if df_1h is not None and len(df_1h) > 0:
-        # Try to get structure_label or structure_type column
-        if "structure_label" in df_1h.columns:
-            structure_labels_list = df_1h["structure_label"].tolist()
-        elif "structure_type" in df_1h.columns:
-            structure_labels_list = df_1h["structure_type"].tolist()
+        # Extract structure labels from DataFrames if available
+        if df_1h is not None and len(df_1h) > 0:
+            # Try to get structure_label or structure_type column
+            if "structure_label" in df_1h.columns:
+                structure_labels_list = df_1h["structure_label"].tolist()
+            elif "structure_type" in df_1h.columns:
+                structure_labels_list = df_1h["structure_type"].tolist()
 
-    # If we have structure labels, calculate clarity and chop
-    if structure_labels_list:
-        structure_clarity = calculate_structure_clarity(
-            structure_labels_list, lookback=10
-        )
-        chop_detected_flag = detect_structure_chop(structure_labels_list, lookback=10)
+        # If we have structure labels, calculate clarity
+        if structure_labels_list:
+            structure_clarity = calculate_structure_clarity(
+                structure_labels_list, lookback=10
+            )
+            # Also check structural chop (alternations) separately from price chop
+            structural_chop = detect_structure_chop(structure_labels_list, lookback=10)
+            
+            # Combine structural chop with price chop for backward compatibility
+            if structural_chop:
+                chop_detected_flag = True
 
-        logger.debug(
-            f"Structure quality: clarity={structure_clarity:.2f}, chop={chop_detected_flag}"
-        )
+            logger.debug(
+                f"Structure quality from df_1h: clarity={structure_clarity:.2f}, "
+                f"chop_detected={chop_detected_flag}"
+            )
+
+    # Also check is_chop from streaming features
+    is_chop_streaming = features_1h.get("is_chop")
+    if is_chop_streaming is not None and not pd.isna(is_chop_streaming) and is_chop_streaming:
+        chop_detected_flag = True
+
+    logger.debug(
+        f"Final structure quality: clarity={structure_clarity:.2f}, "
+        f"chop_detected={chop_detected_flag}, "
+        f"chop_severity={chop_severity.value}"
+    )
 
     # Calculate bars since BOS/CHoCH events
-    if bos_series is not None and timestamp is not None:
+    # Primary: from streaming features (already extracted above), fallback: from series
+    bars_since_bos_val = bars_since_bos_from_features
+    bars_since_choch_val = bars_since_choch_from_features
+
+    # Fallback: calculate from series if not available from streaming
+    if bars_since_bos_val is None and bos_series is not None and timestamp is not None:
         bars_since_bos_val = calculate_bars_since_event(bos_series, timestamp)
 
-    if choch_series is not None and timestamp is not None:
+    if bars_since_choch_val is None and choch_series is not None and timestamp is not None:
         bars_since_choch_val = calculate_bars_since_event(choch_series, timestamp)
 
     # 7. Extract structure event candles
@@ -774,6 +872,8 @@ def compute_htf_bias(
         bars_since_bos=bars_since_bos_val,
         bars_since_choch=bars_since_choch_val,
         chop_detected=chop_detected_flag,
+        chop_severity=chop_severity,
+        chop_consecutive_count=chop_consecutive_count,
         atr_15m=features_15m.get("atr") if features_15m is not None else None,
         seasonality_period=seasonality_period,
         seasonality_adjustment=seasonality_adjustment,
