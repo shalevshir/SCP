@@ -582,3 +582,146 @@ class TestBackwardsCompatibility:
         assert loaded.total_trades == 0
 
 
+class TestChopContextSerialization:
+    """Test that chop_context is correctly serialized from validation_flags."""
+
+    def test_chop_context_derived_from_validation_flags(self, tmp_path):
+        """Test that chop_detected is correctly derived from chop_severity.
+
+        BUG FIX: Previously, save_results() tried to read validation_flags["chop_detected"],
+        which doesn't exist. The validation layer actually sets chop_severity and chop_ok.
+        This test ensures chop_context is correctly populated.
+        """
+        from datetime import datetime, timezone
+
+        from backtester.entry_model import EntryExecution
+        from rule_engine.signal import Signal
+
+        # Create signals with different chop severities
+        signal_no_chop = Signal(
+            timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=timezone.utc),
+            symbol="GC",
+            timeframe="1m",
+            direction="long",
+            setup_type="VWAP_RECLAIM",
+            htf_bias="bullish",
+            score=8.5,
+            confidence="A+",
+            factors={},
+            rationale="Test",
+            validation_flags={
+                "session_ok": True,
+                "chop_severity": "none",  # No chop
+                "chop_ok": True,
+            },
+            enforcer_tier="EarlyMild",
+        )
+
+        signal_soft_chop = Signal(
+            timestamp=datetime(2025, 1, 1, 11, 0, tzinfo=timezone.utc),
+            symbol="GC",
+            timeframe="1m",
+            direction="long",
+            setup_type="VWAP_RECLAIM",
+            htf_bias="bullish",
+            score=7.5,
+            confidence="A+",
+            factors={},
+            rationale="Test",
+            validation_flags={
+                "session_ok": True,
+                "chop_severity": "soft",  # Soft chop
+                "chop_ok": True,  # Reclaim allowed in soft chop
+            },
+            enforcer_tier="EarlyMild",
+        )
+
+        signal_hard_chop = Signal(
+            timestamp=datetime(2025, 1, 1, 12, 0, tzinfo=timezone.utc),
+            symbol="GC",
+            timeframe="1m",
+            direction="long",
+            setup_type="DXY_CONTINUATION",
+            htf_bias="bullish",
+            score=8.0,
+            confidence="A+",
+            factors={},
+            rationale="Test",
+            validation_flags={
+                "session_ok": True,
+                "chop_severity": "hard",  # Hard chop
+                "chop_ok": False,  # Continuation blocked
+            },
+            enforcer_tier="EarlyMild",
+        )
+
+        executions = [
+            EntryExecution(
+                signal_timestamp=signal_no_chop.timestamp,
+                entry_timestamp=signal_no_chop.timestamp,
+                entry_price=2650.0,
+                signal=signal_no_chop,
+                executed=True,
+                rejection_reason=None,
+            ),
+            EntryExecution(
+                signal_timestamp=signal_soft_chop.timestamp,
+                entry_timestamp=signal_soft_chop.timestamp,
+                entry_price=2655.0,
+                signal=signal_soft_chop,
+                executed=True,
+                rejection_reason=None,
+            ),
+            EntryExecution(
+                signal_timestamp=signal_hard_chop.timestamp,
+                entry_timestamp=signal_hard_chop.timestamp,
+                entry_price=0.0,
+                signal=signal_hard_chop,
+                executed=False,
+                rejection_reason="DXY_CONTINUATION blocked: chop detected",
+            ),
+        ]
+
+        results = BacktestResults(
+            trades=[],
+            executions=executions,
+            total_pnl=0.0,
+            total_pnl_dollars=0.0,
+            win_rate=0.0,
+            total_trades=0,
+            winning_trades=0,
+            losing_trades=0,
+            average_r=0.0,
+            max_consecutive_losses=0,
+            pdll_hits=0,
+            session_resets=0,
+        )
+
+        filepath = tmp_path / "chop_test.json"
+        save_results(results, filepath)
+
+        # Load and verify chop_context
+        import json
+
+        with open(filepath) as f:
+            data = json.load(f)
+
+        exec_data = data["executions"]
+        assert len(exec_data) == 3
+
+        # Execution 0: No chop
+        assert exec_data[0]["chop_context"]["chop_detected"] is False
+        assert exec_data[0]["chop_context"]["chop_severity"] == "none"
+        assert exec_data[0]["chop_context"]["chop_rejection"] is False
+
+        # Execution 1: Soft chop (allowed)
+        assert exec_data[1]["chop_context"]["chop_detected"] is True
+        assert exec_data[1]["chop_context"]["chop_severity"] == "soft"
+        assert exec_data[1]["chop_context"]["chop_rejection"] is False
+
+        # Execution 2: Hard chop (rejected)
+        assert exec_data[2]["chop_context"]["chop_detected"] is True
+        assert exec_data[2]["chop_context"]["chop_severity"] == "hard"
+        assert exec_data[2]["chop_context"]["chop_rejection"] is True
+
+

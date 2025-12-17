@@ -75,9 +75,11 @@ def save_results(results: BacktestResults, filepath: str | Path) -> None:
     executions_data = []
     for execution in results.executions:
         # Extract chop context from validation flags
+        # Note: validation_flags contains "chop_severity" and "chop_ok", not "chop_detected"
+        # Derive chop_detected from chop_severity (same as replay_loop.py does)
         validation_flags = execution.signal.validation_flags
-        chop_detected = validation_flags.get("chop_detected", False)
         chop_severity = validation_flags.get("chop_severity", "none")
+        chop_detected = chop_severity != "none"  # Correctly derive from severity
         
         # Check if rejection was chop-related
         rejection_reason = execution.rejection_reason or ""
