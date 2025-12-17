@@ -152,10 +152,12 @@ class StreamingFeatureProcessor:
         self.structure_tracker = StructureContextTracker(
             swing_window=self.swing_window,
             clarity_window=clarity_window,
+            timeframe=self.timeframe,  # Pass timeframe for asset-adjusted ATR thresholds
         )
         self.dxy_structure_tracker = StructureContextTracker(
             swing_window=self.swing_window,
             clarity_window=clarity_window,
+            timeframe=self.timeframe,  # DXY uses same timeframe
         )
 
         logger.info(
@@ -347,7 +349,8 @@ class StreamingFeatureProcessor:
         features["trend_confidence"] = gc_structure_ctx.trend_confidence
         features["structure_clarity"] = gc_structure_ctx.structure_clarity
         features["is_chop"] = gc_structure_ctx.is_chop
-        features["is_noise_zone"] = gc_structure_ctx.is_noise_zone
+        features["is_structural_chop"] = gc_structure_ctx.is_structural_chop
+        features["atr_compression_ratio"] = gc_structure_ctx.atr_compression_ratio
         features["structure_conflict_flag"] = gc_structure_ctx.structure_conflict_flag
         features["last_swing_high"] = gc_structure_ctx.last_swing_high
         features["last_swing_low"] = gc_structure_ctx.last_swing_low
@@ -363,6 +366,12 @@ class StreamingFeatureProcessor:
         features["sweep_direction"] = gc_structure_ctx.sweep_direction
         features["sweep_price"] = gc_structure_ctx.sweep_price
         features["sweep_age"] = gc_structure_ctx.sweep_age
+
+        # === 6b. Expansion Detection (for VWAP_RECLAIM entry timing) ===
+        # Detect expansion signals to determine if market is resolving from compression
+        expansion_detected, expansion_reasons = self.structure_tracker.detect_expansion()
+        features["expansion_detected"] = expansion_detected
+        features["expansion_reasons"] = expansion_reasons
 
         # === 7. DXY Structure Context ===
         # Update DXY structure tracker
@@ -413,10 +422,12 @@ class StreamingFeatureProcessor:
         self.structure_tracker = StructureContextTracker(
             swing_window=self.swing_window,
             clarity_window=clarity_window,
+            timeframe=self.timeframe,  # Pass timeframe for asset-adjusted ATR thresholds
         )
         self.dxy_structure_tracker = StructureContextTracker(
             swing_window=self.swing_window,
             clarity_window=clarity_window,
+            timeframe=self.timeframe,  # DXY uses same timeframe
         )
 
         self.vwap_pv_sum = 0.0
