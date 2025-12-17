@@ -1156,6 +1156,13 @@ class BacktestReplayLoop:
     def _calculate_chop_diagnostics(self) -> dict:
         """Calculate chop-related statistics from all executions.
         
+        Note: Chop state is determined from validation_flags["chop_severity"],
+        NOT validation_flags["chop_detected"] (which doesn't exist).
+        The validation flow records:
+        - validation_flags["chop_severity"]: "none" | "soft" | "hard"
+        - validation_flags["chop_ok"]: True/False
+        - signal.diagnostics["chop_detected"]: True/False (derived from severity)
+        
         Returns:
             Dict containing:
             - signals_evaluated_during_chop: Total signals evaluated during chop
@@ -1174,9 +1181,12 @@ class BacktestReplayLoop:
         
         for execution in self._all_executions:
             validation_flags = execution.signal.validation_flags
-            chop_detected = validation_flags.get("chop_detected", False)
+            # Use chop_severity from validation_flags (the authoritative source)
             chop_severity = validation_flags.get("chop_severity", "none")
             setup_type = execution.signal.setup_type
+            
+            # Determine chop state from severity (not from non-existent "chop_detected" flag)
+            chop_detected = chop_severity != "none"
             
             # Track severity distribution
             chop_severity_distribution[chop_severity] = (
