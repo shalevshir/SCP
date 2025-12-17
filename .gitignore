@@ -27,3 +27,4 @@ data/feature_integration.csv
 docs/CEO-Progress-Summary.md
 docs/Critical-Issues-Analysis.md
 output/
+.cursor/debug.log
