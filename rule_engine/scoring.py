@@ -457,13 +457,6 @@ def calculate_structure_quality_penalty(
         if bos_age is not None and bos_age > 15:
             quality_flags["bos_stale"] = True
 
-    # #region agent log
-    import json as _json
-    _log_path = "/Users/shalev/Code/SCP/.cursor/debug.log"
-    _quality_flags_safe = {k: bool(v) for k, v in quality_flags.items()}
-    _log_data = {"location": "scoring.py:calculate_structure_quality_penalty", "message": "quality flags calculated", "hypothesisId": "C", "timestamp": int(pd.Timestamp.now().timestamp() * 1000), "sessionId": "debug-session", "data": {"quality_flags": _quality_flags_safe, "htf_bos_detected": bool(htf_bias.bos_detected) if htf_bias.bos_detected is not None else None, "htf_liquidity_sweep_detected": bool(htf_bias.liquidity_sweep_detected) if htf_bias.liquidity_sweep_detected is not None else None, "htf_structure_clarity": float(htf_bias.structure_clarity) if htf_bias.structure_clarity else None, "htf_bars_since_bos": int(htf_bias.bars_since_bos) if htf_bias.bars_since_bos is not None else None, "features_bos_recent": bool(features.get("bos_recent", False)), "features_liquidity_sweep": bool(features.get("liquidity_sweep", False))}}
-    with open(_log_path, "a") as _f: _f.write(_json.dumps(_log_data) + "\n")
-    # #endregion
 
     total_penalty = 0.0
 
@@ -581,13 +574,6 @@ def score_signal(features: pd.Series, htf_bias: HTFBias, context: dict) -> Signa
     # Determine signal direction from features
     signal_direction = determine_direction(features, htf_bias)
 
-    # #region agent log
-    import json as _json
-    _log_path = "/Users/shalev/Code/SCP/.cursor/debug.log"
-    _log_data = {"location": "scoring.py:score_signal:entry", "message": "score_signal called", "hypothesisId": "A,B,D", "timestamp": int(pd.Timestamp.now().timestamp() * 1000), "sessionId": "debug-session", "data": {"signal_direction": signal_direction, "htf_bias_direction": htf_bias.direction if htf_bias else None, "htf_bias_bias": htf_bias.bias if htf_bias else None, "htf_bias_confidence": htf_bias.confidence if htf_bias else None, "htf_bias_score": htf_bias.score if htf_bias else None, "bars_since_bos": htf_bias.bars_since_bos if htf_bias else None, "bos_detected": htf_bias.bos_detected if htf_bias else None, "liquidity_sweep_detected": htf_bias.liquidity_sweep_detected if htf_bias else None, "close": float(features.get("close", 0)), "vwap": float(features.get("vwap", 0)), "ema_9": float(features.get("ema_9", 0)), "ema_20": float(features.get("ema_20", 0))}}
-    with open(_log_path, "a") as _f: _f.write(_json.dumps(_log_data) + "\n")
-    # #endregion
-
     # Validate signal against HTF bias
     is_valid, rejection_reason = validate_signal_with_htf(signal_direction, htf_bias)
 
@@ -597,12 +583,6 @@ def score_signal(features: pd.Series, htf_bias: HTFBias, context: dict) -> Signa
     if not is_valid:
         # Return rejected signal with reason
         logger.warning(f"Signal rejected: {rejection_reason}")
-        # #region agent log
-        import json as _json
-        _log_path = "/Users/shalev/Code/SCP/.cursor/debug.log"
-        _log_data = {"location": "scoring.py:score_signal:htf_rejected", "message": "Signal rejected at HTF validation", "hypothesisId": "D", "timestamp": int(pd.Timestamp.now().timestamp() * 1000), "sessionId": "debug-session", "data": {"rejection_reason": rejection_reason, "htf_direction": htf_bias.direction, "signal_direction": signal_direction}}
-        with open(_log_path, "a") as _f: _f.write(_json.dumps(_log_data) + "\n")
-        # #endregion
         return Signal(
             timestamp=features["timestamp"],
             symbol=features["symbol"],
@@ -628,12 +608,6 @@ def score_signal(features: pd.Series, htf_bias: HTFBias, context: dict) -> Signa
     # Handle rejected setups
     if setup_type == "REJECTED":
         logger.warning("Setup type rejected - no valid setup detected")
-        # #region agent log
-        import json as _json
-        _log_path = "/Users/shalev/Code/SCP/.cursor/debug.log"
-        _log_data = {"location": "scoring.py:score_signal:setup_rejected", "message": "Signal rejected - no valid setup type", "hypothesisId": "E", "timestamp": int(pd.Timestamp.now().timestamp() * 1000), "sessionId": "debug-session", "data": {"htf_direction": htf_bias.direction, "signal_direction": signal_direction}}
-        with open(_log_path, "a") as _f: _f.write(_json.dumps(_log_data) + "\n")
-        # #endregion
         return Signal(
             timestamp=features["timestamp"],
             symbol=features["symbol"],
@@ -656,13 +630,6 @@ def score_signal(features: pd.Series, htf_bias: HTFBias, context: dict) -> Signa
 
     # Calculate individual factor scores
     factor_scores = calculate_factor_scores(features, htf_bias, weights, setup_type)
-
-    # #region agent log
-    import json as _json
-    _log_path = "/Users/shalev/Code/SCP/.cursor/debug.log"
-    _log_data = {"location": "scoring.py:score_signal:factor_scores", "message": "factor_scores calculated", "hypothesisId": "C,E", "timestamp": int(pd.Timestamp.now().timestamp() * 1000), "sessionId": "debug-session", "data": {"setup_type": setup_type, "factor_scores": {k: float(v) for k, v in factor_scores.items()}, "factor_sum": float(sum(factor_scores.values()))}}
-    with open(_log_path, "a") as _f: _f.write(_json.dumps(_log_data) + "\n")
-    # #endregion
 
     # Calculate base score (sum of all factors, capped at 10)
     base_score = min(sum(factor_scores.values()), 10.0)
@@ -740,13 +707,6 @@ def score_signal(features: pd.Series, htf_bias: HTFBias, context: dict) -> Signa
         sum(v for v in factor_scores.values() if not v < 0), 10.0
     ) + structure_penalties + timing_penalties
 
-    # #region agent log
-    import json as _json
-    _log_path = "/Users/shalev/Code/SCP/.cursor/debug.log"
-    _log_data = {"location": "scoring.py:score_signal:penalties", "message": "penalties applied", "hypothesisId": "C,E", "timestamp": int(pd.Timestamp.now().timestamp() * 1000), "sessionId": "debug-session", "data": {"base_score_after_penalties": float(base_score), "structure_penalties": float(structure_penalties), "timing_penalties": float(timing_penalties), "chop_penalty": float(factor_scores.get("chop_penalty", 0)), "noise_penalty": float(factor_scores.get("noise_penalty", 0)), "structure_quality_penalty": float(factor_scores.get("structure_quality_penalty", 0)), "late_reclaim_penalty": float(factor_scores.get("late_reclaim_penalty", 0))}}
-    with open(_log_path, "a") as _f: _f.write(_json.dumps(_log_data) + "\n")
-    # #endregion
-    
     # Apply HTF-based score adjustments (pass context for tier-aware adjustments)
     adjusted_score, htf_adjustments = adjust_score_with_htf(
         base_score, htf_bias, signal_direction, context
@@ -833,13 +793,6 @@ def score_signal(features: pd.Series, htf_bias: HTFBias, context: dict) -> Signa
         "htf_bias_ok": signal_direction == htf_bias.direction,
         "htf_valid": is_valid,
     }
-
-    # #region agent log
-    import json as _json
-    _log_path = "/Users/shalev/Code/SCP/.cursor/debug.log"
-    _log_data = {"location": "scoring.py:score_signal:final", "message": "Final signal scored", "hypothesisId": "C", "timestamp": int(pd.Timestamp.now().timestamp() * 1000), "sessionId": "debug-session", "data": {"setup_type": setup_type, "direction": signal_direction, "htf_direction": htf_bias.direction, "adjusted_score": float(adjusted_score), "confidence": confidence, "structure_alignment": float(factor_scores.get("structure_alignment", 0)), "vwap_relation": float(factor_scores.get("vwap_relation", 0)), "dxy_corr": float(factor_scores.get("dxy_corr", 0))}}
-    with open(_log_path, "a") as _f: _f.write(_json.dumps(_log_data) + "\n")
-    # #endregion
 
     # Create and return Signal object
     return Signal(
@@ -1052,19 +1005,8 @@ def calculate_structure_alignment(
     """
     direction = determine_direction(features, htf_bias)
 
-    # #region agent log
-    import json as _json
-    _log_path = "/Users/shalev/Code/SCP/.cursor/debug.log"
-    _log_data = {"location": "scoring.py:calculate_structure_alignment:entry", "message": "structure alignment check", "hypothesisId": "A,B", "timestamp": int(pd.Timestamp.now().timestamp() * 1000), "sessionId": "debug-session", "data": {"direction": direction, "htf_bias_direction": htf_bias.direction, "direction_match": direction == htf_bias.direction, "direction_is_neutral": direction == "neutral", "htf_direction_is_neutral": htf_bias.direction == "neutral", "setup_type": setup_type, "max_points": float(max_points), "bars_since_bos": htf_bias.bars_since_bos, "liquidity_sweep_detected": htf_bias.liquidity_sweep_detected, "structure_clarity": float(htf_bias.structure_clarity) if htf_bias.structure_clarity else None}}
-    with open(_log_path, "a") as _f: _f.write(_json.dumps(_log_data) + "\n")
-    # #endregion
-
     # Base requirement: signal direction must be clear (not neutral)
     if direction == "neutral":
-        # #region agent log
-        _log_data2 = {"location": "scoring.py:calculate_structure_alignment:direction_fail", "message": "direction check failed - signal direction is neutral", "hypothesisId": "A", "timestamp": int(pd.Timestamp.now().timestamp() * 1000), "sessionId": "debug-session", "data": {"reason": "signal_direction_neutral", "direction": direction, "htf_direction": htf_bias.direction}}
-        with open(_log_path, "a") as _f: _f.write(_json.dumps(_log_data2) + "\n")
-        # #endregion
         return 0.0
 
     # For VWAP_RECLAIM: Allow scoring even when HTF is neutral (warmup period)
@@ -1077,18 +1019,10 @@ def calculate_structure_alignment(
             f"VWAP_RECLAIM structure: HTF neutral, scoring at reduced rate "
             f"({score:.2f}/{max_points})"
         )
-        # #region agent log
-        _log_data3 = {"location": "scoring.py:calculate_structure_alignment:htf_neutral_reclaim", "message": "HTF neutral - reduced score for VWAP_RECLAIM", "hypothesisId": "A", "timestamp": int(pd.Timestamp.now().timestamp() * 1000), "sessionId": "debug-session", "data": {"score": float(score), "max_points": float(max_points), "direction": direction}}
-        with open(_log_path, "a") as _f: _f.write(_json.dumps(_log_data3) + "\n")
-        # #endregion
         return score
 
     # For other setups: Require direction match
     if htf_bias.direction != direction:
-        # #region agent log
-        _log_data2 = {"location": "scoring.py:calculate_structure_alignment:direction_fail", "message": "direction check failed - mismatch", "hypothesisId": "A", "timestamp": int(pd.Timestamp.now().timestamp() * 1000), "sessionId": "debug-session", "data": {"reason": "direction_mismatch", "direction": direction, "htf_direction": htf_bias.direction}}
-        with open(_log_path, "a") as _f: _f.write(_json.dumps(_log_data2) + "\n")
-        # #endregion
         return 0.0
 
     # VWAP_RECLAIM: Loosened requirements per SOP
@@ -1651,13 +1585,6 @@ def determine_direction(features: pd.Series, htf_bias: HTFBias) -> str:
                     f"(close={close:.2f} < vwap={vwap:.2f})"
                 )
             # If close == vwap exactly, remain neutral (very rare)
-
-    # #region agent log
-    import json as _json
-    _log_path = "/Users/shalev/Code/SCP/.cursor/debug.log"
-    _log_data = {"location": "scoring.py:determine_direction", "message": "direction determined", "hypothesisId": "D", "timestamp": int(pd.Timestamp.now().timestamp() * 1000), "sessionId": "debug-session", "data": {"result": result, "bullish_signals": bullish_signals, "bearish_signals": bearish_signals, "close": float(close) if close else 0, "vwap": float(vwap) if vwap else 0, "ema_9": float(ema_9) if ema_9 else 0, "ema_20": float(ema_20) if ema_20 else 0, "close_gt_vwap": bool(close > vwap), "ema_9_gt_ema_20": bool(ema_9 > ema_20), "htf_direction": htf_bias.direction if htf_bias else None, "tie_break_used": bullish_signals == bearish_signals}}
-    with open(_log_path, "a") as _f: _f.write(_json.dumps(_log_data) + "\n")
-    # #endregion
 
     return result
 

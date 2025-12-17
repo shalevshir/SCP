@@ -88,20 +88,9 @@ class ValidationContextBuilder:
         # Use provided HTF bias if available, otherwise compute from features
         if htf_bias is not None:
             htf_bias_enum = self._convert_htf_bias_to_enum(htf_bias)
-            # #region agent log
-            import json as _json
-            _log_path = "/Users/shalev/Code/SCP/.cursor/debug.log"
-            _log_data = {"location": "context_builder.py:build_context", "message": "HTF bias passed from calculator", "hypothesisId": "A", "timestamp": int(pd.Timestamp.now().timestamp() * 1000), "sessionId": "debug-session", "data": {"htf_bias_direction": htf_bias.direction, "htf_bias_enum": str(htf_bias_enum), "used_calculator_bias": True}}
-            with open(_log_path, "a") as _f: _f.write(_json.dumps(_log_data) + "\n")
-            # #endregion
         else:
             htf_bias_enum = self._compute_htf_bias(features)
-            # #region agent log
-            import json as _json
-            _log_path = "/Users/shalev/Code/SCP/.cursor/debug.log"
-            _log_data = {"location": "context_builder.py:build_context", "message": "HTF bias computed locally (fallback)", "hypothesisId": "A", "timestamp": int(pd.Timestamp.now().timestamp() * 1000), "sessionId": "debug-session", "data": {"htf_bias_enum": str(htf_bias_enum), "used_calculator_bias": False}}
-            with open(_log_path, "a") as _f: _f.write(_json.dumps(_log_data) + "\n")
-            # #endregion
+
 
         # Determine DXY trending status
         dxy_trending_clean = self._is_dxy_trending_clean(features)

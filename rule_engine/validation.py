@@ -317,14 +317,6 @@ def validate_signal_with_sop(
         reason=None,
     )
 
-    # #region agent log
-    import json as _json
-    _log_path = "/Users/shalev/Code/SCP/.cursor/debug.log"
-    _htf_direction = htf_bias.direction if htf_bias else "None"
-    _log_data = {"location": "validation.py:validate_signal_with_sop", "message": "HTF bias received", "hypothesisId": "B", "timestamp": int(pd.Timestamp.now().timestamp() * 1000), "sessionId": "debug-session", "data": {"htf_bias_present": htf_bias is not None, "htf_direction": _htf_direction, "signal_direction": signal.direction, "signal_setup_type": signal.setup_type}}
-    with open(_log_path, "a") as _f: _f.write(_json.dumps(_log_data) + "\n")
-    # #endregion
-
     # Build ValidationContext
     context_builder = ValidationContextBuilder()
     validation_context = context_builder.build_context(

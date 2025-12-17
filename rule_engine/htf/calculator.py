@@ -196,13 +196,6 @@ def compute_htf_bias_multi_timeframe(
     if is_none_or_nan_1h:
         structure_1h = ""
 
-    # #region agent log
-    import json as _json
-    _log_path = "/Users/shalev/Code/SCP/.cursor/debug.log"
-    _log_data = {"location": "calculator.py:compute_htf_bias_multi_timeframe:entry", "message": "HTF bias multi-timeframe entry", "hypothesisId": "A", "timestamp": int(pd.Timestamp.now().timestamp() * 1000), "sessionId": "debug-session", "data": {"structure_1h_raw": str(features_1h.get("structure_label")), "structure_1h_type_raw": str(features_1h.get("structure_type")), "structure_1h_final": str(structure_1h), "features_1h_empty": features_1h.empty if hasattr(features_1h, 'empty') else False, "features_15m_empty": features_15m.empty if hasattr(features_15m, 'empty') else False}}
-    with open(_log_path, "a") as _f: _f.write(_json.dumps(_log_data) + "\n")
-    # #endregion
-
     # Debug logging for structure detection
     # Log at INFO level when structure is valid for visibility
     is_valid_structure = structure_1h in ("HH", "HL", "LH", "LL")
@@ -402,12 +395,6 @@ def compute_htf_bias(
     # Use legacy logic to compute base bias and score
     bias, direction, score = compute_htf_bias_multi_timeframe(features_1h, features_15m)
 
-    # #region agent log
-    import json as _json
-    _log_path = "/Users/shalev/Code/SCP/.cursor/debug.log"
-    _log_data = {"location": "calculator.py:compute_htf_bias:after_legacy", "message": "HTF bias computed from legacy function", "hypothesisId": "A", "timestamp": int(pd.Timestamp.now().timestamp() * 1000), "sessionId": "debug-session", "data": {"bias": bias, "direction": direction, "score": float(score), "features_1h_structure": features_1h.get("structure_label") or features_1h.get("structure_type"), "features_15m_structure": features_15m.get("structure_label") or features_15m.get("structure_type"), "features_1h_keys": list(features_1h.keys()) if hasattr(features_1h, 'keys') else [], "features_15m_keys": list(features_15m.keys()) if hasattr(features_15m, 'keys') else [], "features_1h_ema_9": float(features_1h.get("ema_9", 0)) if features_1h.get("ema_9") else None, "features_1h_ema_20": float(features_1h.get("ema_20", 0)) if features_1h.get("ema_20") else None, "features_1h_ema_50": float(features_1h.get("ema_50", 0)) if features_1h.get("ema_50") else None}}
-    with open(_log_path, "a") as _f: _f.write(_json.dumps(_log_data) + "\n")
-    # #endregion
 
     # Store original bias before any neutralization for conflict detection
     original_bias = bias
