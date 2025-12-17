@@ -302,9 +302,11 @@ class BacktestReplayLoop:
             candle_count += 1
             current_timestamp = features["timestamp"]
 
-            # Skip candles before execution_start (warmup period)
-            # These candles are still processed to update HTF features
-            # but signals are not recorded
+            # Warmup-only period (before execution_start):
+            # We still MUST process candles to update per-bar state (especially HTF bias /
+            # streaming buffers / structure detection), but we must NOT execute trades or
+            # record signals during warmup.
+            execution_enabled = True
             if self.execution_start is not None:
                 # Convert timestamp for comparison
                 if hasattr(current_timestamp, "to_pydatetime"):
@@ -321,15 +323,18 @@ class BacktestReplayLoop:
                     exec_start = exec_start.replace(tzinfo=timezone.utc)
                 
                 if ts_dt < exec_start:
-                    # Skip signal recording but continue processing for HTF warmup
-                    continue
+                    execution_enabled = False
 
             # Process this candle
             execution = self._process_candle(
-                features, validation_context, next_candle, current_timestamp
+                features,
+                validation_context,
+                next_candle,
+                current_timestamp,
+                execution_enabled=execution_enabled,
             )
 
-            if execution is not None:
+            if execution_enabled and execution is not None:
                 signal_count += 1
                 self._all_executions.append(execution)
 
@@ -377,6 +382,7 @@ class BacktestReplayLoop:
         validation_context: dict,
         next_candle: Candle | None,
         current_timestamp: datetime,
+        execution_enabled: bool = True,
     ) -> EntryExecution | None:
         """Process a single candle through the complete trading pipeline.
 
@@ -396,6 +402,8 @@ class BacktestReplayLoop:
             validation_context: Validation context from BacktestProcessor
             next_candle: Next candle for entry execution (None if end of data)
             current_timestamp: Current candle timestamp
+            execution_enabled: If False, update per-bar state (including HTF bias)
+                              but do not generate/record signals or execute trades.
 
         Returns:
             EntryExecution if signal was generated, None otherwise
@@ -446,6 +454,11 @@ class BacktestReplayLoop:
         ):
             structure_label = "NA"
         self._structure_stats[str(structure_label)] += 1
+
+        # Warmup-only mode: after per-bar updates are applied, stop before any
+        # signal generation or trade execution.
+        if not execution_enabled:
+            return None
 
         # Step 4: Check if we can take new entries (max concurrent trades limit)
         max_concurrent = self.config.get("backtest", {}).get("max_concurrent_trades", 1)
