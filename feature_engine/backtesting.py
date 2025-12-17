@@ -254,6 +254,9 @@ class BacktestProcessor:
                     "sweep_direction": features.get("sweep_direction"),
                     "sweep_price": features.get("sweep_price"),
                     "sweep_age": features.get("sweep_age"),
+                    # Expansion detection (for VWAP_RECLAIM entry timing)
+                    "expansion_detected": features.get("expansion_detected"),
+                    "expansion_reasons": features.get("expansion_reasons"),
                 }
             )
 
@@ -385,6 +388,9 @@ class BacktestProcessor:
                     "sweep_direction": features.get("sweep_direction"),
                     "sweep_price": features.get("sweep_price"),
                     "sweep_age": features.get("sweep_age"),
+                    # Expansion detection (for VWAP_RECLAIM entry timing)
+                    "expansion_detected": features.get("expansion_detected"),
+                    "expansion_reasons": features.get("expansion_reasons"),
                 }
             )
 

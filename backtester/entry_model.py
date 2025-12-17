@@ -126,29 +126,29 @@ def execute_entry_at_next_open(
 
     # Check 3: VWAP_RECLAIM expansion gate (entry readiness check)
     # Setup can be detected without expansion, but entry requires expansion signals
-    # if signal.setup_type == "VWAP_RECLAIM":
-    #     expansion_detected = signal.diagnostics.get("expansion_detected", False)
-    #     expansion_reasons = signal.diagnostics.get("expansion_reasons", [])
+    if signal.setup_type == "VWAP_RECLAIM":
+        expansion_detected = signal.diagnostics.get("expansion_detected", False)
+        expansion_reasons = signal.diagnostics.get("expansion_reasons", [])
         
-    #     if not expansion_detected:
-    #         logger.info(
-    #             f"Entry NOT READY: VWAP_RECLAIM detected but no expansion signals "
-    #             f"(symbol={signal.symbol}, timestamp={signal.timestamp}, "
-    #             f"score={signal.score}). Setup candidate exists, waiting for expansion."
-    #         )
-    #         return EntryExecution(
-    #             signal_timestamp=signal.timestamp,
-    #             entry_timestamp=signal.timestamp,
-    #             entry_price=0.0,
-    #             signal=signal,
-    #             executed=False,
-    #             rejection_reason="VWAP_RECLAIM entry not ready: no expansion signals detected",
-    #         )
+        if not expansion_detected:
+            logger.info(
+                f"Entry NOT READY: VWAP_RECLAIM detected but no expansion signals "
+                f"(symbol={signal.symbol}, timestamp={signal.timestamp}, "
+                f"score={signal.score}). Setup candidate exists, waiting for expansion."
+            )
+            return EntryExecution(
+                signal_timestamp=signal.timestamp,
+                entry_timestamp=signal.timestamp,
+                entry_price=0.0,
+                signal=signal,
+                executed=False,
+                rejection_reason="VWAP_RECLAIM entry not ready: no expansion signals detected",
+            )
         
-    #     logger.debug(
-    #         f"VWAP_RECLAIM expansion gate PASSED: {expansion_reasons} "
-    #         f"(symbol={signal.symbol}, timestamp={signal.timestamp})"
-    #     )
+        logger.debug(
+            f"VWAP_RECLAIM expansion gate PASSED: {expansion_reasons} "
+            f"(symbol={signal.symbol}, timestamp={signal.timestamp})"
+        )
 
     # SUCCESS: Execute entry at next bar open
     time_delta = next_candle.timestamp - signal.timestamp
