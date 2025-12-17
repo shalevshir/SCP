@@ -148,22 +148,28 @@ class TestValidateSignalWithHTF:
         assert "1H bullish but 15M bearish" in reason
 
     def test_rejects_signal_when_dxy_chop_detected(self):
-        """Signal rejected when DXY chop detected.
+        """Signal handling when DXY chop detected.
 
-        Specification: "if htf_bias.dxy_chop_detected: return False, reason"
+        UPDATED: DXY chop no longer globally rejects signals in validate_signal_with_htf.
+        Instead, DXY chop is handled per-setup in validation layer:
+        - DXY_CONTINUATION: blocked by dxy_chop_5m
+        - VWAP_FADE/RECLAIM: not blocked by DXY chop (only by gold chop)
+        
+        This test now verifies that DXY chop alone doesn't reject in validate_signal_with_htf.
         """
         htf_bias = HTFBias(
-            bias="neutral",
-            direction="neutral",
-            score=0.0,
-            confidence="low",
+            bias="bullish",  # Has directional bias despite DXY chop
+            direction="long",
+            score=6.0,
+            confidence="medium",
             dxy_chop_detected=True,
         )
 
         is_valid, reason = validate_signal_with_htf("long", htf_bias)
 
-        assert is_valid is False
-        assert "dxy" in reason.lower() and "chop" in reason.lower()
+        # NEW BEHAVIOR: DXY chop doesn't globally reject
+        # Setup-specific validation handles it
+        assert is_valid is True
 
     def test_rejects_long_signal_opposing_strong_bearish_htf(self):
         """Long signal rejected when opposing strong bearish HTF.

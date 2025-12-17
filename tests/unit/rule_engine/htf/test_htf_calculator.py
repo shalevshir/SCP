@@ -7,6 +7,7 @@ ensuring that bias is forced to neutral when chop is detected.
 import pandas as pd
 import pytest
 from rule_engine.htf.calculator import compute_htf_bias
+from rule_engine.htf.types import ChopSeverity
 
 
 class TestHTFCalculatorBiasConsistency:
@@ -408,10 +409,10 @@ class TestHTFCalculatorConflictRules:
 
     @pytest.fixture
     def features_15m_bearish(self) -> pd.Series:
-        """Create 15M features indicating bearish bias."""
+        """Create 15M features indicating bearish bias (strong bearish for conflict)."""
         return pd.Series(
             {
-                "structure_label": "LH",
+                "structure_label": "LL",  # Strong bearish (LL) to trigger conflict with HH
                 "ema_9": 2085.0,
                 "ema_20": 2095.0,
                 "ema_50": 2105.0,
@@ -474,19 +475,30 @@ class TestHTFCalculatorConflictRules:
         features_15m_bullish: pd.Series,
         price_chop_data: pd.DataFrame,
     ) -> None:
-        """Test that 15M price chop forces neutral bias."""
+        """Test that 15M price chop is classified but does NOT force neutral bias.
+        
+        UPDATED: Chop refactor changed behavior - chop no longer forces neutralization.
+        Instead, chop severity is classified and handled per-setup in validation layer.
+        This test now verifies the new behavior.
+        """
         result = compute_htf_bias(
             features_1h_bullish,
             features_15m_bullish,
             df_15m=price_chop_data,
         )
 
-        # Chop should force neutral
-        assert result.bias == "neutral"
-        assert result.direction == "neutral"
-        assert result.conflict_detected is True
-        assert result.conflict_reason == "15M price action in chop"
-        assert result.score <= 5.0
+        # NEW BEHAVIOR: Chop does NOT force neutral bias
+        # Bias remains based on structure (bullish in this case)
+        assert result.bias == "bullish"
+        assert result.direction == "long"
+        
+        # Chop is detected and classified
+        assert result.chop_detected is True
+        assert result.chop_severity in (ChopSeverity.SOFT_CHOP, ChopSeverity.HARD_CHOP)
+        assert result.chop_consecutive_count > 0
+        
+        # Conflict is NOT detected (chop alone doesn't create conflict)
+        assert result.conflict_detected is False
 
     def test_sweep_against_trend_neutralizes_bias(
         self,
@@ -541,10 +553,11 @@ class TestHTFCalculatorConflictRules:
         assert result_no_conflict.conflict_detected is False
         assert result_no_conflict.conflict_reason is None
 
-        # With conflict
+        # With conflict - must use LL (strong bearish) to conflict with HH (strong bullish)
+        # HH vs LH is now allowed as a normal retracement pattern
         features_15m_conflicting = pd.Series(
             {
-                "structure_label": "LH",
+                "structure_label": "LL",  # Strong bearish to conflict with HH
                 "ema_9": 2085.0,
                 "ema_20": 2095.0,
                 "ema_50": 2105.0,

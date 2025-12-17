@@ -62,6 +62,7 @@ class TestExecuteEntryAtNextOpen:
             rationale="HTF HH/HL intact, VWAP reclaim confirmed",
             validation_flags={"session_ok": True, "tier_ok": True},
             enforcer_tier="EarlyMild",
+            diagnostics={"expansion_detected": True, "expansion_reasons": ["price_momentum"]},
         )
 
     @pytest.fixture

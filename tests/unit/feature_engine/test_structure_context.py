@@ -45,7 +45,8 @@ class TestStructureContextDataclass:
         assert ctx.trend_confidence == 0.8
         assert ctx.structure_clarity == 0.9
         assert ctx.is_chop is False
-        assert ctx.is_noise_zone is False
+        assert ctx.is_structural_chop is False
+        assert ctx.atr_compression_ratio == 1.0
         assert ctx.structure_conflict_flag is False
         assert ctx.choch_detected is False
         assert ctx.choch_direction is None
@@ -854,14 +855,21 @@ class TestChochDetection:
         )
 
 
-class TestNoiseZoneDetection:
-    """Test ATR-based noise zone detection."""
+class TestStructuralChopDetection:
+    """Test structure-based chop detection (not ATR-based)."""
 
-    def test_noise_zone_detected_in_tight_range(self):
-        """Test noise zone detection when ATR is very low (tight range)."""
+    def test_structural_chop_not_detected_in_tight_range_with_clean_structure(self):
+        """Test that low ATR alone does NOT trigger structural chop."""
         tracker = StructureContextTracker(swing_window=2)
 
-        # Create tight range (all bars within 0.1% range)
+        # Build baseline with normal volatility first
+        for i in range(50):
+            high = 100.0 + (i % 10)
+            low = 100.0 - (i % 5)
+            close = 100.0 + (i % 7)
+            tracker.update(high=high, low=low, close=close)
+
+        # Now create tight range (compressed ATR) but with clean structure
         base_price = 100.0
         for i in range(20):
             high = base_price + 0.05
@@ -869,44 +877,45 @@ class TestNoiseZoneDetection:
             close = base_price
             ctx = tracker.update(high=high, low=low, close=close)
 
-        # Should detect noise zone (ATR very small relative to price)
-        assert ctx.is_noise_zone is True, "Should detect noise zone in tight range"
+        # Should NOT detect structural chop (low ATR alone is not chop)
+        # ATR compression should be reflected in atr_compression_ratio instead
+        assert ctx.is_structural_chop is False, "Low ATR alone should not trigger structural chop"
+        # But ATR compression ratio should be low (now that we have baseline)
+        assert ctx.atr_compression_ratio < 0.5, "ATR compression ratio should indicate compression"
 
-    def test_noise_zone_not_detected_in_trending_market(self):
-        """Test no noise zone in trending market with normal volatility."""
+    def test_structural_chop_not_detected_in_trending_market(self):
+        """Test no structural chop in trending market with normal volatility."""
         tracker = StructureContextTracker(swing_window=2)
 
-        # Create trending market with normal ranges (1-2% bars)
-        for i in range(20):
+        # Create trending market with normal ranges and clean structure (HH pattern)
+        # Need enough bars to establish structure and BOS
+        for i in range(40):
             base = 100.0 + i * 0.5  # Trending up
             high = base + 1.0  # ~1% range
             low = base - 0.5
             close = base + 0.3
             ctx = tracker.update(high=high, low=low, close=close)
 
-        # Should NOT detect noise zone
+        # Should NOT detect structural chop (clean uptrend with BOS)
         assert (
-            ctx.is_noise_zone is False
-        ), "Should not detect noise zone in trending market"
+            ctx.is_structural_chop is False
+        ), "Should not detect structural chop in trending market"
 
-    def test_noise_zone_requires_full_atr_window(self):
-        """Test that noise zone requires 15 bars for 14-period ATR calculation."""
+    def test_atr_compression_ratio_requires_full_window(self):
+        """Test that ATR compression ratio defaults to 1.0 without enough data."""
         tracker = StructureContextTracker(swing_window=2)
 
         # First 14 bars - not enough for 14-period ATR (need 15 total)
         for i in range(14):
             ctx = tracker.update(high=100.05, low=99.95, close=100.0)
 
-        # Should be False (not enough data yet)
+        # Should default to 1.0 (not enough data yet)
         assert (
-            ctx.is_noise_zone is False
-        ), "Should not detect noise zone without full ATR window (need 15 bars)"
+            ctx.atr_compression_ratio == 1.0
+        ), "Should default to 1.0 without full ATR window"
 
-    def test_atr_requires_15_bars_not_14(self):
+    def test_atr_compression_ratio_requires_15_bars_not_14(self):
         """Test that 14-period ATR requires 15 bars, not 14.
-
-        Bug: Current implementation accepts 14 bars but only computes 13 TR values
-        because loop starts at index 1 (range(1, 14) = 13 iterations).
         
         Standard ATR semantics:
         - 14-period ATR needs 15 bars total
@@ -917,28 +926,23 @@ class TestNoiseZoneDetection:
         tracker = StructureContextTracker(swing_window=2)
         
         # Create 14 bars with extremely tight range (0.02% of price)
-        # This range is tight enough to trigger noise zone detection
         for i in range(14):
             ctx_14 = tracker.update(high=100.01, low=99.99, close=100.0)
         
-        # With 14 bars total:
-        # Bug: ATR calculated from 13 TR values → is_noise_zone=True
-        # Fix: ATR not calculated (need 15 bars) → is_noise_zone=False
-        
-        assert ctx_14.is_noise_zone is False, (
-            "With only 14 bars, ATR should NOT be calculated yet "
-            "(need 15 bars: 1 initial close + 14 TR values for 14-period ATR). "
-            "Bug: current implementation accepts 14 bars but only uses 13 TR values."
+        # With 14 bars total: ATR not calculated yet, should default to 1.0
+        assert ctx_14.atr_compression_ratio == 1.0, (
+            "With only 14 bars, ATR compression ratio should default to 1.0 "
+            "(need 15 bars: 1 initial close + 14 TR values for 14-period ATR)."
         )
         
         # Add 15th bar (still tight range)
         ctx_15 = tracker.update(high=100.01, low=99.99, close=100.0)
         
-        # With 15 bars total:
-        # Now we have 14 proper TR values → ATR calculated → is_noise_zone=True
-        assert ctx_15.is_noise_zone is True, (
-            "With 15 bars, ATR should be calculated using 14 TR values, "
-            "and tight range should trigger noise zone detection."
+        # With 15 bars total: ATR calculated but still defaults to 1.0 (need baseline)
+        # (Need 20 bars for baseline comparison)
+        assert ctx_15.atr_compression_ratio == 1.0, (
+            "With 15 bars, ATR is calculated but baseline not yet established "
+            "(need 20 bars for baseline comparison)."
         )
 
 
@@ -1186,7 +1190,8 @@ class TestBatchComputation:
             "trend_confidence",
             "structure_clarity",
             "is_chop",
-            "is_noise_zone",
+            "is_structural_chop",
+            "atr_compression_ratio",
             "structure_conflict_flag",
             "last_swing_high",
             "last_swing_low",

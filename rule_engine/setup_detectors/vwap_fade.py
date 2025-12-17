@@ -18,19 +18,19 @@ logger = get_logger(__name__)
 def detect_vwap_fade(
     features: pd.Series, htf_bias: HTFBias, df: Optional[pd.DataFrame] = None
 ) -> bool:
-    """Detect VWAP_FADE setup with strict structure requirements.
+    """Detect VWAP_FADE setup with relaxed thresholds for increased signal flow.
 
-    Requirements (ALL must pass):
-        1. Liquidity sweep detected
-        2. Rejection candle present (strong wick)
-        3. Structure clarity >= 0.6 threshold
-        4. No chop (is_chop=False)
-        5. CHoCH or trend-weakening detected
-        6. Correct directional swing context:
+    Requirements (ALL must pass, thresholds significantly loosened to allow more candidates):
+        1. Liquidity sweep detected (quality signal, will be penalized via scoring if missing)
+        2. Rejection candle present (wick > 1.3x body, loosened from 1.5x/2x)
+        3. Structure clarity >= 0.4 threshold (lowered from 0.5/0.6)
+        4. No noise zone (handled via score penalty in scoring.py)
+        5. CHoCH or trend-weakening detected (trend_conf < 0.65, loosened from 0.6/0.5)
+        6. Correct directional swing context (SAFETY - must remain):
            - Long fade: requires LH (Lower High) - price weakening
            - Short fade: requires HL (Higher Low) - price strengthening
-        7. RSI extreme (<30 or >70)
-        8. Significant VWAP deviation (>0.5%)
+        7. RSI extreme (<40 or >60, loosened from <35/>65, originally <30/>70)
+        8. Significant VWAP deviation (>0.25%, loosened from 0.3%/0.5%)
 
     Args:
         features: Feature series containing market data
@@ -45,24 +45,51 @@ def detect_vwap_fade(
         >>> if is_fade:
         ...     print("Valid VWAP fade setup detected")
     """
+    # Thresholds (further loosened to allow more candidates - quality handled via scoring)
+    CLARITY_THRESHOLD = 0.4  # Lowered from 0.5 (was 0.6 originally)
+    WICK_BODY_RATIO = 1.3  # Lowered from 1.5 (was 2.0 originally)
+    TREND_CONF_THRESHOLD = 0.65  # Increased from 0.6 (easier to meet)
+    RSI_OVERSOLD = 40  # Raised from 35 (was 30 originally)
+    RSI_OVERBOUGHT = 60  # Lowered from 65 (was 70 originally)
+    VWAP_DEVIATION_THRESHOLD = 0.25  # Lowered from 0.3% (was 0.5% originally)
+
     direction = htf_bias.direction
+    structure_clarity = features.get("structure_clarity", 0.0)
+    rsi = features.get("rsi", 50.0)
+    vwap = features.get("vwap", 0)
+    close = features.get("close", 0)
+    choch_detected = features.get("choch_detected", False)
+    trend_confidence = features.get("trend_confidence", 1.0)
+    last_structure_label = features.get("last_structure_label")
+
+    # Check sweep from both HTFBias AND features (1M features have sweep)
+    sweep_from_features = features.get("liquidity_sweep", False)
+    sweep_detected_any = htf_bias.liquidity_sweep_detected or sweep_from_features
+
+    # Log all values at start for debugging
+    logger.info(
+        f"VWAP_FADE prereq check: "
+        f"dir={direction}, sweep={sweep_detected_any} "
+        f"(htf={htf_bias.liquidity_sweep_detected}, feat={sweep_from_features}), "
+        f"clarity={structure_clarity:.2f}, rsi={rsi:.1f}, "
+        f"choch={choch_detected}, trend_conf={trend_confidence:.2f}, "
+        f"struct_label={last_structure_label}"
+    )
 
     # Validate direction (must be long or short)
     if direction not in ("long", "short"):
         logger.debug(f"VWAP_FADE rejected: invalid direction {direction}")
         return False
 
-    # 1. Liquidity sweep requirement
-    if not htf_bias.liquidity_sweep_detected:
+    # 1. Liquidity sweep requirement (already computed above as sweep_detected_any)
+    if not sweep_detected_any:
         logger.debug("VWAP_FADE rejected: no liquidity sweep detected")
         return False
 
-    # 2. Rejection candle requirement
-    # Check for strong wick in the direction of the fade
+    # 2. Rejection candle requirement (loosened wick ratio)
     open_price = features.get("open", 0)
     high = features.get("high", 0)
     low = features.get("low", 0)
-    close = features.get("close", 0)
 
     if high == 0 or low == 0 or high < low:
         logger.debug("VWAP_FADE rejected: invalid OHLC data")
@@ -79,55 +106,42 @@ def detect_vwap_fade(
     # Short fade: need upper wick rejection (pullback from overbought)
     has_rejection_wick = False
     if direction == "long":
-        has_rejection_wick = lower_wick > max(body * 2, min_wick_threshold)
+        has_rejection_wick = lower_wick > max(body * WICK_BODY_RATIO, min_wick_threshold)
     elif direction == "short":
-        has_rejection_wick = upper_wick > max(body * 2, min_wick_threshold)
+        has_rejection_wick = upper_wick > max(body * WICK_BODY_RATIO, min_wick_threshold)
 
     if not has_rejection_wick:
         logger.debug(
             f"VWAP_FADE rejected: no rejection wick "
             f"(direction={direction}, body={body:.2f}, "
-            f"upper_wick={upper_wick:.2f}, lower_wick={lower_wick:.2f})"
+            f"upper_wick={upper_wick:.2f}, lower_wick={lower_wick:.2f}, "
+            f"need wick > {WICK_BODY_RATIO}x body)"
         )
         return False
 
-    # 3. Structure clarity requirement
-    structure_clarity = features.get("structure_clarity", 0.0)
-    if structure_clarity < 0.6:
+    # 3. Structure clarity requirement (lowered threshold)
+    if structure_clarity < CLARITY_THRESHOLD:
         logger.debug(
             f"VWAP_FADE rejected: low structure clarity "
-            f"(clarity={structure_clarity:.2f}, need >= 0.6)"
+            f"(clarity={structure_clarity:.2f}, need >= {CLARITY_THRESHOLD})"
         )
         return False
 
-    # 4. No chop requirement
-    is_chop = features.get("is_chop", False)
-    if is_chop:
-        logger.debug("VWAP_FADE rejected: chop detected (is_chop=True)")
-        return False
+    # 4. Noise zone now handled as score penalty (not hard-block)
+    # See calculate_noise_penalty() in scoring.py for setup-aware noise handling
 
-    # 4b. No noise zone requirement (ATR-based tight range detection)
-    is_noise_zone = features.get("is_noise_zone", False)
-    if is_noise_zone:
-        logger.debug("VWAP_FADE rejected: noise zone detected (is_noise_zone=True)")
-        return False
-
-    # 5. CHoCH or trend-weakening requirement
-    choch_detected = features.get("choch_detected", False)
-    trend_confidence = features.get("trend_confidence", 1.0)
-
-    has_weakening_signal = choch_detected or trend_confidence < 0.5
+    # 5. CHoCH or trend-weakening requirement (loosened threshold)
+    has_weakening_signal = choch_detected or trend_confidence < TREND_CONF_THRESHOLD
 
     if not has_weakening_signal:
         logger.debug(
             f"VWAP_FADE rejected: no trend weakening signal "
-            f"(choch={choch_detected}, trend_confidence={trend_confidence:.2f})"
+            f"(choch={choch_detected}, trend_confidence={trend_confidence:.2f}, "
+            f"need trend_conf < {TREND_CONF_THRESHOLD})"
         )
         return False
 
     # 6. Correct directional swing context requirement
-    last_structure_label = features.get("last_structure_label")
-
     if direction == "long":
         # Long fade: need LH (lower high) to confirm weakening uptrend
         if last_structure_label != "LH":
@@ -143,23 +157,24 @@ def detect_vwap_fade(
             )
             return False
 
-    # 7. RSI extreme requirement
-    rsi = features.get("rsi", 50.0)
-    if not (rsi < 30 or rsi > 70):
-        logger.debug(f"VWAP_FADE rejected: RSI not extreme (rsi={rsi:.1f}, need <30 or >70)")
+    # 7. RSI extreme requirement (loosened thresholds)
+    if not (rsi < RSI_OVERSOLD or rsi > RSI_OVERBOUGHT):
+        logger.debug(
+            f"VWAP_FADE rejected: RSI not extreme "
+            f"(rsi={rsi:.1f}, need <{RSI_OVERSOLD} or >{RSI_OVERBOUGHT})"
+        )
         return False
 
-    # 8. Significant VWAP deviation requirement
-    vwap = features.get("vwap", 0)
+    # 8. Significant VWAP deviation requirement (loosened threshold)
     if vwap == 0:
         logger.debug("VWAP_FADE rejected: VWAP data missing")
         return False
 
     vwap_deviation_pct = abs((close - vwap) / vwap * 100)
-    if vwap_deviation_pct <= 0.5:
+    if vwap_deviation_pct <= VWAP_DEVIATION_THRESHOLD:
         logger.debug(
             f"VWAP_FADE rejected: insufficient VWAP deviation "
-            f"(deviation={vwap_deviation_pct:.2f}%, need >0.5%)"
+            f"(deviation={vwap_deviation_pct:.2f}%, need >{VWAP_DEVIATION_THRESHOLD}%)"
         )
         return False
 

@@ -358,6 +358,88 @@ class TestHTFBiasCallOrder:
         )
 
 
+class TestExecutionStartWarmupBehavior:
+    """Regression tests for execution_start warmup behavior.
+
+    Warmup candles (before execution_start) must still be processed so per-bar
+    state (notably HTF streaming buffers / bias) can accumulate before the
+    execution window begins.
+    """
+
+    def test_execution_start_warmup_still_processes_candles(self, minimal_multi_tf_data):
+        """Warmup bars must call _process_candle() but with execution disabled."""
+        import pandas as pd
+
+        start_time = datetime(2024, 7, 1, 10, 0, tzinfo=UTC)
+        execution_start = start_time + timedelta(minutes=3)
+
+        market_state = {
+            "buffer_phase": "growth",
+            "tier_active": "EarlyMild",
+            "ceo_directive_active": True,
+            "news_ok": True,
+            "session_ok": True,
+        }
+        risk_config = {
+            "risk_per_trade": 600.0,
+            "buffer_phase": "growth",
+            "max_contracts": 1,
+        }
+
+        loop = BacktestReplayLoop(
+            multi_tf_data=minimal_multi_tf_data,
+            timeframe="1m",
+            market_state=market_state,
+            risk_config=risk_config,
+            execution_start=execution_start,
+        )
+
+        # Stub the processor to produce deterministic bars around execution_start.
+        def fake_iterate_with_entry_context(_gc_df, _dxy_df):
+            for i in range(5):
+                ts = start_time + timedelta(minutes=i)
+                features = pd.Series(
+                    {
+                        "timestamp": ts,
+                        "open": 2650.0,
+                        "high": 2651.0,
+                        "low": 2649.0,
+                        "close": 2650.5,
+                        "volume": 1000.0,
+                    }
+                )
+                yield features, {"session_ok": True}, None
+
+        loop._processor.iterate_with_entry_context = fake_iterate_with_entry_context
+
+        calls: list[tuple[datetime, bool]] = []
+
+        def fake_process_candle(
+            features,
+            validation_context,
+            next_candle,
+            current_timestamp,
+            execution_enabled: bool = True,
+        ):
+            calls.append((current_timestamp, execution_enabled))
+            return None
+
+        loop._process_candle = fake_process_candle
+
+        loop.run()
+
+        # We must process every bar, including warmup-only bars.
+        assert len(calls) == 5
+
+        warmup_calls = [enabled for ts, enabled in calls if ts < execution_start]
+        execution_calls = [enabled for ts, enabled in calls if ts >= execution_start]
+
+        assert warmup_calls, "Expected at least one warmup bar before execution_start"
+        assert all(enabled is False for enabled in warmup_calls)
+        assert execution_calls, "Expected at least one execution bar at/after execution_start"
+        assert all(enabled is True for enabled in execution_calls)
+
+
 class TestGuardrailsPDLL:
     """Test PDLL (Per Day Loss Limit) guardrails - specification-based."""
 

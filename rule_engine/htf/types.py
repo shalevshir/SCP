@@ -6,12 +6,25 @@ Defines the HTFBias dataclass and related types used throughout the HTF engine.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import Enum
 from typing import TYPE_CHECKING, Literal
 
 from rule_engine.htf.seasonality.rules import SeasonalityPeriod
 
 if TYPE_CHECKING:
     from common.types import Candle
+
+
+class ChopSeverity(Enum):
+    """Chop severity classification for setup-aware filtering.
+    
+    NONE: Clean trending market - all setups allowed
+    SOFT_CHOP: Indecision/compression (3-4 consecutive chop candles) - allows fades
+    HARD_CHOP: True range-bound chaos (5+ consecutive chop candles) - blocks most setups
+    """
+    NONE = "none"
+    SOFT_CHOP = "soft"
+    HARD_CHOP = "hard"
 
 
 @dataclass
@@ -70,6 +83,8 @@ class HTFBias:
         bars_since_bos: Bars since last BOS event (staleness)
         bars_since_choch: Bars since last CHoCH event
         chop_detected: True if recent labels are mixed (HH+LL within window)
+        chop_severity: ChopSeverity enum indicating chop intensity
+        chop_consecutive_count: Count of consecutive chop candles
     """
 
     # Core bias
@@ -120,7 +135,9 @@ class HTFBias:
     structure_clarity: float = 0.0  # 0-1 score measuring swing sequence purity
     bars_since_bos: int | None = None  # Bars since last BOS (staleness metric)
     bars_since_choch: int | None = None  # Bars since last CHoCH
-    chop_detected: bool = False  # True if recent labels are mixed (HH+LL within window)
+    chop_detected: bool = False  # True if recent labels are mixed (HH+LL within window) - backward compat
+    chop_severity: ChopSeverity = ChopSeverity.NONE  # Setup-aware chop severity classification
+    chop_consecutive_count: int = 0  # Number of consecutive chop candles
     atr_15m: float | None = None  # 15M ATR for noise filtering in structure detection
 
     # Conflict detection
@@ -172,6 +189,8 @@ class HTFBias:
             "bars_since_bos": self.bars_since_bos,
             "bars_since_choch": self.bars_since_choch,
             "chop_detected": self.chop_detected,
+            "chop_severity": self.chop_severity.value if self.chop_severity else "none",
+            "chop_consecutive_count": self.chop_consecutive_count,
             "atr_15m": self.atr_15m,
             "conflict_detected": self.conflict_detected,
             "conflict_reason": self.conflict_reason,

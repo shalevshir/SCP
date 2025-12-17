@@ -60,11 +60,8 @@ def validate_signal_with_htf(
         logger.info(f"Signal rejected - {reason}")
         return False, reason
 
-    # Rule 2: Reject if DXY chop detected
-    if htf_bias.dxy_chop_detected:
-        reason = "DXY in chop mode - no directional bias"
-        logger.info(f"Signal rejected - {reason}")
-        return False, reason
+    # Rule 2: DXY chop rejection removed - now handled per-setup in validation layer
+    # (DXY_CONTINUATION still blocked by dxy_chop_5m in validation.py)
 
     # Rule 3: Reject signals opposing strong HTF bias (high confidence)
     if htf_bias.confidence == "high":
@@ -100,6 +97,7 @@ def adjust_score_with_htf(
     base_score: float,
     htf_bias: HTFBias | None,
     signal_direction: str,
+    context: dict | None = None,
 ) -> tuple[float, dict]:
     """Adjust signal score based on HTF bias alignment.
 
@@ -107,13 +105,14 @@ def adjust_score_with_htf(
         base_score: Base signal score before HTF adjustment
         htf_bias: HTF bias object (None if not available)
         signal_direction: Signal direction ("long", "short")
+        context: Optional context dict with enforcer_tier for tier-aware adjustments
 
     Returns:
         Tuple of (adjusted_score, adjustment_details)
 
     Logic:
         - Strong alignment: Boost score
-        - Weak alignment: Minimal adjustment
+        - Weak alignment: Minimal adjustment (tier-aware for neutral)
         - Misalignment: Reduce score or reject
 
     DoD:
@@ -123,6 +122,10 @@ def adjust_score_with_htf(
     """
     adjusted_score = base_score
     adjustments = {}
+    
+    # Default context if not provided
+    if context is None:
+        context = {}
 
     # Handle None HTF bias (no adjustments)
     if htf_bias is None:
@@ -173,15 +176,27 @@ def adjust_score_with_htf(
             f"(HTF {htf_bias.confidence} confidence, score={htf_bias.score:.1f})"
         )
 
-    # 5. Penalty for neutral HTF or low confidence
+    # 5. Penalty for neutral HTF or low confidence (tier-aware for neutral)
     if htf_bias.bias == "neutral" or htf_bias.confidence == "low":
-        penalty = -0.5
+        # Tier-aware penalty for neutral HTF
+        enforcer_tier = context.get("enforcer_tier", "Conservative")
+        
+        if htf_bias.bias == "neutral" and enforcer_tier == "EarlyMild":
+            # Softer penalty for EarlyMild tier
+            penalty = -0.25
+            logger.debug(
+                f"Applied soft neutral HTF penalty for EarlyMild: {penalty:.2f}"
+            )
+        else:
+            # Standard penalty for other tiers
+            penalty = -0.5
+            logger.debug(
+                f"Applied standard weak HTF bias penalty: {penalty:.2f} "
+                f"(bias={htf_bias.bias}, confidence={htf_bias.confidence}, tier={enforcer_tier})"
+            )
+        
         adjusted_score += penalty
         adjustments["htf_weak_bias"] = penalty
-        logger.debug(
-            f"Applied weak HTF bias penalty: {penalty:.2f} "
-            f"(bias={htf_bias.bias}, confidence={htf_bias.confidence})"
-        )
 
     # 6. Bonus for VWAP trend confirmation
     # Only boost when both have clear directional alignment (not neutral)
@@ -280,11 +295,13 @@ def create_htf_bias_func_with_sync_layer(
         # Buffer for 15m candles (for liquidity sweep detection)
         # Need enough history for swing detection
         candle_buffer_15m: list = []
+        # Buffer for 1h candles (for BOS/CHoCH/FVG detection)
+        candle_buffer_1h: list = []
         max_buffer_size = swing_window * 3  # Keep 3x swing window for context
 
         def htf_bias_func(features_1m: pd.Series, context: dict) -> HTFBias:
             """Compute HTF bias using streaming approach."""
-            nonlocal prev_sync_bar, candle_buffer_15m
+            nonlocal prev_sync_bar, candle_buffer_15m, candle_buffer_1h
 
             timestamp = features_1m["timestamp"]
             if isinstance(timestamp, pd.Timestamp):
@@ -371,7 +388,29 @@ def create_htf_bias_func_with_sync_layer(
                         sweep_events_15m = None
 
             if sync_bar.htf_1h:
-                df_1h = build_htf_dataframe_from_candles([sync_bar.htf_1h[0]], "1h")
+                # Update 1h candle buffer (like 15m buffer)
+                current_1h_candle = sync_bar.htf_1h[0]
+
+                # Only add if it's a new candle (different timestamp from last)
+                if (
+                    not candle_buffer_1h
+                    or candle_buffer_1h[-1].timestamp != current_1h_candle.timestamp
+                ):
+                    candle_buffer_1h.append(current_1h_candle)
+
+                    # Keep buffer size manageable
+                    if len(candle_buffer_1h) > max_buffer_size:
+                        candle_buffer_1h.pop(0)
+
+                # Build DataFrame from buffered candles for BOS/CHoCH/FVG detection
+                if (
+                    len(candle_buffer_1h) >= swing_window * 2 + 1
+                ):  # Need enough for swing detection
+                    df_1h = build_htf_dataframe_from_candles(candle_buffer_1h, "1h")
+                else:
+                    # Fallback to single candle if buffer not full yet
+                    df_1h = build_htf_dataframe_from_candles([current_1h_candle], "1h")
+
                 dxy_1h = build_htf_dataframe_from_candles([sync_bar.htf_1h[1]], "1h")
 
             if sync_bar.htf_5m:

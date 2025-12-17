@@ -46,15 +46,17 @@
       "request": "launch",
       "module": "scripts.run_backtest_and_view",
       "python": "${workspaceFolder}/.venv/bin/python",
-      "args": [
+      "args": [ 
         "--start",
-        "2025-11-01T10:00:00Z",
+        "2025-11-06T10:00:00Z",
         "--end",
-        "2025-11-30T13:00:00Z",
+        "2025-12-15T13:00:00Z",
         "--buffer-phase",
         "growth",
         "--tier-active",
         "EarlyMild",
+        "--warmup-days",
+        "2",
         "--view"
       ],
       "console": "integratedTerminal",

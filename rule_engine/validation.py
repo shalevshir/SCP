@@ -18,7 +18,7 @@ from validation.context_builder import (
 from validation.engine import TradeDirection, ValidationEngine
 
 from rule_engine.config_loader import load_scoring_config
-from rule_engine.htf.types import HTFBias
+from rule_engine.htf.types import ChopSeverity, HTFBias
 from rule_engine.signal import Signal
 
 if TYPE_CHECKING:
@@ -26,6 +26,80 @@ if TYPE_CHECKING:
     from validation.session_validator import SessionConstraints
 
 logger = get_logger(__name__)
+
+
+def _evaluate_chop_for_setup(
+    setup_type: str, htf_bias: HTFBias
+) -> tuple[bool, str | None]:
+    """Evaluate chop constraints per setup type (setup-aware filtering).
+    
+    This function implements the core principle: "Chop is information, not prohibition."
+    Different setups have different chop tolerance based on their nature.
+    
+    Args:
+        setup_type: Setup type name ("VWAP_FADE", "VWAP_RECLAIM", "DXY_CONTINUATION")
+        htf_bias: HTFBias object containing chop severity classification
+    
+    Returns:
+        Tuple of (is_allowed, rejection_reason):
+        - is_allowed: True if setup is allowed given chop conditions
+        - rejection_reason: Description of rejection, or None if allowed
+    
+    Logic:
+        VWAP_FADE (counter-trend, benefits from chop):
+        - SOFT_CHOP: Allowed (preferred environment)
+        - HARD_CHOP: Allowed with confirmation (liquidity sweep required)
+        
+        VWAP_RECLAIM (structural, tolerates some chop):
+        - SOFT_CHOP: Allowed (score penalty applied in scoring.py)
+        - HARD_CHOP: Hard-blocked (too chaotic for structural setup)
+        
+        DXY_CONTINUATION (momentum, requires clean trends):
+        - ANY chop: Hard-blocked (continuation needs directional clarity)
+    
+    Example:
+        >>> is_ok, reason = _evaluate_chop_for_setup("VWAP_FADE", htf_bias)
+        >>> if not is_ok:
+        ...     logger.info(f"Setup blocked: {reason}")
+    """
+    severity = htf_bias.chop_severity
+    
+    if setup_type == "VWAP_FADE":
+        # VWAP_FADE allowed in SOFT_CHOP (preferred), requires confirmation in HARD_CHOP
+        if severity == ChopSeverity.HARD_CHOP:
+            # Require liquidity sweep for HARD_CHOP confirmation
+            if not htf_bias.liquidity_sweep_detected:
+                return (
+                    False,
+                    f"VWAP_FADE blocked: HARD_CHOP requires sweep confirmation "
+                    f"(consecutive={htf_bias.chop_consecutive_count})",
+                )
+        # SOFT_CHOP or NONE always allowed for fades
+        return True, None
+    
+    elif setup_type == "DXY_CONTINUATION":
+        # DXY_CONTINUATION hard-blocked on any chop (momentum setup)
+        if severity != ChopSeverity.NONE:
+            return (
+                False,
+                f"DXY_CONTINUATION blocked: {severity.value} chop detected "
+                f"(consecutive={htf_bias.chop_consecutive_count})",
+            )
+        return True, None
+    
+    elif setup_type == "VWAP_RECLAIM":
+        # VWAP_RECLAIM allowed in SOFT_CHOP (with score penalty), blocked in HARD_CHOP
+        if severity == ChopSeverity.HARD_CHOP:
+            return (
+                False,
+                f"VWAP_RECLAIM blocked: HARD_CHOP detected "
+                f"(consecutive={htf_bias.chop_consecutive_count})",
+            )
+        # SOFT_CHOP allowed (score penalty applied in scoring.py)
+        return True, None
+    
+    # Unknown setup type - allow by default (conservative)
+    return True, None
 
 
 def validate_signal(signal: Signal, htf_bias: HTFBias, context: dict) -> Signal:
@@ -76,31 +150,22 @@ def validate_signal(signal: Signal, htf_bias: HTFBias, context: dict) -> Signal:
     dxy_alignment_ok = htf_bias.dxy_alignment
     validation_flags["dxy_alignment_ok"] = dxy_alignment_ok
 
-    # Gold chop validation: DXY_CONTINUATION and VWAP_FADE blocked by chop
-    # VWAP_RECLAIM is allowed during chop (structural setup, not momentum)
-    chop_ok = True
-    if signal.setup_type == "DXY_CONTINUATION":
-        if htf_bias.dxy_chop_5m:
-            chop_ok = False
-            logger.info(
-                f"DXY_CONTINUATION rejected: DXY 5M chop detected "
-                f"(dxy_chop_5m={htf_bias.dxy_chop_5m})"
-            )
-        elif htf_bias.chop_detected:
-            chop_ok = False
-            logger.info(
-                f"DXY_CONTINUATION rejected: Gold micro chop detected "
-                f"(chop_detected={htf_bias.chop_detected})"
-            )
-    elif signal.setup_type == "VWAP_FADE":
-        # VWAP_FADE also blocked by gold micro chop (momentum setup)
-        if htf_bias.chop_detected:
-            chop_ok = False
-            logger.info(
-                f"VWAP_FADE rejected: Gold micro chop detected "
-                f"(chop_detected={htf_bias.chop_detected})"
-            )
-    # Note: VWAP_RECLAIM is NOT blocked by chop (structural setup)
+    # Setup-aware chop validation (replaces binary chop blocking)
+    chop_ok, chop_rejection_reason = _evaluate_chop_for_setup(
+        signal.setup_type, htf_bias
+    )
+    validation_flags["chop_severity"] = htf_bias.chop_severity.value
+    
+    # Also check DXY 5M chop for DXY_CONTINUATION (separate from gold chop)
+    if signal.setup_type == "DXY_CONTINUATION" and htf_bias.dxy_chop_5m:
+        chop_ok = False
+        chop_rejection_reason = (
+            f"DXY_CONTINUATION blocked: DXY 5M chop detected "
+            f"(dxy_chop_5m={htf_bias.dxy_chop_5m})"
+        )
+        logger.info(chop_rejection_reason)
+    
+    # Update chop_ok flag AFTER all chop checks
     validation_flags["chop_ok"] = chop_ok
 
     # Check HTF bias alignment
@@ -143,13 +208,14 @@ def validate_signal(signal: Signal, htf_bias: HTFBias, context: dict) -> Signal:
             if htf_bias.dxy_chop_detected:
                 rejection_reasons.append("DXY in chop mode")
         if not validation_flags["chop_ok"]:
-            if signal.setup_type == "DXY_CONTINUATION":
-                if htf_bias.dxy_chop_5m:
-                    rejection_reasons.append("DXY 5M chop - continuation invalid")
-                elif htf_bias.chop_detected:
-                    rejection_reasons.append("Gold micro chop - continuation invalid")
-            elif signal.setup_type == "VWAP_FADE":
-                rejection_reasons.append("Gold micro chop - fade invalid")
+            # Use the specific rejection reason from setup-aware evaluation
+            if chop_rejection_reason:
+                rejection_reasons.append(chop_rejection_reason)
+            else:
+                # Fallback for unexpected cases
+                rejection_reasons.append(
+                    f"Chop validation failed for {signal.setup_type}"
+                )
 
         logger.info(f"Signal validation failed: {'; '.join(rejection_reasons)}")
 
@@ -258,6 +324,7 @@ def validate_signal_with_sop(
         market_state=market_state,
         session_result=session_result,
         guardrail_result=guardrail_result,
+        htf_bias=htf_bias,  # Pass the HTF calculator's bias to ensure consistency
     )
 
     # Determine trade direction from signal

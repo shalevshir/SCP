@@ -665,3 +665,5 @@ class TestIntegration:
             # Buffers should contain data
             assert len(calculator.df_1h_buffer) >= 1
             assert len(calculator.df_15m_buffer) >= 4
+
+

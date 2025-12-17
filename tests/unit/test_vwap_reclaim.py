@@ -305,7 +305,7 @@ class TestValidateReclaimPrerequisites:
         assert "bos" in reason.lower()
 
     def test_invalid_stale_bos(self):
-        """Test validation fails when BOS is too old."""
+        """Test validation fails when BOS is too old (> 20 bars per current threshold)."""
         htf_bias = HTFBias(
             bias="bullish",
             direction="long",
@@ -315,7 +315,7 @@ class TestValidateReclaimPrerequisites:
             liquidity_sweep_type="bullish",
             structure_clarity=0.8,
             bos_detected=True,
-            bars_since_bos=20,  # Too old (>15 bars)
+            bars_since_bos=21,  # Too old (> 20 bars threshold)
             chop_detected=False,
         )
 

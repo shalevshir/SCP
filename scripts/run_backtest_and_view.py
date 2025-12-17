@@ -210,6 +210,13 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default="streaming",
         help="HTF feature computation approach (default: streaming)",
     )
+    parser.add_argument(
+        "--warmup-days",
+        type=int,
+        default=1,
+        help="Number of days before start date to load for HTF warmup (default: 1). "
+        "Needed because structure detection requires ~11 1H bars to initialize.",
+    )
 
     # Output
     parser.add_argument(
@@ -254,6 +261,7 @@ def run_backtest(
     buffer_phase: str,
     tier_active: str,
     htf_approach: str,
+    warmup_days: int = 1,
     output_file: Path | None = None,
 ) -> tuple[BacktestResults, Path]:
     """Run backtest and return results.
@@ -265,11 +273,14 @@ def run_backtest(
         buffer_phase: Capital buffer phase
         tier_active: Active enforcer tier
         htf_approach: HTF computation approach
+        warmup_days: Number of days before start to load for HTF warmup
         output_file: Optional output file path
 
     Returns:
         Tuple of (BacktestResults, output_file_path)
     """
+    from datetime import timedelta
+
     logger.info("=" * 80)
     logger.info("Running Backtest")
     logger.info("=" * 80)
@@ -279,10 +290,14 @@ def run_backtest(
     logger.info(f"Tier active: {tier_active}")
     logger.info(f"HTF approach: {htf_approach}")
 
-    # Load multi-timeframe data
+    # Calculate warmup start date
+    warmup_start = start - timedelta(days=warmup_days)
+    logger.info(f"Warmup period: {warmup_days} day(s) (loading from {warmup_start})")
+
+    # Load multi-timeframe data (including warmup period)
     logger.info("\nLoading multi-timeframe data...")
     sync_layer = MultiTimeframeSyncLayer(str(data_dir))
-    multi_tf_data = sync_layer.load(start, end)
+    multi_tf_data = sync_layer.load(warmup_start, end)
 
     logger.info(
         f"Loaded {len(multi_tf_data)} synchronized bars "
@@ -329,6 +344,7 @@ def run_backtest(
         risk_config=risk_config,
         htf_approach=htf_approach,
         log_signals=False,
+        execution_start=start,  # Only record signals from actual start date
     )
 
     results = loop.run()
@@ -453,6 +469,7 @@ def main() -> None:
             buffer_phase=args.buffer_phase,
             tier_active=args.tier_active,
             htf_approach=args.htf_approach,
+            warmup_days=args.warmup_days,
             output_file=args.output_file
             or (
                 args.output_dir

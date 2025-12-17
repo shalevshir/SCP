@@ -2,13 +2,13 @@
 
 Verifies that validation.py properly rejects continuation setups based on:
 - DXY 5M chop (dxy_chop_5m)
-- Gold micro chop (chop_detected)
+- Gold micro chop (chop_severity)
 """
 
 import pytest
 from datetime import datetime, timezone
 
-from rule_engine.htf.types import HTFBias
+from rule_engine.htf.types import ChopSeverity, HTFBias
 from rule_engine.signal import Signal
 from rule_engine.validation import validate_signal
 
@@ -53,8 +53,9 @@ class TestDXYContinuationValidation:
     def test_gold_micro_chop_rejects_continuation(self):
         """Test that gold micro chop rejects DXY_CONTINUATION setups.
 
-        This test verifies the bug fix: chop_detected (gold micro chop)
+        This test verifies the bug fix: chop_severity (gold micro chop)
         should also reject continuation setups, not just dxy_chop_5m.
+        Note: validation layer uses chop_severity, not chop_detected.
         """
         signal = Signal(
             timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=timezone.utc),
@@ -78,6 +79,7 @@ class TestDXYContinuationValidation:
             confidence="high",
             dxy_chop_5m=False,  # DXY 5M OK
             chop_detected=True,  # Gold micro chop detected
+            chop_severity=ChopSeverity.SOFT_CHOP,  # Required for validation rejection
         )
 
         context = {"enforcer_tier": "EarlyMild"}

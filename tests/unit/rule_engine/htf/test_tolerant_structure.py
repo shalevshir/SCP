@@ -132,3 +132,5 @@ class TestTolerantChopDetection:
         result = detect_structure_chop(labels, lookback=3)
         # 2/3 bullish in last 3 = trend (not chop)
         assert result is False
+
+

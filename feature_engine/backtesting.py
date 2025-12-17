@@ -237,7 +237,8 @@ class BacktestProcessor:
                     "trend_confidence": features.get("trend_confidence"),
                     "structure_clarity": features.get("structure_clarity"),
                     "is_chop": features.get("is_chop"),
-                    "is_noise_zone": features.get("is_noise_zone"),
+                    "is_structural_chop": features.get("is_structural_chop"),
+                    "atr_compression_ratio": features.get("atr_compression_ratio"),
                     "structure_conflict_flag": features.get("structure_conflict_flag"),
                     "last_swing_high": features.get("last_swing_high"),
                     "last_swing_low": features.get("last_swing_low"),
@@ -253,6 +254,9 @@ class BacktestProcessor:
                     "sweep_direction": features.get("sweep_direction"),
                     "sweep_price": features.get("sweep_price"),
                     "sweep_age": features.get("sweep_age"),
+                    # Expansion detection (for VWAP_RECLAIM entry timing)
+                    "expansion_detected": features.get("expansion_detected"),
+                    "expansion_reasons": features.get("expansion_reasons"),
                 }
             )
 
@@ -367,7 +371,8 @@ class BacktestProcessor:
                     "trend_confidence": features.get("trend_confidence"),
                     "structure_clarity": features.get("structure_clarity"),
                     "is_chop": features.get("is_chop"),
-                    "is_noise_zone": features.get("is_noise_zone"),
+                    "is_structural_chop": features.get("is_structural_chop"),
+                    "atr_compression_ratio": features.get("atr_compression_ratio"),
                     "structure_conflict_flag": features.get("structure_conflict_flag"),
                     "last_swing_high": features.get("last_swing_high"),
                     "last_swing_low": features.get("last_swing_low"),
@@ -383,6 +388,9 @@ class BacktestProcessor:
                     "sweep_direction": features.get("sweep_direction"),
                     "sweep_price": features.get("sweep_price"),
                     "sweep_age": features.get("sweep_age"),
+                    # Expansion detection (for VWAP_RECLAIM entry timing)
+                    "expansion_detected": features.get("expansion_detected"),
+                    "expansion_reasons": features.get("expansion_reasons"),
                 }
             )
 
@@ -463,6 +471,7 @@ class BacktestProcessor:
         structure_context = compute_structure_context_batch(
             features[["high", "low", "close"]],
             swing_window=self.swing_window,
+            timeframe=self.timeframe,
         )
 
         # Merge structure context fields into features

@@ -16,6 +16,17 @@ from typing import Literal
 import pandas as pd
 
 
+# Asset-adjusted ATR configuration by timeframe (Gold/GC)
+# min_pct: Minimum ATR as % of price (floor - below this is normal low vol, not compression)
+# compression_threshold: ATR compression ratio threshold (current/baseline)
+ATR_CONFIG = {
+    "1m": {"min_pct": 0.0008, "compression_threshold": 0.4},  # 0.08% - 0.15% normal
+    "5m": {"min_pct": 0.0012, "compression_threshold": 0.35},  # 0.12% - 0.25% normal
+    "15m": {"min_pct": 0.0020, "compression_threshold": 0.30},  # 0.20% - 0.40% normal
+    "1h": {"min_pct": 0.0035, "compression_threshold": 0.25},  # 0.35%+ normal
+}
+
+
 @dataclass
 class StructureContext:
     """Derived structure state, updated every bar.
@@ -33,7 +44,9 @@ class StructureContext:
         trend_confidence: 0-1 confidence based on label consistency
         structure_clarity: 0-1 swing sequence purity score
         is_chop: True if rapid alternations detected
-        is_noise_zone: True if ATR indicates tight/noisy range
+        is_structural_chop: True if structural disorder detected (overlapping swings,
+            failed follow-through, wick dominance without displacement)
+        atr_compression_ratio: Ratio of current ATR to baseline ATR (supporting filter)
         structure_conflict_flag: True if mixed signals present
         bos_direction: Direction of last Break of Structure ("bullish"/"bearish")
         bos_recent: True if BOS occurred within threshold bars
@@ -64,7 +77,8 @@ class StructureContext:
     # Structure quality
     structure_clarity: float = 0.0
     is_chop: bool = False
-    is_noise_zone: bool = False  # ATR-based noise detection
+    is_structural_chop: bool = False  # Structure-based chop detection
+    atr_compression_ratio: float = 1.0  # ATR / baseline ATR (supporting filter)
     structure_conflict_flag: bool = False
 
     # BOS tracking (Structure Engine v2.0 Part 2)
@@ -93,12 +107,22 @@ class StructureContextTracker:
     Args:
         swing_window: Swing detection window size (default 5)
         clarity_window: Window for clarity score computation (default 10)
+        timeframe: Timeframe for asset-adjusted ATR thresholds (default "1m")
     """
 
-    def __init__(self, swing_window: int = 5, clarity_window: int = 10):
+    def __init__(self, swing_window: int = 5, clarity_window: int = 10, timeframe: str = "1m"):
         """Initialize tracker with configuration."""
         self.swing_window = swing_window
         self.clarity_window = clarity_window
+        self.timeframe = timeframe
+        
+        # Get ATR configuration for this timeframe
+        self.atr_config = ATR_CONFIG.get(timeframe, ATR_CONFIG["1m"])
+        
+        # Track current ATR and price baseline for floor checks
+        self.current_atr: float | None = None
+        self.price_baseline: float | None = None
+        self.atr_compression_ratio_cached: float = 1.0
 
         # Swing detection buffers (reuse StructureState logic)
         maxlen = swing_window * 2 + 1
@@ -111,6 +135,15 @@ class StructureContextTracker:
         self.high_buffer_atr: deque[float] = deque(maxlen=self.atr_window + 1)
         self.low_buffer_atr: deque[float] = deque(maxlen=self.atr_window + 1)
         self.close_buffer_atr: deque[float] = deque(maxlen=self.atr_window + 1)
+        
+        # ATR baseline buffer for contextual noise detection
+        # Maintains a longer window of ATR values to establish baseline volatility
+        self.atr_baseline_window = 50
+        self.atr_baseline_buffer: deque[float] = deque(maxlen=self.atr_baseline_window)
+
+        # Wick dominance tracking for structural chop detection
+        self.wick_dominance_window = 5
+        self.wick_ratio_buffer: deque[float] = deque(maxlen=self.wick_dominance_window)
 
         # Track previous swing values for label determination
         self.prev_swing_high: float | None = None
@@ -169,10 +202,29 @@ class StructureContextTracker:
         self.high_buffer.append(high)
         self.low_buffer.append(low)
 
-        # Add to ATR buffers for noise detection
+        # Add to ATR buffers for ATR compression calculation
         self.high_buffer_atr.append(high)
         self.low_buffer_atr.append(low)
         self.close_buffer_atr.append(close)
+
+        # Track wick dominance for structural chop detection
+        # Note: We need open price, but since we only have high/low/close,
+        # we'll use a simplified approach: check if total wick length > body length
+        # For a proper implementation, this would be done in the aggregator where we have OHLC
+        # For now, we'll approximate: if range is much larger than typical, it suggests wicks
+        if len(self.close_buffer_atr) >= 2:
+            # Simple wick ratio: compare current bar's range to typical body
+            prev_close = self.close_buffer_atr[-2]
+            curr_close = close
+            body_size = abs(curr_close - prev_close)
+            total_range = high - low
+            # Avoid division by zero
+            if body_size > 0:
+                wick_ratio = total_range / body_size
+            else:
+                # For doji or very small bodies, high wick ratio
+                wick_ratio = total_range / (high * 0.001) if high > 0 else 0
+            self.wick_ratio_buffer.append(wick_ratio)
 
         # Detect swing point at center of buffer
         new_label = None
@@ -208,7 +260,8 @@ class StructureContextTracker:
         trend_direction, trend_confidence = self._compute_trend()
         structure_clarity = self._compute_clarity()
         is_chop = self._detect_chop()
-        is_noise_zone = self._detect_noise_zone()
+        is_structural_chop = self._detect_structural_chop()
+        atr_compression_ratio = self._calculate_atr_compression_ratio()
         structure_conflict_flag = self._detect_conflict()
 
         # Reset CHoCH direction guard when sustained opposite trend establishes
@@ -285,7 +338,8 @@ class StructureContextTracker:
             trend_confidence=trend_confidence,
             structure_clarity=structure_clarity,
             is_chop=is_chop,
-            is_noise_zone=is_noise_zone,
+            is_structural_chop=is_structural_chop,
+            atr_compression_ratio=atr_compression_ratio,
             structure_conflict_flag=structure_conflict_flag,
             bos_direction=self.last_bos_direction,
             bos_recent=bos_recent,
@@ -301,6 +355,103 @@ class StructureContextTracker:
             sweep_price=self.last_sweep_price if sweep_detected else None,
             sweep_age=sweep_age,
         )
+
+    def detect_expansion(self, bos_recency_threshold: int = 10) -> tuple[bool, list[str]]:
+        """Detect if market is expanding out of compression.
+
+        This method checks for expansion signals that indicate price is resolving
+        out of a compressed/choppy state. Used for VWAP_RECLAIM entry timing.
+
+        Args:
+            bos_recency_threshold: Maximum BOS age to consider as expansion signal (default: 10 bars)
+
+        Returns:
+            Tuple of (expansion_detected, reasons)
+            - expansion_detected: True if any expansion signal is present
+            - reasons: List of expansion reason strings (may contain multiple)
+
+        Expansion signals (any one qualifies):
+            1. Recent BOS: BOS detected within bos_recency_threshold bars
+            2. Range expansion: Current bar range > 1.5x median range of last 10 bars
+            3. ATR expansion: atr_compression_ratio > 0.7 (rising from compressed state)
+            4. Displacement candle: Current bar body > 2x average body of last 10 bars
+
+        Example:
+            >>> tracker = StructureContextTracker()
+            >>> # ... update tracker with bars ...
+            >>> expansion, reasons = tracker.detect_expansion()
+            >>> if expansion:
+            ...     print(f"Expansion detected: {reasons}")
+        """
+        reasons: list[str] = []
+
+        # Signal 1: Recent BOS (within threshold)
+        bos_age = None if self.last_bos_idx is None else (self.bar_count - self.last_bos_idx)
+        if bos_age is not None and bos_age <= bos_recency_threshold:
+            reasons.append("recent_bos")
+
+        # Signal 2: Range expansion (current bar range vs median of last 10)
+        if len(self.high_buffer_atr) >= 11:  # Need current + 10 lookback
+            # Calculate current bar range
+            current_high = self.high_buffer_atr[-1]
+            current_low = self.low_buffer_atr[-1]
+            current_range = current_high - current_low
+
+            # Calculate median range of last 10 bars (excluding current)
+            recent_ranges = []
+            for i in range(len(self.high_buffer_atr) - 11, len(self.high_buffer_atr) - 1):
+                if i >= 0:
+                    recent_ranges.append(self.high_buffer_atr[i] - self.low_buffer_atr[i])
+
+            if recent_ranges:
+                median_range = sorted(recent_ranges)[len(recent_ranges) // 2]
+                # Check if current range > 1.5x median
+                if median_range > 0 and current_range > median_range * 1.5:
+                    reasons.append("range_expansion")
+
+        # Signal 3: ATR expansion (ratio > 0.7 indicates rising from compression)
+        # atr_compression_ratio_cached is maintained by _calculate_atr_compression_ratio()
+        # Values: <0.4 = severe compression, 0.4-0.7 = mild compression, >0.7 = expanding/normal
+        if self.atr_compression_ratio_cached > 0.7:
+            reasons.append("atr_expansion")
+
+        # Signal 4: Displacement candle (body > 2x average body)
+        # Since we don't have open price, we use close-to-close change as proxy
+        # Combined with range check to avoid false positives from constant closes
+        if len(self.close_buffer_atr) >= 11 and len(self.high_buffer_atr) >= 11:
+            # Calculate current bar body (close-to-close change)
+            current_close = self.close_buffer_atr[-1]
+            prev_close = self.close_buffer_atr[-2]
+            current_body = abs(current_close - prev_close)
+            
+            # Also check current bar's range for validation
+            current_range = self.high_buffer_atr[-1] - self.low_buffer_atr[-1]
+
+            # Calculate average body of last 10 bars (close-to-close changes)
+            recent_bodies = []
+            recent_ranges = []
+            for i in range(len(self.close_buffer_atr) - 11, len(self.close_buffer_atr) - 1):
+                if i >= 1:
+                    body = abs(self.close_buffer_atr[i] - self.close_buffer_atr[i - 1])
+                    recent_bodies.append(body)
+                if i >= 0 and i < len(self.high_buffer_atr):
+                    bar_range = self.high_buffer_atr[i] - self.low_buffer_atr[i]
+                    recent_ranges.append(bar_range)
+
+            if recent_bodies and recent_ranges:
+                avg_body = sum(recent_bodies) / len(recent_bodies)
+                avg_range = sum(recent_ranges) / len(recent_ranges)
+                
+                # Check if current body > 2x average OR current range > 2x average range
+                # This handles cases where closes don't change much but range expands
+                body_expansion = avg_body > 0 and current_body > avg_body * 2.0
+                range_displacement = avg_range > 0 and current_range > avg_range * 2.0
+                
+                if body_expansion or range_displacement:
+                    reasons.append("displacement_candle")
+
+        expansion_detected = len(reasons) > 0
+        return expansion_detected, reasons
 
     def _detect_swing_label(self) -> str | None:
         """Detect swing label at center of buffer.
@@ -465,44 +616,244 @@ class StructureContextTracker:
         return alternation_count >= 2
 
     def _detect_conflict(self) -> bool:
-        """Detect if there are conflicting structural signals.
+        """Detect if there are conflicting structural signals (refined logic).
+        
+        Conflict requires meaningful opposing structure, not just presence of both HH/LL.
+        A single pullback (e.g., one LL in bullish HH/HL sequence) is normal, not conflict.
+        
+        Conflict criteria (any of):
+        1. >= 2 HH AND >= 2 LL in recent history (range-bound whipsaw)
+        2. Alternating HH/LL pattern (rapid reversals)
+        
+        Trend protection: If strong trend exists (clarity >= 0.5 AND confidence >= 0.7),
+        do NOT flag conflict from single opposing labels.
 
         Returns:
-            True if conflict detected
+            True if meaningful conflict detected
         """
-        # Simple conflict: both HH and LL in recent history
+        # Need sufficient history
         if len(self.label_history) < 3:
             return False
 
         valid_labels = [label for label in self.label_history if label is not None]
         recent = valid_labels[-5:] if len(valid_labels) >= 5 else valid_labels
+        
+        if len(recent) < 3:
+            return False
 
-        has_hh = "HH" in recent
-        has_ll = "LL" in recent
+        # Count HH and LL occurrences
+        hh_count = recent.count("HH")
+        ll_count = recent.count("LL")
+        
+        # Criterion 1: Require >= 2 of each for conflict (not just presence)
+        has_meaningful_conflict = hh_count >= 2 and ll_count >= 2
+        
+        # Criterion 2: Check for alternating pattern (HH/LL whipsaw)
+        alternating = False
+        if len(recent) >= 4:
+            # Check for alternating HH/LL in last 4 labels
+            alternation_count = 0
+            for i in range(len(recent) - 1):
+                curr = recent[i]
+                next_label = recent[i + 1]
+                # HH -> LL or LL -> HH is an alternation
+                if (curr == "HH" and next_label == "LL") or (curr == "LL" and next_label == "HH"):
+                    alternation_count += 1
+            # If >= 2 alternations in recent history, it's whipsaw
+            alternating = alternation_count >= 2
+        
+        # Detect conflict
+        conflict_detected = has_meaningful_conflict or alternating
+        
+        if not conflict_detected:
+            return False
+        
+        # Trend protection: Override conflict if strong trend exists
+        # Compute current trend metrics
+        clarity = self._compute_clarity()
+        trend_direction, trend_confidence = self._compute_trend()
+        
+        # If strong trend, ignore minor conflicts (single opposing label allowed)
+        if clarity >= 0.5 and trend_confidence >= 0.7:
+            # Only flag conflict if it's severe:
+            # - >= 2 of EACH type (range-bound whipsaw), OR
+            # - Alternating pattern (rapid reversals override trend protection)
+            if (hh_count >= 2 and ll_count >= 2) or alternating:
+                return True  # Severe conflict overrides trend protection
+            else:
+                return False  # Trend protection prevents flag
+        
+        return conflict_detected
 
-        return has_hh and has_ll
+    def _has_poor_structure(self) -> bool:
+        """Check if structure clarity is below threshold.
+        
+        Returns:
+            True if structure clarity < 0.3 (poor structure)
+        """
+        clarity = self._compute_clarity()
+        CLARITY_THRESHOLD = 0.3  # Stricter threshold (was 0.4)
+        return clarity < CLARITY_THRESHOLD
 
-    def _detect_noise_zone(self) -> bool:
-        """Detect if current structure is in a noise zone (tight range, low volatility).
+    def _has_recent_bos(self) -> bool:
+        """Check if Break of Structure occurred recently.
+        
+        Returns:
+            True if BOS within last 15 bars
+        """
+        if self.last_bos_idx is None:
+            return False
+        
+        bos_age = self.bar_count - self.last_bos_idx
+        BOS_RECENCY_THRESHOLD = 15
+        return bos_age <= BOS_RECENCY_THRESHOLD
 
-        Uses ATR (Average True Range) to identify periods where price action is too
-        tight/choppy for reliable structure analysis. Noise zones typically indicate:
-        - Consolidation/ranging markets
-        - Low volatility periods
-        - Unreliable swing formations
+    def _is_atr_compressed(self) -> bool:
+        """Check if ATR is compressed with asset-adjusted floor check.
+        
+        Per SOP: ATR should ONLY confirm structural issues, never flag chop independently.
+        
+        Floor check: If ATR % is below minimum for this timeframe, it's normal low
+        volatility (not compression). This prevents over-flagging during regular
+        intraday conditions.
+        
+        Returns:
+            True if ATR compressed below threshold AND above minimum floor
+        """
+        # Need ATR data
+        if self.current_atr is None or self.price_baseline is None:
+            return False
+        
+        if self.price_baseline == 0:
+            return False
+        
+        # Calculate ATR as % of price
+        atr_pct = self.current_atr / self.price_baseline
+        
+        # Floor check: if ATR % is below minimum, it's normal low volatility, not compression
+        if atr_pct < self.atr_config["min_pct"]:
+            return False
+        
+        # Compression check: use cached ATR compression ratio from most recent update
+        # (don't recalculate as it would modify the baseline buffer)
+        return self.atr_compression_ratio_cached < self.atr_config["compression_threshold"]
+
+    def _detect_wick_dominance(self) -> bool:
+        """Check for persistent wick dominance without displacement.
+        
+        Returns:
+            True if persistent extreme wick dominance detected
+        """
+        if len(self.wick_ratio_buffer) < self.wick_dominance_window:
+            return False
+        
+        # Count bars with VERY high wick ratio (wick > 5x body equivalent)
+        # Higher threshold to avoid false positives from trending markets
+        high_wick_bars = sum(1 for ratio in self.wick_ratio_buffer if ratio > 5.0)
+        # If ALL recent bars show extreme wick dominance → wick dominance
+        return high_wick_bars >= 5  # All 5 bars must show extreme wicks
+
+    def _detect_structural_chop(self) -> bool:
+        """Detect structural chop with priority-ordered evaluation.
+
+        Per Shir Capital SOP:
+        - Noise means structural disorder, not low volatility
+        - ATR should ONLY confirm structural issues, never flag chop independently
+        
+        Priority Order:
+        0. OVERRIDE: Recent BOS without counter-CHoCH = clear trend continuation
+           (never flag chop if this condition met)
+        
+        1. PRIMARY (higher severity - immediate structural issues):
+           - Rapid alternations (is_chop)
+           - Structure conflict (mixed HH/LL)
+           - Poor structure (clarity < threshold) AND no recent BOS
+        
+        2. SECONDARY (confirmation only, requires primary issue):
+           - Wick dominance
+           - ATR compression
+        
+        Returns:
+            True if structural chop detected (requires at least one PRIMARY issue)
+        """
+        # OVERRIDE CHECK: Recent BOS in trend direction without counter-CHoCH
+        # This indicates clear trend continuation, never flag as chop
+        if self._has_recent_bos() and not self._has_counter_choch():
+            return False  # Clear trend continuation, not chop
+        
+        # PRIORITY 1: Primary structural issues
+        # Rapid alternations or structure conflict are immediate red flags
+        has_immediate_issue = (
+            self._detect_chop()  # rapid alternations
+            or self._detect_conflict()  # mixed HH/LL signals
+        )
+        
+        if has_immediate_issue:
+            return True
+        
+        # Secondary primary check: Poor structure AND no BOS (failed follow-through)
+        # Both must be present - poor structure alone in a mature trend is okay
+        # No BOS alone in clean structure is also okay (mature trend continuation)
+        # HOWEVER: If clarity is 0 (no swings detected), it's likely a smooth trend, not chop
+        has_poor_structure = self._has_poor_structure()
+        has_no_bos = not self._has_recent_bos()
+        clarity = self._compute_clarity()
+        
+        # Only flag if poor structure AND no BOS AND some swings exist (clarity > 0)
+        # If clarity is exactly 0, no swings detected → smooth trend, not chop
+        if has_poor_structure and has_no_bos and clarity > 0:
+            return True
+        
+        # PRIORITY 2: Secondary confirmation (optional - tracked for scoring)
+        # These are tracked for scoring penalties but don't change the structural chop decision
+        _ = self._detect_wick_dominance()  # Track for potential future use
+        _ = self._is_atr_compressed()  # Track for scoring penalty in scoring.py
+        
+        # No primary issues found
+        return False
+    
+    def _has_counter_choch(self) -> bool:
+        """Check if counter-CHoCH detected (CHoCH opposite to current BOS direction).
+        
+        Returns:
+            True if CHoCH detected in opposite direction to last BOS
+        """
+        if self.last_bos_direction is None or self.last_choch_direction is None:
+            return False
+        
+        # Counter-CHoCH means CHoCH in opposite direction to BOS
+        if self.last_bos_direction == "bullish" and self.last_choch_direction == "bearish":
+            return True
+        if self.last_bos_direction == "bearish" and self.last_choch_direction == "bullish":
+            return True
+        
+        return False
+
+    def _calculate_atr_compression_ratio(self) -> float:
+        """Calculate ATR compression ratio as a supporting filter.
+
+        ATR is a modifier, not a primary gate. This ratio helps:
+        - Increase chop severity score when combined with structural chop
+        - Apply additional score penalty (not rejection)
+        - Tighten SL/TP rules when compression is severe
 
         Logic:
-        - Calculate 14-period ATR (requires 15 bars: 1 initial + 14 TR values)
-        - Calculate average price (midpoint of high/low over ATR window)
-        - If ATR < 0.3% of average price → noise zone
+        - Calculate 14-period ATR
+        - Compare to 50-bar baseline ATR (median)
+        - Return ratio: current_atr / baseline_atr
+        - Store current_atr and price_baseline for floor checks
 
         Returns:
-            True if in noise zone (unreliable structure)
+            ATR compression ratio (0-2+, typically 0.5-1.5)
+            1.0 = normal volatility
+            <0.4 = severe compression
+            >1.5 = volatility expansion
         """
         # Need at least atr_window+1 bars for proper N-period ATR calculation
-        # (1 bar for initial close, then N bars to compute N True Range values)
         if len(self.high_buffer_atr) < self.atr_window + 1:
-            return False
+            self.current_atr = None
+            self.price_baseline = None
+            return 1.0  # Default to normal
 
         # Calculate True Range for each bar in buffer
         true_ranges = []
@@ -515,28 +866,34 @@ class StructureContextTracker:
             tr = max(high - low, abs(high - prev_close), abs(low - prev_close))
             true_ranges.append(tr)
 
-        # Calculate ATR (simple moving average of True Ranges)
+        # Calculate current ATR (simple moving average of True Ranges)
         if not true_ranges:
-            return False
+            self.current_atr = None
+            self.price_baseline = None
+            return 1.0
 
-        atr = sum(true_ranges) / len(true_ranges)
+        self.current_atr = sum(true_ranges) / len(true_ranges)
+        
+        # Store price baseline (current close) for ATR % calculation
+        self.price_baseline = self.close_buffer_atr[-1] if len(self.close_buffer_atr) > 0 else None
 
-        # Calculate average price (midpoint) over the window
-        avg_high = sum(self.high_buffer_atr) / len(self.high_buffer_atr)
-        avg_low = sum(self.low_buffer_atr) / len(self.low_buffer_atr)
-        avg_price = (avg_high + avg_low) / 2
+        # Add current ATR to baseline buffer for future comparisons
+        self.atr_baseline_buffer.append(self.current_atr)
 
-        # Noise threshold: ATR < 0.3% of average price
-        # (adjust threshold based on asset characteristics)
-        NOISE_THRESHOLD_PCT = 0.003  # 0.3%
+        # Need sufficient baseline history for contextual comparison
+        if len(self.atr_baseline_buffer) < 20:
+            return 1.0  # Not enough data for baseline
 
-        if avg_price == 0:
-            return False
+        # Calculate baseline ATR (median is more robust to outliers than mean)
+        baseline_atr = sorted(self.atr_baseline_buffer)[len(self.atr_baseline_buffer) // 2]
 
-        atr_pct = atr / avg_price
+        if baseline_atr == 0:
+            self.atr_compression_ratio_cached = 1.0
+            return 1.0  # Avoid division by zero
 
-        # Noise zone if ATR is below threshold (tight range)
-        return atr_pct < NOISE_THRESHOLD_PCT
+        # Calculate and cache ATR compression ratio
+        self.atr_compression_ratio_cached = self.current_atr / baseline_atr
+        return self.atr_compression_ratio_cached
 
     def _detect_choch_event(
         self,
@@ -960,6 +1317,7 @@ def compute_structure_context_batch(
     df: pd.DataFrame,
     swing_window: int = 5,
     clarity_window: int = 10,
+    timeframe: str = "1m",
 ) -> pd.DataFrame:
     """Compute StructureContext fields for entire DataFrame (batch mode).
 
@@ -970,6 +1328,7 @@ def compute_structure_context_batch(
         df: DataFrame with OHLC data (must have 'high', 'low', 'close' columns)
         swing_window: Swing detection window (default 5)
         clarity_window: Clarity computation window (default 10)
+        timeframe: Timeframe for asset-adjusted ATR thresholds (default "1m")
 
     Returns:
         DataFrame with original index and derived structure columns:
@@ -978,7 +1337,8 @@ def compute_structure_context_batch(
         - trend_confidence: 0-1 confidence score
         - structure_clarity: 0-1 purity score
         - is_chop: Boolean chop flag
-        - is_noise_zone: Boolean noise zone flag (ATR-based)
+        - is_structural_chop: Boolean structural chop flag (structure-based)
+        - atr_compression_ratio: ATR compression ratio (supporting filter)
         - structure_conflict_flag: Boolean conflict flag
         - last_swing_high: Last swing high price (forward-filled)
         - last_swing_low: Last swing low price (forward-filled)
@@ -1019,10 +1379,12 @@ def compute_structure_context_batch(
     tracker = StructureContextTracker(
         swing_window=swing_window,
         clarity_window=clarity_window,
+        timeframe=timeframe,
     )
 
     # Process each row and collect contexts
     contexts = []
+    expansion_data = []  # Track expansion detection separately
     for i in range(len(df)):
         ctx = tracker.update(
             high=df["high"].iloc[i],
@@ -1030,6 +1392,10 @@ def compute_structure_context_batch(
             close=df["close"].iloc[i],
         )
         contexts.append(ctx)
+        
+        # Detect expansion for this bar (for VWAP_RECLAIM entry timing)
+        expansion_detected, expansion_reasons = tracker.detect_expansion()
+        expansion_data.append((expansion_detected, expansion_reasons))
 
     # Convert to DataFrame
     result = pd.DataFrame(
@@ -1040,7 +1406,8 @@ def compute_structure_context_batch(
                 "trend_confidence": ctx.trend_confidence,
                 "structure_clarity": ctx.structure_clarity,
                 "is_chop": ctx.is_chop,
-                "is_noise_zone": ctx.is_noise_zone,
+                "is_structural_chop": ctx.is_structural_chop,
+                "atr_compression_ratio": ctx.atr_compression_ratio,
                 "structure_conflict_flag": ctx.structure_conflict_flag,
                 "last_swing_high": ctx.last_swing_high,
                 "last_swing_low": ctx.last_swing_low,
@@ -1055,8 +1422,11 @@ def compute_structure_context_batch(
                 "sweep_direction": ctx.sweep_direction,
                 "sweep_price": ctx.sweep_price,
                 "sweep_age": ctx.sweep_age,
+                # Expansion detection (for VWAP_RECLAIM entry timing)
+                "expansion_detected": expansion_data[i][0],
+                "expansion_reasons": expansion_data[i][1],
             }
-            for ctx in contexts
+            for i, ctx in enumerate(contexts)
         ],
         index=df.index,
     )

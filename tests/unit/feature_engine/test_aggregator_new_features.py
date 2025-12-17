@@ -322,3 +322,5 @@ class TestFeatureIntegration:
         assert result["lower_wick_pct"].dtype == "float64"
         assert result["close_vwap_diff"].dtype == "float64"
         assert result["close_vwap_pct"].dtype == "float64"
+
+

@@ -85,3 +85,5 @@ def test_weight_values_are_positive():
             assert isinstance(
                 weight_value, int | float
             ), f"Setup '{setup_name}' factor '{factor_name}' weight must be numeric: {weight_value}"
+
+

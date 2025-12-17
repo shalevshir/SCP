@@ -19,6 +19,7 @@ from validation.schema import (
 )
 
 if TYPE_CHECKING:
+    from rule_engine.htf.types import HTFBias as HTFBiasDataclass
     from validation.guardrails import GuardrailResult
     from validation.session_validator import SessionResult
 
@@ -47,6 +48,7 @@ class ValidationContextBuilder:
         market_state: dict,
         session_result: SessionResult,
         guardrail_result: GuardrailResult | None = None,
+        htf_bias: HTFBiasDataclass | None = None,
     ) -> ValidationContext:
         """Build ValidationContext from all inputs.
 
@@ -59,6 +61,8 @@ class ValidationContextBuilder:
                 - fatigue_flag: Optional manual fatigue flag override
             session_result: Result from SessionValidator evaluation
             guardrail_result: Optional result from BehaviorGuardrails
+            htf_bias: Optional HTFBias dataclass from the HTF calculator.
+                If provided, uses this instead of computing a separate bias.
 
         Returns:
             ValidationContext ready for ValidationEngine
@@ -81,8 +85,12 @@ class ValidationContextBuilder:
             ... }
             >>> context = builder.build_context(features, market_state, session_result)
         """
-        # Extract HTF bias from structure and EMAs
-        htf_bias = self._compute_htf_bias(features)
+        # Use provided HTF bias if available, otherwise compute from features
+        if htf_bias is not None:
+            htf_bias_enum = self._convert_htf_bias_to_enum(htf_bias)
+        else:
+            htf_bias_enum = self._compute_htf_bias(features)
+
 
         # Determine DXY trending status
         dxy_trending_clean = self._is_dxy_trending_clean(features)
@@ -122,7 +130,7 @@ class ValidationContextBuilder:
         return ValidationContext(
             session_ok=session_result.session_ok,
             tier_active=tier_active,
-            htf_bias=htf_bias,
+            htf_bias=htf_bias_enum,
             dxy_trending_clean=dxy_trending_clean,
             fatigue_flag=fatigue_flag,
             risk_allowed=risk_allowed,
@@ -131,11 +139,32 @@ class ValidationContextBuilder:
             buffer_phase=buffer_phase,
         )
 
+    def _convert_htf_bias_to_enum(self, htf_bias: HTFBiasDataclass) -> HTFBias:
+        """Convert HTF calculator's bias dataclass to validation enum.
+
+        Args:
+            htf_bias: HTFBias dataclass from rule_engine/htf/types.py
+
+        Returns:
+            HTFBias enum for validation schema
+        """
+        direction = htf_bias.direction.lower() if htf_bias.direction else "neutral"
+
+        if direction == "long":
+            return HTFBias.BULLISH
+        elif direction == "short":
+            return HTFBias.BEARISH
+        else:
+            return HTFBias.NEUTRAL
+
     def _compute_htf_bias(self, features: pd.Series) -> HTFBias:
         """Compute HTF bias from structure features, EMAs, and DXY.
 
         Uses 1H + 15M structure, EMA trend, and DXY alignment to determine
         higher timeframe directional bias.
+
+        NOTE: This is a fallback method. Prefer passing htf_bias from the
+        HTF calculator to build_context() for consistent bias values.
 
         Args:
             features: Feature series with structure and EMA data

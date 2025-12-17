@@ -4,8 +4,9 @@ This module defines the core Signal dataclass that represents a structured,
 auditable trade signal adhering to Shir Capital's SOP requirements.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -36,6 +37,8 @@ class Signal:
                          (e.g., {"session_ok": True, "tier_ok": True})
         enforcer_tier: Active enforcer tier ("Conservative", "Early Mild",
                       "Mild", "Offensive")
+        diagnostics: Optional dict with structure/setup diagnostics for debugging.
+                    Contains raw values like structure_label, rsi, bos_age, etc.
 
     Example:
         >>> from datetime import datetime, timezone
@@ -67,3 +70,5 @@ class Signal:
     rationale: str
     validation_flags: dict[str, bool]
     enforcer_tier: str
+    # Optional diagnostics for debugging - contains structure params, RSI, BOS age, etc.
+    diagnostics: dict[str, Any] = field(default_factory=dict)
