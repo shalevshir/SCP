@@ -49,11 +49,18 @@ class TestContextValidation:
         assert result.structure_clarity >= 0.4
 
     def test_invalid_context_no_sweep(self):
-        """Test that context fails without liquidity sweep."""
+        """Test that context fails without liquidity sweep - returns quality flag not safety rejection.
+
+        Note: validate_reclaim_context now only hard-rejects on SAFETY gates
+        (BOS/CHoCH direction mismatch, structure conflict). Missing sweep is tracked
+        as a quality flag for penalty calculation, not a hard rejection.
+        """
         features = pd.Series({
             "structure_clarity": 0.6,
             "liquidity_sweep": False,
             "bos_recent": True,
+            "bos_direction": "bullish",  # Required for long direction
+            "choch_detected": False,
         })
 
         htf_bias = HTFBias(
@@ -67,15 +74,23 @@ class TestContextValidation:
 
         result = validate_reclaim_context(htf_bias, features)
 
-        assert result.context_valid is False
-        assert "sweep" in result.reason.lower()
+        # Context is VALID (safety gates passed), but quality_flags indicate issues
+        assert result.context_valid is True
+        assert result.quality_flags.get("no_sweep") is True
 
     def test_invalid_context_low_clarity(self):
-        """Test that context fails with low structure clarity."""
+        """Test that context tracks low clarity as quality flag, not hard rejection.
+
+        Note: validate_reclaim_context now only hard-rejects on SAFETY gates
+        (BOS/CHoCH direction mismatch, structure conflict). Low clarity is tracked
+        as a quality flag for penalty calculation, not a hard rejection.
+        """
         features = pd.Series({
             "structure_clarity": 0.3,
             "liquidity_sweep": True,
             "bos_recent": True,
+            "bos_direction": "bullish",  # Required for long direction
+            "choch_detected": False,
         })
 
         htf_bias = HTFBias(
@@ -89,8 +104,9 @@ class TestContextValidation:
 
         result = validate_reclaim_context(htf_bias, features)
 
-        assert result.context_valid is False
-        assert "clarity" in result.reason.lower()
+        # Context is VALID (safety gates passed), but quality_flags indicate issues
+        assert result.context_valid is True
+        assert result.quality_flags.get("low_clarity") is True
 
 
 class TestEntryReadiness:

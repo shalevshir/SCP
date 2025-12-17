@@ -809,7 +809,11 @@ class TestCalculateLiquiditySweep:
         assert score == -max_points / 2
 
     def test_calculate_liquidity_sweep_none(self) -> None:
-        """Test no sweep detected returns 0."""
+        """Test no sweep detected returns small base points for clear direction.
+
+        Implementation now gives small base credit (10% of max) when direction is
+        clear but no sweep detected, to soften the penalty for missing sweep data.
+        """
         from rule_engine.scoring import calculate_liquidity_sweep
 
         features = pd.Series(
@@ -831,10 +835,18 @@ class TestCalculateLiquiditySweep:
         max_points = 0.5
         score = calculate_liquidity_sweep(features, htf_bias, max_points)
 
-        assert score == 0.0
+        # Small base credit for clear direction when no sweep detected
+        assert score == max_points * 0.1  # 0.05
 
     def test_calculate_liquidity_sweep_neutral_direction(self) -> None:
-        """Test sweep with neutral direction returns 0 (ambiguous, not penalty)."""
+        """Test sweep with neutral direction returns partial points (sweep detected but unclear).
+
+        When sweep is detected but direction is unclear, implementation gives
+        25% of max points (sweep detected but direction unclear).
+
+        Note: determine_direction uses HTF bias as tie-breaker. To get neutral,
+        both local signals AND HTF bias must be neutral.
+        """
         from rule_engine.scoring import calculate_liquidity_sweep
 
         # Features that produce neutral direction (equal bullish/bearish signals)
@@ -848,10 +860,10 @@ class TestCalculateLiquiditySweep:
         )
 
         htf_bias = HTFBias(
-            bias="bullish",
-            direction="long",
-            score=8.5,
-            confidence="high",
+            bias="neutral",  # Must be neutral for true neutral direction
+            direction="neutral",  # Must be neutral for true neutral direction
+            score=5.0,
+            confidence="low",
             liquidity_sweep_detected=True,
             liquidity_sweep_type="bullish",
             dxy_alignment=True,
@@ -860,11 +872,15 @@ class TestCalculateLiquiditySweep:
         max_points = 0.5
         score = calculate_liquidity_sweep(features, htf_bias, max_points)
 
-        # Neutral direction means we can't determine alignment, should return 0.0
-        assert score == 0.0
+        # Sweep detected but direction unclear = 25% of max points
+        assert score == max_points * 0.25  # 0.125
 
     def test_calculate_liquidity_sweep_none_type(self) -> None:
-        """Test sweep detected but type is None returns 0 (ambiguous, not penalty)."""
+        """Test sweep detected but type is None returns partial points (sweep detected but unclear).
+
+        When sweep is detected but type is None, implementation gives
+        25% of max points (sweep detected but direction unclear).
+        """
         from rule_engine.scoring import calculate_liquidity_sweep
 
         features = pd.Series(
@@ -889,8 +905,8 @@ class TestCalculateLiquiditySweep:
         max_points = 0.5
         score = calculate_liquidity_sweep(features, htf_bias, max_points)
 
-        # None type means we can't determine alignment, should return 0.0
-        assert score == 0.0
+        # Sweep detected but type None = 25% of max points
+        assert score == max_points * 0.25  # 0.125
 
 
 class TestEnhancedStructureAlignment:
@@ -933,7 +949,16 @@ class TestEnhancedStructureAlignment:
         assert abs(score - expected) < 0.01
 
     def test_enhanced_structure_with_choch(self) -> None:
-        """Test CHoCH detection does NOT add bonus to structure score (indicates reversal)."""
+        """Test CHoCH detection does NOT add bonus to structure score (indicates reversal).
+
+        VWAP_RECLAIM uses tolerant scoring:
+        - Base: 40%
+        - +20% for liquidity sweep
+        - +20% for high clarity (>= 0.7)
+        - 0% for BOS (age 35 > 15)
+
+        CHoCH is not rewarded in structure_alignment; it's penalized in adjust_score_with_htf.
+        """
         from rule_engine.scoring import calculate_structure_alignment
 
         features = pd.Series(
@@ -953,10 +978,10 @@ class TestEnhancedStructureAlignment:
             bos_detected=False,
             choch_detected=True,
             dxy_alignment=True,
-            structure_clarity=0.9,  # High clarity (40% of max)
-            bars_since_bos=35,  # Stale BOS (no credit)
-            chop_detected=False,  # No chop (30% of max)
-            liquidity_sweep_detected=True,  # Required for scoring
+            structure_clarity=0.9,  # High clarity (+20%)
+            bars_since_bos=35,  # Stale BOS (no BOS bonus)
+            chop_detected=False,  # No chop
+            liquidity_sweep_detected=True,  # +20%
         )
 
         max_points = 2.5
@@ -964,9 +989,8 @@ class TestEnhancedStructureAlignment:
             features, htf_bias, max_points, "VWAP_RECLAIM"
         )
 
-        # VWAP_RECLAIM with stale BOS (35 bars) gets reduced score (30% of max)
-        # Note: VWAP_RECLAIM has tolerant scoring, so even with stale BOS it gets something
-        expected = max_points * 0.3  # Reduced for stale BOS
+        # VWAP_RECLAIM tolerant scoring: base (40%) + sweep (20%) + clarity (20%) = 80%
+        expected = max_points * 0.8  # 2.0
         assert abs(score - expected) < 0.01
 
     def test_enhanced_structure_with_both(self) -> None:
