@@ -78,7 +78,7 @@ from validation.guardrails import BehaviorGuardrails
 
 from backtester.entry_model import EntryExecution, execute_entry_at_next_open
 from backtester.invalidations import InvalidationChecker
-from backtester.simulator import simulate_trade_outcome
+from backtester.simulator import is_valid_candle, simulate_trade_outcome
 from backtester.trade import Trade, create_trade_from_entry
 
 logger = get_logger(__name__)
@@ -861,7 +861,16 @@ class BacktestReplayLoop:
             if current_candle.timestamp <= trade.entry_timestamp:
                 continue
 
-            # Increment bar counter for this trade
+            # FIX: Validate candle before incrementing bar counter
+            # Invalid candles (NaN/Inf) should not count toward grace periods or timeouts
+            if not is_valid_candle(current_candle):
+                logger.debug(
+                    f"Skipping invalid candle at {current_candle.timestamp} "
+                    f"for trade {trade_id} (bar counter not incremented)"
+                )
+                continue
+
+            # Increment bar counter for this trade (only for valid candles)
             if trade_id not in self._trade_bar_counts:
                 self._trade_bar_counts[trade_id] = 0
             self._trade_bar_counts[trade_id] += 1
