@@ -98,10 +98,15 @@ class BacktestResults:
         winning_trades: Number of winning trades
         losing_trades: Number of losing trades
         average_r: Average R-multiple per trade
+        chop_diagnostics: Dict containing chop-related statistics
         max_consecutive_losses: Maximum consecutive losses encountered
         pdll_hits: Number of times PDLL was hit
         session_resets: Number of session resets performed
         structure_stats: Structure label distribution for diagnostics
+        setup_candidates: Total bars classified as setup type (not REJECTED)
+        rejected_at_scoring: Signals rejected due to score below minimum
+        rejected_at_execution: A+ signals rejected at execution (expansion gate)
+        executed_trades: Number of trades actually executed
     """
 
     trades: list[Trade] = field(default_factory=list)
@@ -117,6 +122,11 @@ class BacktestResults:
     pdll_hits: int = 0
     session_resets: int = 0
     structure_stats: dict[str, int] = field(default_factory=dict)
+    chop_diagnostics: dict = field(default_factory=dict)
+    setup_candidates: int = 0
+    rejected_at_scoring: int = 0
+    rejected_at_execution: int = 0
+    executed_trades: int = 0
 
 
 class BacktestReplayLoop:
@@ -158,6 +168,7 @@ class BacktestReplayLoop:
         config: dict | None = None,
         log_signals: bool = False,
         log_dir: str | None = None,
+        execution_start: datetime | None = None,
     ) -> None:
         """Initialize backtest replay loop.
 
@@ -173,6 +184,9 @@ class BacktestReplayLoop:
             risk_config: Risk configuration dict containing:
                 - risk_per_trade: Dollar risk per trade
                 - buffer_phase: Current capital phase
+            execution_start: Optional start datetime for signal execution.
+                            Candles before this time are used for warmup only
+                            (HTF features are computed but signals are not recorded).
                 - max_contracts: Maximum contracts allowed
             htf_approach: "streaming" (incremental) or "vectorized" (pre-computed)
                          for HTF feature computation (default: "streaming")
@@ -202,6 +216,7 @@ class BacktestReplayLoop:
         )
         self.log_signals = log_signals
         self.log_dir = log_dir
+        self.execution_start = execution_start
 
         # Extract execution DataFrames from multi-timeframe data
         self.gc_df, self.dxy_df = extract_execution_dataframes(multi_tf_data)
@@ -219,6 +234,7 @@ class BacktestReplayLoop:
 
         # State tracking
         self._active_trades: dict[str, Trade] = {}
+        self._trade_bar_counts: dict[str, int] = {}  # External bar tracking (trade_id -> bars_elapsed)
         self._daily_pnl: float = 0.0
         self._session_date: datetime | None = None
         self._trades_today: int = 0
@@ -238,6 +254,12 @@ class BacktestReplayLoop:
         # Results tracking
         self._all_trades: list[Trade] = []
         self._all_executions: list[EntryExecution] = []
+
+        # Signal flow diagnostic counters
+        self._setup_candidates: int = 0  # Total bars with setup_type != "REJECTED"
+        self._rejected_at_scoring: int = 0  # Score below minimum
+        self._rejected_at_execution: int = 0  # A+ but expansion gate failed
+        self._executed_trades: int = 0  # Actually executed
 
         logger.info(
             f"BacktestReplayLoop initialized: timeframe={timeframe}, "
@@ -280,6 +302,28 @@ class BacktestReplayLoop:
             candle_count += 1
             current_timestamp = features["timestamp"]
 
+            # Skip candles before execution_start (warmup period)
+            # These candles are still processed to update HTF features
+            # but signals are not recorded
+            if self.execution_start is not None:
+                # Convert timestamp for comparison
+                if hasattr(current_timestamp, "to_pydatetime"):
+                    ts_dt = current_timestamp.to_pydatetime()
+                else:
+                    ts_dt = current_timestamp
+                
+                # Make both timezone-aware or naive for comparison
+                exec_start = self.execution_start
+                if ts_dt.tzinfo is None and exec_start.tzinfo is not None:
+                    exec_start = exec_start.replace(tzinfo=None)
+                elif ts_dt.tzinfo is not None and exec_start.tzinfo is None:
+                    from datetime import timezone
+                    exec_start = exec_start.replace(tzinfo=timezone.utc)
+                
+                if ts_dt < exec_start:
+                    # Skip signal recording but continue processing for HTF warmup
+                    continue
+
             # Process this candle
             execution = self._process_candle(
                 features, validation_context, next_candle, current_timestamp
@@ -313,6 +357,17 @@ class BacktestReplayLoop:
         logger.info(f"Max consecutive losses: {results.max_consecutive_losses}")
         logger.info(f"PDLL hits: {results.pdll_hits}")
         logger.info(f"Session resets: {results.session_resets}")
+        logger.info("=" * 80)
+        logger.info("Signal Flow Diagnostics")
+        logger.info("=" * 80)
+        logger.info(f"Setup candidates detected: {results.setup_candidates}")
+        logger.info(f"Rejected at scoring (score too low): {results.rejected_at_scoring}")
+        logger.info(f"Rejected at execution (expansion gate): {results.rejected_at_execution}")
+        logger.info(f"Executed trades: {results.executed_trades}")
+        if results.setup_candidates > 0:
+            execution_rate = (results.executed_trades / results.setup_candidates) * 100
+            logger.info(f"Execution rate: {execution_rate:.1f}% (executed / candidates)")
+        logger.info("=" * 80)
 
         return results
 
@@ -392,11 +447,12 @@ class BacktestReplayLoop:
             structure_label = "NA"
         self._structure_stats[str(structure_label)] += 1
 
-        # Step 4: Check if we can take new entries (max one active trade)
-        if len(self._active_trades) > 0:
+        # Step 4: Check if we can take new entries (max concurrent trades limit)
+        max_concurrent = self.config.get("backtest", {}).get("max_concurrent_trades", 1)
+        if len(self._active_trades) >= max_concurrent:
             logger.debug(
-                f"Active trade exists at {current_timestamp}, "
-                "skipping signal generation"
+                f"Max concurrent trades limit reached ({len(self._active_trades)}/{max_concurrent}) "
+                f"at {current_timestamp}, skipping signal generation"
             )
             return None
 
@@ -432,8 +488,41 @@ class BacktestReplayLoop:
             )
             return None
 
+        # Track setup candidates (setup_type != "REJECTED")
+        if signal.setup_type != "REJECTED":
+            self._setup_candidates += 1
+            logger.debug(
+                f"Setup candidate detected: {signal.setup_type} "
+                f"(score={signal.score}, confidence={signal.confidence})"
+            )
+        
+        # Track rejection at scoring (score too low, confidence not A+)
+        if signal.setup_type != "REJECTED" and signal.confidence != "A+":
+            self._rejected_at_scoring += 1
+            logger.debug(
+                f"Rejected at scoring: {signal.setup_type} "
+                f"(score={signal.score}, confidence={signal.confidence})"
+            )
+
         # Step 7: Execute entry at next bar open
         execution = execute_entry_at_next_open(signal, next_candle)
+        
+        # Track rejection at execution (A+ but expansion gate failed)
+        if not execution.executed and signal.confidence == "A+":
+            if "expansion" in execution.rejection_reason.lower():
+                self._rejected_at_execution += 1
+                logger.debug(
+                    f"Rejected at execution: {signal.setup_type} "
+                    f"(reason={execution.rejection_reason})"
+                )
+        
+        # Track executed trades
+        if execution.executed:
+            self._executed_trades += 1
+            logger.debug(
+                f"Trade executed: {signal.setup_type} "
+                f"(score={signal.score}, entry_price={execution.entry_price})"
+            )
 
         # Step 8: If entry executed, create trade and add to active trades
         if execution.executed and next_candle is not None:
@@ -562,8 +651,9 @@ class BacktestReplayLoop:
                         execution.signal.factors,
                     )
 
-                # Add to active trades
+                # Add to active trades and initialize bar counter
                 self._active_trades[trade.trade_id] = trade
+                self._trade_bar_counts[trade.trade_id] = 0  # Initialize counter at 0
                 self._trades_today += 1
 
                 logger.info(
@@ -610,7 +700,8 @@ class BacktestReplayLoop:
         This method enforces all SOP guardrails:
         - PDLL enforcement: stop trading when daily loss limit hit
         - Loss streak halt: block after 2 consecutive losses
-        - Maximum trades per day: enforce 1 active trade at a time + daily limits
+        - Maximum concurrent trades: enforce configurable limit (default: 1)
+        - Maximum trades per day: enforce daily trade limits
         - Session resets: reset state at day boundaries, enforce 10:00–13:00 ILT
         - Seasonality rules: Sept conservative, Nov–Dec trend allowed
         - CEO Directives: (Early Mild) tier overrides when active
@@ -727,13 +818,16 @@ class BacktestReplayLoop:
     def _update_active_trades(
         self, current_candle: Candle, features: pd.Series
     ) -> None:
-        """Update active trades and check for exits.
+        """Update active trades and check for exits (single-bar approach).
 
-        This method processes all active trades against the current candle:
-        1. Check if any active trade should exit on this candle
-        2. For each active trade, extract future candles for simulation
-        3. Use simulate_trade_outcome() to determine exit
-        4. If trade closes, remove from active trades and update state
+        This method checks each active trade against the current candle only,
+        matching live trading behavior where you only know the current bar.
+
+        For each active trade:
+        1. Increment bar counter
+        2. Check current candle for exit conditions (SL, TP, invalidation, timeout)
+        3. If exit hit, close trade and update state
+        4. If no exit, continue to next bar
 
         Args:
             current_candle: Current candle to check against active trades
@@ -741,6 +835,9 @@ class BacktestReplayLoop:
         """
         if not self._active_trades:
             return
+
+        # Import single-bar checker
+        from backtester.simulator import check_trade_exit_single_bar
 
         # Process each active trade
         # (make copy of dict keys since we may modify during iteration)
@@ -751,140 +848,54 @@ class BacktestReplayLoop:
             if current_candle.timestamp <= trade.entry_timestamp:
                 continue
 
-            # Determine max bars for this trade based on setup type
-            if trade.setup_type == "VWAP_FADE":
-                max_bars = 10
-            else:
-                max_bars = 20
+            # Increment bar counter for this trade
+            if trade_id not in self._trade_bar_counts:
+                self._trade_bar_counts[trade_id] = 0
+            self._trade_bar_counts[trade_id] += 1
+            bars_elapsed = self._trade_bar_counts[trade_id]
 
-            # Extract future candles from current candle onward
-            try:
-                current_idx = self.gc_df.index.get_loc(current_candle.timestamp)
-                future_start_idx = current_idx
-                future_end_idx = min(current_idx + max_bars, len(self.gc_df))
-                future_candles = self.gc_df.iloc[future_start_idx:future_end_idx]
+            # Get features for current candle (for invalidation checks)
+            candle_features = features.to_dict() if features is not None else None
 
-                if future_candles.empty:
-                    logger.debug(
-                        f"No future candles for trade {trade_id} at "
-                        f"{current_candle.timestamp}"
-                    )
-                    continue
+            # Check single bar for exit
+            updated_trade = check_trade_exit_single_bar(
+                trade=trade,
+                candle=current_candle,
+                bars_elapsed=bars_elapsed,
+                invalidation_checker=self._invalidation_checker,
+                config=self.config,
+                candle_features=candle_features,
+            )
 
-                # Compute features for future candles (required for invalidation checks)
-                future_features = None
-                try:
-                    entry_idx = self.gc_df.index.get_loc(trade.entry_timestamp)
-                    end_idx = min(entry_idx + 1 + len(future_candles), len(self.gc_df))
-                    gc_slice = self.gc_df.iloc[:end_idx]
-                    dxy_slice = (
-                        self.dxy_df.iloc[:end_idx]
-                        if len(self.dxy_df) >= end_idx
-                        else self.dxy_df
-                    )
-
-                    # Compute features for the entire slice
-                    features_df = self._processor._compute_features(gc_slice, dxy_slice)
-
-                    # Extract only features for future candles (after entry)
-                    if len(features_df) > entry_idx + 1:
-                        future_features_df = features_df.iloc[entry_idx + 1 :].copy()
-
-                        # Set timestamp index if not already set
-                        if "ts_event" in future_features_df.columns:
-                            future_features_df = future_features_df.set_index(
-                                "ts_event"
-                            )
-                        elif not isinstance(future_features_df.index, pd.DatetimeIndex):
-                            if len(gc_slice) > entry_idx + 1:
-                                future_timestamps = gc_slice.index[entry_idx + 1 :]
-
-                                # Verify we have enough timestamps for features
-                                if len(future_timestamps) >= len(future_features_df):
-                                    # Enough timestamps available
-                                    future_features_df.index = future_timestamps[
-                                        : len(future_features_df)
-                                    ]
-                                elif len(future_timestamps) > 0:
-                                    # Not enough timestamps - truncate features to match
-                                    logger.debug(
-                                        f"Truncating future_features_df from {len(future_features_df)} "
-                                        f"to {len(future_timestamps)} rows to match available timestamps"
-                                    )
-                                    future_features_df = future_features_df.iloc[
-                                        : len(future_timestamps)
-                                    ]
-                                    future_features_df.index = future_timestamps
-                                else:
-                                    # No timestamps available - skip this
-                                    logger.warning(
-                                        f"No future timestamps available for trade {trade_id}"
-                                    )
-                                    future_features = None
-                                    continue
-
-                        # Align with future_candles timestamps
-                        future_features = future_features_df.reindex(
-                            future_candles.index, method=None
-                        )
-                except Exception as e:
-                    logger.warning(
-                        f"Failed to compute features for trade {trade_id}: {e}"
-                    )
-                    future_features = None
-
-                # Simulate trade outcome using future candles
-                closed_trade = simulate_trade_outcome(
-                    trade=trade,
-                    future_candles=future_candles,
-                    invalidation_checker=self._invalidation_checker,
-                    config=self.config,
-                    future_features=future_features,
+            # If trade closed, update state
+            if updated_trade.status != "OPEN":
+                pnl_str = (
+                    f"{updated_trade.pnl:.2f}"
+                    if updated_trade.pnl is not None
+                    else "None"
+                )
+                r_str = (
+                    f"{updated_trade.r_realized:.2f}"
+                    if updated_trade.r_realized is not None
+                    else "None"
+                )
+                logger.info(
+                    f"Trade {trade_id} closed at "
+                    f"{updated_trade.exit_timestamp}: "
+                    f"exit_reason={updated_trade.exit_reason}, "
+                    f"PnL={pnl_str}, "
+                    f"R={r_str}"
                 )
 
-                # If trade closed, remove from active trades immediately
-                # Note: simulate_trade_outcome looks at future candles, so
-                # exit_timestamp may be in the future. We should still remove
-                # the trade now to avoid re-simulating on subsequent candles.
-                if closed_trade.status != "OPEN":
-                    pnl_str = (
-                        f"{closed_trade.pnl:.2f}"
-                        if closed_trade.pnl is not None
-                        else "None"
-                    )
-                    r_str = (
-                        f"{closed_trade.r_realized:.2f}"
-                        if closed_trade.r_realized is not None
-                        else "None"
-                    )
-                    logger.info(
-                        f"Trade {trade_id} closed at "
-                        f"{closed_trade.exit_timestamp}: "
-                        f"exit_reason={closed_trade.exit_reason}, "
-                        f"PnL={pnl_str}, "
-                        f"R={r_str}"
-                    )
+                # Remove from active trades and bar counts
+                del self._active_trades[trade_id]
+                del self._trade_bar_counts[trade_id]
 
-                    # Remove from active trades
-                    del self._active_trades[trade_id]
+                # Add to completed trades
+                self._all_trades.append(updated_trade)
 
-                    # Add to completed trades
-                    self._all_trades.append(closed_trade)
-
-                    # Update state (PnL, loss streak, etc.)
-                    self._update_state(closed_trade)
-
-            except KeyError:
-                logger.warning(
-                    f"Failed to get candle index for {current_candle.timestamp}"
-                )
-                continue
-            except Exception as e:
-                logger.error(
-                    f"Error processing active trade {trade_id} at "
-                    f"{current_candle.timestamp}: {e}",
-                    exc_info=True,
-                )
+                # Update state (PnL, loss streak, etc.)
+                self._update_state(updated_trade)
 
     def _update_state(self, closed_trade: Trade) -> None:
         """Update state after trade closes.
@@ -1070,8 +1081,10 @@ class BacktestReplayLoop:
             # Close trade at last candle
             closed_trade = close_trade(trade, last_candle, "end_of_data", self.config)
 
-            # Remove from active trades
+            # Remove from active trades and bar counts
             del self._active_trades[trade_id]
+            if trade_id in self._trade_bar_counts:
+                del self._trade_bar_counts[trade_id]
 
             # Add to completed trades
             self._all_trades.append(closed_trade)
@@ -1116,6 +1129,9 @@ class BacktestReplayLoop:
         r_values = [t.r_realized for t in self._all_trades if t.r_realized is not None]
         average_r = float(sum(r_values) / len(r_values)) if r_values else 0.0
 
+        # Calculate chop diagnostics
+        chop_diagnostics = self._calculate_chop_diagnostics()
+
         return BacktestResults(
             trades=self._all_trades,
             executions=self._all_executions,
@@ -1129,5 +1145,73 @@ class BacktestReplayLoop:
             max_consecutive_losses=self._max_consecutive_losses,
             pdll_hits=self._pdll_hit_count,
             session_resets=self._session_reset_count,
+            chop_diagnostics=chop_diagnostics,
             structure_stats=dict(self._structure_stats),
+            setup_candidates=self._setup_candidates,
+            rejected_at_scoring=self._rejected_at_scoring,
+            rejected_at_execution=self._rejected_at_execution,
+            executed_trades=self._executed_trades,
         )
+
+    def _calculate_chop_diagnostics(self) -> dict:
+        """Calculate chop-related statistics from all executions.
+        
+        Returns:
+            Dict containing:
+            - signals_evaluated_during_chop: Total signals evaluated during chop
+            - signals_blocked_by_chop: Signals rejected due to chop
+            - fades_allowed_during_chop: VWAP_FADE signals allowed during chop
+            - reclaims_penalized_by_chop: VWAP_RECLAIM signals penalized by chop
+            - continuations_blocked_by_chop: DXY_CONTINUATION signals blocked by chop
+            - chop_severity_distribution: Count of signals by chop severity
+        """
+        signals_evaluated_during_chop = 0
+        signals_blocked_by_chop = 0
+        fades_allowed_during_chop = 0
+        reclaims_penalized_by_chop = 0
+        continuations_blocked_by_chop = 0
+        chop_severity_distribution = {"none": 0, "soft": 0, "hard": 0}
+        
+        for execution in self._all_executions:
+            validation_flags = execution.signal.validation_flags
+            chop_detected = validation_flags.get("chop_detected", False)
+            chop_severity = validation_flags.get("chop_severity", "none")
+            setup_type = execution.signal.setup_type
+            
+            # Track severity distribution
+            chop_severity_distribution[chop_severity] = (
+                chop_severity_distribution.get(chop_severity, 0) + 1
+            )
+            
+            if chop_detected:
+                signals_evaluated_during_chop += 1
+                
+                # Check if rejected due to chop
+                rejection_reason = execution.rejection_reason or ""
+                if "chop" in rejection_reason.lower():
+                    signals_blocked_by_chop += 1
+                    
+                    # Track by setup type
+                    if setup_type == "DXY_CONTINUATION":
+                        continuations_blocked_by_chop += 1
+                
+                # Track fades allowed during chop
+                if setup_type == "VWAP_FADE" and execution.executed:
+                    fades_allowed_during_chop += 1
+                
+                # Track reclaims penalized (soft chop, not blocked)
+                if (
+                    setup_type == "VWAP_RECLAIM"
+                    and chop_severity == "soft"
+                    and not ("chop" in rejection_reason.lower())
+                ):
+                    reclaims_penalized_by_chop += 1
+        
+        return {
+            "signals_evaluated_during_chop": signals_evaluated_during_chop,
+            "signals_blocked_by_chop": signals_blocked_by_chop,
+            "fades_allowed_during_chop": fades_allowed_during_chop,
+            "reclaims_penalized_by_chop": reclaims_penalized_by_chop,
+            "continuations_blocked_by_chop": continuations_blocked_by_chop,
+            "chop_severity_distribution": chop_severity_distribution,
+        }

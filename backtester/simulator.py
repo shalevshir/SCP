@@ -157,6 +157,170 @@ def check_timeout(bars_elapsed: int, setup_type: str) -> bool:
     return bars_elapsed >= max_bars
 
 
+def check_trade_exit_single_bar(
+    trade: Trade,
+    candle: Candle,
+    bars_elapsed: int,
+    invalidation_checker=None,
+    config: dict | None = None,
+    candle_features: dict | None = None,
+) -> Trade:
+    """Check if trade should exit on this single candle (single-bar approach).
+
+    This function checks a single candle against an active trade to determine
+    if any exit condition is met. Unlike simulate_trade_outcome(), this checks
+    only one bar at a time, making it suitable for incremental processing that
+    matches live trading behavior.
+
+    Args:
+        trade: Open trade to check
+        candle: Current candle to check against trade
+        bars_elapsed: Number of bars elapsed since entry (externally tracked)
+        invalidation_checker: Optional InvalidationChecker for early exits
+        config: Optional config dict for dollar PnL calculation
+        candle_features: Optional dict with features for current candle
+
+    Returns:
+        Trade object - either closed (if exit hit) or original trade (if still open)
+
+    Exit Priority (checked in order per SOP):
+        1. Stop Loss → exit at SL price
+        2. Take Profit → exit at TP price
+        3. Invalidations (VWAP, HTF, DXY, Session, Window) → exit at candle open
+        4. Timeout (max bars) → exit at candle close
+
+    Grace Periods (setup-specific):
+        - CONTINUATION: 6 bars for both SL/TP and invalidations
+        - RECLAIM: 2 bars for both SL/TP and invalidations
+        - FADE: 0 bars for SL/TP (immediate), 3 bars for invalidations only
+    """
+    # Validate trade
+    if not is_valid_trade(trade):
+        logger.error(
+            f"Trade {trade.trade_id} is invalid (zero risk or NaN values). "
+            "Closing at entry with INVALID_SETUP."
+        )
+        exit_candle = Candle(
+            timestamp=trade.entry_timestamp,
+            open=trade.entry_price,
+            high=trade.entry_price,
+            low=trade.entry_price,
+            close=trade.entry_price,
+            volume=0,
+            symbol=trade.symbol,
+            timeframe=trade.timeframe,
+            source="SIMULATION",
+        )
+        return close_trade(trade, exit_candle, "invalid_setup", config)
+
+    # Check if trade is already closed
+    if trade.status != "OPEN":
+        logger.debug(
+            f"Trade {trade.trade_id} is already closed (status={trade.status}). "
+            "Returning unchanged."
+        )
+        return trade
+
+    # Validate candle data - skip invalid candles (return trade as-is)
+    if not is_valid_candle(candle):
+        logger.warning(
+            f"Skipping candle with NaN/Inf values at {candle.timestamp} "
+            f"for trade {trade.trade_id}"
+        )
+        return trade
+
+    # Setup-specific grace periods
+    skip_sl_tp = False
+    skip_invalidations = False
+
+    if is_continuation(trade):
+        # CONTINUATION: skip both SL/TP and invalidations for first 6 bars
+        skip_sl_tp = bars_elapsed <= 6
+        skip_invalidations = bars_elapsed <= 6
+        if skip_sl_tp:
+            logger.debug(
+                f"Trade {trade.trade_id}: CONTINUATION grace period active "
+                f"(bar {bars_elapsed}/6) - skipping SL/TP and invalidations"
+            )
+    elif is_fade(trade):
+        # FADE: NEVER skip SL/TP (allow TP hits and close-based SL on bar 1)
+        # But skip invalidations for 3 bars
+        skip_sl_tp = False
+        skip_invalidations = bars_elapsed <= 3
+        if skip_invalidations:
+            logger.debug(
+                f"Trade {trade.trade_id}: FADE invalidation grace active "
+                f"(bar {bars_elapsed}/3) - SL/TP allowed, invalidations skipped"
+            )
+    elif is_reclaim(trade):
+        # RECLAIM: Skip SL/TP for first 2 bars, skip invalidations for 2 bars
+        skip_sl_tp = bars_elapsed <= 2
+        skip_invalidations = bars_elapsed <= 2
+        if skip_sl_tp:
+            logger.debug(
+                f"Trade {trade.trade_id}: RECLAIM grace period active "
+                f"(bar {bars_elapsed}/2) - skipping SL/TP and invalidations"
+            )
+
+    # Exit Priority Order (per SOP):
+    # 1. Stop Loss (highest priority)
+    if not skip_sl_tp:
+        # FADE bar 1: use close-based SL for volatility protection
+        use_close_sl = is_fade(trade) and bars_elapsed == 1
+        if use_close_sl:
+            logger.debug(f"Trade {trade.trade_id}: FADE bar 1 - using close-based SL")
+
+        if check_sl_hit(trade, candle, use_close=use_close_sl):
+            logger.info(
+                f"Trade {trade.trade_id} hit SL at {trade.stop_loss} "
+                f"(bars={bars_elapsed}, close_based={use_close_sl})"
+            )
+            return close_trade(trade, candle, "sl", config)
+
+    # 2. Take Profit
+    if not skip_sl_tp and check_tp_hit(trade, candle):
+        logger.info(
+            f"Trade {trade.trade_id} hit TP at {trade.take_profit} "
+            f"(bars={bars_elapsed})"
+        )
+        return close_trade(trade, candle, "tp", config)
+
+    # 3. Invalidation checks (VWAP, HTF, DXY, Session, Window)
+    if not skip_invalidations and invalidation_checker is not None:
+        is_invalid, reason = invalidation_checker.check_all(
+            trade, candle, bars_elapsed, features=candle_features
+        )
+        if is_invalid:
+            # Map reason to exit code
+            exit_reason = "invalidation"  # Default
+            if "vwap" in reason.lower():
+                exit_reason = "vwap_invalidation"
+            elif "htf" in reason.lower() or "structure" in reason.lower():
+                exit_reason = "htf_invalidation"
+            elif "dxy" in reason.lower():
+                exit_reason = "dxy_flip"
+            elif "session" in reason.lower():
+                exit_reason = "session_close"
+            elif "window" in reason.lower():
+                exit_reason = "window_expired"
+            elif "daily" in reason.lower() or "risk" in reason.lower():
+                exit_reason = "daily_risk_stop"
+
+            logger.info(
+                f"Trade {trade.trade_id} invalidated: {reason} "
+                f"(bars={bars_elapsed}, exit_reason={exit_reason})"
+            )
+            return close_trade(trade, candle, exit_reason, config)
+
+    # 4. Timeout (only if no other exit occurred)
+    if check_timeout(bars_elapsed, trade.setup_type):
+        logger.info(f"Trade {trade.trade_id} timed out after {bars_elapsed} bars")
+        return close_trade(trade, candle, "timeout", config)
+
+    # No exit condition met - trade stays open
+    return trade
+
+
 def simulate_trade_outcome(
     trade: Trade,
     future_candles: pd.DataFrame,

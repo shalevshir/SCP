@@ -7,6 +7,9 @@ for later analysis and visualization.
 import json
 from datetime import datetime
 from pathlib import Path
+from typing import Any
+
+import numpy as np
 
 from common.logger import get_logger
 
@@ -15,6 +18,37 @@ from backtester.trade import from_dict as trade_from_dict
 from backtester.trade import to_dict as trade_to_dict
 
 logger = get_logger(__name__)
+
+
+def convert_numpy_types(obj: Any) -> Any:
+    """Recursively convert numpy types to native Python types for JSON serialization.
+
+    Args:
+        obj: Any Python object that may contain numpy types
+
+    Returns:
+        The same object structure with numpy types converted to native Python types
+
+    Example:
+        >>> import numpy as np
+        >>> data = {"bool": np.bool_(True), "int": np.int64(42)}
+        >>> convert_numpy_types(data)
+        {"bool": True, "int": 42}
+    """
+    if isinstance(obj, np.bool_):
+        return bool(obj)
+    elif isinstance(obj, np.integer):
+        return int(obj)
+    elif isinstance(obj, np.floating):
+        return float(obj)
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    elif isinstance(obj, dict):
+        return {key: convert_numpy_types(value) for key, value in obj.items()}
+    elif isinstance(obj, (list, tuple)):
+        return [convert_numpy_types(item) for item in obj]
+    else:
+        return obj
 
 
 def save_results(results: BacktestResults, filepath: str | Path) -> None:
@@ -40,12 +74,26 @@ def save_results(results: BacktestResults, filepath: str | Path) -> None:
     # Serialize executions (EntryExecution objects)
     executions_data = []
     for execution in results.executions:
+        # Extract chop context from validation flags
+        validation_flags = execution.signal.validation_flags
+        chop_detected = validation_flags.get("chop_detected", False)
+        chop_severity = validation_flags.get("chop_severity", "none")
+        
+        # Check if rejection was chop-related
+        rejection_reason = execution.rejection_reason or ""
+        is_chop_rejection = "chop" in rejection_reason.lower()
+        
         exec_dict = {
             "signal_timestamp": execution.signal_timestamp.isoformat(),
             "entry_timestamp": execution.entry_timestamp.isoformat(),
             "entry_price": execution.entry_price,
             "executed": execution.executed,
             "rejection_reason": execution.rejection_reason,
+            "chop_context": {
+                "chop_detected": chop_detected,
+                "chop_severity": chop_severity,
+                "chop_rejection": is_chop_rejection,
+            },
             "signal": {
                 "timestamp": execution.signal.timestamp.isoformat(),
                 "symbol": execution.signal.symbol,
@@ -59,6 +107,7 @@ def save_results(results: BacktestResults, filepath: str | Path) -> None:
                 "rationale": execution.signal.rationale,
                 "validation_flags": execution.signal.validation_flags,
                 "enforcer_tier": execution.signal.enforcer_tier,
+                "diagnostics": execution.signal.diagnostics,
             },
         }
         executions_data.append(exec_dict)
@@ -83,10 +132,17 @@ def save_results(results: BacktestResults, filepath: str | Path) -> None:
             "max_consecutive_losses": results.max_consecutive_losses,
             "pdll_hits": results.pdll_hits,
             "session_resets": results.session_resets,
+            "setup_candidates": results.setup_candidates,
+            "rejected_at_scoring": results.rejected_at_scoring,
+            "rejected_at_execution": results.rejected_at_execution,
+            "executed_trades": results.executed_trades,
         },
         "trades": trades_data,
         "executions": executions_data,
     }
+
+    # Convert numpy types to native Python types for JSON serialization
+    results_dict = convert_numpy_types(results_dict)
 
     # Write to file
     with open(filepath, "w") as f:
@@ -146,6 +202,7 @@ def load_results(filepath: str | Path) -> BacktestResults:
             rationale=signal_data["rationale"],
             validation_flags=signal_data["validation_flags"],
             enforcer_tier=signal_data["enforcer_tier"],
+            diagnostics=signal_data.get("diagnostics", {}),
         )
 
         execution = EntryExecution(
