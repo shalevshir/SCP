@@ -571,6 +571,11 @@ class StructureContextTracker:
         if self.vwap_reclaim_bar_idx is None:
             return result
 
+        # Calculate bars since reclaim FIRST (needed for all return paths)
+        current_bar = self.bar_count - 1
+        bars_since = current_bar - self.vwap_reclaim_bar_idx
+        result["bars_since_reclaim"] = bars_since
+
         # Check state machine state (Sprint 1: early return if expired/invalidated)
         if self.vwap_reclaim_sm.current_state == VWAPReclaimState.EXPIRED:
             result["confirmed"] = False
@@ -583,11 +588,6 @@ class StructureContextTracker:
             result["confirmation_type"] = "invalidated"
             result["reasons"] = ["Reclaim invalidated: structural break"]
             return result
-
-        # Calculate bars since reclaim
-        current_bar = self.bar_count - 1
-        bars_since = current_bar - self.vwap_reclaim_bar_idx
-        result["bars_since_reclaim"] = bars_since
 
         # Cannot confirm on the same bar as reclaim
         if bars_since <= 0:
