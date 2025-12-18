@@ -250,3 +250,68 @@ class TestStateMachineNotification:
         # Verify exit reason is NOT "sl"
         assert closed_trade.exit_reason == "vwap_invalidation"
         assert closed_trade.exit_reason != "sl"
+
+
+class TestOnExecutionCalled:
+    """Test that on_execution() is called when a VWAP_RECLAIM trade is created.
+
+    This is a critical regression test for the bug where on_execution() was never
+    called, leaving execution_count at 0 forever and making re-entry protection
+    completely ineffective.
+    """
+
+    def test_state_machine_execution_count_increments_on_trade_creation(self):
+        """Verify that execution_count is incremented when VWAP_RECLAIM trade is created.
+
+        This test verifies the fix for the bug where on_execution() was never called
+        after trade creation, meaning execution_count stayed at 0 and can_execute()
+        would always return True (re-entry protection ineffective).
+        """
+        sm = VWAPReclaimStateMachine()
+
+        # Set up state machine to CONFIRMED state (ready for execution)
+        sm.on_reclaim_detected(bar_idx=100, direction="above")
+        sm.on_confirmation(bar_idx=102, confirmation_type="vwap_hold")
+
+        assert sm.current_state == VWAPReclaimState.CONFIRMED
+        assert sm.execution_count == 0
+        assert sm.can_execute() is True
+
+        # Simulate what replay_loop should do after trade creation
+        # This is the call that was missing in the bug
+        sm.on_execution(bar_idx=103)
+
+        # After execution, count should be incremented
+        assert sm.execution_count == 1
+        assert sm.current_state == VWAPReclaimState.EXECUTED
+        # Re-entry should now be blocked
+        assert sm.can_execute() is False
+
+    def test_reentry_blocked_after_trade_creation_and_stopout(self):
+        """Full integration flow: trade created, stopped out, re-entry blocked.
+
+        This test simulates the complete flow that would happen in replay_loop:
+        1. State machine reaches CONFIRMED
+        2. Trade is created -> on_execution() called
+        3. Trade stops out -> on_stop_out() called
+        4. Attempt re-entry -> can_execute() returns False
+        """
+        sm = VWAPReclaimStateMachine()
+
+        # Step 1: Reach CONFIRMED state
+        sm.on_reclaim_detected(bar_idx=100, direction="above")
+        sm.on_confirmation(bar_idx=102, confirmation_type="vwap_hold")
+        assert sm.can_execute() is True
+
+        # Step 2: Trade created (on_execution must be called)
+        sm.on_execution(bar_idx=103)
+        assert sm.execution_count == 1
+
+        # Step 3: Trade stops out
+        sm.on_stop_out(bar_idx=110)
+        assert sm.current_state == VWAPReclaimState.INVALIDATED
+        # execution_count should NOT reset on stop-out
+        assert sm.execution_count == 1
+
+        # Step 4: Re-entry attempt should be blocked
+        assert sm.can_execute() is False

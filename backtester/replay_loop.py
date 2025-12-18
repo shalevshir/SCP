@@ -708,6 +708,36 @@ class BacktestReplayLoop:
                 self._trade_bar_counts[trade.trade_id] = 0  # Initialize counter at 0
                 self._trades_today += 1
 
+                # Sprint 4: Notify state machine on VWAP_RECLAIM trade execution
+                # This increments execution_count to enable re-entry protection
+                if (
+                    trade.setup_type == "VWAP_RECLAIM"
+                    and self._processor
+                    and hasattr(self._processor, "_streaming")
+                    and hasattr(self._processor._streaming, "structure_tracker")
+                    and hasattr(
+                        self._processor._streaming.structure_tracker, "vwap_reclaim_sm"
+                    )
+                ):
+                    state_machine = (
+                        self._processor._streaming.structure_tracker.vwap_reclaim_sm
+                    )
+                    try:
+                        # Get bar index for the execution
+                        bar_idx = self.gc_df.index.get_loc(execution.entry_timestamp)
+                        state_machine.on_execution(bar_idx=bar_idx)
+                        logger.info(
+                            f"Trade {trade.trade_id}: VWAP_RECLAIM execution "
+                            f"notified to state machine (bar_idx={bar_idx}, "
+                            f"execution_count={state_machine.execution_count})"
+                        )
+                    except ValueError as e:
+                        # State machine not in CONFIRMED state - log warning but continue
+                        logger.warning(
+                            f"Trade {trade.trade_id}: Could not notify state machine "
+                            f"of VWAP_RECLAIM execution: {e}"
+                        )
+
                 logger.info(
                     f"Trade opened: {trade.trade_id} {trade.direction} "
                     f"{trade.symbol} @ {trade.entry_price} "
