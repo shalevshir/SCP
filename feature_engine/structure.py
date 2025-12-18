@@ -215,7 +215,8 @@ class StructureContextTracker:
         # Sprint 1: Check reclaim expiration on every bar
         # Must be called BEFORE any confirmation logic to ensure expired reclaims
         # don't get confirmed
-        self.update_reclaim_state(self.bar_count)
+        # Use bar_count - 1 for current bar index (consistent with detection and confirmation)
+        self.update_reclaim_state(self.bar_count - 1)
 
         # Add to swing detection buffers
         self.high_buffer.append(high)

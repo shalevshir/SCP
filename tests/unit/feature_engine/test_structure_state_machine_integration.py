@@ -249,3 +249,56 @@ class TestStructureTrackerStateMachineIntegration:
         assert result["confirmed"] is False
         assert result["confirmation_type"] == "expired"
 
+    def test_expiration_bar_count_is_exact(self):
+        """Reclaim should expire exactly after MAX_CONFIRM_WINDOW bars, not off-by-one.
+        
+        This test verifies the fix for the bug where update_reclaim_state(bar_count)
+        passed bar_count instead of bar_count - 1, causing early expiration.
+        
+        Detection stores bar_count - 1, so expiration check must also use bar_count - 1
+        for consistent bar indexing.
+        """
+        MAX_CONFIRM_WINDOW = 10
+        tracker = StructureContextTracker()
+        
+        # Setup initial bars
+        for i in range(5):
+            tracker.update(high=2650.0, low=2640.0, close=2645.0)
+        
+        # Setup VWAP state (below VWAP)
+        tracker.update_vwap_state(vwap=2650.0, close=2645.0)
+        
+        # Trigger reclaim (cross above VWAP)
+        tracker.update_vwap_state(vwap=2650.0, close=2655.0)
+        detection_bar = tracker.vwap_reclaim_sm.detection_bar_idx
+        
+        assert tracker.vwap_reclaim_sm.current_state == VWAPReclaimState.PENDING_ACCEPTANCE
+        
+        # Call update() exactly MAX_CONFIRM_WINDOW times
+        # After these calls, we should NOT be expired yet (exactly at threshold)
+        for i in range(MAX_CONFIRM_WINDOW):
+            tracker.update(high=2650.0, low=2640.0, close=2645.0)
+        
+        # At exactly MAX_CONFIRM_WINDOW bars, should NOT be expired
+        # (is_expired checks > max_confirm_window, not >=)
+        current_bar = tracker.bar_count - 1
+        bars_since = current_bar - detection_bar
+        assert bars_since == MAX_CONFIRM_WINDOW, (
+            f"Expected {MAX_CONFIRM_WINDOW} bars since detection, got {bars_since}"
+        )
+        assert tracker.vwap_reclaim_sm.current_state == VWAPReclaimState.PENDING_ACCEPTANCE, (
+            f"Should still be PENDING at exactly {MAX_CONFIRM_WINDOW} bars, "
+            f"but state is {tracker.vwap_reclaim_sm.current_state.value}"
+        )
+        
+        # One more update should trigger expiration
+        tracker.update(high=2650.0, low=2640.0, close=2645.0)
+        
+        current_bar = tracker.bar_count - 1
+        bars_since = current_bar - detection_bar
+        assert bars_since == MAX_CONFIRM_WINDOW + 1
+        assert tracker.vwap_reclaim_sm.current_state == VWAPReclaimState.EXPIRED, (
+            f"Should be EXPIRED at {MAX_CONFIRM_WINDOW + 1} bars, "
+            f"but state is {tracker.vwap_reclaim_sm.current_state.value}"
+        )
+
