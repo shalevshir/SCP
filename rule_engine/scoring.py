@@ -58,7 +58,9 @@ def build_rejection_analysis(
     }
 
 
-def build_diagnostics(features: pd.Series, htf_bias: HTFBias) -> dict[str, Any]:
+def build_diagnostics(
+    features: pd.Series, htf_bias: HTFBias, direction: str | None = None
+) -> dict[str, Any]:
     """Build diagnostics dict with structure parameters for debugging.
 
     Extracts all relevant structure, RSI, BOS, CHoCH, sweep, and DXY data
@@ -67,10 +69,15 @@ def build_diagnostics(features: pd.Series, htf_bias: HTFBias) -> dict[str, Any]:
     Args:
         features: Feature series with structure and indicator data
         htf_bias: HTFBias object with HTF structure info
+        direction: Signal direction ("long" or "short") for mapping
+            direction-specific fields to generic keys. If None, uses htf_bias.direction.
 
     Returns:
         Dict with all diagnostic fields for debugging (JSON serializable)
     """
+    # Use htf_bias.direction as fallback if direction not provided
+    effective_direction = direction if direction is not None else htf_bias.direction
+
     diag = {
         # Structure fields
         "structure_label": features.get("last_structure_label"),
@@ -124,6 +131,34 @@ def build_diagnostics(features: pd.Series, htf_bias: HTFBias) -> dict[str, Any]:
         "expansion_detected": _to_python_bool(features.get("expansion_detected", False)),
         "expansion_reasons": features.get("expansion_reasons", []) if features.get("expansion_reasons") else [],
     }
+
+    # Map direction-specific second confirmation fields to generic keys
+    # streaming.py computes: second_confirmation_long/short, bars_since_vwap_reclaim
+    # entry_model.py expects: second_confirmation_satisfied, bars_since_reclaim
+    if effective_direction == "long":
+        diag["second_confirmation_satisfied"] = _to_python_bool(
+            features.get("second_confirmation_long", False)
+        )
+        diag["second_confirmation_type"] = features.get("second_confirmation_long_type")
+        reasons = features.get("second_confirmation_long_reasons", [])
+        diag["second_confirmation_reasons"] = list(reasons) if reasons else []
+    elif effective_direction == "short":
+        diag["second_confirmation_satisfied"] = _to_python_bool(
+            features.get("second_confirmation_short", False)
+        )
+        diag["second_confirmation_type"] = features.get("second_confirmation_short_type")
+        reasons = features.get("second_confirmation_short_reasons", [])
+        diag["second_confirmation_reasons"] = list(reasons) if reasons else []
+    else:
+        # Unknown direction - default to False
+        diag["second_confirmation_satisfied"] = False
+        diag["second_confirmation_type"] = None
+        diag["second_confirmation_reasons"] = []
+
+    # Map bars_since_vwap_reclaim to bars_since_reclaim
+    bars_since = features.get("bars_since_vwap_reclaim")
+    diag["bars_since_reclaim"] = _to_python_int(bars_since) if bars_since is not None else 0
+
     return diag
 
 
@@ -262,7 +297,7 @@ def calculate_late_reclaim_penalty(
           - Age 16-20: -1.0
           - Age > 20: -1.5
         - BOS valid (no counter-CHoCH, clarity >= 0.4): NO age penalty
-        - VWAP distance > 0.3%: -0.3 (late reclaim, price already moved)
+        - VWAP distance 0.3-0.5%: -0.15, >0.5%: -0.3 (late reclaim, price already moved)
         - No expansion signal: -0.5 (entering without confirmation)
 
     Example:
@@ -305,14 +340,21 @@ def calculate_late_reclaim_penalty(
 
     if vwap != 0:
         vwap_deviation_pct = abs((close - vwap) / vwap * 100)
-        if vwap_deviation_pct > 0.3:
+        # Graduated penalty: mild for 0.3-0.5%, full for >0.5%
+        if vwap_deviation_pct > 0.5:
             total_penalty += -0.3
             logger.debug(
-                f"VWAP distance penalty -0.3 (deviation={vwap_deviation_pct:.2f}%)"
+                f"VWAP distance penalty -0.3 (deviation={vwap_deviation_pct:.2f}% > 0.5%)"
+            )
+        elif vwap_deviation_pct > 0.3:
+            total_penalty += -0.15
+            logger.debug(
+                f"VWAP distance penalty -0.15 (deviation={vwap_deviation_pct:.2f}% > 0.3%)"
             )
 
     # Penalty 3: No expansion signal (entering during compression)
     expansion_detected = features.get("expansion_detected", False)
+
     if not expansion_detected:
         total_penalty += -0.5
         logger.debug("No expansion penalty -0.5")
@@ -578,7 +620,7 @@ def score_signal(features: pd.Series, htf_bias: HTFBias, context: dict) -> Signa
     is_valid, rejection_reason = validate_signal_with_htf(signal_direction, htf_bias)
 
     # Build diagnostics for all signal outputs
-    diagnostics = build_diagnostics(features, htf_bias)
+    diagnostics = build_diagnostics(features, htf_bias, direction=signal_direction)
 
     if not is_valid:
         # Return rejected signal with reason
@@ -658,12 +700,13 @@ def score_signal(features: pd.Series, htf_bias: HTFBias, context: dict) -> Signa
     # Apply structure quality penalty (quality issues that were previously hard rejections)
     # Extract quality_flags from context validation if VWAP_RECLAIM
     quality_flags = None
+
     if setup_type == "VWAP_RECLAIM":
         from rule_engine.htf.vwap.reclaim import validate_reclaim_context
-        
+
         context_result = validate_reclaim_context(htf_bias, features)
         quality_flags = context_result.quality_flags
-    
+
     structure_quality_penalty = calculate_structure_quality_penalty(
         features, htf_bias, setup_type, quality_flags
     )

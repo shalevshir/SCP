@@ -182,6 +182,13 @@ class StructureContextTracker:
         self.last_sweep_direction: str | None = None
         self.last_sweep_price: float | None = None
 
+        # VWAP reclaim tracking for second confirmation
+        self.vwap_reclaim_bar_idx: int | None = None
+        self.vwap_reclaim_direction: str | None = None  # "above" or "below"
+        self.vwap_buffer: deque[float] = deque(maxlen=20)  # Track recent VWAP values
+        self.close_buffer_vwap: deque[float] = deque(maxlen=20)  # Track recent closes
+        self.volume_buffer: deque[float] = deque(maxlen=20)  # Track recent volume
+
         # Bar counter
         self.bar_count = 0
 
@@ -452,6 +459,157 @@ class StructureContextTracker:
 
         expansion_detected = len(reasons) > 0
         return expansion_detected, reasons
+
+    def update_vwap_state(self, vwap: float, close: float) -> None:
+        """Update VWAP tracking state and detect VWAP crosses.
+
+        Tracks when price crosses above/below VWAP for second confirmation logic.
+        Must be called after update() to ensure bar_count is current.
+
+        Args:
+            vwap: Current VWAP value
+            close: Current close price
+        """
+        # Track previous state before updating buffers
+        prev_close = self.close_buffer_vwap[-1] if self.close_buffer_vwap else None
+        prev_vwap = self.vwap_buffer[-1] if self.vwap_buffer else None
+
+        # Update buffers
+        self.vwap_buffer.append(vwap)
+        self.close_buffer_vwap.append(close)
+
+        # Detect VWAP cross (need previous values)
+        if prev_close is not None and prev_vwap is not None:
+            was_below = prev_close < prev_vwap
+            was_above = prev_close > prev_vwap
+            is_below = close < vwap
+            is_above = close > vwap
+
+            # Detect cross above (was below, now above)
+            if was_below and is_above:
+                self.vwap_reclaim_bar_idx = self.bar_count - 1  # Current bar index
+                self.vwap_reclaim_direction = "above"
+
+            # Detect cross below (was above, now below)
+            elif was_above and is_below:
+                self.vwap_reclaim_bar_idx = self.bar_count - 1  # Current bar index
+                self.vwap_reclaim_direction = "below"
+
+    def update_volume_state(self, volume: float) -> None:
+        """Update volume tracking buffer.
+
+        Args:
+            volume: Current bar volume
+        """
+        self.volume_buffer.append(volume)
+
+    def compute_second_confirmation(self, direction: str) -> dict:
+        """Compute second confirmation status for VWAP_RECLAIM entry.
+
+        Second confirmation prevents early entries by requiring at least one
+        confirmation signal after a VWAP reclaim is detected.
+
+        Args:
+            direction: Trade direction ("long" or "short")
+
+        Returns:
+            Dict with:
+                - confirmed: bool - whether second confirmation is satisfied
+                - confirmation_type: str | None - type of confirmation
+                - reasons: list[str] - confirmation reason descriptions
+                - bars_since_reclaim: int - bars since VWAP reclaim detected
+        """
+        MAX_RECLAIM_AGE = 10  # Stale reclaim threshold
+
+        result = {
+            "confirmed": False,
+            "confirmation_type": None,
+            "reasons": [],
+            "bars_since_reclaim": 0,
+        }
+
+        # No reclaim detected yet
+        if self.vwap_reclaim_bar_idx is None:
+            return result
+
+        # Calculate bars since reclaim
+        current_bar = self.bar_count - 1
+        bars_since = current_bar - self.vwap_reclaim_bar_idx
+        result["bars_since_reclaim"] = bars_since
+
+        # Cannot confirm on the same bar as reclaim
+        if bars_since <= 0:
+            return result
+
+        # Stale reclaim expiration - per vwap_Reclain_fix.mdc Task 3:
+        # "If no confirmation within window → setup expires"
+        # "Prevent stale reclaim execution"
+        if bars_since > MAX_RECLAIM_AGE:
+            result["confirmed"] = False
+            result["confirmation_type"] = "expired"
+            result["reasons"] = ["Reclaim expired: no confirmation within window"]
+            return result
+
+        # Direction-specific confirmation checks
+        if direction == "long" and self.vwap_reclaim_direction == "above":
+            # Check 1: VWAP hold - price holding above VWAP for 2+ bars
+            if len(self.close_buffer_vwap) >= 2 and len(self.vwap_buffer) >= 2:
+                recent_closes = list(self.close_buffer_vwap)[-2:]
+                recent_vwaps = list(self.vwap_buffer)[-2:]
+                if all(c > v for c, v in zip(recent_closes, recent_vwaps)):
+                    result["confirmed"] = True
+                    result["confirmation_type"] = "vwap_hold"
+                    result["reasons"].append("vwap_hold: price holding above VWAP")
+
+            # Check 2: Volume expansion (1.5x average)
+            if len(self.volume_buffer) >= 5:
+                recent_volume = list(self.volume_buffer)
+                avg_volume = sum(recent_volume[:-1]) / len(recent_volume[:-1])
+                if avg_volume > 0 and recent_volume[-1] > avg_volume * 1.5:
+                    result["confirmed"] = True
+                    result["confirmation_type"] = result["confirmation_type"] or "volume_expansion"
+                    result["reasons"].append("volume_expansion: volume > 1.5x average")
+
+            # Check 3: Micro higher low (using low_buffer from structure tracking)
+            if len(self.low_buffer) >= 3:
+                lows = list(self.low_buffer)[-3:]
+                if lows[-1] > lows[-2] and len(self.vwap_buffer) > 0:
+                    # Verify the higher low is above VWAP
+                    if lows[-1] > self.vwap_buffer[-1]:
+                        result["confirmed"] = True
+                        result["confirmation_type"] = result["confirmation_type"] or "micro_hl"
+                        result["reasons"].append("micro_hl: higher low above VWAP")
+
+        elif direction == "short" and self.vwap_reclaim_direction == "below":
+            # Check 1: VWAP hold - price holding below VWAP for 2+ bars
+            if len(self.close_buffer_vwap) >= 2 and len(self.vwap_buffer) >= 2:
+                recent_closes = list(self.close_buffer_vwap)[-2:]
+                recent_vwaps = list(self.vwap_buffer)[-2:]
+                if all(c < v for c, v in zip(recent_closes, recent_vwaps)):
+                    result["confirmed"] = True
+                    result["confirmation_type"] = "vwap_hold"
+                    result["reasons"].append("vwap_hold: price holding below VWAP")
+
+            # Check 2: Volume expansion (1.5x average)
+            if len(self.volume_buffer) >= 5:
+                recent_volume = list(self.volume_buffer)
+                avg_volume = sum(recent_volume[:-1]) / len(recent_volume[:-1])
+                if avg_volume > 0 and recent_volume[-1] > avg_volume * 1.5:
+                    result["confirmed"] = True
+                    result["confirmation_type"] = result["confirmation_type"] or "volume_expansion"
+                    result["reasons"].append("volume_expansion: volume > 1.5x average")
+
+            # Check 3: Micro lower high (using high_buffer from structure tracking)
+            if len(self.high_buffer) >= 3:
+                highs = list(self.high_buffer)[-3:]
+                if highs[-1] < highs[-2] and len(self.vwap_buffer) > 0:
+                    # Verify the lower high is below VWAP
+                    if highs[-1] < self.vwap_buffer[-1]:
+                        result["confirmed"] = True
+                        result["confirmation_type"] = result["confirmation_type"] or "micro_lh"
+                        result["reasons"].append("micro_lh: lower high below VWAP")
+
+        return result
 
     def _detect_swing_label(self) -> str | None:
         """Detect swing label at center of buffer.

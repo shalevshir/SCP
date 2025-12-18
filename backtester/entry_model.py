@@ -60,14 +60,14 @@ def execute_entry_at_next_open(
     This function implements the core "next bar open" entry logic, ensuring:
     - Entries occur one bar after signal generation (no look-ahead)
     - Only A+ confidence signals are executed
-    - VWAP_RECLAIM expansion gate checked at execution (not setup classification)
+    - VWAP_RECLAIM second confirmation gate checked at execution
     - Graceful handling of missing data (end of dataset)
     - Full determinism (no randomness or slippage)
 
     Entry rejection reasons:
     1. Signal confidence != "A+"
     2. next_candle is None (end of dataset)
-    3. VWAP_RECLAIM without expansion signals (entry not ready)
+    3. VWAP_RECLAIM without second confirmation (entry not ready)
     All other validation (session, guardrails, tier) happens BEFORE signal generation.
 
     Args:
@@ -82,7 +82,7 @@ def execute_entry_at_next_open(
     Behavior:
         - If signal confidence is not "A+": entry not executed
         - If next_candle is None: entry not executed (end of dataset)
-        - If VWAP_RECLAIM without expansion: entry not ready (setup detected, not executable)
+        - If VWAP_RECLAIM without second confirmation: entry not ready (setup detected, not executable)
         - If next_candle exists and signal is "A+": entry at next_candle.open
         - Entry timestamp = next_candle.timestamp
         - Entry price = next_candle.open (no slippage applied)
@@ -109,7 +109,36 @@ def execute_entry_at_next_open(
             rejection_reason=f"Signal confidence {signal.confidence} not tradeable",
         )
 
-    # Check 2: Ensure next candle exists
+    # Check 2: VWAP_RECLAIM second confirmation gate (entry readiness check)
+    # Setup can be detected after reclaim, but entry requires second confirmation
+    # to prevent early entries before pullback fully resolves
+    if signal.setup_type == "VWAP_RECLAIM":
+        second_confirmation = signal.diagnostics.get("second_confirmation_satisfied", False) if signal.diagnostics else False
+        confirmation_type = signal.diagnostics.get("second_confirmation_type") if signal.diagnostics else None
+        bars_waited = signal.diagnostics.get("bars_since_reclaim", 0) if signal.diagnostics else 0
+
+        if not second_confirmation:
+            logger.info(
+                f"Entry NOT READY: VWAP_RECLAIM detected but no second confirmation "
+                f"(symbol={signal.symbol}, timestamp={signal.timestamp}, "
+                f"score={signal.score}, bars_waited={bars_waited}). "
+                f"Setup candidate exists, waiting for confirmation."
+            )
+            return EntryExecution(
+                signal_timestamp=signal.timestamp,
+                entry_timestamp=signal.timestamp,
+                entry_price=0.0,
+                signal=signal,
+                executed=False,
+                rejection_reason="VWAP_RECLAIM entry not ready: no second confirmation detected",
+            )
+
+        logger.debug(
+            f"VWAP_RECLAIM second confirmation PASSED: {confirmation_type} "
+            f"(symbol={signal.symbol}, timestamp={signal.timestamp}, bars_waited={bars_waited})"
+        )
+
+    # Check 3: Ensure next candle exists
     if next_candle is None:
         logger.warning(
             f"Entry rejected: No next candle available (end of dataset) "
@@ -122,32 +151,6 @@ def execute_entry_at_next_open(
             signal=signal,
             executed=False,
             rejection_reason="No next candle available (end of dataset)",
-        )
-
-    # Check 3: VWAP_RECLAIM expansion gate (entry readiness check)
-    # Setup can be detected without expansion, but entry requires expansion signals
-    if signal.setup_type == "VWAP_RECLAIM":
-        expansion_detected = signal.diagnostics.get("expansion_detected", False)
-        expansion_reasons = signal.diagnostics.get("expansion_reasons", [])
-        
-        if not expansion_detected:
-            logger.info(
-                f"Entry NOT READY: VWAP_RECLAIM detected but no expansion signals "
-                f"(symbol={signal.symbol}, timestamp={signal.timestamp}, "
-                f"score={signal.score}). Setup candidate exists, waiting for expansion."
-            )
-            return EntryExecution(
-                signal_timestamp=signal.timestamp,
-                entry_timestamp=signal.timestamp,
-                entry_price=0.0,
-                signal=signal,
-                executed=False,
-                rejection_reason="VWAP_RECLAIM entry not ready: no expansion signals detected",
-            )
-        
-        logger.debug(
-            f"VWAP_RECLAIM expansion gate PASSED: {expansion_reasons} "
-            f"(symbol={signal.symbol}, timestamp={signal.timestamp})"
         )
 
     # SUCCESS: Execute entry at next bar open

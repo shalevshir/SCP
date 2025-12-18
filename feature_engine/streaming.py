@@ -339,6 +339,19 @@ class StreamingFeatureProcessor:
             low=gc_bar.low,
             close=gc_bar.close,
         )
+        
+        # Update VWAP tracking for second confirmation
+        self.structure_tracker.update_vwap_state(
+            vwap=vwap,
+            close=gc_bar.close,
+        )
+        
+        # Update volume tracking for expansion confirmation
+        self.structure_tracker.update_volume_state(volume=gc_bar.volume)
+        
+        # Compute second confirmation for both directions
+        long_conf = self.structure_tracker.compute_second_confirmation("long")
+        short_conf = self.structure_tracker.compute_second_confirmation("short")
 
         # Add GC structure fields to features
         features["structure_label"] = gc_structure_ctx.last_structure_label
@@ -386,6 +399,15 @@ class StreamingFeatureProcessor:
         features["dxy_trend_direction"] = dxy_structure_ctx.trend_direction
         features["dxy_structure_clarity"] = dxy_structure_ctx.structure_clarity
         features["dxy_is_chop"] = dxy_structure_ctx.is_chop
+        
+        # === 8. Second Confirmation for VWAP_RECLAIM ===
+        features["second_confirmation_long"] = long_conf["confirmed"]
+        features["second_confirmation_short"] = short_conf["confirmed"]
+        features["second_confirmation_long_type"] = long_conf["confirmation_type"]
+        features["second_confirmation_short_type"] = short_conf["confirmation_type"]
+        features["second_confirmation_long_reasons"] = long_conf["reasons"]
+        features["second_confirmation_short_reasons"] = short_conf["reasons"]
+        features["bars_since_vwap_reclaim"] = long_conf["bars_since_reclaim"]
 
         return pd.Series(features)
 
