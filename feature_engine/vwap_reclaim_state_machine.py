@@ -39,6 +39,11 @@ from common.logger import get_logger
 
 logger = get_logger(__name__)
 
+# Sprint 4: Re-entry Protection
+# Maximum number of executions allowed per reclaim context
+# After a stopped-out trade, re-entry requires fresh structural evidence (new sweep + BOS)
+MAX_EXECUTIONS_PER_RECLAIM = 1
+
 
 class VWAPReclaimState(Enum):
     """VWAP Reclaim lifecycle states."""
@@ -85,17 +90,20 @@ class VWAPReclaimStateMachine:
     def __init__(self, max_confirm_window: int = 10):
         """Initialize state machine."""
         self.max_confirm_window = max_confirm_window
-        
+
         # Current state
         self.current_state = VWAPReclaimState.NONE
-        
+
         # Detection tracking
         self.detection_bar_idx: int | None = None
         self.reclaim_direction: str | None = None  # "above" or "below"
-        
+
         # Confirmation tracking
         self.confirmations: set[str] = set()
-        
+
+        # Execution tracking (Sprint 4: Re-entry Protection)
+        self.execution_count: int = 0
+
         # Transition history for audit trail
         self.transition_history: list[StateTransition] = []
 
@@ -114,25 +122,25 @@ class VWAPReclaimStateMachine:
                 "Resetting previous reclaim."
             )
             self.reset()
-        
+
         # NONE -> DETECTED
         self._transition(
             to_state=VWAPReclaimState.DETECTED,
             bar_idx=bar_idx,
             reason=f"VWAP reclaim {direction} detected",
         )
-        
+
         # Store detection context
         self.detection_bar_idx = bar_idx
         self.reclaim_direction = direction
-        
+
         # DETECTED -> PENDING_ACCEPTANCE (immediate transition)
         self._transition(
             to_state=VWAPReclaimState.PENDING_ACCEPTANCE,
             bar_idx=bar_idx,
             reason="Entering confirmation window",
         )
-        
+
         logger.info(
             f"VWAP reclaim detected at bar {bar_idx} (direction={direction}). "
             f"State: {self.current_state.value}"
@@ -155,13 +163,13 @@ class VWAPReclaimStateMachine:
                 f"Cannot confirm reclaim in EXPIRED state at bar {bar_idx}. "
                 "Reclaim timed out."
             )
-        
+
         if self.current_state == VWAPReclaimState.INVALIDATED:
             raise ValueError(
                 f"Cannot confirm reclaim in INVALIDATED state at bar {bar_idx}. "
                 "Reclaim structurally broken."
             )
-        
+
         if self.current_state != VWAPReclaimState.PENDING_ACCEPTANCE:
             # Allow confirmation in CONFIRMED state (multiple confirmations)
             if self.current_state != VWAPReclaimState.CONFIRMED:
@@ -169,10 +177,10 @@ class VWAPReclaimStateMachine:
                     f"Cannot confirm reclaim in state {self.current_state.value} at bar {bar_idx}. "
                     "Must be PENDING_ACCEPTANCE."
                 )
-        
+
         # Add confirmation to set
         self.confirmations.add(confirmation_type)
-        
+
         # Transition to CONFIRMED (if not already)
         if self.current_state == VWAPReclaimState.PENDING_ACCEPTANCE:
             self._transition(
@@ -206,16 +214,19 @@ class VWAPReclaimStateMachine:
                 f"Cannot execute reclaim in state {self.current_state.value} at bar {bar_idx}. "
                 "Must be CONFIRMED."
             )
-        
+
+        # Sprint 4: Increment execution count for re-entry protection
+        self.execution_count += 1
+
         self._transition(
             to_state=VWAPReclaimState.EXECUTED,
             bar_idx=bar_idx,
             reason="Trade executed",
         )
-        
+
         logger.info(
             f"VWAP reclaim executed at bar {bar_idx} "
-            f"(confirmations={list(self.confirmations)})"
+            f"(confirmations={list(self.confirmations)}, execution_count={self.execution_count})"
         )
 
     def on_expiration(self, bar_idx: int) -> None:
@@ -235,15 +246,15 @@ class VWAPReclaimStateMachine:
                 "Ignoring."
             )
             return
-        
+
         bars_waited = bar_idx - self.detection_bar_idx if self.detection_bar_idx else 0
-        
+
         self._transition(
             to_state=VWAPReclaimState.EXPIRED,
             bar_idx=bar_idx,
             reason=f"Reclaim expired after {bars_waited} bars (max: {self.max_confirm_window})",
         )
-        
+
         logger.info(
             f"VWAP reclaim expired at bar {bar_idx} "
             f"(bars_waited={bars_waited}, max={self.max_confirm_window})"
@@ -264,24 +275,71 @@ class VWAPReclaimStateMachine:
                 "Ignoring."
             )
             return
-        
+
         self._transition(
             to_state=VWAPReclaimState.INVALIDATED,
             bar_idx=bar_idx,
             reason=f"Invalidation: {reason}",
         )
-        
+
+        logger.info(f"VWAP reclaim invalidated at bar {bar_idx} (reason={reason})")
+
+    def on_stop_out(self, bar_idx: int) -> None:
+        """Handle stop-loss exit.
+
+        Sprint 3 Task 7: Distinguish stop-loss from invalidation.
+        Stop-out transitions to INVALIDATED to prevent re-entry on same reclaim.
+
+        Transitions: ANY -> INVALIDATED
+
+        Args:
+            bar_idx: Bar index where stop-out occurred
+        """
+        if self.current_state == VWAPReclaimState.INVALIDATED:
+            logger.debug(
+                f"Stop-out called while already INVALIDATED at bar {bar_idx}. "
+                "Ignoring."
+            )
+            return
+
+        self._transition(
+            to_state=VWAPReclaimState.INVALIDATED,
+            bar_idx=bar_idx,
+            reason="Stop-loss hit",
+        )
+
         logger.info(
-            f"VWAP reclaim invalidated at bar {bar_idx} (reason={reason})"
+            f"VWAP reclaim stop-out at bar {bar_idx} (state machine invalidated)"
         )
 
     def can_execute(self) -> bool:
         """Check if reclaim can be executed.
 
+        Sprint 4: Also checks execution_count to prevent re-entry on same reclaim.
+
         Returns:
-            True only if current_state == CONFIRMED
+            True only if current_state == CONFIRMED AND execution_count < MAX_EXECUTIONS_PER_RECLAIM
         """
-        return self.current_state == VWAPReclaimState.CONFIRMED
+        state_ok = self.current_state == VWAPReclaimState.CONFIRMED
+        capacity_ok = self.execution_count < MAX_EXECUTIONS_PER_RECLAIM
+
+        if state_ok and not capacity_ok:
+            logger.debug(
+                f"Execution blocked: execution_count ({self.execution_count}) "
+                f">= MAX_EXECUTIONS_PER_RECLAIM ({MAX_EXECUTIONS_PER_RECLAIM})"
+            )
+
+        return state_ok and capacity_ok
+
+    def has_execution_capacity(self) -> bool:
+        """Check if execution capacity is available.
+
+        Sprint 4: Helper method for re-entry protection.
+
+        Returns:
+            True if execution_count < MAX_EXECUTIONS_PER_RECLAIM
+        """
+        return self.execution_count < MAX_EXECUTIONS_PER_RECLAIM
 
     def is_expired(self, current_bar_idx: int) -> bool:
         """Check if reclaim has expired.
@@ -294,7 +352,7 @@ class VWAPReclaimStateMachine:
         """
         if self.detection_bar_idx is None:
             return False
-        
+
         bars_since = current_bar_idx - self.detection_bar_idx
         return bars_since > self.max_confirm_window
 
@@ -315,17 +373,19 @@ class VWAPReclaimStateMachine:
         """Reset state machine to NONE.
 
         Clears current state but preserves transition history for diagnostics.
+        Sprint 4: Also resets execution_count (fresh structural evidence).
         """
         self._transition(
             to_state=VWAPReclaimState.NONE,
             bar_idx=self.detection_bar_idx or 0,
             reason="State machine reset",
         )
-        
+
         self.detection_bar_idx = None
         self.reclaim_direction = None
         self.confirmations.clear()
-        
+        self.execution_count = 0  # Sprint 4: Reset for new reclaim
+
         logger.debug("State machine reset to NONE")
 
     def _transition(
@@ -347,12 +407,11 @@ class VWAPReclaimStateMachine:
             bar_idx=bar_idx,
             reason=reason,
         )
-        
+
         self.transition_history.append(transition)
         self.current_state = to_state
-        
+
         logger.debug(
             f"State transition: {transition.from_state.value} -> {transition.to_state.value} "
             f"at bar {bar_idx} (reason: {reason})"
         )
-
