@@ -7,8 +7,8 @@ into Signal objects with SOP-compliant scoring and classification.
 from typing import Any
 
 import pandas as pd
-
 from common.logger import get_logger
+
 from rule_engine.config_loader import load_scoring_config
 from rule_engine.htf.integration import adjust_score_with_htf, validate_signal_with_htf
 from rule_engine.htf.types import ChopSeverity, HTFBias
@@ -140,6 +140,8 @@ def build_diagnostics(
             features.get("second_confirmation_long", False)
         )
         diag["second_confirmation_type"] = features.get("second_confirmation_long_type")
+        # Sprint 2 Task 4: Add full list of confirmations
+        diag["second_confirmation_types"] = features.get("second_confirmation_long_types", [])
         reasons = features.get("second_confirmation_long_reasons", [])
         diag["second_confirmation_reasons"] = list(reasons) if reasons else []
     elif effective_direction == "short":
@@ -147,12 +149,15 @@ def build_diagnostics(
             features.get("second_confirmation_short", False)
         )
         diag["second_confirmation_type"] = features.get("second_confirmation_short_type")
+        # Sprint 2 Task 4: Add full list of confirmations
+        diag["second_confirmation_types"] = features.get("second_confirmation_short_types", [])
         reasons = features.get("second_confirmation_short_reasons", [])
         diag["second_confirmation_reasons"] = list(reasons) if reasons else []
     else:
         # Unknown direction - default to False
         diag["second_confirmation_satisfied"] = False
         diag["second_confirmation_type"] = None
+        diag["second_confirmation_types"] = []
         diag["second_confirmation_reasons"] = []
 
     # Map bars_since_vwap_reclaim to bars_since_reclaim
