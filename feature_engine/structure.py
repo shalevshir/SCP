@@ -715,12 +715,19 @@ class StructureContextTracker:
         # Check 4: Expansion signals (from detect_expansion)
         # Per SOP: Expansion indicates market resolving from compression
         # This satisfies second confirmation requirement
+        # Only apply if expansion aligns with reclaim direction
         expansion_detected, expansion_reasons = self.detect_expansion()
         if expansion_detected and expansion_reasons:
-            result["confirmed"] = True
-            for reason in expansion_reasons:
-                result["confirmations"].add(f"expansion_{reason}")
-                result["reasons"].append(f"expansion_{reason}: market resolving from compression")
+            # Check if expansion aligns with reclaim direction
+            reclaim_matches_direction = (
+                (direction == "long" and self.vwap_reclaim_direction == "above") or
+                (direction == "short" and self.vwap_reclaim_direction == "below")
+            )
+            if reclaim_matches_direction:
+                result["confirmed"] = True
+                for reason in expansion_reasons:
+                    result["confirmations"].add(f"expansion_{reason}")
+                    result["reasons"].append(f"expansion_{reason}: market resolving from compression")
 
         # Sprint 2 Task 4: Set confirmation_type for backward compatibility
         if result["confirmations"]:
