@@ -27,6 +27,12 @@ class TestEntryExecution:
             rationale="Test signal",
             validation_flags={"session_ok": True},
             enforcer_tier="EarlyMild",
+            diagnostics={
+                "second_confirmation_satisfied": True,
+                "second_confirmation_type": "vwap_hold",
+                "second_confirmation_reasons": [],
+                "bars_since_reclaim": 1,
+            },
         )
 
         execution = EntryExecution(
@@ -62,7 +68,12 @@ class TestExecuteEntryAtNextOpen:
             rationale="HTF HH/HL intact, VWAP reclaim confirmed",
             validation_flags={"session_ok": True, "tier_ok": True},
             enforcer_tier="EarlyMild",
-            diagnostics={"expansion_detected": True, "expansion_reasons": ["price_momentum"]},
+            diagnostics={
+                "second_confirmation_satisfied": True,
+                "second_confirmation_type": "vwap_hold",
+                "second_confirmation_reasons": ["vwap_hold: price holding above VWAP"],
+                "bars_since_reclaim": 2,
+            },
         )
 
     @pytest.fixture
