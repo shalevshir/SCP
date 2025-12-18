@@ -120,10 +120,11 @@ class TestSingleBarChecker:
             close=2665.0,
         )
         
+        # VWAP_RECLAIM has 8-bar grace period, so use bars_elapsed=9 to be after grace
         closed_trade = check_trade_exit_single_bar(
             trade=trade,
             candle=candle,
-            bars_elapsed=3,
+            bars_elapsed=9,
             invalidation_checker=None,
             config=None,
             candle_features=None,
@@ -146,10 +147,11 @@ class TestSingleBarChecker:
             close=2646.0,
         )
         
+        # VWAP_RECLAIM has 8-bar grace period, so use bars_elapsed=9 to be after grace
         closed_trade = check_trade_exit_single_bar(
             trade=trade,
             candle=candle,
-            bars_elapsed=3,
+            bars_elapsed=9,
             invalidation_checker=None,
             config=None,
             candle_features=None,
@@ -177,10 +179,11 @@ class TestSingleBarChecker:
             close=2636.0,
         )
         
+        # VWAP_RECLAIM has 8-bar grace period, so use bars_elapsed=9 to be after grace
         closed_trade = check_trade_exit_single_bar(
             trade=trade,
             candle=candle,
-            bars_elapsed=3,
+            bars_elapsed=9,
             invalidation_checker=None,
             config=None,
             candle_features=None,
@@ -207,10 +210,11 @@ class TestSingleBarChecker:
             close=2653.0,
         )
         
+        # VWAP_RECLAIM has 8-bar grace period, so use bars_elapsed=9 to be after grace
         closed_trade = check_trade_exit_single_bar(
             trade=trade,
             candle=candle,
-            bars_elapsed=3,
+            bars_elapsed=9,
             invalidation_checker=None,
             config=None,
             candle_features=None,
@@ -232,10 +236,11 @@ class TestSingleBarChecker:
             close=2660.0,
         )
         
+        # VWAP_RECLAIM has 8-bar grace period, so use bars_elapsed=9 to be after grace
         closed_trade = check_trade_exit_single_bar(
             trade=trade,
             candle=candle,
-            bars_elapsed=3,
+            bars_elapsed=9,
             invalidation_checker=None,
             config=None,
             candle_features=None,
@@ -346,8 +351,8 @@ class TestSingleBarChecker:
         )
         assert closed_trade_bar2.exit_reason == "sl"
 
-    def test_reclaim_grace_period_2_bars(self):
-        """Test RECLAIM grace period (2 bars) skips SL/TP checks."""
+    def test_reclaim_grace_period_8_bars(self):
+        """Test RECLAIM grace period (8 bars) skips SL/TP checks."""
         trade = make_trade(
             direction="long",
             setup_type="VWAP_RECLAIM",
@@ -365,11 +370,11 @@ class TestSingleBarChecker:
             close=2646.0,
         )
         
-        # Bar 2 - within grace period
+        # Bar 8 - still within grace period (ACCEPTANCE_GRACE_BARS_RECLAIM = 8)
         result_trade = check_trade_exit_single_bar(
             trade=trade,
             candle=candle,
-            bars_elapsed=2,
+            bars_elapsed=8,
             invalidation_checker=None,
             config=None,
             candle_features=None,
@@ -377,11 +382,11 @@ class TestSingleBarChecker:
         
         assert result_trade.status == "OPEN"
         
-        # Bar 3 - outside grace period
+        # Bar 9 - outside grace period
         closed_trade = check_trade_exit_single_bar(
             trade=trade,
             candle=candle,
-            bars_elapsed=3,
+            bars_elapsed=9,
             invalidation_checker=None,
             config=None,
             candle_features=None,
