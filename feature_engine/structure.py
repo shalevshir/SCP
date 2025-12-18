@@ -538,13 +538,14 @@ class StructureContextTracker:
             current_bar_idx: Current bar index
         """
         # Check if reclaim has expired
+        # Only expire PENDING_ACCEPTANCE state (waiting for confirmation)
+        # CONFIRMED state should NOT expire - once confirmed, setup remains valid
+        # until executed or a new reclaim replaces it
         if self.vwap_reclaim_sm.current_state == VWAPReclaimState.PENDING_ACCEPTANCE:
             if self.vwap_reclaim_sm.is_expired(current_bar_idx):
                 self.vwap_reclaim_sm.on_expiration(bar_idx=current_bar_idx)
-        elif self.vwap_reclaim_sm.current_state == VWAPReclaimState.CONFIRMED:
-            # Also check expiration in CONFIRMED state (edge case: confirmed but not executed)
-            if self.vwap_reclaim_sm.is_expired(current_bar_idx):
-                self.vwap_reclaim_sm.on_expiration(bar_idx=current_bar_idx)
+        # NOTE: Removed expiration check for CONFIRMED state
+        # Once confirmation is achieved, the setup remains valid for execution
 
     def compute_second_confirmation(self, direction: str) -> dict:
         """Compute second confirmation status for VWAP_RECLAIM entry.
@@ -611,11 +612,22 @@ class StructureContextTracker:
         # Stale reclaim expiration - per vwap_Reclain_fix.mdc Task 3:
         # "If no confirmation within window → setup expires"
         # "Prevent stale reclaim execution"
+        # FIX: Only expire if state machine is NOT in CONFIRMED state
+        # If confirmation happened within window, the state machine will be CONFIRMED
+        # and we should honor that confirmation for subsequent bars
         if bars_since > MAX_RECLAIM_AGE:
-            result["confirmed"] = False
-            result["confirmation_type"] = "expired"
-            result["reasons"] = ["Reclaim expired: no confirmation within window"]
-            return result
+            if self.vwap_reclaim_sm.current_state == VWAPReclaimState.CONFIRMED:
+                # Confirmation was achieved within window - setup is still valid
+                result["confirmed"] = True
+                result["confirmation_type"] = "confirmed_persistent"
+                result["reasons"] = ["Reclaim confirmed: confirmation achieved within window"]
+                return result
+            else:
+                # No confirmation within window - setup expires
+                result["confirmed"] = False
+                result["confirmation_type"] = "expired"
+                result["reasons"] = ["Reclaim expired: no confirmation within window"]
+                return result
 
         # Direction-specific confirmation checks
         if direction == "long" and self.vwap_reclaim_direction == "above":
@@ -699,6 +711,16 @@ class StructureContextTracker:
                         result["confirmed"] = True
                         result["confirmations"].add("micro_lh")  # Sprint 2 Task 4
                         result["reasons"].append("micro_lh: lower high below VWAP")
+
+        # Check 4: Expansion signals (from detect_expansion)
+        # Per SOP: Expansion indicates market resolving from compression
+        # This satisfies second confirmation requirement
+        expansion_detected, expansion_reasons = self.detect_expansion()
+        if expansion_detected and expansion_reasons:
+            result["confirmed"] = True
+            for reason in expansion_reasons:
+                result["confirmations"].add(f"expansion_{reason}")
+                result["reasons"].append(f"expansion_{reason}: market resolving from compression")
 
         # Sprint 2 Task 4: Set confirmation_type for backward compatibility
         if result["confirmations"]:
@@ -1587,6 +1609,8 @@ def compute_structure_context_batch(
     swing_window: int = 5,
     clarity_window: int = 10,
     timeframe: str = "1m",
+    vwap_series: pd.Series | None = None,
+    volume_series: pd.Series | None = None,
 ) -> pd.DataFrame:
     """Compute StructureContext fields for entire DataFrame (batch mode).
 
@@ -1598,6 +1622,8 @@ def compute_structure_context_batch(
         swing_window: Swing detection window (default 5)
         clarity_window: Clarity computation window (default 10)
         timeframe: Timeframe for asset-adjusted ATR thresholds (default "1m")
+        vwap_series: Optional VWAP values for second confirmation tracking
+        volume_series: Optional volume values for second confirmation tracking
 
     Returns:
         DataFrame with original index and derived structure columns:
@@ -1622,6 +1648,9 @@ def compute_structure_context_batch(
         - sweep_direction: Direction of sweep ("bullish"/"bearish")
         - sweep_price: Price level that was swept
         - sweep_age: Bars since last sweep
+        - second_confirmation_long: Boolean for long confirmation (if vwap_series provided)
+        - second_confirmation_short: Boolean for short confirmation (if vwap_series provided)
+        - bars_since_vwap_reclaim: Bars since VWAP reclaim detected
 
     Raises:
         ValueError: If required columns missing
@@ -1651,9 +1680,15 @@ def compute_structure_context_batch(
         timeframe=timeframe,
     )
 
+    # Check if VWAP tracking is enabled
+    has_vwap = vwap_series is not None and len(vwap_series) == len(df)
+    has_volume = volume_series is not None and len(volume_series) == len(df)
+
     # Process each row and collect contexts
     contexts = []
     expansion_data = []  # Track expansion detection separately
+    second_confirmation_data = []  # Track second confirmation for each bar
+    
     for i in range(len(df)):
         ctx = tracker.update(
             high=df["high"].iloc[i],
@@ -1662,9 +1697,38 @@ def compute_structure_context_batch(
         )
         contexts.append(ctx)
         
+        # Update VWAP state for second confirmation tracking
+        if has_vwap:
+            vwap_val = vwap_series.iloc[i]
+            close_val = df["close"].iloc[i]
+            # Only update if both values are valid (not NaN)
+            if pd.notna(vwap_val) and pd.notna(close_val):
+                tracker.update_vwap_state(vwap=float(vwap_val), close=float(close_val))
+        
+        # Update volume state for second confirmation tracking
+        if has_volume:
+            vol_val = volume_series.iloc[i]
+            if pd.notna(vol_val):
+                tracker.update_volume_state(volume=float(vol_val))
+        
         # Detect expansion for this bar (for VWAP_RECLAIM entry timing)
         expansion_detected, expansion_reasons = tracker.detect_expansion()
         expansion_data.append((expansion_detected, expansion_reasons))
+        
+        # Compute second confirmation for both directions
+        long_conf = tracker.compute_second_confirmation("long")
+        short_conf = tracker.compute_second_confirmation("short")
+        second_confirmation_data.append({
+            "second_confirmation_long": long_conf["confirmed"],
+            "second_confirmation_short": short_conf["confirmed"],
+            "second_confirmation_long_type": long_conf["confirmation_type"],
+            "second_confirmation_short_type": short_conf["confirmation_type"],
+            "second_confirmation_long_types": list(long_conf["confirmations"]),
+            "second_confirmation_short_types": list(short_conf["confirmations"]),
+            "second_confirmation_long_reasons": long_conf["reasons"],
+            "second_confirmation_short_reasons": short_conf["reasons"],
+            "bars_since_vwap_reclaim": long_conf["bars_since_reclaim"],
+        })
 
     # Convert to DataFrame
     result = pd.DataFrame(
@@ -1694,6 +1758,8 @@ def compute_structure_context_batch(
                 # Expansion detection (for VWAP_RECLAIM entry timing)
                 "expansion_detected": expansion_data[i][0],
                 "expansion_reasons": expansion_data[i][1],
+                # Second confirmation fields (for VWAP_RECLAIM execution gate)
+                **second_confirmation_data[i],
             }
             for i, ctx in enumerate(contexts)
         ],

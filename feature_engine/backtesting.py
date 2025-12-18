@@ -257,6 +257,16 @@ class BacktestProcessor:
                     # Expansion detection (for VWAP_RECLAIM entry timing)
                     "expansion_detected": features.get("expansion_detected"),
                     "expansion_reasons": features.get("expansion_reasons"),
+                    # Second confirmation (for VWAP_RECLAIM execution gate)
+                    "second_confirmation_long": features.get("second_confirmation_long"),
+                    "second_confirmation_short": features.get("second_confirmation_short"),
+                    "second_confirmation_long_type": features.get("second_confirmation_long_type"),
+                    "second_confirmation_short_type": features.get("second_confirmation_short_type"),
+                    "second_confirmation_long_types": features.get("second_confirmation_long_types"),
+                    "second_confirmation_short_types": features.get("second_confirmation_short_types"),
+                    "second_confirmation_long_reasons": features.get("second_confirmation_long_reasons"),
+                    "second_confirmation_short_reasons": features.get("second_confirmation_short_reasons"),
+                    "bars_since_vwap_reclaim": features.get("bars_since_vwap_reclaim"),
                 }
             )
 
@@ -391,6 +401,16 @@ class BacktestProcessor:
                     # Expansion detection (for VWAP_RECLAIM entry timing)
                     "expansion_detected": features.get("expansion_detected"),
                     "expansion_reasons": features.get("expansion_reasons"),
+                    # Second confirmation (for VWAP_RECLAIM execution gate)
+                    "second_confirmation_long": features.get("second_confirmation_long"),
+                    "second_confirmation_short": features.get("second_confirmation_short"),
+                    "second_confirmation_long_type": features.get("second_confirmation_long_type"),
+                    "second_confirmation_short_type": features.get("second_confirmation_short_type"),
+                    "second_confirmation_long_types": features.get("second_confirmation_long_types"),
+                    "second_confirmation_short_types": features.get("second_confirmation_short_types"),
+                    "second_confirmation_long_reasons": features.get("second_confirmation_long_reasons"),
+                    "second_confirmation_short_reasons": features.get("second_confirmation_short_reasons"),
+                    "bars_since_vwap_reclaim": features.get("bars_since_vwap_reclaim"),
                 }
             )
 
@@ -468,10 +488,16 @@ class BacktestProcessor:
         features["structure_type"] = structure_labels  # Alias
 
         # Add structure context (continuous derived fields)
+        # Pass VWAP and volume for second confirmation tracking
+        vwap_series = features["vwap"] if "vwap" in features.columns else None
+        volume_series = features["volume"] if "volume" in features.columns else None
+        
         structure_context = compute_structure_context_batch(
             features[["high", "low", "close"]],
             swing_window=self.swing_window,
             timeframe=self.timeframe,
+            vwap_series=vwap_series,
+            volume_series=volume_series,
         )
 
         # Merge structure context fields into features
