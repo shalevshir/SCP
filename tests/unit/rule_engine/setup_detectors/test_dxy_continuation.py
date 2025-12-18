@@ -227,3 +227,69 @@ class TestDXYContinuationDetector:
 
         result = detect_dxy_continuation(features, htf_bias, df)
         assert result is True
+
+
+class TestNoiseZoneHandling:
+    """Test that noise zone is handled via score penalty, not hard rejection.
+    
+    Per Shir Capital SOP: "Noise zone now handled as score penalty (not hard-block)"
+    The detect_dxy_continuation function should NOT hard-reject based on noise zone.
+    Noise handling is done via calculate_noise_penalty() in scoring.py.
+    
+    This test verifies the fix for the bug where is_noise_zone was checked as
+    a hard gate but never computed in the feature engine.
+    """
+
+    def test_is_noise_zone_not_a_hard_rejection(self):
+        """Test that is_noise_zone does NOT cause hard rejection.
+        
+        Noise zone detection should be handled via score penalty in scoring.py,
+        not as a hard gate in the detector. Valid setups should pass detection
+        regardless of is_noise_zone value.
+        
+        This is a regression test for the bug where is_noise_zone was checked
+        but never computed in the feature engine (always defaulted to False).
+        """
+        htf_bias = HTFBias(
+            bias="bullish",
+            direction="long",
+            score=8.5,
+            confidence="high",
+            dxy_corr_1m=-0.4,
+            dxy_corr_5m=-0.5,
+            dxy_structure="LL",
+            bars_since_bos=8,
+            dxy_chop_5m=False,
+            chop_detected=False,
+        )
+
+        # Create features with is_noise_zone=True
+        # If noise zone caused hard rejection, this would fail
+        features = pd.Series(
+            {
+                "open": 100.0,
+                "close": 105.0,
+                "high": 105.5,
+                "low": 99.5,
+                "atr": 3.0,
+                "structure_clarity": 0.7,
+                "is_chop": False,
+                "is_noise_zone": True,  # Noise zone should NOT cause hard rejection
+                "last_structure_label": "HH",
+            }
+        )
+
+        df = pd.DataFrame(
+            {
+                "high": [102, 104, 103],
+                "low": [98, 100, 101],  # HL pattern
+            }
+        )
+
+        # Should detect continuation even with is_noise_zone=True
+        # Noise zone handling is done via score penalty in scoring.py
+        result = detect_dxy_continuation(features, htf_bias, df)
+        assert result is True, (
+            "Noise zone should be handled via score penalty, not hard rejection. "
+            "See calculate_noise_penalty() in scoring.py for setup-aware noise handling."
+        )

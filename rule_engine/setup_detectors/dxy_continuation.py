@@ -129,11 +129,8 @@ def detect_dxy_continuation(
         logger.debug("DXY continuation rejected: rapid alternations (is_chop=True)")
         return False
 
-    # 5b. Noise zone check (ATR-based tight range detection)
-    is_noise_zone = features.get("is_noise_zone", False)
-    if is_noise_zone:
-        logger.debug("DXY continuation rejected: noise zone detected (is_noise_zone=True)")
-        return False
+    # 5b. Noise zone now handled as score penalty (not hard-block)
+    # See calculate_noise_penalty() in scoring.py for setup-aware noise handling
 
     # Also check DXY 5M chop from HTF bias
     if htf_bias.dxy_chop_5m:
