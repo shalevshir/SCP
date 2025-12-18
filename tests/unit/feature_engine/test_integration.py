@@ -374,3 +374,4 @@ class TestProcessFeaturesWithValidation:
         assert signal is None or hasattr(signal, "score")
 
 
+

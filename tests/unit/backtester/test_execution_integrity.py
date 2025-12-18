@@ -454,3 +454,4 @@ class TestSetupTypeHelpers:
         assert is_continuation(continuation_trade) is True
 
 
+

@@ -451,3 +451,4 @@ class TestSingleBarChecker:
         
         assert closed_trade.exit_reason == "timeout"
 
+

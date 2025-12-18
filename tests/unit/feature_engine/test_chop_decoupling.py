@@ -4,11 +4,13 @@ Tests verify that:
 1. Recent BOS in trend direction prevents structural chop flag
 2. Chop only blocks range-bound, non-expanding markets
 3. Trending sequences never rejected solely by chop
+4. is_structural_chop respects consecutive alternation semantics
 """
 
 import pytest
 
 from feature_engine.structure import StructureContextTracker
+from rule_engine.htf.calculator import is_structural_chop
 
 
 class TestChopDecoupling:
@@ -158,5 +160,70 @@ class TestChopWithExpansion:
         if context.bos_recent:
             assert context.is_structural_chop is False, \
                 "Recent BOS from expansion should prevent chop"
+
+
+class TestIsStructuralChopConsecutiveSemantics:
+    """Test that is_structural_chop respects consecutive alternation semantics.
+    
+    The function should only return True when there are min_alternations
+    CONSECUTIVE alternations. Trend continuation should reset the count.
+    """
+
+    def test_pure_alternations_detected_as_chop(self):
+        """Pure alternating sequence should be detected as chop."""
+        labels = ["HH", "LL", "HH", "LL"]  # 3 consecutive alternations
+        assert is_structural_chop(labels, min_alternations=2) is True
+
+    def test_pure_trend_not_chop(self):
+        """Pure trending sequence should NOT be detected as chop."""
+        labels = ["HH", "HL", "HH", "HL", "HH"]  # All bullish, no alternations
+        assert is_structural_chop(labels, min_alternations=2) is False
+
+    def test_alternations_followed_by_trend_resets_count(self):
+        """Alternations followed by trend continuation should reset count.
+        
+        This is a regression test for a bug where once min_alternations was
+        reached, subsequent trend bars didn't reset the count, causing
+        false positives for sequences ending with pure trend.
+        """
+        # 2 alternations followed by 3 trend bars
+        labels = ["HH", "LL", "HH", "HH", "HH"]
+        # HH→LL: alternation (count=1)
+        # LL→HH: alternation (count=2) 
+        # HH→HH: trend continuation, should reset count to 0
+        # HH→HH: trend continuation, count stays 0
+        # Final count = 0, should return False
+        assert is_structural_chop(labels, min_alternations=2) is False, \
+            "Alternations followed by trend should not be marked as chop"
+
+    def test_trend_followed_by_alternations_is_chop(self):
+        """Trend followed by alternations should be detected as chop."""
+        labels = ["HH", "HH", "LL", "HH", "LL"]
+        # HH→HH: trend, count stays 0
+        # HH→LL: alternation (count=1)
+        # LL→HH: alternation (count=2)
+        # HH→LL: alternation (count=3)
+        # Final count = 3 >= 2, should return True
+        assert is_structural_chop(labels, min_alternations=2) is True
+
+    def test_single_alternation_not_chop(self):
+        """Single alternation should not trigger chop."""
+        labels = ["HH", "LL", "LL", "LL"]
+        # HH→LL: alternation (count=1)
+        # LL→LL: trend, resets count to 0
+        # LL→LL: trend, count stays 0
+        assert is_structural_chop(labels, min_alternations=2) is False
+
+    def test_insufficient_labels_returns_false(self):
+        """Less than 3 labels should return False."""
+        assert is_structural_chop(["HH", "LL"], min_alternations=2) is False
+        assert is_structural_chop(["HH"], min_alternations=2) is False
+        assert is_structural_chop([], min_alternations=2) is False
+
+    def test_none_labels_filtered_out(self):
+        """None labels should be filtered out before processing."""
+        labels = [None, "HH", "LL", None, "HH", "LL"]
+        # After filtering: ["HH", "LL", "HH", "LL"] = 3 alternations
+        assert is_structural_chop(labels, min_alternations=2) is True
 
 

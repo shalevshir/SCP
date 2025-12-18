@@ -667,3 +667,4 @@ class TestIntegration:
             assert len(calculator.df_15m_buffer) >= 4
 
 
+

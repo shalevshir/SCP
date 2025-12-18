@@ -87,3 +87,4 @@ def test_weight_values_are_positive():
             ), f"Setup '{setup_name}' factor '{factor_name}' weight must be numeric: {weight_value}"
 
 
+

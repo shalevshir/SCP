@@ -208,3 +208,4 @@ class TestStructureQualityPenaltyWithBOSValidity:
             f"Invalid BOS with poor structure should have heavy penalty (got {penalty})"
 
 
+
