@@ -1,5 +1,6 @@
 """Unit tests for entry model - next bar open execution logic."""
 
+import json
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -274,3 +275,146 @@ class TestExecuteEntryAtNextOpen:
         assert execution.signal.setup_type == "VWAP_RECLAIM"
         assert execution.signal.score == 9.0
         assert execution.signal.confidence == "A+"
+
+
+class TestVwapReclaimDecisionLogging:
+    """Tests for _log_vwap_reclaim_decision logging behavior."""
+
+    def test_explicit_false_in_diagnostics_not_overridden_by_validation_flags(
+        self, caplog
+    ):
+        """Test that explicit False in diagnostics is not overridden.
+        
+        Bug: Using 'or' operator incorrectly evaluates second operand when
+        first is False. When diagnostics.get("session_ok") returns False,
+        the 'or' evaluates the second operand from validation_flags,
+        incorrectly logging the validation_flags value instead of the
+        explicit False from diagnostics.
+        
+        Expected behavior: diagnostics values should take precedence
+        regardless of their boolean value when explicitly set.
+        """
+        # Create signal with explicit False in diagnostics but True in validation_flags
+        signal = Signal(
+            timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
+            symbol="GC",
+            timeframe="1m",
+            direction="long",
+            setup_type="VWAP_RECLAIM",
+            htf_bias="bullish",
+            score=9.0,
+            confidence="A+",
+            factors={"structure": 2.0},
+            rationale="Test signal with False flags",
+            validation_flags={
+                "session_ok": True,  # This should NOT override diagnostics
+                "tier_ok": True,     # This should NOT override diagnostics
+            },
+            enforcer_tier="EarlyMild",
+            diagnostics={
+                "session_ok": False,  # Explicitly False - should be logged
+                "tier_ok": False,     # Explicitly False - should be logged
+                "second_confirmation_satisfied": True,
+                "second_confirmation_type": "vwap_hold",
+                "bars_since_reclaim": 2,
+                "reclaim_state": "confirmed",
+            },
+        )
+        
+        next_candle = Candle(
+            timestamp=datetime(2025, 1, 1, 10, 1, tzinfo=UTC),
+            open=2650.0,
+            high=2655.0,
+            low=2648.0,
+            close=2652.0,
+            volume=1000.0,
+            symbol="GC",
+            timeframe="1m",
+            source="TEST",
+        )
+        
+        # Execute entry (which triggers _log_vwap_reclaim_decision)
+        with caplog.at_level("INFO"):
+            execution = execute_entry_at_next_open(signal, next_candle)
+        
+        # Find the VWAP_RECLAIM_DECISION log entry
+        decision_log = None
+        for record in caplog.records:
+            if "VWAP_RECLAIM_DECISION" in record.message:
+                # Extract JSON from log message
+                json_str = record.message.split("VWAP_RECLAIM_DECISION: ")[1]
+                decision_log = json.loads(json_str)
+                break
+        
+        assert decision_log is not None, "No VWAP_RECLAIM_DECISION log found"
+        
+        # BUG: These assertions will fail with current code because 'or'
+        # operator incorrectly uses validation_flags when diagnostics=False
+        assert decision_log["session_ok"] is False, (
+            "session_ok should be False from diagnostics, not True from "
+            "validation_flags"
+        )
+        assert decision_log["tier_ok"] is False, (
+            "tier_ok should be False from diagnostics, not True from "
+            "validation_flags"
+        )
+        
+        # Verify execution still succeeded (flags don't affect execution logic)
+        assert execution.executed is True
+
+    def test_validation_flags_used_when_diagnostics_missing_keys(self, caplog):
+        """Test validation_flags fallback when keys absent from diagnostics."""
+        # Create signal with missing session_ok/tier_ok in diagnostics
+        signal = Signal(
+            timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
+            symbol="GC",
+            timeframe="1m",
+            direction="long",
+            setup_type="VWAP_RECLAIM",
+            htf_bias="bullish",
+            score=9.0,
+            confidence="A+",
+            factors={"structure": 2.0},
+            rationale="Test signal fallback to validation_flags",
+            validation_flags={
+                "session_ok": True,
+                "tier_ok": False,
+            },
+            enforcer_tier="EarlyMild",
+            diagnostics={
+                # session_ok and tier_ok intentionally omitted
+                "second_confirmation_satisfied": True,
+                "second_confirmation_type": "vwap_hold",
+                "bars_since_reclaim": 1,
+            },
+        )
+        
+        next_candle = Candle(
+            timestamp=datetime(2025, 1, 1, 10, 1, tzinfo=UTC),
+            open=2650.0,
+            high=2655.0,
+            low=2648.0,
+            close=2652.0,
+            volume=1000.0,
+            symbol="GC",
+            timeframe="1m",
+            source="TEST",
+        )
+        
+        with caplog.at_level("INFO"):
+            execution = execute_entry_at_next_open(signal, next_candle)
+        
+        # Find the VWAP_RECLAIM_DECISION log entry
+        decision_log = None
+        for record in caplog.records:
+            if "VWAP_RECLAIM_DECISION" in record.message:
+                json_str = record.message.split("VWAP_RECLAIM_DECISION: ")[1]
+                decision_log = json.loads(json_str)
+                break
+        
+        assert decision_log is not None
+        
+        # Should use validation_flags as fallback
+        assert decision_log["session_ok"] is True
+        assert decision_log["tier_ok"] is False
+        assert execution.executed is True

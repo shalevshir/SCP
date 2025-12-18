@@ -219,10 +219,13 @@ def _log_vwap_reclaim_decision(
     confirmation_type = diagnostics.get("second_confirmation_type")
     session_ok = (
         diagnostics.get("session_ok")
-        or signal.validation_flags.get("session_ok")
+        if "session_ok" in diagnostics
+        else signal.validation_flags.get("session_ok")
     )
     tier_ok = (
-        diagnostics.get("tier_ok") or signal.validation_flags.get("tier_ok")
+        diagnostics.get("tier_ok")
+        if "tier_ok" in diagnostics
+        else signal.validation_flags.get("tier_ok")
     )
     
     # Build confirmations list
