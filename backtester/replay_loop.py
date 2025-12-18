@@ -234,7 +234,9 @@ class BacktestReplayLoop:
 
         # State tracking
         self._active_trades: dict[str, Trade] = {}
-        self._trade_bar_counts: dict[str, int] = {}  # External bar tracking (trade_id -> bars_elapsed)
+        self._trade_bar_counts: dict[str, int] = (
+            {}
+        )  # External bar tracking (trade_id -> bars_elapsed)
         self._daily_pnl: float = 0.0
         self._session_date: datetime | None = None
         self._trades_today: int = 0
@@ -313,15 +315,16 @@ class BacktestReplayLoop:
                     ts_dt = current_timestamp.to_pydatetime()
                 else:
                     ts_dt = current_timestamp
-                
+
                 # Make both timezone-aware or naive for comparison
                 exec_start = self.execution_start
                 if ts_dt.tzinfo is None and exec_start.tzinfo is not None:
                     exec_start = exec_start.replace(tzinfo=None)
                 elif ts_dt.tzinfo is not None and exec_start.tzinfo is None:
                     from datetime import timezone
+
                     exec_start = exec_start.replace(tzinfo=timezone.utc)
-                
+
                 if ts_dt < exec_start:
                     execution_enabled = False
 
@@ -366,12 +369,18 @@ class BacktestReplayLoop:
         logger.info("Signal Flow Diagnostics")
         logger.info("=" * 80)
         logger.info(f"Setup candidates detected: {results.setup_candidates}")
-        logger.info(f"Rejected at scoring (score too low): {results.rejected_at_scoring}")
-        logger.info(f"Rejected at execution (expansion gate): {results.rejected_at_execution}")
+        logger.info(
+            f"Rejected at scoring (score too low): {results.rejected_at_scoring}"
+        )
+        logger.info(
+            f"Rejected at execution (expansion gate): {results.rejected_at_execution}"
+        )
         logger.info(f"Executed trades: {results.executed_trades}")
         if results.setup_candidates > 0:
             execution_rate = (results.executed_trades / results.setup_candidates) * 100
-            logger.info(f"Execution rate: {execution_rate:.1f}% (executed / candidates)")
+            logger.info(
+                f"Execution rate: {execution_rate:.1f}% (executed / candidates)"
+            )
         logger.info("=" * 80)
 
         return results
@@ -508,7 +517,7 @@ class BacktestReplayLoop:
                 f"Setup candidate detected: {signal.setup_type} "
                 f"(score={signal.score}, confidence={signal.confidence})"
             )
-        
+
         # Track rejection at scoring (score too low, confidence not A+)
         if signal.setup_type != "REJECTED" and signal.confidence != "A+":
             self._rejected_at_scoring += 1
@@ -519,7 +528,7 @@ class BacktestReplayLoop:
 
         # Step 7: Execute entry at next bar open
         execution = execute_entry_at_next_open(signal, next_candle)
-        
+
         # Track rejection at execution (A+ but expansion gate failed)
         if not execution.executed and signal.confidence == "A+":
             if "expansion" in execution.rejection_reason.lower():
@@ -528,7 +537,33 @@ class BacktestReplayLoop:
                     f"Rejected at execution: {signal.setup_type} "
                     f"(reason={execution.rejection_reason})"
                 )
-        
+
+        # Sprint 4 Task 3: Check execution gate for VWAP_RECLAIM (re-entry protection)
+        if (
+            execution.executed
+            and signal.setup_type == "VWAP_RECLAIM"
+            and self._processor
+            and hasattr(self._processor, "_streaming")
+            and hasattr(self._processor._streaming, "structure_tracker")
+            and hasattr(self._processor._streaming.structure_tracker, "vwap_reclaim_sm")
+        ):
+            state_machine = self._processor._streaming.structure_tracker.vwap_reclaim_sm
+            if not state_machine.can_execute():
+                logger.warning(
+                    f"VWAP_RECLAIM execution blocked: Max executions reached for current reclaim "
+                    f"(execution_count={state_machine.execution_count}, "
+                    f"state={state_machine.current_state.value})"
+                )
+                # Override execution flag to block trade creation
+                execution = execution.__class__(
+                    signal_timestamp=execution.signal_timestamp,
+                    entry_timestamp=execution.entry_timestamp,
+                    entry_price=execution.entry_price,
+                    signal=execution.signal,
+                    executed=False,
+                    rejection_reason="Max executions reached for current reclaim",
+                )
+
         # Track executed trades
         if execution.executed:
             self._executed_trades += 1
@@ -972,6 +1007,36 @@ class BacktestReplayLoop:
         # (for PDLL checks during trade simulation)
         self._invalidation_checker.record_trade_outcome(closed_trade, won=won)
 
+        # Sprint 4 Task 2: Notify state machine on VWAP_RECLAIM stop-out
+        if (
+            closed_trade.setup_type == "VWAP_RECLAIM"
+            and closed_trade.exit_reason == "sl"
+        ):
+            # Access state machine through processor -> streaming -> structure_tracker
+            if (
+                self._processor
+                and hasattr(self._processor, "_streaming")
+                and hasattr(self._processor._streaming, "structure_tracker")
+                and hasattr(
+                    self._processor._streaming.structure_tracker, "vwap_reclaim_sm"
+                )
+            ):
+                # Calculate bar index for notification
+                # Use duration_bars if available, otherwise estimate from timestamps
+                if closed_trade.duration_bars is not None:
+                    # Approximate bar index (we don't have absolute bar idx here)
+                    bar_idx = closed_trade.duration_bars
+                else:
+                    bar_idx = 0  # Fallback
+
+                self._processor._streaming.structure_tracker.vwap_reclaim_sm.on_stop_out(
+                    bar_idx=bar_idx
+                )
+                logger.info(
+                    f"Trade {closed_trade.trade_id}: VWAP_RECLAIM stop-out "
+                    f"notified to state machine (bar_idx={bar_idx})"
+                )
+
         # Track max consecutive losses for reporting
         current_state = (
             self._processor._behavior_tracker.state
@@ -1177,14 +1242,14 @@ class BacktestReplayLoop:
 
     def _calculate_chop_diagnostics(self) -> dict:
         """Calculate chop-related statistics from all executions.
-        
+
         Note: Chop state is determined from validation_flags["chop_severity"],
         NOT validation_flags["chop_detected"] (which doesn't exist).
         The validation flow records:
         - validation_flags["chop_severity"]: "none" | "soft" | "hard"
         - validation_flags["chop_ok"]: True/False
         - signal.diagnostics["chop_detected"]: True/False (derived from severity)
-        
+
         Returns:
             Dict containing:
             - signals_evaluated_during_chop: Total signals evaluated during chop
@@ -1200,37 +1265,37 @@ class BacktestReplayLoop:
         reclaims_penalized_by_chop = 0
         continuations_blocked_by_chop = 0
         chop_severity_distribution = {"none": 0, "soft": 0, "hard": 0}
-        
+
         for execution in self._all_executions:
             validation_flags = execution.signal.validation_flags
             # Use chop_severity from validation_flags (the authoritative source)
             chop_severity = validation_flags.get("chop_severity", "none")
             setup_type = execution.signal.setup_type
-            
+
             # Determine chop state from severity (not from non-existent "chop_detected" flag)
             chop_detected = chop_severity != "none"
-            
+
             # Track severity distribution
             chop_severity_distribution[chop_severity] = (
                 chop_severity_distribution.get(chop_severity, 0) + 1
             )
-            
+
             if chop_detected:
                 signals_evaluated_during_chop += 1
-                
+
                 # Check if rejected due to chop
                 rejection_reason = execution.rejection_reason or ""
                 if "chop" in rejection_reason.lower():
                     signals_blocked_by_chop += 1
-                    
+
                     # Track by setup type
                     if setup_type == "DXY_CONTINUATION":
                         continuations_blocked_by_chop += 1
-                
+
                 # Track fades allowed during chop
                 if setup_type == "VWAP_FADE" and execution.executed:
                     fades_allowed_during_chop += 1
-                
+
                 # Track reclaims penalized (soft chop, not blocked)
                 if (
                     setup_type == "VWAP_RECLAIM"
@@ -1238,7 +1303,7 @@ class BacktestReplayLoop:
                     and not ("chop" in rejection_reason.lower())
                 ):
                     reclaims_penalized_by_chop += 1
-        
+
         return {
             "signals_evaluated_during_chop": signals_evaluated_during_chop,
             "signals_blocked_by_chop": signals_blocked_by_chop,
