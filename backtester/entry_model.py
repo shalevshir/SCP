@@ -216,12 +216,16 @@ def _log_vwap_reclaim_decision(
     diagnostics = signal.diagnostics if signal.diagnostics else {}
     reclaim_state = diagnostics.get("reclaim_state", "unknown")
     bars_since_reclaim = diagnostics.get("bars_since_reclaim", 0)
+    # Use 'in' check to respect explicit False values in diagnostics
     session_ok = (
         diagnostics.get("session_ok")
-        or signal.validation_flags.get("session_ok")
+        if "session_ok" in diagnostics
+        else signal.validation_flags.get("session_ok")
     )
     tier_ok = (
-        diagnostics.get("tier_ok") or signal.validation_flags.get("tier_ok")
+        diagnostics.get("tier_ok")
+        if "tier_ok" in diagnostics
+        else signal.validation_flags.get("tier_ok")
     )
     
     # Sprint 2 Task 4: Build confirmations list from second_confirmation_types
