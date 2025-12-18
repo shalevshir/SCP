@@ -324,3 +324,4 @@ class TestFeatureIntegration:
         assert result["close_vwap_pct"].dtype == "float64"
 
 
+

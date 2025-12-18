@@ -156,18 +156,31 @@ def validate_reclaim_context(
         structure_clarity = htf_bias.structure_clarity
 
     # Get sweep info from features if available (more responsive)
+    # Check both current bar sweep AND recent sweep via sweep_age
+    SWEEP_RECENCY_THRESHOLD = 20  # Sweep within last 20 bars is considered recent
+    
     if features is not None:
-        sweep_detected = (
+        # Current bar sweep
+        sweep_on_this_bar = (
             features.get("liquidity_sweep", False) or htf_bias.liquidity_sweep_detected
         )
+        # Recent sweep via sweep_age
+        sweep_age = features.get("sweep_age")
+        sweep_recent = (
+            sweep_age is not None 
+            and not pd.isna(sweep_age) 
+            and int(sweep_age) <= SWEEP_RECENCY_THRESHOLD
+        )
+        sweep_detected = sweep_on_this_bar or sweep_recent
         bos_detected = features.get("bos_recent", False) or htf_bias.bos_detected
     else:
         sweep_detected = htf_bias.liquidity_sweep_detected
         bos_detected = htf_bias.bos_detected
+        sweep_age = None
 
     logger.info(
         f"VWAP_RECLAIM context check: "
-        f"sweep={sweep_detected}, "
+        f"sweep={sweep_detected}, sweep_age={sweep_age}, "
         f"clarity={structure_clarity:.2f}, "
         f"bos={bos_detected}"
     )

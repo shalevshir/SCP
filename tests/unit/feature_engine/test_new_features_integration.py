@@ -161,3 +161,4 @@ class TestNewFeaturesIntegration:
             assert upper_wick >= 0, f"Upper wick should be >= 0, got {upper_wick}"
 
 
+

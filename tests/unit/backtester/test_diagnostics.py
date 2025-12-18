@@ -323,3 +323,4 @@ def test_add_nested_diag_handles_none_diagnostics(sample_trade):
     assert sample_trade.diagnostics["entry_context"]["vwap"] == 2650.5
 
 
+

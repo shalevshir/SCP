@@ -1,0 +1,144 @@
+---
+alwaysApply: false
+---
+# Priority 1 — VWAP_RECLAIM Timing Fix (Entry Readiness, Not Detection)
+
+## Goal
+Prevent early VWAP_RECLAIM entries that occur before the pullback has fully resolved.
+Detection logic stays unchanged.  
+Only **entry timing** is refined.
+
+This fix targets:
+- Late / premature reclaim entries
+- Stop-outs caused by “one more pullback leg”
+- Entries without urgency / expansion
+
+---
+
+## Core Principle (DO NOT VIOLATE)
+> VWAP_RECLAIM may be **detected** without confirmation,  
+> but must NOT be **executed** without post-reclaim confirmation.
+
+Detection ≠ Entry.
+
+---
+
+## Task 1 — Introduce VWAP_RECLAIM Entry Readiness State
+
+### Description
+Add an explicit **entry readiness check** for VWAP_RECLAIM setups.
+
+After a reclaim is detected:
+- Mark setup as `SETUP_DETECTED`
+- Do NOT execute immediately
+- Wait for confirmation signals
+
+This is not a delay — it is confirmation.
+
+### DoD
+- VWAP_RECLAIM can exist without execution
+- Logs clearly show:
+  - setup_detected
+  - entry_ready (true/false)
+- No reclaim executes on the reclaim bar alone
+
+---
+
+## Task 2 — Require At Least ONE Post-Reclaim Confirmation Signal
+
+### Description
+Execution of VWAP_RECLAIM requires **at least one** confirmation **after** reclaim.
+
+Allowed confirmation categories (implementation choice):
+- Structure-based:
+  - Micro higher low after reclaim
+  - Micro BOS in trade direction
+- Price acceptance:
+  - Second close holding VWAP
+- Momentum:
+  - Expansion / displacement candle
+- Participation:
+  - Volume expansion after reclaim
+
+Confirmation must occur **after** reclaim detection.
+
+### DoD
+- Every executed VWAP_RECLAIM logs at least one confirmation reason
+- Losing trades caused by immediate pullback are materially reduced
+- Detection count unchanged; execution count reduced but cleaner
+
+---
+
+## Task 3 — Add Bounded Confirmation Window
+
+### Description
+Confirmation must occur within a limited window after reclaim.
+
+Rationale:
+- Late confirmations are not A+
+- Prevent stale reclaim execution
+
+Guidelines:
+- Window size configurable (suggest 5–10 bars on 1m)
+- If no confirmation within window → setup expires
+
+### DoD
+- No reclaim waits indefinitely
+- No confirmation logic references data outside its window
+- Expired setups reset cleanly and do not block new setups
+
+---
+
+## Task 4 — Prevent Buffer / State Mismatch
+
+### Description
+Confirmation logic must not rely on rolling buffers that cannot reference reclaim timing.
+
+Requirements:
+- Do NOT compute reclaim indices via rolling buffer math alone
+- Use:
+  - global bar index, or
+  - timestamp comparison
+- Never allow negative buffer indices
+
+### DoD
+- No negative or out-of-window buffer indexing
+- Confirmation logic deterministic regardless of buffer size
+- Reclaim timing and confirmation window are consistent
+
+---
+
+## Task 5 — Logging & Diagnostics (Mandatory)
+
+### Required Logs
+For every VWAP_RECLAIM candidate:
+- bars_since_reclaim
+- confirmation_window_remaining
+- confirmation_reasons (if any)
+- reason for non-execution (if applicable)
+
+### DoD
+- Logs allow answering:
+  “Was this reclaim early, late, or unconfirmed?”
+- Debugging does NOT require reading raw candles
+
+---
+
+## Explicit Non-Goals (Do NOT Change)
+- Do NOT change reclaim detection logic
+- Do NOT lower score thresholds
+- Do NOT relax liquidity sweep requirements
+- Do NOT modify stop-loss logic
+- Do NOT add new setup types
+
+---
+
+## Success Criteria
+- Fewer VWAP_RECLAIM stop-outs caused by shallow pullbacks
+- Executed reclaims show visible urgency / follow-through
+- Trade count decreases slightly; expectancy improves
+- A+ behavior preserved
+
+---
+
+End of instruction.
