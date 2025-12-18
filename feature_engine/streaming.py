@@ -403,8 +403,12 @@ class StreamingFeatureProcessor:
         # === 8. Second Confirmation for VWAP_RECLAIM ===
         features["second_confirmation_long"] = long_conf["confirmed"]
         features["second_confirmation_short"] = short_conf["confirmed"]
+        # Backward compatibility: single confirmation_type (first from set)
         features["second_confirmation_long_type"] = long_conf["confirmation_type"]
         features["second_confirmation_short_type"] = short_conf["confirmation_type"]
+        # Sprint 2 Task 4: Add full list of confirmations
+        features["second_confirmation_long_types"] = list(long_conf["confirmations"])
+        features["second_confirmation_short_types"] = list(short_conf["confirmations"])
         features["second_confirmation_long_reasons"] = long_conf["reasons"]
         features["second_confirmation_short_reasons"] = short_conf["reasons"]
         features["bars_since_vwap_reclaim"] = long_conf["bars_since_reclaim"]
