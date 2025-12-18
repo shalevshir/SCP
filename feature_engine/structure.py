@@ -553,27 +553,39 @@ class StructureContextTracker:
         # Direction-specific confirmation checks
         if direction == "long" and self.vwap_reclaim_direction == "above":
             # Check 1: VWAP hold - price holding above VWAP for 2+ bars
-            if len(self.close_buffer_vwap) >= 2 and len(self.vwap_buffer) >= 2:
-                recent_closes = list(self.close_buffer_vwap)[-2:]
-                recent_vwaps = list(self.vwap_buffer)[-2:]
+            # Require at least 2 POST-reclaim bars and scope to post-reclaim data only
+            if bars_since >= 2 and len(self.close_buffer_vwap) >= 2 and len(self.vwap_buffer) >= 2:
+                # Use only the last min(bars_since, 2) bars (post-reclaim only)
+                lookback = min(bars_since, 2)
+                recent_closes = list(self.close_buffer_vwap)[-lookback:]
+                recent_vwaps = list(self.vwap_buffer)[-lookback:]
                 if all(c > v for c, v in zip(recent_closes, recent_vwaps)):
                     result["confirmed"] = True
                     result["confirmation_type"] = "vwap_hold"
                     result["reasons"].append("vwap_hold: price holding above VWAP")
 
             # Check 2: Volume expansion (1.5x average)
-            if len(self.volume_buffer) >= 5:
+            # Use pre-reclaim bars as baseline, verify spike is post-reclaim
+            if len(self.volume_buffer) >= bars_since + 4:  # Need at least 4 pre-reclaim bars for baseline
                 recent_volume = list(self.volume_buffer)
-                avg_volume = sum(recent_volume[:-1]) / len(recent_volume[:-1])
-                if avg_volume > 0 and recent_volume[-1] > avg_volume * 1.5:
-                    result["confirmed"] = True
-                    result["confirmation_type"] = result["confirmation_type"] or "volume_expansion"
-                    result["reasons"].append("volume_expansion: volume > 1.5x average")
+                # Split at reclaim: pre-reclaim bars for baseline, current bar must be post-reclaim
+                pre_reclaim_volumes = recent_volume[-(bars_since + 4):-bars_since] if bars_since > 0 else recent_volume[:-bars_since]
+                current_volume = recent_volume[-1]  # Most recent bar (post-reclaim)
+                
+                if len(pre_reclaim_volumes) >= 4:
+                    avg_volume = sum(pre_reclaim_volumes) / len(pre_reclaim_volumes)
+                    if avg_volume > 0 and current_volume > avg_volume * 1.5:
+                        result["confirmed"] = True
+                        result["confirmation_type"] = result["confirmation_type"] or "volume_expansion"
+                        result["reasons"].append("volume_expansion: volume > 1.5x average")
 
             # Check 3: Micro higher low (using low_buffer from structure tracking)
-            if len(self.low_buffer) >= 3:
-                lows = list(self.low_buffer)[-3:]
-                if lows[-1] > lows[-2] and len(self.vwap_buffer) > 0:
+            # Require at least 2 POST-reclaim bars and scope to post-reclaim data only
+            if bars_since >= 2 and len(self.low_buffer) >= 2:
+                # Use only the last min(bars_since, 3) bars (post-reclaim only)
+                lookback = min(bars_since, 3)
+                lows = list(self.low_buffer)[-lookback:]
+                if len(lows) >= 2 and lows[-1] > lows[-2] and len(self.vwap_buffer) > 0:
                     # Verify the higher low is above VWAP
                     if lows[-1] > self.vwap_buffer[-1]:
                         result["confirmed"] = True
@@ -582,27 +594,39 @@ class StructureContextTracker:
 
         elif direction == "short" and self.vwap_reclaim_direction == "below":
             # Check 1: VWAP hold - price holding below VWAP for 2+ bars
-            if len(self.close_buffer_vwap) >= 2 and len(self.vwap_buffer) >= 2:
-                recent_closes = list(self.close_buffer_vwap)[-2:]
-                recent_vwaps = list(self.vwap_buffer)[-2:]
+            # Require at least 2 POST-reclaim bars and scope to post-reclaim data only
+            if bars_since >= 2 and len(self.close_buffer_vwap) >= 2 and len(self.vwap_buffer) >= 2:
+                # Use only the last min(bars_since, 2) bars (post-reclaim only)
+                lookback = min(bars_since, 2)
+                recent_closes = list(self.close_buffer_vwap)[-lookback:]
+                recent_vwaps = list(self.vwap_buffer)[-lookback:]
                 if all(c < v for c, v in zip(recent_closes, recent_vwaps)):
                     result["confirmed"] = True
                     result["confirmation_type"] = "vwap_hold"
                     result["reasons"].append("vwap_hold: price holding below VWAP")
 
             # Check 2: Volume expansion (1.5x average)
-            if len(self.volume_buffer) >= 5:
+            # Use pre-reclaim bars as baseline, verify spike is post-reclaim
+            if len(self.volume_buffer) >= bars_since + 4:  # Need at least 4 pre-reclaim bars for baseline
                 recent_volume = list(self.volume_buffer)
-                avg_volume = sum(recent_volume[:-1]) / len(recent_volume[:-1])
-                if avg_volume > 0 and recent_volume[-1] > avg_volume * 1.5:
-                    result["confirmed"] = True
-                    result["confirmation_type"] = result["confirmation_type"] or "volume_expansion"
-                    result["reasons"].append("volume_expansion: volume > 1.5x average")
+                # Split at reclaim: pre-reclaim bars for baseline, current bar must be post-reclaim
+                pre_reclaim_volumes = recent_volume[-(bars_since + 4):-bars_since] if bars_since > 0 else recent_volume[:-bars_since]
+                current_volume = recent_volume[-1]  # Most recent bar (post-reclaim)
+                
+                if len(pre_reclaim_volumes) >= 4:
+                    avg_volume = sum(pre_reclaim_volumes) / len(pre_reclaim_volumes)
+                    if avg_volume > 0 and current_volume > avg_volume * 1.5:
+                        result["confirmed"] = True
+                        result["confirmation_type"] = result["confirmation_type"] or "volume_expansion"
+                        result["reasons"].append("volume_expansion: volume > 1.5x average")
 
             # Check 3: Micro lower high (using high_buffer from structure tracking)
-            if len(self.high_buffer) >= 3:
-                highs = list(self.high_buffer)[-3:]
-                if highs[-1] < highs[-2] and len(self.vwap_buffer) > 0:
+            # Require at least 2 POST-reclaim bars and scope to post-reclaim data only
+            if bars_since >= 2 and len(self.high_buffer) >= 2:
+                # Use only the last min(bars_since, 3) bars (post-reclaim only)
+                lookback = min(bars_since, 3)
+                highs = list(self.high_buffer)[-lookback:]
+                if len(highs) >= 2 and highs[-1] < highs[-2] and len(self.vwap_buffer) > 0:
                     # Verify the lower high is below VWAP
                     if highs[-1] < self.vwap_buffer[-1]:
                         result["confirmed"] = True

@@ -218,3 +218,131 @@ class TestSecondConfirmationComputation:
 
         # Short should NOT be confirmed (price is above VWAP, not below)
         assert short_result["confirmed"] is False or short_result["confirmation_type"] is None
+
+
+class TestConfirmationWindowScoping:
+    """Test that confirmation signals are only valid within the reclaim confirmation window.
+    
+    Pre-reclaim signals should NOT satisfy second confirmation.
+    """
+
+    def test_pre_reclaim_volume_spike_not_confirmed(self):
+        """Test that volume spike BEFORE reclaim does NOT satisfy confirmation."""
+        tracker = StructureContextTracker()
+
+        # Build up state with volume spike BEFORE reclaim
+        for i in range(5):
+            tracker.update(high=100.0, low=99.0, close=99.5)
+            tracker.update_vwap_state(vwap=100.0, close=99.5)
+            tracker.update_volume_state(volume=1000.0)
+
+        # Pre-reclaim volume spike (should not count)
+        tracker.update(high=100.0, low=99.0, close=99.5)
+        tracker.update_vwap_state(vwap=100.0, close=99.5)
+        tracker.update_volume_state(volume=3000.0)  # 3x average
+
+        # Cross above VWAP
+        tracker.update(high=101.0, low=100.0, close=100.5)
+        tracker.update_vwap_state(vwap=100.2, close=100.5)
+        tracker.update_volume_state(volume=1000.0)  # Back to normal volume
+
+        # Post-reclaim bar with normal volume
+        tracker.update(high=101.5, low=100.5, close=101.0)
+        tracker.update_vwap_state(vwap=100.3, close=101.0)
+        tracker.update_volume_state(volume=1000.0)
+
+        # Compute confirmation
+        result = tracker.compute_second_confirmation("long")
+
+        # Should NOT be confirmed via volume expansion (spike was pre-reclaim)
+        if result["confirmed"]:
+            assert "volume_expansion" not in str(result["reasons"]), \
+                "Pre-reclaim volume spike should not satisfy confirmation"
+
+    def test_pre_reclaim_vwap_hold_not_confirmed(self):
+        """Test that VWAP hold BEFORE reclaim does NOT satisfy confirmation."""
+        tracker = StructureContextTracker()
+
+        # Build up state with price holding above VWAP BEFORE reclaim detection
+        for i in range(5):
+            tracker.update(high=101.0, low=100.0, close=100.5)
+            tracker.update_vwap_state(vwap=100.0, close=100.5)
+
+        # Price dips below VWAP
+        tracker.update(high=100.0, low=99.0, close=99.5)
+        tracker.update_vwap_state(vwap=100.0, close=99.5)
+
+        # Cross back above VWAP (this triggers reclaim detection)
+        tracker.update(high=101.0, low=100.0, close=100.5)
+        tracker.update_vwap_state(vwap=100.2, close=100.5)
+
+        # Only 1 bar after reclaim - NOT enough for vwap_hold (needs 2)
+        tracker.update(high=100.0, low=99.0, close=99.5)
+        tracker.update_vwap_state(vwap=100.0, close=99.5)
+
+        # Compute confirmation
+        result = tracker.compute_second_confirmation("long")
+
+        # Should NOT be confirmed (pre-reclaim holds don't count)
+        assert result["confirmed"] is False, \
+            "Pre-reclaim VWAP hold should not satisfy confirmation"
+
+    def test_pre_reclaim_micro_structure_not_confirmed(self):
+        """Test that micro structure formed BEFORE reclaim does NOT satisfy confirmation."""
+        tracker = StructureContextTracker()
+
+        # Build up state with micro higher low pattern BEFORE reclaim
+        for i in range(5):
+            tracker.update(high=100.0, low=99.0, close=99.5)
+            tracker.update_vwap_state(vwap=100.0, close=99.5)
+
+        # Form higher lows below VWAP (pre-reclaim)
+        tracker.update(high=100.0, low=99.0, close=99.5)  # Low = 99.0
+        tracker.update_vwap_state(vwap=100.0, close=99.5)
+
+        tracker.update(high=100.0, low=99.2, close=99.5)  # Higher low = 99.2
+        tracker.update_vwap_state(vwap=100.0, close=99.5)
+
+        tracker.update(high=100.0, low=99.4, close=99.5)  # Higher low = 99.4
+        tracker.update_vwap_state(vwap=100.0, close=99.5)
+
+        # Cross above VWAP
+        tracker.update(high=101.0, low=100.0, close=100.5)
+        tracker.update_vwap_state(vwap=100.2, close=100.5)
+
+        # Only 1 post-reclaim bar - NOT enough for micro structure check
+        tracker.update(high=101.5, low=100.5, close=101.0)
+        tracker.update_vwap_state(vwap=100.3, close=101.0)
+
+        # Compute confirmation
+        result = tracker.compute_second_confirmation("long")
+
+        # Should NOT be confirmed via micro_hl (pattern was pre-reclaim)
+        if result["confirmed"]:
+            assert "micro_hl" not in str(result["reasons"]), \
+                "Pre-reclaim micro structure should not satisfy confirmation"
+
+    def test_post_reclaim_vwap_hold_requires_two_bars(self):
+        """Test that VWAP hold requires at least 2 POST-reclaim bars."""
+        tracker = StructureContextTracker()
+
+        # Build up state
+        for i in range(5):
+            tracker.update(high=100.0, low=99.0, close=99.5)
+            tracker.update_vwap_state(vwap=100.0, close=99.5)
+
+        # Cross above VWAP
+        tracker.update(high=101.0, low=100.0, close=100.5)
+        tracker.update_vwap_state(vwap=100.2, close=100.5)
+
+        # Only 1 bar after reclaim
+        tracker.update(high=101.5, low=100.5, close=101.0)
+        tracker.update_vwap_state(vwap=100.3, close=101.0)
+
+        # Compute confirmation
+        result = tracker.compute_second_confirmation("long")
+
+        # Should NOT be confirmed via vwap_hold (needs 2 bars)
+        if result["confirmed"]:
+            assert "vwap_hold" not in str(result["reasons"]), \
+                "VWAP hold requires at least 2 post-reclaim bars"
