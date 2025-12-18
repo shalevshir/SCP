@@ -30,6 +30,10 @@ logger = get_logger(__name__)
 # PATCH PART 2: Grace period constants removed in favor of inline setup-specific logic
 # Old constants MIN_BARS_RECLAIM, MIN_BARS_CONTINUATION, MIN_BARS_FADE removed
 
+# Sprint 3 Task 6: Extended grace period for VWAP_RECLAIM
+# Allows VWAP reclaim to retest and accept without premature stop-out
+ACCEPTANCE_GRACE_BARS_RECLAIM = 8
+
 # SOP timeout limits per setup type
 TIMEOUT_BARS = {
     "VWAP_RECLAIM": 20,
@@ -253,13 +257,14 @@ def check_trade_exit_single_bar(
                 f"(bar {bars_elapsed}/3) - SL/TP allowed, invalidations skipped"
             )
     elif is_reclaim(trade):
-        # RECLAIM: Skip SL/TP for first 2 bars, skip invalidations for 2 bars
-        skip_sl_tp = bars_elapsed <= 2
-        skip_invalidations = bars_elapsed <= 2
+        # RECLAIM: Skip SL/TP for first 8 bars, skip invalidations for 8 bars
+        # Sprint 3 Task 6: Extended grace period to allow VWAP retest/acceptance
+        skip_sl_tp = bars_elapsed <= ACCEPTANCE_GRACE_BARS_RECLAIM
+        skip_invalidations = bars_elapsed <= ACCEPTANCE_GRACE_BARS_RECLAIM
         if skip_sl_tp:
             logger.debug(
                 f"Trade {trade.trade_id}: RECLAIM grace period active "
-                f"(bar {bars_elapsed}/2) - skipping SL/TP and invalidations"
+                f"(bar {bars_elapsed}/{ACCEPTANCE_GRACE_BARS_RECLAIM}) - skipping SL/TP and invalidations"
             )
 
     # Exit Priority Order (per SOP):
@@ -499,13 +504,14 @@ def simulate_trade_outcome(
                     f"(bar {bars_elapsed}/3) - SL/TP allowed, invalidations skipped"
                 )
         elif is_reclaim(trade):
-            # RECLAIM: Skip SL/TP for first 2 bars (grace period), skip invalidations for 2 bars (allow retest)
-            skip_sl_tp = bars_elapsed <= 2
-            skip_invalidations = bars_elapsed <= 2
+            # RECLAIM: Skip SL/TP for first 8 bars (grace period), skip invalidations for 8 bars (allow retest)
+            # Bug Fix: Use ACCEPTANCE_GRACE_BARS_RECLAIM constant for consistency
+            skip_sl_tp = bars_elapsed <= ACCEPTANCE_GRACE_BARS_RECLAIM
+            skip_invalidations = bars_elapsed <= ACCEPTANCE_GRACE_BARS_RECLAIM
             if skip_sl_tp:
                 logger.debug(
                     f"Trade {trade.trade_id}: RECLAIM grace period active "
-                    f"(bar {bars_elapsed}/2) - skipping SL/TP and invalidations"
+                    f"(bar {bars_elapsed}/{ACCEPTANCE_GRACE_BARS_RECLAIM}) - skipping SL/TP and invalidations"
                 )
 
         # Exit Priority Order (per SOP):

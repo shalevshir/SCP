@@ -524,23 +524,25 @@ class TestSimulateTradeOutcome:
     def test_basic_tp_hit(self, long_continuation_trade):
         """Test basic TP hit scenario - price moves to TP without hitting SL."""
         # Create candles where price gradually moves to TP
+        # VWAP_RECLAIM has 8-bar grace period, so we need 9+ candles for TP to be checked
         candles = []
         base_time = datetime(2025, 1, 1, 10, 2, tzinfo=UTC)
-        for i in range(5):
+        # First 8 candles are during grace period (price gradually rising)
+        for i in range(8):
             candles.append(
                 make_candle(
                     timestamp=base_time + timedelta(minutes=i),
-                    open=2650.0 + i * 3,
-                    high=2652.0 + i * 3,
-                    low=2649.0 + i * 3,
-                    close=2651.0 + i * 3,
+                    open=2650.0 + i * 1.5,
+                    high=2652.0 + i * 1.5,
+                    low=2649.0 + i * 1.5,
+                    close=2651.0 + i * 1.5,
                     volume=100,
                 )
             )
-        # Final candle hits TP
+        # 9th candle hits TP (after grace period)
         candles.append(
             make_candle(
-                timestamp=base_time + timedelta(minutes=5),
+                timestamp=base_time + timedelta(minutes=8),
                 open=2663.0,
                 high=2666.0,  # Hits TP (2665.0)
                 low=2662.0,
@@ -558,28 +560,30 @@ class TestSimulateTradeOutcome:
         assert closed_trade.exit_price == 2665.0
         assert closed_trade.status == "CLOSED_WIN"
         assert closed_trade.r_realized == pytest.approx(3.0)
-        assert closed_trade.duration_bars == 6
+        assert closed_trade.duration_bars == 9  # 8 grace period + 1 TP bar
 
     def test_basic_sl_hit(self, long_continuation_trade):
         """Test basic SL hit scenario - price moves to SL."""
-        # Create candles where price drops to SL
+        # Create candles where price eventually drops to SL
+        # VWAP_RECLAIM has 8-bar grace period, so SL is only checked from bar 9
         candles = []
         base_time = datetime(2025, 1, 1, 10, 2, tzinfo=UTC)
-        for i in range(3):
+        # First 8 candles during grace period (price stays safe, even if wicks hit SL)
+        for i in range(8):
             candles.append(
                 make_candle(
                     timestamp=base_time + timedelta(minutes=i),
-                    open=2650.0 - i * 2,
-                    high=2651.0 - i * 2,
-                    low=2648.0 - i * 2,
-                    close=2649.0 - i * 2,
+                    open=2650.0,
+                    high=2651.0,
+                    low=2648.0,  # Above SL (2645.0)
+                    close=2649.0,
                     volume=100,
                 )
             )
-        # Final candle hits SL
+        # 9th candle hits SL (after grace period)
         candles.append(
             make_candle(
-                timestamp=base_time + timedelta(minutes=3),
+                timestamp=base_time + timedelta(minutes=8),
                 open=2646.0,
                 high=2647.0,
                 low=2644.0,  # Hits SL (2645.0)
@@ -597,19 +601,19 @@ class TestSimulateTradeOutcome:
         assert closed_trade.exit_price == 2645.0
         assert closed_trade.status == "STOPPED_OUT"
         assert closed_trade.r_realized == pytest.approx(-1.0)
-        # FIX #5: VWAP_RECLAIM has 2-bar grace period, so SL hits on bar 3
+        # VWAP_RECLAIM has 8-bar grace period, so SL hits on bar 9
         assert (
-            closed_trade.duration_bars == 3
-        )  # Hits SL on 3rd bar (after 2-bar grace period)
+            closed_trade.duration_bars == 9
+        )  # Hits SL on 9th bar (after 8-bar grace period)
 
     def test_sl_priority_over_tp(self, long_continuation_trade):
         """Test SL takes priority when both hit in same candle."""
-        # Need 3+ candles due to VWAP_RECLAIM grace period (MIN_BARS_RECLAIM = 3)
-        # First 2 candles are neutral (grace period), 3rd candle hits both SL and TP
+        # VWAP_RECLAIM has 8-bar grace period
+        # First 8 candles are neutral (grace period), 9th candle hits both SL and TP
         candles = []
         base_time = datetime(2025, 1, 1, 10, 2, tzinfo=UTC)
-        # Add 2 neutral candles during grace period
-        for i in range(2):
+        # Add 8 neutral candles during grace period
+        for i in range(8):
             candles.append(
                 make_candle(
                     timestamp=base_time + timedelta(minutes=i),
@@ -620,10 +624,10 @@ class TestSimulateTradeOutcome:
                     volume=100,
                 )
             )
-        # 3rd candle hits both SL and TP (after grace period)
+        # 9th candle hits both SL and TP (after grace period)
         candles.append(
             make_candle(
-                timestamp=base_time + timedelta(minutes=2),
+                timestamp=base_time + timedelta(minutes=8),
                 open=2650.0,
                 high=2666.0,  # Above TP (2665.0)
                 low=2644.0,  # Below SL (2645.0)
@@ -644,11 +648,11 @@ class TestSimulateTradeOutcome:
 
     def test_gap_beyond_sl_long(self, long_continuation_trade):
         """Test gap opening beyond SL - should exit at SL, not worse."""
-        # Need 3+ candles due to VWAP_RECLAIM grace period (MIN_BARS_RECLAIM = 3)
+        # VWAP_RECLAIM has 8-bar grace period
         candles = []
         base_time = datetime(2025, 1, 1, 10, 2, tzinfo=UTC)
-        # Add 3 neutral candles during grace period
-        for i in range(3):
+        # Add 8 neutral candles during grace period
+        for i in range(8):
             candles.append(
                 make_candle(
                     timestamp=base_time + timedelta(minutes=i),
@@ -659,10 +663,10 @@ class TestSimulateTradeOutcome:
                     volume=100,
                 )
             )
-        # 4th candle: Gap down opening below SL
+        # 9th candle: Gap down opening below SL
         candles.append(
             make_candle(
-                timestamp=base_time + timedelta(minutes=3),
+                timestamp=base_time + timedelta(minutes=8),
                 open=2640.0,  # Opens below SL (2645.0)
                 high=2642.0,
                 low=2638.0,
@@ -682,11 +686,11 @@ class TestSimulateTradeOutcome:
 
     def test_gap_beyond_tp_long(self, long_continuation_trade):
         """Test gap opening beyond TP - should exit at TP."""
-        # Need 3+ candles due to VWAP_RECLAIM grace period (MIN_BARS_RECLAIM = 3)
+        # VWAP_RECLAIM has 8-bar grace period
         candles = []
         base_time = datetime(2025, 1, 1, 10, 2, tzinfo=UTC)
-        # Add 2 neutral candles during grace period
-        for i in range(2):
+        # Add 8 neutral candles during grace period
+        for i in range(8):
             candles.append(
                 make_candle(
                     timestamp=base_time + timedelta(minutes=i),
@@ -697,10 +701,10 @@ class TestSimulateTradeOutcome:
                     volume=100,
                 )
             )
-        # 3rd candle: Gap up opening above TP (after grace period)
+        # 9th candle: Gap up opening above TP (after grace period)
         candles.append(
             make_candle(
-                timestamp=base_time + timedelta(minutes=2),
+                timestamp=base_time + timedelta(minutes=8),
                 open=2670.0,  # Opens above TP (2665.0)
                 high=2672.0,
                 low=2668.0,
@@ -1180,143 +1184,137 @@ class TestGracePeriodLogic:
             ignore_first_retest_bar=False,
         )
 
-    def test_vwap_reclaim_sl_not_checked_during_first_2_bars(self, vwap_reclaim_trade):
-        """VWAP_RECLAIM: SL not checked during first 2 bars (grace period).
+    def test_vwap_reclaim_sl_not_checked_during_first_8_bars(self, vwap_reclaim_trade):
+        """VWAP_RECLAIM: SL not checked during first 8 bars (grace period).
 
-        Specification: MIN_BARS_RECLAIM = 3 (skip bars 1-2, check from bar 3)
-        During bars 1-2, SL hits should be ignored.
+        Specification: ACCEPTANCE_GRACE_BARS_RECLAIM = 8 (skip bars 1-8, check from bar 9)
+        During bars 1-8, SL hits should be ignored to allow VWAP retest/acceptance.
         """
-        # Create 3 candles where SL is hit on bars 1 and 2
-        future_candles = pd.DataFrame(
-            [
-                # Bar 1: SL hit (but grace period protects)
-                {
-                    "timestamp": datetime(2025, 1, 1, 10, 2, tzinfo=UTC),
-                    "open": 2650.0,
-                    "high": 2650.5,
-                    "low": 2644.0,  # Below SL (2645.0)
-                    "close": 2646.0,
-                    "volume": 100,
-                },
-                # Bar 2: SL hit (but grace period protects)
-                {
-                    "timestamp": datetime(2025, 1, 1, 10, 3, tzinfo=UTC),
-                    "open": 2646.0,
-                    "high": 2647.0,
-                    "low": 2643.0,  # Below SL
-                    "close": 2644.0,
-                    "volume": 100,
-                },
-                # Bar 3: Price recovers ABOVE SL (grace period ends but SL not hit)
-                {
-                    "timestamp": datetime(2025, 1, 1, 10, 4, tzinfo=UTC),
-                    "open": 2646.0,
-                    "high": 2652.0,
-                    "low": 2646.0,  # Above SL (2645.0) - no SL trigger
-                    "close": 2651.0,
-                    "volume": 100,
-                },
-            ]
-        ).set_index("timestamp")
+        # Create 9 candles where SL is hit on bars 1-8 but price recovers on bar 9
+        candle_data = []
+        base_time = datetime(2025, 1, 1, 10, 2, tzinfo=UTC)
+        
+        # Bars 1-8: SL hit (but grace period protects)
+        for i in range(8):
+            candle_data.append({
+                "timestamp": base_time + timedelta(minutes=i),
+                "open": 2650.0 - i * 0.5,
+                "high": 2651.0 - i * 0.5,
+                "low": 2644.0 - i * 0.3,  # Below SL (2645.0)
+                "close": 2646.0 - i * 0.5,
+                "volume": 100,
+            })
+        
+        # Bar 9: Price recovers ABOVE SL (grace period ended, but SL not hit)
+        candle_data.append({
+            "timestamp": base_time + timedelta(minutes=8),
+            "open": 2646.0,
+            "high": 2652.0,
+            "low": 2646.0,  # Above SL (2645.0) - no SL trigger
+            "close": 2651.0,
+            "volume": 100,
+        })
+        
+        future_candles = pd.DataFrame(candle_data).set_index("timestamp")
 
         closed_trade = simulate_trade_outcome(vwap_reclaim_trade, future_candles)
 
-        # Should NOT have hit SL during grace period (bars 1-2)
-        # Trade should still be open or hit another exit condition
+        # Should NOT have hit SL during grace period (bars 1-8)
+        # Trade should end_of_data or hit another exit condition
         assert (
             closed_trade.exit_reason != "sl"
-        ), "SL should not trigger during 2-bar grace period for VWAP_RECLAIM"
+        ), "SL should not trigger during 8-bar grace period for VWAP_RECLAIM"
 
     def test_vwap_reclaim_sl_checked_after_grace_period_ends(self, vwap_reclaim_trade):
-        """VWAP_RECLAIM: SL IS checked after grace period ends (bar 3+).
+        """VWAP_RECLAIM: SL IS checked after grace period ends (bar 9+).
 
-        Specification: After MIN_BARS_RECLAIM (3 bars), SL checks resume.
+        Specification: After ACCEPTANCE_GRACE_BARS_RECLAIM (8 bars), SL checks resume.
         """
-        # Create 3 candles where SL is hit on bar 3 (after grace period)
-        future_candles = pd.DataFrame(
-            [
-                # Bars 1-2: Grace period (price above SL)
-                {
-                    "timestamp": datetime(2025, 1, 1, 10, 2, tzinfo=UTC),
-                    "open": 2650.0,
-                    "high": 2651.0,
-                    "low": 2649.0,
-                    "close": 2650.5,
-                    "volume": 100,
-                },
-                {
-                    "timestamp": datetime(2025, 1, 1, 10, 3, tzinfo=UTC),
-                    "open": 2650.5,
-                    "high": 2652.0,
-                    "low": 2649.5,
-                    "close": 2651.0,
-                    "volume": 100,
-                },
-                # Bar 3: SL hit (grace period ended, SL should trigger)
-                {
-                    "timestamp": datetime(2025, 1, 1, 10, 4, tzinfo=UTC),
-                    "open": 2650.0,
-                    "high": 2650.0,
-                    "low": 2644.0,  # Below SL (2645.0)
-                    "close": 2644.5,
-                    "volume": 100,
-                },
-            ]
-        ).set_index("timestamp")
+        # Create 9 candles where SL is hit on bar 9 (after grace period)
+        candle_data = []
+        base_time = datetime(2025, 1, 1, 10, 2, tzinfo=UTC)
+        
+        # Bars 1-8: Grace period (price above SL)
+        for i in range(8):
+            candle_data.append({
+                "timestamp": base_time + timedelta(minutes=i),
+                "open": 2650.0,
+                "high": 2651.0,
+                "low": 2649.0,
+                "close": 2650.5,
+                "volume": 100,
+            })
+        
+        # Bar 9: SL hit (grace period ended, SL should trigger)
+        candle_data.append({
+            "timestamp": base_time + timedelta(minutes=8),
+            "open": 2650.0,
+            "high": 2650.0,
+            "low": 2644.0,  # Below SL (2645.0)
+            "close": 2644.5,
+            "volume": 100,
+        })
+        
+        future_candles = pd.DataFrame(candle_data).set_index("timestamp")
 
         closed_trade = simulate_trade_outcome(vwap_reclaim_trade, future_candles)
 
-        # Should hit SL on bar 3 (after 2-bar grace period)
+        # Should hit SL on bar 9 (after 8-bar grace period)
         assert closed_trade.exit_reason == "sl"
-        assert closed_trade.duration_bars == 3
+        assert closed_trade.duration_bars == 9
 
     def test_vwap_reclaim_tp_not_checked_during_grace_period(self, vwap_reclaim_trade):
         """VWAP_RECLAIM: TP also not checked during grace period.
 
-        Specification: Both SL and TP checks are skipped during grace period.
+        Specification: Both SL and TP checks are skipped during 8-bar grace period.
         """
-        # Create 3 candles where TP is hit on bar 2 (during grace period)
-        future_candles = pd.DataFrame(
-            [
-                # Bar 1: Neutral
-                {
-                    "timestamp": datetime(2025, 1, 1, 10, 2, tzinfo=UTC),
-                    "open": 2650.0,
-                    "high": 2652.0,
-                    "low": 2649.0,
-                    "close": 2651.0,
-                    "volume": 100,
-                },
-                # Bar 2: TP hit (but grace period protects)
-                {
-                    "timestamp": datetime(2025, 1, 1, 10, 3, tzinfo=UTC),
-                    "open": 2651.0,
-                    "high": 2666.0,  # Above TP (2665.0)
-                    "low": 2650.0,
-                    "close": 2665.5,
-                    "volume": 100,
-                },
-                # Bar 3: Grace period ends
-                {
-                    "timestamp": datetime(2025, 1, 1, 10, 4, tzinfo=UTC),
-                    "open": 2665.5,
-                    "high": 2667.0,
-                    "low": 2664.0,
-                    "close": 2666.0,
-                    "volume": 100,
-                },
-            ]
-        ).set_index("timestamp")
+        # Create 9 candles where TP is hit on bar 5 (during grace period)
+        candle_data = []
+        base_time = datetime(2025, 1, 1, 10, 2, tzinfo=UTC)
+        
+        # Bars 1-4: Neutral
+        for i in range(4):
+            candle_data.append({
+                "timestamp": base_time + timedelta(minutes=i),
+                "open": 2650.0 + i,
+                "high": 2652.0 + i,
+                "low": 2649.0 + i,
+                "close": 2651.0 + i,
+                "volume": 100,
+            })
+        
+        # Bar 5: TP hit (but grace period still protects - bar 5 <= 8)
+        candle_data.append({
+            "timestamp": base_time + timedelta(minutes=4),
+            "open": 2651.0,
+            "high": 2666.0,  # Above TP (2665.0)
+            "low": 2650.0,
+            "close": 2665.5,
+            "volume": 100,
+        })
+        
+        # Bars 6-8: Grace period continues
+        for i in range(3):
+            candle_data.append({
+                "timestamp": base_time + timedelta(minutes=5 + i),
+                "open": 2665.5,
+                "high": 2667.0,
+                "low": 2664.0,
+                "close": 2666.0,
+                "volume": 100,
+            })
+        
+        future_candles = pd.DataFrame(candle_data).set_index("timestamp")
 
         closed_trade = simulate_trade_outcome(vwap_reclaim_trade, future_candles)
 
-        # Should NOT have hit TP during grace period
-        # Trade should either timeout or exit on different condition
-        # But if it exits, it should not be at bar 2
+        # Should NOT have hit TP during grace period (bars 1-8)
+        # Trade should end_of_data since we only have 8 candles and TP was hit at bar 5
+        # But if it exits with TP, it should not be at bar 5 or earlier
         if closed_trade.exit_reason == "tp":
             assert (
-                closed_trade.duration_bars > 2
-            ), "TP should not trigger during 2-bar grace period"
+                closed_trade.duration_bars > 8
+            ), "TP should not trigger during 8-bar grace period"
 
     def test_dxy_continuation_sl_not_checked_during_first_6_bars(
         self, dxy_continuation_trade
@@ -1794,51 +1792,47 @@ class TestGracePeriodAndRetestProtectionInteraction:
     def test_grace_period_takes_precedence_over_retest_protection(
         self, trade_with_both_protections
     ):
-        """Grace period takes precedence: SL not checked during bars 1-3 regardless of retest flag.
+        """Grace period takes precedence: SL not checked during bars 1-8 regardless of retest flag.
 
-        Specification: Grace period check happens AFTER retest protection check.
+        Specification: VWAP_RECLAIM has 8-bar grace period.
         If grace period is active, SL is skipped.
         """
-        # Create 5 candles where SL is hit on bars 1-3
-        future_candles = pd.DataFrame(
-            [
-                # Bar 1: SL hit (both protections active)
-                {
-                    "timestamp": datetime(2025, 1, 1, 10, 2, tzinfo=UTC),
-                    "open": 2650.0,
-                    "high": 2650.5,
-                    "low": 2644.0,  # Below SL
-                    "close": 2646.0,
-                    "volume": 100,
-                },
-                # Bar 2: SL hit (retest protection disabled, but grace period still active)
-                {
-                    "timestamp": datetime(2025, 1, 1, 10, 3, tzinfo=UTC),
-                    "open": 2646.0,
-                    "high": 2647.0,
-                    "low": 2643.0,  # Below SL
-                    "close": 2644.0,
-                    "volume": 100,
-                },
-                # Bar 3: SL hit (grace period ends, SL should trigger)
-                {
-                    "timestamp": datetime(2025, 1, 1, 10, 4, tzinfo=UTC),
-                    "open": 2644.0,
-                    "high": 2645.0,
-                    "low": 2642.0,  # Below SL
-                    "close": 2643.0,
-                    "volume": 100,
-                },
-            ]
-        ).set_index("timestamp")
+        # Create 9 candles where SL is hit during grace period and on bar 9
+        candle_data = []
+        base_time = datetime(2025, 1, 1, 10, 2, tzinfo=UTC)
+        
+        # Bars 1-8: SL hit (but grace period protects)
+        # Ensure valid OHLC: low <= close <= high
+        for i in range(8):
+            base_price = 2648.0
+            candle_data.append({
+                "timestamp": base_time + timedelta(minutes=i),
+                "open": base_price,
+                "high": base_price + 2.0,
+                "low": 2643.0,  # Below SL (2645.0)
+                "close": base_price + 1.0,  # close is between low and high
+                "volume": 100,
+            })
+        
+        # Bar 9: SL hit (grace period ends, SL should trigger)
+        candle_data.append({
+            "timestamp": base_time + timedelta(minutes=8),
+            "open": 2644.0,
+            "high": 2645.0,
+            "low": 2642.0,  # Below SL
+            "close": 2643.0,
+            "volume": 100,
+        })
+        
+        future_candles = pd.DataFrame(candle_data).set_index("timestamp")
 
         closed_trade = simulate_trade_outcome(
             trade_with_both_protections, future_candles
         )
 
-        # Should hit SL on bar 3 (after 2-bar grace period ends)
+        # Should hit SL on bar 9 (after 8-bar grace period ends)
         assert closed_trade.exit_reason == "sl"
-        assert closed_trade.duration_bars == 3
+        assert closed_trade.duration_bars == 9
 
 
 class TestInvalidDataHandling:

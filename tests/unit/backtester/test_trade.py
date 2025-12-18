@@ -181,13 +181,17 @@ class TestCalculateStopLoss:
 
     @pytest.fixture
     def long_entry_execution(self):
-        """Create a long entry execution."""
+        """Create a long entry execution.
+        
+        Uses DXY_CONTINUATION to test min(confirmation, bos) SL logic.
+        VWAP_RECLAIM has different SL behavior (VWAP-zone SL).
+        """
         signal = Signal(
             timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
             symbol="GC",
             timeframe="1m",
             direction="long",
-            setup_type="VWAP_RECLAIM",
+            setup_type="DXY_CONTINUATION",  # Changed from VWAP_RECLAIM
             htf_bias="bullish",
             score=9.0,
             confidence="A+",
@@ -261,15 +265,32 @@ class TestCalculateStopLoss:
         assert "confirmation" in rationale.lower()
 
     def test_calculate_sl_short_continuation_uses_max_of_confirmation_and_bos(
-        self, confirmation_candle, bos_candle
+        self, bos_candle
     ):
-        """Test SL for short continuation: max(confirmation_high, bos_high)."""
+        """Test SL for short continuation: max(confirmation_high, bos_high).
+        
+        Note: DXY_CONTINUATION has 25-tick minimum, so we use candles with 
+        high >= 25 ticks from entry to test the max logic without padding.
+        """
+        # Create confirmation candle with high at 2655.0 (50 ticks from entry)
+        confirmation_candle_high = Candle(
+            timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
+            open=2648.0,
+            high=2655.0,  # 50 ticks above entry (sufficient)
+            low=2645.0,
+            close=2650.0,
+            volume=1000.0,
+            symbol="GC",
+            timeframe="1m",
+            source="TEST",
+        )
+        
         signal = Signal(
             timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=UTC),
             symbol="GC",
             timeframe="1m",
             direction="short",
-            setup_type="VWAP_RECLAIM",
+            setup_type="DXY_CONTINUATION",
             htf_bias="bearish",
             score=9.0,
             confidence="A+",
@@ -289,10 +310,11 @@ class TestCalculateStopLoss:
         )
 
         sl, rationale, _ = calculate_stop_loss(
-            short_entry, "short", confirmation_candle, bos_candle
+            short_entry, "short", confirmation_candle_high, bos_candle
         )
 
-        expected_sl = max(confirmation_candle.high, bos_candle.high)
+        # max(2655, 2646) = 2655, which is 50 ticks > 25-tick minimum, so no padding
+        expected_sl = max(confirmation_candle_high.high, bos_candle.high)
         assert sl == expected_sl
         assert "confirmation" in rationale.lower() or "bos" in rationale.lower()
 
@@ -499,7 +521,7 @@ class TestCalculateStopLoss:
             symbol="GC",
             timeframe="1m",
             direction="short",
-            setup_type="VWAP_RECLAIM",
+            setup_type="DXY_CONTINUATION",  # Changed from VWAP_RECLAIM
             htf_bias="bearish",
             score=9.0,
             confidence="A+",

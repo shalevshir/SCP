@@ -387,6 +387,22 @@ def run_backtest_with_trades(
         # Get DXY alignment from HTF bias
         dxy_aligned = entry_bias_obj.dxy_alignment if entry_bias_obj else True
 
+        # Sprint 3 Task 5: Extract VWAP value at entry for VWAP-zone SL
+        vwap_value = None
+        try:
+            entry_idx = gc_df.index.get_loc(entry.entry_timestamp)
+            # Compute features up to entry point to get VWAP
+            gc_slice = gc_df.iloc[: entry_idx + 1]
+            dxy_slice = (
+                dxy_df.iloc[: entry_idx + 1] if len(dxy_df) >= entry_idx + 1 else dxy_df
+            )
+            features_df = processor._compute_features(gc_slice, dxy_slice)
+            if len(features_df) > entry_idx and "vwap" in features_df.columns:
+                vwap_value = features_df.iloc[entry_idx]["vwap"]
+        except Exception as e:
+            logger.debug(f"Failed to extract VWAP at entry: {e}")
+            vwap_value = None
+
         trade = create_trade_from_entry(
             entry_execution=entry,
             confirmation_candle=confirmation_candle,
@@ -400,6 +416,7 @@ def run_backtest_with_trades(
                 "dxy_aligned": dxy_aligned,
             },
             config=None,  # TODO: Add config parameter to enable MIN_RISK_TICKS validation
+            vwap_value=vwap_value,
         )
 
         # Get future candles for simulation

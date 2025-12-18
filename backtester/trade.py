@@ -14,8 +14,11 @@ Key Features:
 
 from dataclasses import dataclass, field, replace
 from datetime import datetime
+import math
 from typing import Any
 from uuid import uuid4
+
+import pandas as pd
 
 from common.logger import get_logger
 from common.types import Candle
@@ -33,6 +36,11 @@ MIN_RISK_TICKS = 10
 # from entry to avoid premature stop-out during the retest phase
 # Requirement: 20 ticks minimum for VWAP_RECLAIM
 MIN_SL_TICKS_VWAP_RECLAIM = 20
+
+# Sprint 3 Task 5: VWAP-zone SL buffer for VWAP_RECLAIM
+# Conservative buffer below/above VWAP for long/short trades
+# Allows normal retest behavior without premature stop-out
+VWAP_SL_BUFFER_TICKS = 30
 
 # Minimum stop-loss distance for DXY_CONTINUATION setups
 # Continuation trades need structural breathing room to avoid micro-swing noise
@@ -284,6 +292,7 @@ def calculate_stop_loss(
     confirmation_candle: Candle,
     bos_candle: Candle | None = None,
     config: dict | None = None,
+    vwap_value: float | None = None,
 ) -> tuple[float, str, bool]:
     """Calculate stop loss based on SOP rules.
 
@@ -354,34 +363,104 @@ def calculate_stop_loss(
         )
         return sl, rationale, False  # No retest protection for fades
 
-    # Continuation setups (VWAP_RECLAIM, DXY_CONTINUATION)
-    if direction == "long":
-        # Long: SL below lower of confirmation/BOS
-        if bos_candle is not None:
-            sl = min(confirmation_candle.low, bos_candle.low)
-            if sl == bos_candle.low:
-                rationale = "Below BOS candle low (structure-based)"
-            else:
-                rationale = "Below confirmation candle low (structure-based)"
+    # Sprint 3 Task 5: VWAP-zone SL for VWAP_RECLAIM setups
+    # Other continuation setups use confirmation/BOS candle logic
+    ignore_first_retest_bar = False
+
+    # Bug Fix: Check for both None and NaN VWAP values
+    vwap_is_valid = (
+        vwap_value is not None
+        and not (isinstance(vwap_value, float) and math.isnan(vwap_value))
+        and not pd.isna(vwap_value)
+    )
+
+    if setup_type == "VWAP_RECLAIM" and vwap_is_valid:
+        # Sprint 3: Use VWAP-zone SL (VWAP ± buffer) instead of micro candle extremes
+        # This allows normal retest behavior without premature stop-out
+        symbol = entry_execution.signal.symbol
+        if config is not None:
+            tick_size = config.get("assets", {}).get("tick_sizes", {}).get(symbol, 0.1)
         else:
-            sl = confirmation_candle.low
-            rationale = "Below confirmation candle low (structure-based)"
-    else:
-        # Short: SL above higher of confirmation/BOS
-        if bos_candle is not None:
-            sl = max(confirmation_candle.high, bos_candle.high)
-            if sl == bos_candle.high:
-                rationale = "Above BOS candle high (structure-based)"
+            default_tick_sizes = {"GC": 0.1, "ES": 0.25, "NQ": 0.25, "CL": 0.01}
+            tick_size = default_tick_sizes.get(symbol, 0.1)
+
+        buffer_amount = VWAP_SL_BUFFER_TICKS * tick_size
+
+        if direction == "long":
+            sl = vwap_value - buffer_amount
+            rationale = (
+                f"VWAP-zone SL: VWAP - {VWAP_SL_BUFFER_TICKS} ticks (allows retest)"
+            )
+        else:
+            sl = vwap_value + buffer_amount
+            rationale = (
+                f"VWAP-zone SL: VWAP + {VWAP_SL_BUFFER_TICKS} ticks (allows retest)"
+            )
+
+        # Verify 20-tick minimum floor still met
+        risk_distance = abs(entry_price - sl)
+        risk_ticks = risk_distance / tick_size
+
+        if risk_ticks < MIN_SL_TICKS_VWAP_RECLAIM:
+            # Expand SL outward to meet minimum requirement
+            if direction == "long":
+                sl = entry_price - (MIN_SL_TICKS_VWAP_RECLAIM * tick_size)
             else:
-                rationale = "Above confirmation candle high (structure-based)"
+                sl = entry_price + (MIN_SL_TICKS_VWAP_RECLAIM * tick_size)
+
+            rationale = f"VWAP-zone SL expanded to {MIN_SL_TICKS_VWAP_RECLAIM}-tick minimum (was {risk_ticks:.1f} ticks)"
+            logger.info(
+                f"VWAP_RECLAIM SL expanded from VWAP-zone: {entry_price} -> {sl} "
+                f"(from {risk_ticks:.1f} ticks to {MIN_SL_TICKS_VWAP_RECLAIM} ticks)"
+            )
+
+        # Enable retest protection for all VWAP_RECLAIM setups
+        ignore_first_retest_bar = True
+        logger.debug(
+            f"VWAP_RECLAIM VWAP-zone SL: {sl} (VWAP={vwap_value}, buffer={VWAP_SL_BUFFER_TICKS} ticks)"
+        )
+
+    elif setup_type == "VWAP_RECLAIM" and not vwap_is_valid:
+        # Fallback to confirmation candle if VWAP not available
+        logger.warning(
+            "VWAP value not available for VWAP_RECLAIM, falling back to confirmation candle SL"
+        )
+        if direction == "long":
+            sl = confirmation_candle.low
+            rationale = "Below confirmation candle low (VWAP not available)"
         else:
             sl = confirmation_candle.high
-            rationale = "Above confirmation candle high (structure-based)"
+            rationale = "Above confirmation candle high (VWAP not available)"
+        ignore_first_retest_bar = True
 
-    # FIX #1: VWAP_RECLAIM minimum 20-tick buffer
+    else:
+        # Non-VWAP_RECLAIM continuation setups: use confirmation/BOS candle logic
+        if direction == "long":
+            # Long: SL below lower of confirmation/BOS
+            if bos_candle is not None:
+                sl = min(confirmation_candle.low, bos_candle.low)
+                if sl == bos_candle.low:
+                    rationale = "Below BOS candle low (structure-based)"
+                else:
+                    rationale = "Below confirmation candle low (structure-based)"
+            else:
+                sl = confirmation_candle.low
+                rationale = "Below confirmation candle low (structure-based)"
+        else:
+            # Short: SL above higher of confirmation/BOS
+            if bos_candle is not None:
+                sl = max(confirmation_candle.high, bos_candle.high)
+                if sl == bos_candle.high:
+                    rationale = "Above BOS candle high (structure-based)"
+                else:
+                    rationale = "Above confirmation candle high (structure-based)"
+            else:
+                sl = confirmation_candle.high
+                rationale = "Above confirmation candle high (structure-based)"
+
+    # FIX #1: For VWAP_RECLAIM without VWAP, ensure minimum 20-tick buffer
     # FIX #2: VWAP_RECLAIM retest protection (skip SL on first bar)
-    ignore_first_retest_bar = False
-    if setup_type == "VWAP_RECLAIM":
+    if setup_type == "VWAP_RECLAIM" and not vwap_is_valid:
         # Get tick_size from config based on symbol (default 0.1 for GC)
         symbol = entry_execution.signal.symbol
         if config is not None:
@@ -527,6 +606,7 @@ def create_trade_from_entry(
     risk_config: dict,
     market_context: dict,
     config: dict | None = None,
+    vwap_value: float | None = None,
 ) -> Trade:
     """Create Trade object from executed entry.
 
@@ -569,8 +649,9 @@ def create_trade_from_entry(
     setup_type = signal.setup_type
 
     # 1. Calculate stop loss (FIX #2: Also returns retest protection flag)
+    # Sprint 3 Task 5: Pass VWAP value for VWAP-zone SL calculation
     stop_loss, sl_rationale, ignore_first_retest_bar = calculate_stop_loss(
-        entry_execution, direction, confirmation_candle, bos_candle, config
+        entry_execution, direction, confirmation_candle, bos_candle, config, vwap_value
     )
 
     # 1.5. Validate minimum risk threshold (prevent micro-chop entries)

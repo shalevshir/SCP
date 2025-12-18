@@ -212,26 +212,31 @@ def test_diagnostics_populated_on_tp_hit():
     )
 
     # Create future candles that hit TP
+    # VWAP_RECLAIM has 8-bar grace period, so we need 9+ candles for TP to be checked
     tp_price = trade.take_profit
     # Ensure candle data is valid (high >= low, close between low and high)
-    # Bar 3: high must be >= tp_price to hit TP, low should be below tp_price, close at tp_price
-    bar3_low = min(tp_price - 1.0, 2659.0)  # Ensure low < tp_price
-    bar3_high = max(tp_price + 1.0, 2660.0)  # Ensure high >= tp_price
+    # Bar 9: high must be >= tp_price to hit TP
+    bar9_low = min(tp_price - 1.0, 2659.0)  # Ensure low < tp_price
+    bar9_high = max(tp_price + 1.0, 2660.0)  # Ensure high >= tp_price
+    
+    # Build candle data for 9 bars
+    opens = [2651.0 + i * 0.5 for i in range(8)] + [tp_price - 0.5]
+    highs = [2652.0 + i * 0.5 for i in range(8)] + [bar9_high]  # Bar 9 hits TP
+    lows = [2650.0 + i * 0.5 for i in range(8)] + [bar9_low]
+    closes = [2651.5 + i * 0.5 for i in range(8)] + [tp_price]
+    volumes = [100.0] * 9
+    
+    timestamps = [datetime(2025, 11, 1, 10, 2 + i, tzinfo=UTC) for i in range(9)]
+    
     future_candles = pd.DataFrame(
         {
-            "open": [2651.0, 2655.0, tp_price - 0.5],
-            "high": [2652.0, 2658.0, bar3_high],  # Bar 3 hits TP
-            "low": [2650.0, 2654.0, bar3_low],
-            "close": [2651.5, 2657.0, tp_price],
-            "volume": [100.0, 100.0, 100.0],
+            "open": opens,
+            "high": highs,
+            "low": lows,
+            "close": closes,
+            "volume": volumes,
         },
-        index=pd.DatetimeIndex(
-            [
-                datetime(2025, 11, 1, 10, 2, tzinfo=UTC),
-                datetime(2025, 11, 1, 10, 3, tzinfo=UTC),
-                datetime(2025, 11, 1, 10, 4, tzinfo=UTC),
-            ]
-        ),
+        index=pd.DatetimeIndex(timestamps),
     )
 
     # Simulate trade outcome (will hit TP)

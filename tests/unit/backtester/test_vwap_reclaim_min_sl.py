@@ -91,10 +91,12 @@ def test_vwap_reclaim_min_sl_enforced():
 
 
 def test_vwap_reclaim_structure_sl_sufficient():
-    """Test that structure-based SL is kept when already >= 20 ticks.
+    """Test that confirmation-based SL is kept when already >= 20 ticks.
 
-    Scenario: Structure-based SL is 30 ticks away (sufficient).
-    Expected: Use structure-based SL without modification.
+    Scenario: Confirmation candle SL is 30 ticks away (sufficient).
+    Expected: Use confirmation candle SL without modification.
+    
+    Note: VWAP_RECLAIM without VWAP value falls back to confirmation candle.
     """
     signal = Signal(
         timestamp=datetime(2025, 11, 1, 10, 30, tzinfo=UTC),
@@ -138,9 +140,9 @@ def test_vwap_reclaim_structure_sl_sufficient():
         entry_execution, "long", confirmation_candle, None
     )
 
-    # Assert: SL should be at confirmation low (structure-based)
+    # Assert: SL should be at confirmation low (VWAP not available fallback)
     assert sl == 2647.0, f"SL {sl} should be at confirmation low 2647.0"
-    assert "structure-based" in rationale.lower()
+    assert "confirmation" in rationale.lower(), f"Expected 'confirmation' in rationale: {rationale}"
     assert retest_protection is True, "VWAP_RECLAIM should have retest protection"
 
 

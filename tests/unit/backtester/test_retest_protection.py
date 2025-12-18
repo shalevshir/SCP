@@ -120,12 +120,12 @@ def test_vwap_reclaim_sl_works_after_first_bar():
     """Test that SL works normally after the grace period.
 
     Scenario: VWAP_RECLAIM long enters at 2650.0 with SL at 2648.0.
-              Bars 1-3: Price stays above SL (grace period).
-              Bar 4: Price drops below SL.
-    Expected: Trade should stop out on Bar 4 (after grace period ends).
+              Bars 1-8: Price stays above SL (grace period).
+              Bar 9: Price drops below SL.
+    Expected: Trade should stop out on Bar 9 (after 8-bar grace period ends).
 
-    Note: VWAP_RECLAIM has a 4-bar grace period (MIN_BARS_RECLAIM = 4) where
-    SL/TP checks are skipped to allow the retest pattern to develop.
+    Note: VWAP_RECLAIM has an 8-bar grace period (ACCEPTANCE_GRACE_BARS_RECLAIM = 8)
+    where SL/TP checks are skipped to allow the retest/acceptance pattern to develop.
     """
     signal = Signal(
         timestamp=datetime(2025, 11, 1, 10, 30, tzinfo=UTC),
@@ -175,13 +175,13 @@ def test_vwap_reclaim_sl_works_after_first_bar():
         },
     )
 
-    # Future candles: Bars 1-3 OK (grace period), Bar 4 hits SL
+    # Future candles: Bars 1-8 OK (grace period), Bar 9 hits SL
     future_data = {
-        "open": [2650.5, 2650.3, 2650.1, 2649.5],  # Bars 1-4
-        "high": [2651.0, 2651.0, 2651.0, 2650.0],
-        "low": [2649.5, 2649.5, 2649.5, 2647.5],  # Bar 4 hits SL at 2648.0
-        "close": [2650.8, 2650.6, 2650.4, 2647.8],
-        "volume": [100, 100, 100, 100],
+        "open": [2650.5, 2650.3, 2650.1, 2650.2, 2650.4, 2650.3, 2650.2, 2650.1, 2649.5],
+        "high": [2651.0, 2651.0, 2651.0, 2651.0, 2651.0, 2651.0, 2651.0, 2651.0, 2650.0],
+        "low": [2649.5, 2649.5, 2649.5, 2649.5, 2649.5, 2649.5, 2649.5, 2649.5, 2647.5],  # Bar 9 hits SL
+        "close": [2650.8, 2650.6, 2650.4, 2650.5, 2650.6, 2650.5, 2650.4, 2650.3, 2647.8],
+        "volume": [100, 100, 100, 100, 100, 100, 100, 100, 100],
     }
 
     timestamps = [
@@ -189,6 +189,11 @@ def test_vwap_reclaim_sl_works_after_first_bar():
         datetime(2025, 11, 1, 10, 33, tzinfo=UTC),  # Bar 2
         datetime(2025, 11, 1, 10, 34, tzinfo=UTC),  # Bar 3
         datetime(2025, 11, 1, 10, 35, tzinfo=UTC),  # Bar 4
+        datetime(2025, 11, 1, 10, 36, tzinfo=UTC),  # Bar 5
+        datetime(2025, 11, 1, 10, 37, tzinfo=UTC),  # Bar 6
+        datetime(2025, 11, 1, 10, 38, tzinfo=UTC),  # Bar 7
+        datetime(2025, 11, 1, 10, 39, tzinfo=UTC),  # Bar 8
+        datetime(2025, 11, 1, 10, 40, tzinfo=UTC),  # Bar 9
     ]
 
     future_candles = pd.DataFrame(future_data, index=timestamps)
@@ -201,13 +206,13 @@ def test_vwap_reclaim_sl_works_after_first_bar():
         config=None,
     )
 
-    # Assert: Trade should stop out on Bar 4 (after grace period)
+    # Assert: Trade should stop out on Bar 9 (after 8-bar grace period)
     assert (
         closed_trade.exit_reason == "sl"
-    ), f"Trade should stop out on Bar 4. Got exit_reason={closed_trade.exit_reason}"
+    ), f"Trade should stop out on Bar 9. Got exit_reason={closed_trade.exit_reason}"
     assert (
-        closed_trade.duration_bars == 4
-    ), f"Trade should exit on Bar 4. Got duration_bars={closed_trade.duration_bars}"
+        closed_trade.duration_bars == 9
+    ), f"Trade should exit on Bar 9. Got duration_bars={closed_trade.duration_bars}"
 
 
 def test_non_vwap_reclaim_no_retest_protection():

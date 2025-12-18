@@ -614,6 +614,9 @@ class BacktestReplayLoop:
                     "dxy_aligned": dxy_aligned,
                 }
 
+                # Sprint 3 Task 5: Pass VWAP value for VWAP-zone SL calculation
+                vwap_value = features.get("vwap") if features else None
+
                 trade = create_trade_from_entry(
                     entry_execution=execution,
                     confirmation_candle=confirmation_candle,
@@ -621,6 +624,7 @@ class BacktestReplayLoop:
                     risk_config=self.risk_config,
                     market_context=market_context,
                     config=self.config,
+                    vwap_value=vwap_value,
                 )
 
                 # Add diagnostic context at entry
