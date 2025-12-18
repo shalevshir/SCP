@@ -15,6 +15,10 @@ from typing import Literal
 
 import pandas as pd
 
+from feature_engine.vwap_reclaim_state_machine import (
+    VWAPReclaimState,
+    VWAPReclaimStateMachine,
+)
 
 # Asset-adjusted ATR configuration by timeframe (Gold/GC)
 # min_pct: Minimum ATR as % of price (floor - below this is normal low vol, not compression)
@@ -189,6 +193,9 @@ class StructureContextTracker:
         self.close_buffer_vwap: deque[float] = deque(maxlen=20)  # Track recent closes
         self.volume_buffer: deque[float] = deque(maxlen=20)  # Track recent volume
 
+        # VWAP reclaim state machine (Sprint 1: Foundation + Visibility)
+        self.vwap_reclaim_sm = VWAPReclaimStateMachine(max_confirm_window=10)
+
         # Bar counter
         self.bar_count = 0
 
@@ -204,6 +211,12 @@ class StructureContextTracker:
             StructureContext with all derived fields populated
         """
         self.bar_count += 1
+
+        # Sprint 1: Check reclaim expiration on every bar
+        # Must be called BEFORE any confirmation logic to ensure expired reclaims
+        # don't get confirmed
+        # Use bar_count - 1 for current bar index (consistent with detection and confirmation)
+        self.update_reclaim_state(self.bar_count - 1)
 
         # Add to swing detection buffers
         self.high_buffer.append(high)
@@ -489,11 +502,21 @@ class StructureContextTracker:
             if was_below and is_above:
                 self.vwap_reclaim_bar_idx = self.bar_count - 1  # Current bar index
                 self.vwap_reclaim_direction = "above"
+                # Trigger state machine: reclaim detected
+                self.vwap_reclaim_sm.on_reclaim_detected(
+                    bar_idx=self.bar_count - 1,
+                    direction="above"
+                )
 
             # Detect cross below (was above, now below)
             elif was_above and is_below:
                 self.vwap_reclaim_bar_idx = self.bar_count - 1  # Current bar index
                 self.vwap_reclaim_direction = "below"
+                # Trigger state machine: reclaim detected
+                self.vwap_reclaim_sm.on_reclaim_detected(
+                    bar_idx=self.bar_count - 1,
+                    direction="below"
+                )
 
     def update_volume_state(self, volume: float) -> None:
         """Update volume tracking buffer.
@@ -502,6 +525,23 @@ class StructureContextTracker:
             volume: Current bar volume
         """
         self.volume_buffer.append(volume)
+
+    def update_reclaim_state(self, current_bar_idx: int) -> None:
+        """Update VWAP reclaim state machine (check expiration).
+
+        Should be called each bar to check if active reclaim has expired.
+
+        Args:
+            current_bar_idx: Current bar index
+        """
+        # Check if reclaim has expired
+        if self.vwap_reclaim_sm.current_state == VWAPReclaimState.PENDING_ACCEPTANCE:
+            if self.vwap_reclaim_sm.is_expired(current_bar_idx):
+                self.vwap_reclaim_sm.on_expiration(bar_idx=current_bar_idx)
+        elif self.vwap_reclaim_sm.current_state == VWAPReclaimState.CONFIRMED:
+            # Also check expiration in CONFIRMED state (edge case: confirmed but not executed)
+            if self.vwap_reclaim_sm.is_expired(current_bar_idx):
+                self.vwap_reclaim_sm.on_expiration(bar_idx=current_bar_idx)
 
     def compute_second_confirmation(self, direction: str) -> dict:
         """Compute second confirmation status for VWAP_RECLAIM entry.
@@ -532,10 +572,23 @@ class StructureContextTracker:
         if self.vwap_reclaim_bar_idx is None:
             return result
 
-        # Calculate bars since reclaim
+        # Calculate bars since reclaim FIRST (needed for all return paths)
         current_bar = self.bar_count - 1
         bars_since = current_bar - self.vwap_reclaim_bar_idx
         result["bars_since_reclaim"] = bars_since
+
+        # Check state machine state (Sprint 1: early return if expired/invalidated)
+        if self.vwap_reclaim_sm.current_state == VWAPReclaimState.EXPIRED:
+            result["confirmed"] = False
+            result["confirmation_type"] = "expired"
+            result["reasons"] = ["Reclaim expired: no confirmation within window"]
+            return result
+
+        if self.vwap_reclaim_sm.current_state == VWAPReclaimState.INVALIDATED:
+            result["confirmed"] = False
+            result["confirmation_type"] = "invalidated"
+            result["reasons"] = ["Reclaim invalidated: structural break"]
+            return result
 
         # Cannot confirm on the same bar as reclaim
         if bars_since <= 0:
@@ -632,6 +685,19 @@ class StructureContextTracker:
                         result["confirmed"] = True
                         result["confirmation_type"] = result["confirmation_type"] or "micro_lh"
                         result["reasons"].append("micro_lh: lower high below VWAP")
+
+        # Sprint 1: Trigger state machine transition on confirmation
+        if result["confirmed"] and result["confirmation_type"]:
+            # Only transition if in PENDING_ACCEPTANCE or CONFIRMED state
+            # (avoid re-triggering if already confirmed)
+            if self.vwap_reclaim_sm.current_state in [
+                VWAPReclaimState.PENDING_ACCEPTANCE,
+                VWAPReclaimState.CONFIRMED,
+            ]:
+                self.vwap_reclaim_sm.on_confirmation(
+                    bar_idx=current_bar,
+                    confirmation_type=result["confirmation_type"]
+                )
 
         return result
 

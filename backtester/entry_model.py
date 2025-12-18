@@ -9,6 +9,7 @@ This module implements the "next bar open" entry model, which ensures:
 Following Shir Capital SOP requirements for structure-based, reproducible entries.
 """
 
+import json
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -82,7 +83,8 @@ def execute_entry_at_next_open(
     Behavior:
         - If signal confidence is not "A+": entry not executed
         - If next_candle is None: entry not executed (end of dataset)
-        - If VWAP_RECLAIM without second confirmation: entry not ready (setup detected, not executable)
+        - If VWAP_RECLAIM without second confirmation: entry not ready
+          (setup detected, not executable)
         - If next_candle exists and signal is "A+": entry at next_candle.open
         - Entry timestamp = next_candle.timestamp
         - Entry price = next_candle.open (no slippage applied)
@@ -113,11 +115,23 @@ def execute_entry_at_next_open(
     # Setup can be detected after reclaim, but entry requires second confirmation
     # to prevent early entries before pullback fully resolves
     if signal.setup_type == "VWAP_RECLAIM":
-        second_confirmation = signal.diagnostics.get("second_confirmation_satisfied", False) if signal.diagnostics else False
-        confirmation_type = signal.diagnostics.get("second_confirmation_type") if signal.diagnostics else None
-        bars_waited = signal.diagnostics.get("bars_since_reclaim", 0) if signal.diagnostics else 0
+        diagnostics = signal.diagnostics if signal.diagnostics else {}
+        second_confirmation = diagnostics.get(
+            "second_confirmation_satisfied", False
+        )
+        confirmation_type = diagnostics.get("second_confirmation_type")
+        bars_waited = diagnostics.get("bars_since_reclaim", 0)
 
         if not second_confirmation:
+            # Sprint 1: Instrument rejection decision
+            _log_vwap_reclaim_decision(
+                signal=signal,
+                executed=False,
+                rejection_reason=(
+                    "VWAP_RECLAIM entry not ready: no second confirmation detected"
+                ),
+            )
+            
             logger.info(
                 f"Entry NOT READY: VWAP_RECLAIM detected but no second confirmation "
                 f"(symbol={signal.symbol}, timestamp={signal.timestamp}, "
@@ -130,12 +144,15 @@ def execute_entry_at_next_open(
                 entry_price=0.0,
                 signal=signal,
                 executed=False,
-                rejection_reason="VWAP_RECLAIM entry not ready: no second confirmation detected",
+                rejection_reason=(
+                    "VWAP_RECLAIM entry not ready: no second confirmation detected"
+                ),
             )
 
         logger.debug(
             f"VWAP_RECLAIM second confirmation PASSED: {confirmation_type} "
-            f"(symbol={signal.symbol}, timestamp={signal.timestamp}, bars_waited={bars_waited})"
+            f"(symbol={signal.symbol}, timestamp={signal.timestamp}, "
+            f"bars_waited={bars_waited})"
         )
 
     # Check 3: Ensure next candle exists
@@ -155,6 +172,15 @@ def execute_entry_at_next_open(
 
     # SUCCESS: Execute entry at next bar open
     time_delta = next_candle.timestamp - signal.timestamp
+    
+    # Sprint 1: Instrument successful execution decision (VWAP_RECLAIM only)
+    if signal.setup_type == "VWAP_RECLAIM":
+        _log_vwap_reclaim_decision(
+            signal=signal,
+            executed=True,
+            rejection_reason=None,
+        )
+    
     logger.info(
         f"Entry executed: {signal.direction} {signal.symbol} at {next_candle.open} "
         f"(signal_time={signal.timestamp}, entry_time={next_candle.timestamp}, "
@@ -169,3 +195,57 @@ def execute_entry_at_next_open(
         executed=True,
         rejection_reason=None,
     )
+
+
+def _log_vwap_reclaim_decision(
+    signal: Signal,
+    executed: bool,
+    rejection_reason: str | None,
+) -> None:
+    """Log VWAP_RECLAIM execution decision (Sprint 1: Instrumentation).
+
+    Logs structured decision data for debugging and analysis. Format is grep-able
+    with consistent JSON structure.
+
+    Args:
+        signal: Signal object with diagnostics
+        executed: Whether entry was executed
+        rejection_reason: Reason for rejection if not executed
+    """
+    # Extract diagnostics
+    diagnostics = signal.diagnostics if signal.diagnostics else {}
+    reclaim_state = diagnostics.get("reclaim_state", "unknown")
+    bars_since_reclaim = diagnostics.get("bars_since_reclaim", 0)
+    confirmation_type = diagnostics.get("second_confirmation_type")
+    session_ok = (
+        diagnostics.get("session_ok")
+        if "session_ok" in diagnostics
+        else signal.validation_flags.get("session_ok")
+    )
+    tier_ok = (
+        diagnostics.get("tier_ok")
+        if "tier_ok" in diagnostics
+        else signal.validation_flags.get("tier_ok")
+    )
+    
+    # Build confirmations list
+    confirmations = []
+    if confirmation_type:
+        confirmations.append(confirmation_type)
+    
+    # Build decision data
+    decision_data = {
+        "setup_type": signal.setup_type,
+        "reclaim_state": reclaim_state,
+        "bars_since_reclaim": bars_since_reclaim,
+        "score": signal.score,
+        "confirmations": confirmations,
+        "session_ok": session_ok,
+        "tier_ok": tier_ok,
+        "executed": executed,
+        "rejection_reason": rejection_reason,
+    }
+    
+    # Log with grep-able format
+    decision_json = json.dumps(decision_data)
+    logger.info(f"VWAP_RECLAIM_DECISION: {decision_json}")
