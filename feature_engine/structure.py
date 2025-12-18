@@ -14,11 +14,14 @@ from dataclasses import dataclass
 from typing import Literal
 
 import pandas as pd
+from common.logger import get_logger
 
 from feature_engine.vwap_reclaim_state_machine import (
     VWAPReclaimState,
     VWAPReclaimStateMachine,
 )
+
+logger = get_logger(__name__)
 
 # Asset-adjusted ATR configuration by timeframe (Gold/GC)
 # min_pct: Minimum ATR as % of price (floor - below this is normal low vol, not compression)
@@ -555,7 +558,8 @@ class StructureContextTracker:
         Returns:
             Dict with:
                 - confirmed: bool - whether second confirmation is satisfied
-                - confirmation_type: str | None - type of confirmation
+                - confirmations: set[str] - set of confirmation types (Sprint 2 Task 4)
+                - confirmation_type: str | None - first confirmation (backward compatibility)
                 - reasons: list[str] - confirmation reason descriptions
                 - bars_since_reclaim: int - bars since VWAP reclaim detected
         """
@@ -563,7 +567,8 @@ class StructureContextTracker:
 
         result = {
             "confirmed": False,
-            "confirmation_type": None,
+            "confirmations": set(),  # Sprint 2 Task 4: aggregate confirmations
+            "confirmation_type": None,  # Backward compatibility
             "reasons": [],
             "bars_since_reclaim": 0,
         }
@@ -578,13 +583,22 @@ class StructureContextTracker:
         result["bars_since_reclaim"] = bars_since
 
         # Check state machine state (Sprint 1: early return if expired/invalidated)
+        # Sprint 2 Task 3: Add logging when confirmation checks skipped
         if self.vwap_reclaim_sm.current_state == VWAPReclaimState.EXPIRED:
+            logger.debug(
+                f"Confirmation check skipped: reclaim EXPIRED at bar {current_bar} "
+                f"(bars_since_reclaim={bars_since})"
+            )
             result["confirmed"] = False
             result["confirmation_type"] = "expired"
             result["reasons"] = ["Reclaim expired: no confirmation within window"]
             return result
 
         if self.vwap_reclaim_sm.current_state == VWAPReclaimState.INVALIDATED:
+            logger.debug(
+                f"Confirmation check skipped: reclaim INVALIDATED at bar {current_bar} "
+                f"(bars_since_reclaim={bars_since})"
+            )
             result["confirmed"] = False
             result["confirmation_type"] = "invalidated"
             result["reasons"] = ["Reclaim invalidated: structural break"]
@@ -612,9 +626,9 @@ class StructureContextTracker:
                 lookback = min(bars_since, 2)
                 recent_closes = list(self.close_buffer_vwap)[-lookback:]
                 recent_vwaps = list(self.vwap_buffer)[-lookback:]
-                if all(c > v for c, v in zip(recent_closes, recent_vwaps)):
+                if all(c > v for c, v in zip(recent_closes, recent_vwaps, strict=False)):
                     result["confirmed"] = True
-                    result["confirmation_type"] = "vwap_hold"
+                    result["confirmations"].add("vwap_hold")  # Sprint 2 Task 4
                     result["reasons"].append("vwap_hold: price holding above VWAP")
 
             # Check 2: Volume expansion (1.5x average)
@@ -629,7 +643,7 @@ class StructureContextTracker:
                     avg_volume = sum(pre_reclaim_volumes) / len(pre_reclaim_volumes)
                     if avg_volume > 0 and current_volume > avg_volume * 1.5:
                         result["confirmed"] = True
-                        result["confirmation_type"] = result["confirmation_type"] or "volume_expansion"
+                        result["confirmations"].add("volume_expansion")  # Sprint 2 Task 4
                         result["reasons"].append("volume_expansion: volume > 1.5x average")
 
             # Check 3: Micro higher low (using low_buffer from structure tracking)
@@ -642,7 +656,7 @@ class StructureContextTracker:
                     # Verify the higher low is above VWAP
                     if lows[-1] > self.vwap_buffer[-1]:
                         result["confirmed"] = True
-                        result["confirmation_type"] = result["confirmation_type"] or "micro_hl"
+                        result["confirmations"].add("micro_hl")  # Sprint 2 Task 4
                         result["reasons"].append("micro_hl: higher low above VWAP")
 
         elif direction == "short" and self.vwap_reclaim_direction == "below":
@@ -653,9 +667,9 @@ class StructureContextTracker:
                 lookback = min(bars_since, 2)
                 recent_closes = list(self.close_buffer_vwap)[-lookback:]
                 recent_vwaps = list(self.vwap_buffer)[-lookback:]
-                if all(c < v for c, v in zip(recent_closes, recent_vwaps)):
+                if all(c < v for c, v in zip(recent_closes, recent_vwaps, strict=False)):
                     result["confirmed"] = True
-                    result["confirmation_type"] = "vwap_hold"
+                    result["confirmations"].add("vwap_hold")  # Sprint 2 Task 4
                     result["reasons"].append("vwap_hold: price holding below VWAP")
 
             # Check 2: Volume expansion (1.5x average)
@@ -670,7 +684,7 @@ class StructureContextTracker:
                     avg_volume = sum(pre_reclaim_volumes) / len(pre_reclaim_volumes)
                     if avg_volume > 0 and current_volume > avg_volume * 1.5:
                         result["confirmed"] = True
-                        result["confirmation_type"] = result["confirmation_type"] or "volume_expansion"
+                        result["confirmations"].add("volume_expansion")  # Sprint 2 Task 4
                         result["reasons"].append("volume_expansion: volume > 1.5x average")
 
             # Check 3: Micro lower high (using high_buffer from structure tracking)
@@ -683,21 +697,28 @@ class StructureContextTracker:
                     # Verify the lower high is below VWAP
                     if highs[-1] < self.vwap_buffer[-1]:
                         result["confirmed"] = True
-                        result["confirmation_type"] = result["confirmation_type"] or "micro_lh"
+                        result["confirmations"].add("micro_lh")  # Sprint 2 Task 4
                         result["reasons"].append("micro_lh: lower high below VWAP")
 
+        # Sprint 2 Task 4: Set confirmation_type for backward compatibility
+        if result["confirmations"]:
+            result["confirmation_type"] = next(iter(result["confirmations"]))
+
         # Sprint 1: Trigger state machine transition on confirmation
-        if result["confirmed"] and result["confirmation_type"]:
+        # Sprint 2 Task 4: Loop through all confirmations
+        if result["confirmed"] and result["confirmations"]:
             # Only transition if in PENDING_ACCEPTANCE or CONFIRMED state
             # (avoid re-triggering if already confirmed)
             if self.vwap_reclaim_sm.current_state in [
                 VWAPReclaimState.PENDING_ACCEPTANCE,
                 VWAPReclaimState.CONFIRMED,
             ]:
-                self.vwap_reclaim_sm.on_confirmation(
-                    bar_idx=current_bar,
-                    confirmation_type=result["confirmation_type"]
-                )
+                # Call on_confirmation for each confirmation type
+                for conf_type in result["confirmations"]:
+                    self.vwap_reclaim_sm.on_confirmation(
+                        bar_idx=current_bar,
+                        confirmation_type=conf_type
+                    )
 
         return result
 
