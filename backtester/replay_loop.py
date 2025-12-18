@@ -615,7 +615,7 @@ class BacktestReplayLoop:
                 }
 
                 # Sprint 3 Task 5: Pass VWAP value for VWAP-zone SL calculation
-                vwap_value = features.get("vwap") if features else None
+                vwap_value = features.get("vwap") if features is not None else None
 
                 trade = create_trade_from_entry(
                     entry_execution=execution,
