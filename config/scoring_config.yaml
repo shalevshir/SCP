@@ -8,7 +8,7 @@
 #   - weights: Dict of factor names to point values (max 10 total)
 
 setup_types:
-  # VWAP Reclaim: Continuation setup when price reclaims VWAP
+  # VWAP Reclaim: Reclaim setup after price sweeps and reclaims VWAP
   VWAP_RECLAIM:
     min_score: 8
     weights:

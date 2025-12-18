@@ -451,7 +451,7 @@ def validate(context, direction, setup_type):
         errors.append("HTF bias mismatch")
     
     # DXY structure (continuation only)
-    if setup_type in ("VWAP_RECLAIM", "DXY_CONTINUATION") and not context.dxy_trending_clean:
+    if setup_type in ("DXY_CONTINUATION",) and not context.dxy_trending_clean:
         errors.append("DXY structure not clean")
     
     return ValidationResult(valid=len(errors) == 0, errors=errors)

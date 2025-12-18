@@ -140,7 +140,8 @@ class ValidationEngine:
 
         # DXY structure check for continuation setups only
         # VWAP_FADE is allowed without DXY per SOP (with warning handled in validate_signal_with_sop)
-        continuation_setups = ("VWAP_RECLAIM", "DXY_CONTINUATION")
+        # VWAP_RECLAIM is a reclaim/reversal setup, not a continuation setup
+        continuation_setups = ("DXY_CONTINUATION",)
         if setup_type in continuation_setups and not context.dxy_trending_clean:
             errors.append(
                 "DXY structure not clean - continuation setups require "
