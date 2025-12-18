@@ -85,17 +85,17 @@ class VWAPReclaimStateMachine:
     def __init__(self, max_confirm_window: int = 10):
         """Initialize state machine."""
         self.max_confirm_window = max_confirm_window
-        
+
         # Current state
         self.current_state = VWAPReclaimState.NONE
-        
+
         # Detection tracking
         self.detection_bar_idx: int | None = None
         self.reclaim_direction: str | None = None  # "above" or "below"
-        
+
         # Confirmation tracking
         self.confirmations: set[str] = set()
-        
+
         # Transition history for audit trail
         self.transition_history: list[StateTransition] = []
 
@@ -114,25 +114,25 @@ class VWAPReclaimStateMachine:
                 "Resetting previous reclaim."
             )
             self.reset()
-        
+
         # NONE -> DETECTED
         self._transition(
             to_state=VWAPReclaimState.DETECTED,
             bar_idx=bar_idx,
             reason=f"VWAP reclaim {direction} detected",
         )
-        
+
         # Store detection context
         self.detection_bar_idx = bar_idx
         self.reclaim_direction = direction
-        
+
         # DETECTED -> PENDING_ACCEPTANCE (immediate transition)
         self._transition(
             to_state=VWAPReclaimState.PENDING_ACCEPTANCE,
             bar_idx=bar_idx,
             reason="Entering confirmation window",
         )
-        
+
         logger.info(
             f"VWAP reclaim detected at bar {bar_idx} (direction={direction}). "
             f"State: {self.current_state.value}"
@@ -155,13 +155,13 @@ class VWAPReclaimStateMachine:
                 f"Cannot confirm reclaim in EXPIRED state at bar {bar_idx}. "
                 "Reclaim timed out."
             )
-        
+
         if self.current_state == VWAPReclaimState.INVALIDATED:
             raise ValueError(
                 f"Cannot confirm reclaim in INVALIDATED state at bar {bar_idx}. "
                 "Reclaim structurally broken."
             )
-        
+
         if self.current_state != VWAPReclaimState.PENDING_ACCEPTANCE:
             # Allow confirmation in CONFIRMED state (multiple confirmations)
             if self.current_state != VWAPReclaimState.CONFIRMED:
@@ -169,10 +169,10 @@ class VWAPReclaimStateMachine:
                     f"Cannot confirm reclaim in state {self.current_state.value} at bar {bar_idx}. "
                     "Must be PENDING_ACCEPTANCE."
                 )
-        
+
         # Add confirmation to set
         self.confirmations.add(confirmation_type)
-        
+
         # Transition to CONFIRMED (if not already)
         if self.current_state == VWAPReclaimState.PENDING_ACCEPTANCE:
             self._transition(
@@ -206,13 +206,13 @@ class VWAPReclaimStateMachine:
                 f"Cannot execute reclaim in state {self.current_state.value} at bar {bar_idx}. "
                 "Must be CONFIRMED."
             )
-        
+
         self._transition(
             to_state=VWAPReclaimState.EXECUTED,
             bar_idx=bar_idx,
             reason="Trade executed",
         )
-        
+
         logger.info(
             f"VWAP reclaim executed at bar {bar_idx} "
             f"(confirmations={list(self.confirmations)})"
@@ -235,15 +235,15 @@ class VWAPReclaimStateMachine:
                 "Ignoring."
             )
             return
-        
+
         bars_waited = bar_idx - self.detection_bar_idx if self.detection_bar_idx else 0
-        
+
         self._transition(
             to_state=VWAPReclaimState.EXPIRED,
             bar_idx=bar_idx,
             reason=f"Reclaim expired after {bars_waited} bars (max: {self.max_confirm_window})",
         )
-        
+
         logger.info(
             f"VWAP reclaim expired at bar {bar_idx} "
             f"(bars_waited={bars_waited}, max={self.max_confirm_window})"
@@ -264,15 +264,41 @@ class VWAPReclaimStateMachine:
                 "Ignoring."
             )
             return
-        
+
         self._transition(
             to_state=VWAPReclaimState.INVALIDATED,
             bar_idx=bar_idx,
             reason=f"Invalidation: {reason}",
         )
-        
+
+        logger.info(f"VWAP reclaim invalidated at bar {bar_idx} (reason={reason})")
+
+    def on_stop_out(self, bar_idx: int) -> None:
+        """Handle stop-loss exit.
+
+        Sprint 3 Task 7: Distinguish stop-loss from invalidation.
+        Stop-out transitions to INVALIDATED to prevent re-entry on same reclaim.
+
+        Transitions: ANY -> INVALIDATED
+
+        Args:
+            bar_idx: Bar index where stop-out occurred
+        """
+        if self.current_state == VWAPReclaimState.INVALIDATED:
+            logger.debug(
+                f"Stop-out called while already INVALIDATED at bar {bar_idx}. "
+                "Ignoring."
+            )
+            return
+
+        self._transition(
+            to_state=VWAPReclaimState.INVALIDATED,
+            bar_idx=bar_idx,
+            reason="Stop-loss hit",
+        )
+
         logger.info(
-            f"VWAP reclaim invalidated at bar {bar_idx} (reason={reason})"
+            f"VWAP reclaim stop-out at bar {bar_idx} (state machine invalidated)"
         )
 
     def can_execute(self) -> bool:
@@ -294,7 +320,7 @@ class VWAPReclaimStateMachine:
         """
         if self.detection_bar_idx is None:
             return False
-        
+
         bars_since = current_bar_idx - self.detection_bar_idx
         return bars_since > self.max_confirm_window
 
@@ -321,11 +347,11 @@ class VWAPReclaimStateMachine:
             bar_idx=self.detection_bar_idx or 0,
             reason="State machine reset",
         )
-        
+
         self.detection_bar_idx = None
         self.reclaim_direction = None
         self.confirmations.clear()
-        
+
         logger.debug("State machine reset to NONE")
 
     def _transition(
@@ -347,12 +373,11 @@ class VWAPReclaimStateMachine:
             bar_idx=bar_idx,
             reason=reason,
         )
-        
+
         self.transition_history.append(transition)
         self.current_state = to_state
-        
+
         logger.debug(
             f"State transition: {transition.from_state.value} -> {transition.to_state.value} "
             f"at bar {bar_idx} (reason: {reason})"
         )
-
