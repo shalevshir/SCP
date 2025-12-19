@@ -116,6 +116,8 @@ def render_price_chart_with_markers(
             decreasing_line_color="#ef5350",
             increasing_fillcolor="#26a69a",
             decreasing_fillcolor="#ef5350",
+            showlegend=True,
+            legendgroup="price",
         ),
         row=1,
         col=1,
@@ -144,6 +146,8 @@ def render_price_chart_with_markers(
                 name="VWAP",
                 line=dict(color="cyan", width=2, dash="dash"),
                 opacity=0.8,
+                showlegend=True,
+                legendgroup="indicators",
             ),
             row=1,
             col=1,
@@ -164,6 +168,8 @@ def render_price_chart_with_markers(
                 name="EMA 9",
                 line=dict(color="yellow", width=1.5),
                 opacity=0.7,
+                showlegend=True,
+                legendgroup="indicators",
             ),
             row=1,
             col=1,
@@ -179,6 +185,8 @@ def render_price_chart_with_markers(
                 name="EMA 21",
                 line=dict(color="blue", width=1.5),
                 opacity=0.7,
+                showlegend=True,
+                legendgroup="indicators",
             ),
             row=1,
             col=1,
@@ -202,6 +210,9 @@ def render_price_chart_with_markers(
                 name="DXY",
                 line=dict(color="orange", width=2),
                 opacity=0.6,
+                showlegend=True,
+                legendgroup="correlation",
+                yaxis="y2",
             ),
             row=1,
             col=1,
@@ -219,14 +230,19 @@ def render_price_chart_with_markers(
             y=gc_df["volume"],
             name="Volume",
             marker_color=volume_colors,
-            showlegend=False,
+            showlegend=True,
+            legendgroup="volume",
         ),
         row=2,
         col=1,
     )
 
+    # Track which legend items we've shown
+    shown_long_entry = False
+    shown_short_entry = False
+
     # Add entry markers for all trades
-    for i, trade in enumerate(results.trades):
+    for trade in results.trades:
         entry_time = trade.entry_timestamp
         entry_price = trade.entry_price
 
@@ -238,6 +254,16 @@ def render_price_chart_with_markers(
                 marker_symbol = (
                     "triangle-up" if trade.direction == "long" else "triangle-down"
                 )
+
+                # Show legend only once per direction
+                show_in_legend = False
+                legendgroup = f"{trade.direction}_entry"
+                if trade.direction == "long" and not shown_long_entry:
+                    show_in_legend = True
+                    shown_long_entry = True
+                elif trade.direction == "short" and not shown_short_entry:
+                    show_in_legend = True
+                    shown_short_entry = True
 
                 fig.add_trace(
                     go.Scatter(
@@ -257,12 +283,16 @@ def render_price_chart_with_markers(
                             f"Setup: {trade.setup_type}<br>"
                             f"Score: {trade.entry_execution.signal.score:.1f}<extra></extra>"
                         ),
-                        showlegend=(i == 0),  # Only show legend for first
+                        showlegend=show_in_legend,
+                        legendgroup=legendgroup,
                     ),
                     row=1,
                     col=1,
                     secondary_y=False,
                 )
+
+    # Track if we've shown exit legend
+    shown_exit_legend = False
 
     # Add exit markers for all trades
     for trade in results.trades:
@@ -289,6 +319,11 @@ def render_price_chart_with_markers(
                         else "N/A"
                     )
 
+                    # Show legend only for first exit marker
+                    show_exit_legend = not shown_exit_legend
+                    if show_exit_legend:
+                        shown_exit_legend = True
+
                     fig.add_trace(
                         go.Scatter(
                             x=[gc_df.index[closest_idx]],
@@ -307,7 +342,8 @@ def render_price_chart_with_markers(
                                 f"Reason: {trade.exit_reason}<br>"
                                 f"PnL: {pnl_text} ({r_text})<extra></extra>"
                             ),
-                            showlegend=False,  # Don't clutter legend with exit markers
+                            showlegend=show_exit_legend,
+                            legendgroup="exits",
                         ),
                         row=1,
                         col=1,
@@ -379,9 +415,15 @@ def render_price_chart_with_markers(
             x=0.01,
             bgcolor="rgba(0,0,0,0.5)",
         ),
-        hovermode="x unified",
+        hovermode="x",  # Changed from "x unified" to show OHLC properly
         height=700,  # Increased height for volume subplot
         margin=dict(l=60, r=60, t=40, b=40),
+    )
+    
+    # Configure hover for candlesticks to show OHLC data
+    fig.update_traces(
+        selector=dict(type="candlestick"),
+        hoverinfo="all",
     )
 
     # Remove rangeslider from candlestick
