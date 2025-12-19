@@ -212,7 +212,6 @@ def render_price_chart_with_markers(
                 opacity=0.6,
                 showlegend=True,
                 legendgroup="correlation",
-                yaxis="y2",
             ),
             row=1,
             col=1,
