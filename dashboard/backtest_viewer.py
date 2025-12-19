@@ -46,15 +46,17 @@ class BacktestResultsViewer:
     - Signal scoring breakdown analysis
     """
 
-    def __init__(self, results: BacktestResults, gc_df=None):
+    def __init__(self, results: BacktestResults, gc_df=None, dxy_df=None):
         """Initialize backtest results viewer.
 
         Args:
             results: BacktestResults object with all trades and metrics
             gc_df: Optional GC price DataFrame for price chart visualization
+            dxy_df: Optional DXY price DataFrame for correlation visualization
         """
         self.results = results
         self.gc_df = gc_df
+        self.dxy_df = dxy_df
 
         # Create Dash app
         self.app = dash.Dash(
@@ -175,7 +177,7 @@ class BacktestResultsViewer:
 
             # Price chart
             price_fig = render_price_chart_with_markers(
-                self.results, self.gc_df, selected_trade_id
+                self.results, self.gc_df, selected_trade_id, self.dxy_df
             )
 
             # Scoring breakdown

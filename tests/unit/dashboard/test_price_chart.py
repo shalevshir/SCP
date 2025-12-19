@@ -95,6 +95,7 @@ def test_render_price_chart_with_none_pnl_in_hovertemplate():
     trade.exit_timestamp = dates[5]
     trade.exit_price = 2710.0
     trade.pnl = None  # This is the bug trigger
+    trade.r_realized = None  # Must also set r_realized for the None check
     trade.exit_reason = "TIME"
 
     signal = MagicMock()
