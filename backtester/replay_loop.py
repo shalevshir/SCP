@@ -731,8 +731,9 @@ class BacktestReplayLoop:
                             f"notified to state machine (bar_idx={bar_idx}, "
                             f"execution_count={state_machine.execution_count})"
                         )
-                    except ValueError as e:
-                        # State machine not in CONFIRMED state - log warning but continue
+                    except (ValueError, KeyError) as e:
+                        # ValueError: State machine not in CONFIRMED state
+                        # KeyError: Timestamp not found in index
                         logger.warning(
                             f"Trade {trade.trade_id}: Could not notify state machine "
                             f"of VWAP_RECLAIM execution: {e}"
