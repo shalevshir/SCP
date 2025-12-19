@@ -32,9 +32,9 @@ class TestVWAPReclaimStateMachine:
     def test_reclaim_detected_transitions_to_pending(self):
         """on_reclaim_detected() transitions NONE -> DETECTED -> PENDING."""
         sm = VWAPReclaimStateMachine()
-        
+
         sm.on_reclaim_detected(bar_idx=100, direction="above")
-        
+
         assert sm.current_state == VWAPReclaimState.PENDING_ACCEPTANCE
         assert sm.detection_bar_idx == 100
         assert sm.reclaim_direction == "above"
@@ -43,9 +43,9 @@ class TestVWAPReclaimStateMachine:
         """on_confirmation() transitions PENDING -> CONFIRMED."""
         sm = VWAPReclaimStateMachine()
         sm.on_reclaim_detected(bar_idx=100, direction="above")
-        
+
         sm.on_confirmation(bar_idx=103, confirmation_type="vwap_hold")
-        
+
         assert sm.current_state == VWAPReclaimState.CONFIRMED
         assert len(sm.confirmations) == 1
         assert "vwap_hold" in sm.confirmations
@@ -54,10 +54,10 @@ class TestVWAPReclaimStateMachine:
         """Multiple confirmations can be added before CONFIRMED state."""
         sm = VWAPReclaimStateMachine()
         sm.on_reclaim_detected(bar_idx=100, direction="above")
-        
+
         sm.on_confirmation(bar_idx=102, confirmation_type="vwap_hold")
         sm.on_confirmation(bar_idx=103, confirmation_type="volume_expansion")
-        
+
         assert sm.current_state == VWAPReclaimState.CONFIRMED
         assert len(sm.confirmations) == 2
         assert "vwap_hold" in sm.confirmations
@@ -68,18 +68,18 @@ class TestVWAPReclaimStateMachine:
         sm = VWAPReclaimStateMachine()
         sm.on_reclaim_detected(bar_idx=100, direction="above")
         sm.on_confirmation(bar_idx=103, confirmation_type="vwap_hold")
-        
+
         sm.on_execution(bar_idx=104)
-        
+
         assert sm.current_state == VWAPReclaimState.EXECUTED
 
     def test_expiration_transitions_pending_to_expired(self):
         """on_expiration() transitions PENDING -> EXPIRED."""
         sm = VWAPReclaimStateMachine()
         sm.on_reclaim_detected(bar_idx=100, direction="above")
-        
+
         sm.on_expiration(bar_idx=111)
-        
+
         assert sm.current_state == VWAPReclaimState.EXPIRED
 
     def test_expiration_at_max_confirm_window(self):
@@ -87,11 +87,11 @@ class TestVWAPReclaimStateMachine:
         MAX_CONFIRM_WINDOW = 10
         sm = VWAPReclaimStateMachine(max_confirm_window=MAX_CONFIRM_WINDOW)
         sm.on_reclaim_detected(bar_idx=5, direction="above")
-        
+
         # At bar 15, exactly 10 bars have passed since bar 5
         # Should NOT be expired yet (need > 10 bars)
         assert not sm.is_expired(current_bar_idx=15)
-        
+
         # At bar 16, 11 bars have passed since bar 5
         # Should be expired (> 10 bars)
         assert sm.is_expired(current_bar_idx=16)
@@ -103,7 +103,7 @@ class TestVWAPReclaimStateMachine:
         sm.on_reclaim_detected(bar_idx=100, direction="above")
         sm.on_invalidation(bar_idx=105, reason="htf_break")
         assert sm.current_state == VWAPReclaimState.INVALIDATED
-        
+
         # Test from CONFIRMED
         sm2 = VWAPReclaimStateMachine()
         sm2.on_reclaim_detected(bar_idx=100, direction="above")
@@ -114,18 +114,18 @@ class TestVWAPReclaimStateMachine:
     def test_can_execute_only_in_confirmed_state(self):
         """can_execute() returns True only when state == CONFIRMED."""
         sm = VWAPReclaimStateMachine()
-        
+
         # NONE state
         assert not sm.can_execute()
-        
+
         # PENDING state
         sm.on_reclaim_detected(bar_idx=100, direction="above")
         assert not sm.can_execute()
-        
+
         # CONFIRMED state
         sm.on_confirmation(bar_idx=103, confirmation_type="vwap_hold")
         assert sm.can_execute()
-        
+
         # EXECUTED state
         sm.on_execution(bar_idx=104)
         assert not sm.can_execute()
@@ -135,7 +135,7 @@ class TestVWAPReclaimStateMachine:
         sm = VWAPReclaimStateMachine()
         sm.on_reclaim_detected(bar_idx=100, direction="above")
         sm.on_expiration(bar_idx=111)
-        
+
         assert not sm.can_execute()
 
     def test_can_execute_false_after_invalidation(self):
@@ -144,19 +144,19 @@ class TestVWAPReclaimStateMachine:
         sm.on_reclaim_detected(bar_idx=100, direction="above")
         sm.on_confirmation(bar_idx=103, confirmation_type="vwap_hold")
         sm.on_invalidation(bar_idx=105, reason="htf_break")
-        
+
         assert not sm.can_execute()
 
     def test_transition_history_preserved(self):
         """All state transitions are recorded in history."""
         sm = VWAPReclaimStateMachine()
-        
+
         sm.on_reclaim_detected(bar_idx=100, direction="above")
         sm.on_confirmation(bar_idx=103, confirmation_type="vwap_hold")
         sm.on_execution(bar_idx=104)
-        
+
         assert len(sm.transition_history) >= 3
-        
+
         # Check that history contains the key transitions
         states_in_history = [t.to_state for t in sm.transition_history]
         assert VWAPReclaimState.PENDING_ACCEPTANCE in states_in_history
@@ -167,7 +167,7 @@ class TestVWAPReclaimStateMachine:
         """bars_since_detection() returns correct bar count."""
         sm = VWAPReclaimStateMachine()
         sm.on_reclaim_detected(bar_idx=100, direction="above")
-        
+
         assert sm.bars_since_detection(current_bar_idx=100) == 0
         assert sm.bars_since_detection(current_bar_idx=105) == 5
         assert sm.bars_since_detection(current_bar_idx=110) == 10
@@ -177,9 +177,9 @@ class TestVWAPReclaimStateMachine:
         sm = VWAPReclaimStateMachine()
         sm.on_reclaim_detected(bar_idx=100, direction="above")
         sm.on_confirmation(bar_idx=103, confirmation_type="vwap_hold")
-        
+
         sm.reset()
-        
+
         assert sm.current_state == VWAPReclaimState.NONE
         assert sm.detection_bar_idx is None
         assert len(sm.confirmations) == 0
@@ -191,7 +191,7 @@ class TestVWAPReclaimStateMachine:
         sm = VWAPReclaimStateMachine()
         sm.on_reclaim_detected(bar_idx=100, direction="above")
         sm.on_expiration(bar_idx=111)
-        
+
         # This should either be a no-op or raise an error
         # Let's test it doesn't change state
         with pytest.raises(ValueError, match="Cannot confirm.*EXPIRED"):
@@ -201,16 +201,16 @@ class TestVWAPReclaimStateMachine:
         """Attempting execution in PENDING state should be rejected."""
         sm = VWAPReclaimStateMachine()
         sm.on_reclaim_detected(bar_idx=100, direction="above")
-        
+
         with pytest.raises(ValueError, match="Cannot execute.*pending"):
             sm.on_execution(bar_idx=102)
 
     def test_transition_logging_includes_bar_index(self):
         """All transitions log bar index and reason."""
         sm = VWAPReclaimStateMachine()
-        
+
         sm.on_reclaim_detected(bar_idx=100, direction="above")
-        
+
         assert len(sm.transition_history) >= 1
         last_transition = sm.transition_history[-1]
         assert hasattr(last_transition, "bar_idx")
@@ -218,3 +218,80 @@ class TestVWAPReclaimStateMachine:
         assert hasattr(last_transition, "reason")
         assert last_transition.reason is not None
 
+
+class TestExecutionCountTracking:
+    """Test execution count tracking for re-entry protection (Sprint 4)."""
+
+    def test_execution_count_starts_at_zero(self):
+        """State machine should start with execution_count = 0."""
+        sm = VWAPReclaimStateMachine()
+        assert sm.execution_count == 0
+
+    def test_on_execution_increments_count(self):
+        """on_execution() should increment execution_count."""
+        sm = VWAPReclaimStateMachine()
+        sm.on_reclaim_detected(bar_idx=100, direction="above")
+        sm.on_confirmation(bar_idx=102, confirmation_type="vwap_hold")
+
+        assert sm.execution_count == 0
+        sm.on_execution(bar_idx=103)
+        assert sm.execution_count == 1
+
+    def test_can_execute_returns_false_when_max_reached(self):
+        """can_execute() should return False when execution_count >= MAX_EXECUTIONS_PER_RECLAIM."""
+        sm = VWAPReclaimStateMachine()
+        sm.on_reclaim_detected(bar_idx=100, direction="above")
+        sm.on_confirmation(bar_idx=102, confirmation_type="vwap_hold")
+
+        # First execution should be allowed
+        assert sm.can_execute() is True
+        sm.on_execution(bar_idx=103)
+
+        # Second execution should be blocked
+        assert sm.can_execute() is False
+
+    def test_execution_count_resets_on_reset(self):
+        """reset() should clear execution_count."""
+        sm = VWAPReclaimStateMachine()
+        sm.on_reclaim_detected(bar_idx=100, direction="above")
+        sm.on_confirmation(bar_idx=102, confirmation_type="vwap_hold")
+        sm.on_execution(bar_idx=103)
+
+        assert sm.execution_count == 1
+        sm.reset()
+        assert sm.execution_count == 0
+
+    def test_has_execution_capacity_helper_method(self):
+        """has_execution_capacity() should return True if execution_count < max."""
+        sm = VWAPReclaimStateMachine()
+        sm.on_reclaim_detected(bar_idx=100, direction="above")
+        sm.on_confirmation(bar_idx=102, confirmation_type="vwap_hold")
+
+        # Before execution
+        assert sm.has_execution_capacity() is True
+
+        # After execution
+        sm.on_execution(bar_idx=103)
+        assert sm.has_execution_capacity() is False
+
+    def test_new_reclaim_detection_resets_execution_count(self):
+        """New reclaim detection should reset execution_count (fresh structural evidence)."""
+        sm = VWAPReclaimStateMachine()
+
+        # First reclaim
+        sm.on_reclaim_detected(bar_idx=100, direction="above")
+        sm.on_confirmation(bar_idx=102, confirmation_type="vwap_hold")
+        sm.on_execution(bar_idx=103)
+        assert sm.execution_count == 1
+
+        # New reclaim detection (resets state machine)
+        sm.on_reclaim_detected(bar_idx=200, direction="above")
+        assert sm.execution_count == 0
+
+    def test_max_executions_per_reclaim_constant_exists(self):
+        """MAX_EXECUTIONS_PER_RECLAIM constant should exist and equal 1."""
+        from feature_engine.vwap_reclaim_state_machine import (
+            MAX_EXECUTIONS_PER_RECLAIM,
+        )
+
+        assert MAX_EXECUTIONS_PER_RECLAIM == 1

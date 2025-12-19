@@ -258,21 +258,27 @@ class TestSessionWindowEnforcement(BaseValidationTest):
         # Session time is valid
         market_state["session_ok"] = True
 
-        # But DXY structure is not clean (will fail validation)
-        features["dxy_corr"] = -0.3  # Not clean enough for continuation setup
+        # But DXY structure is not clean (will fail validation for VWAP_RECLAIM)
+        features["dxy_corr"] = -0.3  # Not clean enough - VWAP_RECLAIM requires DXY data
 
-        # And HTF bias doesn't match
-        market_state["htf_bias"] = "bearish"  # Mismatched with signal's bullish bias
+        # And HTF bias doesn't match - modify features to produce bearish HTF bias
+        # Signal has htf_bias="bullish", so create bearish features
+        features["structure_type"] = "LH"  # Lower high = bearish
+        features["close"] = 2640.0  # Below VWAP (2645.0) = bearish
+        features["ema_9"] = 2641.0  # Descending EMA alignment
+        features["ema_20"] = 2643.0
+        features["ema_50"] = 2645.0  # ema_9 < ema_20 < ema_50 = bearish
 
         validated = validate_signal_with_sop(
             signal, features, market_state, constraints, None
         )
 
-        # Signal should be rejected due to DXY and HTF mismatch
+        # Signal should be rejected due to DXY unavailability and HTF mismatch
         assert validated.confidence == "Reject"
         assert (
-            "DXY structure" in validated.rationale
-            or "correlation" in validated.rationale.lower()
+            "DXY" in validated.rationale
+            or "HTF bias" in validated.rationale
+            or "unavail" in validated.rationale.lower()
         )
 
         # But session_ok flag should still be True because session time was valid

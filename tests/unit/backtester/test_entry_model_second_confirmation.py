@@ -186,3 +186,37 @@ class TestSecondConfirmationGate:
         assert execution.executed is False
         assert "no second confirmation" in execution.rejection_reason.lower()
 
+    def test_vwap_reclaim_with_expansion_confirmation_executes(self, next_candle):
+        """Test that VWAP_RECLAIM with expansion signal as confirmation executes entry.
+        
+        This test verifies the fix for the execution deadlock: expansion signals
+        (BOS, range expansion, ATR expansion, displacement) now count as valid
+        second confirmation, allowing execution to proceed.
+        """
+        signal = Signal(
+            timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=timezone.utc),
+            symbol="GC",
+            timeframe="1m",
+            direction="long",
+            setup_type="VWAP_RECLAIM",
+            htf_bias="bullish",
+            score=9.0,
+            confidence="A+",
+            factors={"structure_alignment": 2.0},
+            rationale="Test signal",
+            validation_flags={"htf_valid": True},
+            enforcer_tier="Early Mild",
+            diagnostics={
+                "second_confirmation_satisfied": True,
+                "second_confirmation_type": "expansion_recent_bos",
+                "second_confirmation_reasons": ["expansion_recent_bos: market resolving from compression"],
+                "bars_since_reclaim": 2,
+            },
+        )
+
+        execution = execute_entry_at_next_open(signal, next_candle)
+
+        assert execution.executed is True
+        assert execution.entry_price == 2650.0
+        assert execution.rejection_reason is None
+

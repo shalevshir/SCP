@@ -538,6 +538,32 @@ class BacktestReplayLoop:
                     f"(reason={execution.rejection_reason})"
                 )
 
+        # Sprint 4 Task 3: Check execution gate for VWAP_RECLAIM (re-entry protection)
+        if (
+            execution.executed
+            and signal.setup_type == "VWAP_RECLAIM"
+            and self._processor
+            and hasattr(self._processor, "_streaming")
+            and hasattr(self._processor._streaming, "structure_tracker")
+            and hasattr(self._processor._streaming.structure_tracker, "vwap_reclaim_sm")
+        ):
+            state_machine = self._processor._streaming.structure_tracker.vwap_reclaim_sm
+            if not state_machine.can_execute():
+                logger.warning(
+                    f"VWAP_RECLAIM execution blocked: Max executions reached for current reclaim "
+                    f"(execution_count={state_machine.execution_count}, "
+                    f"state={state_machine.current_state.value})"
+                )
+                # Override execution flag to block trade creation
+                execution = execution.__class__(
+                    signal_timestamp=execution.signal_timestamp,
+                    entry_timestamp=execution.entry_timestamp,
+                    entry_price=execution.entry_price,
+                    signal=execution.signal,
+                    executed=False,
+                    rejection_reason="Max executions reached for current reclaim",
+                )
+
         # Track executed trades
         if execution.executed:
             self._executed_trades += 1
@@ -589,7 +615,7 @@ class BacktestReplayLoop:
                 }
 
                 # Sprint 3 Task 5: Pass VWAP value for VWAP-zone SL calculation
-                vwap_value = features.get("vwap") if features else None
+                vwap_value = features.get("vwap") if features is not None else None
 
                 trade = create_trade_from_entry(
                     entry_execution=execution,
@@ -681,6 +707,37 @@ class BacktestReplayLoop:
                 self._active_trades[trade.trade_id] = trade
                 self._trade_bar_counts[trade.trade_id] = 0  # Initialize counter at 0
                 self._trades_today += 1
+
+                # Sprint 4: Notify state machine on VWAP_RECLAIM trade execution
+                # This increments execution_count to enable re-entry protection
+                if (
+                    trade.setup_type == "VWAP_RECLAIM"
+                    and self._processor
+                    and hasattr(self._processor, "_streaming")
+                    and hasattr(self._processor._streaming, "structure_tracker")
+                    and hasattr(
+                        self._processor._streaming.structure_tracker, "vwap_reclaim_sm"
+                    )
+                ):
+                    state_machine = (
+                        self._processor._streaming.structure_tracker.vwap_reclaim_sm
+                    )
+                    try:
+                        # Get bar index for the execution
+                        bar_idx = self.gc_df.index.get_loc(execution.entry_timestamp)
+                        state_machine.on_execution(bar_idx=bar_idx)
+                        logger.info(
+                            f"Trade {trade.trade_id}: VWAP_RECLAIM execution "
+                            f"notified to state machine (bar_idx={bar_idx}, "
+                            f"execution_count={state_machine.execution_count})"
+                        )
+                    except (ValueError, KeyError) as e:
+                        # ValueError: State machine not in CONFIRMED state
+                        # KeyError: Timestamp not found in index
+                        logger.warning(
+                            f"Trade {trade.trade_id}: Could not notify state machine "
+                            f"of VWAP_RECLAIM execution: {e}"
+                        )
 
                 logger.info(
                     f"Trade opened: {trade.trade_id} {trade.direction} "
@@ -984,6 +1041,36 @@ class BacktestReplayLoop:
         # Update invalidation checker daily state
         # (for PDLL checks during trade simulation)
         self._invalidation_checker.record_trade_outcome(closed_trade, won=won)
+
+        # Sprint 4 Task 2: Notify state machine on VWAP_RECLAIM stop-out
+        if (
+            closed_trade.setup_type == "VWAP_RECLAIM"
+            and closed_trade.exit_reason == "sl"
+        ):
+            # Access state machine through processor -> streaming -> structure_tracker
+            if (
+                self._processor
+                and hasattr(self._processor, "_streaming")
+                and hasattr(self._processor._streaming, "structure_tracker")
+                and hasattr(
+                    self._processor._streaming.structure_tracker, "vwap_reclaim_sm"
+                )
+            ):
+                # Calculate bar index for notification
+                # Use duration_bars if available, otherwise estimate from timestamps
+                if closed_trade.duration_bars is not None:
+                    # Approximate bar index (we don't have absolute bar idx here)
+                    bar_idx = closed_trade.duration_bars
+                else:
+                    bar_idx = 0  # Fallback
+
+                self._processor._streaming.structure_tracker.vwap_reclaim_sm.on_stop_out(
+                    bar_idx=bar_idx
+                )
+                logger.info(
+                    f"Trade {closed_trade.trade_id}: VWAP_RECLAIM stop-out "
+                    f"notified to state machine (bar_idx={bar_idx})"
+                )
 
         # Track max consecutive losses for reporting
         current_state = (

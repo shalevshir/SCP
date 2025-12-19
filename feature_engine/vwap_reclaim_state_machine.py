@@ -39,6 +39,11 @@ from common.logger import get_logger
 
 logger = get_logger(__name__)
 
+# Sprint 4: Re-entry Protection
+# Maximum number of executions allowed per reclaim context
+# After a stopped-out trade, re-entry requires fresh structural evidence (new sweep + BOS)
+MAX_EXECUTIONS_PER_RECLAIM = 1
+
 
 class VWAPReclaimState(Enum):
     """VWAP Reclaim lifecycle states."""
@@ -95,6 +100,9 @@ class VWAPReclaimStateMachine:
 
         # Confirmation tracking
         self.confirmations: set[str] = set()
+
+        # Execution tracking (Sprint 4: Re-entry Protection)
+        self.execution_count: int = 0
 
         # Transition history for audit trail
         self.transition_history: list[StateTransition] = []
@@ -207,6 +215,9 @@ class VWAPReclaimStateMachine:
                 "Must be CONFIRMED."
             )
 
+        # Sprint 4: Increment execution count for re-entry protection
+        self.execution_count += 1
+
         self._transition(
             to_state=VWAPReclaimState.EXECUTED,
             bar_idx=bar_idx,
@@ -215,7 +226,7 @@ class VWAPReclaimStateMachine:
 
         logger.info(
             f"VWAP reclaim executed at bar {bar_idx} "
-            f"(confirmations={list(self.confirmations)})"
+            f"(confirmations={list(self.confirmations)}, execution_count={self.execution_count})"
         )
 
     def on_expiration(self, bar_idx: int) -> None:
@@ -304,10 +315,31 @@ class VWAPReclaimStateMachine:
     def can_execute(self) -> bool:
         """Check if reclaim can be executed.
 
+        Sprint 4: Also checks execution_count to prevent re-entry on same reclaim.
+
         Returns:
-            True only if current_state == CONFIRMED
+            True only if current_state == CONFIRMED AND execution_count < MAX_EXECUTIONS_PER_RECLAIM
         """
-        return self.current_state == VWAPReclaimState.CONFIRMED
+        state_ok = self.current_state == VWAPReclaimState.CONFIRMED
+        capacity_ok = self.execution_count < MAX_EXECUTIONS_PER_RECLAIM
+
+        if state_ok and not capacity_ok:
+            logger.debug(
+                f"Execution blocked: execution_count ({self.execution_count}) "
+                f">= MAX_EXECUTIONS_PER_RECLAIM ({MAX_EXECUTIONS_PER_RECLAIM})"
+            )
+
+        return state_ok and capacity_ok
+
+    def has_execution_capacity(self) -> bool:
+        """Check if execution capacity is available.
+
+        Sprint 4: Helper method for re-entry protection.
+
+        Returns:
+            True if execution_count < MAX_EXECUTIONS_PER_RECLAIM
+        """
+        return self.execution_count < MAX_EXECUTIONS_PER_RECLAIM
 
     def is_expired(self, current_bar_idx: int) -> bool:
         """Check if reclaim has expired.
@@ -341,6 +373,7 @@ class VWAPReclaimStateMachine:
         """Reset state machine to NONE.
 
         Clears current state but preserves transition history for diagnostics.
+        Sprint 4: Also resets execution_count (fresh structural evidence).
         """
         self._transition(
             to_state=VWAPReclaimState.NONE,
@@ -351,6 +384,7 @@ class VWAPReclaimStateMachine:
         self.detection_bar_idx = None
         self.reclaim_direction = None
         self.confirmations.clear()
+        self.execution_count = 0  # Sprint 4: Reset for new reclaim
 
         logger.debug("State machine reset to NONE")
 

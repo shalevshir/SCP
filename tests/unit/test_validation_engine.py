@@ -148,7 +148,7 @@ class TestValidationEngine:
         assert any("news event" in err.lower() for err in result.errors)
 
     def test_dxy_not_clean_fails(self) -> None:
-        """Validation should fail if dxy_trending_clean is False for continuation setups."""
+        """Validation should fail if dxy_trending_clean is False for DXY_CONTINUATION setup."""
         engine = ValidationEngine()
         context = self._create_valid_context()
         context = ValidationContext(
@@ -156,7 +156,7 @@ class TestValidationEngine:
         )
 
         result = engine.validate(
-            context, TradeDirection.LONG, setup_type="VWAP_RECLAIM"
+            context, TradeDirection.LONG, setup_type="DXY_CONTINUATION"
         )
 
         assert result.valid is False
@@ -245,7 +245,7 @@ class TestValidationEngine:
         )
 
         result = engine.validate(
-            context, TradeDirection.SHORT, setup_type="VWAP_RECLAIM"
+            context, TradeDirection.SHORT, setup_type="DXY_CONTINUATION"
         )
 
         assert result.valid is False
