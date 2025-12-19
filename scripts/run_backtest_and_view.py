@@ -409,6 +409,41 @@ def load_gc_data_for_viewer(
     return None
 
 
+def load_dxy_data_for_viewer(
+    data_dir: Path, start: datetime, end: datetime
+) -> pd.DataFrame | None:
+    """Load DXY data for correlation visualization.
+
+    Args:
+        data_dir: Directory containing CSV files
+        start: Start datetime
+        end: End datetime
+
+    Returns:
+        DXY DataFrame or None if not available
+    """
+    try:
+        from data_layer.loader import HistoricalDataLoader
+
+        loader = HistoricalDataLoader(data_dir)
+        data = loader.load(["DXY"], "1m", start, end)
+
+        if "DXY" in data and not data["DXY"].empty:
+            df = data["DXY"]
+            # Ensure timestamp column exists for chart
+            if isinstance(df.index, pd.DatetimeIndex):
+                df = df.copy()
+                df["timestamp"] = df.index
+            elif "timestamp" not in df.columns:
+                logger.warning("DXY DataFrame missing timestamp column/index")
+                return None
+            return df
+    except Exception as e:
+        logger.warning(f"Could not load DXY data for viewer: {e}")
+
+    return None
+
+
 def main() -> None:
     """Main entry point."""
     # Initialize logging first
@@ -431,7 +466,21 @@ def main() -> None:
 
         if args.view:
             logger.info("Launching results viewer...")
-            viewer = BacktestResultsViewer(results)
+            # Try to load data for visualization (optional)
+            gc_df = None
+            dxy_df = None
+            if args.data_dir.exists():
+                # Extract date range from results
+                if results.trades:
+                    start = min(t.entry_timestamp for t in results.trades)
+                    end = max(
+                        t.exit_timestamp if t.exit_timestamp else t.entry_timestamp
+                        for t in results.trades
+                    )
+                    gc_df = load_gc_data_for_viewer(args.data_dir, start, end)
+                    dxy_df = load_dxy_data_for_viewer(args.data_dir, start, end)
+
+            viewer = BacktestResultsViewer(results, gc_df=gc_df, dxy_df=dxy_df)
             viewer.run(port=args.port)
         else:
             logger.info("Results loaded. Use --view to launch viewer.")
@@ -481,10 +530,11 @@ def main() -> None:
         if args.view:
             logger.info("\nLaunching results viewer...")
 
-            # Try to load GC data for price chart
+            # Try to load GC and DXY data for price chart
             gc_df = load_gc_data_for_viewer(args.data_dir, args.start, args.end)
+            dxy_df = load_dxy_data_for_viewer(args.data_dir, args.start, args.end)
 
-            viewer = BacktestResultsViewer(results, gc_df=gc_df)
+            viewer = BacktestResultsViewer(results, gc_df=gc_df, dxy_df=dxy_df)
             viewer.run(port=args.port)
 
 
