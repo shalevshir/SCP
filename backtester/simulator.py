@@ -297,18 +297,28 @@ def check_trade_exit_single_bar(
         )
         if is_invalid:
             # Map reason to exit code
+            # FIXED: Order matters - check specific patterns before generic ones
             exit_reason = "invalidation"  # Default
-            if "vwap" in reason.lower():
-                exit_reason = "vwap_invalidation"
-            elif "htf" in reason.lower() or "structure" in reason.lower():
-                exit_reason = "htf_invalidation"
-            elif "dxy" in reason.lower():
+            reason_lower = reason.lower()
+            if "+1r" in reason_lower or "timeout" in reason_lower or "not reached" in reason_lower:
+                # Time-based exit (must check before "vwap" since reason contains setup type)
+                exit_reason = "time_stop"
+            elif "dxy" in reason_lower:
+                # DXY flip (must check before "structure" since DXY reasons may contain "structure")
                 exit_reason = "dxy_flip"
-            elif "session" in reason.lower():
+            elif "micro structure" in reason_lower or "micro_structure" in reason_lower:
+                # Micro (1m) structure break - separate from true HTF
+                exit_reason = "micro_structure_invalidation"
+            elif "vwap" in reason_lower:
+                exit_reason = "vwap_invalidation"
+            elif "htf" in reason_lower:
+                # Reserved for actual HTF (15m/1h) structure breaks
+                exit_reason = "htf_invalidation"
+            elif "session" in reason_lower:
                 exit_reason = "session_close"
-            elif "window" in reason.lower():
+            elif "window" in reason_lower:
                 exit_reason = "window_expired"
-            elif "daily" in reason.lower() or "risk" in reason.lower():
+            elif "daily" in reason_lower or "risk" in reason_lower:
                 exit_reason = "daily_risk_stop"
 
             logger.info(
@@ -580,18 +590,28 @@ def simulate_trade_outcome(
             )
             if is_invalid:
                 # Map reason to exit code
+                # FIXED: Order matters - check specific patterns before generic ones
                 exit_reason = "invalidation"  # Default
-                if "vwap" in reason.lower():
-                    exit_reason = "vwap_invalidation"
-                elif "htf" in reason.lower() or "structure" in reason.lower():
-                    exit_reason = "htf_invalidation"
-                elif "dxy" in reason.lower():
+                reason_lower = reason.lower()
+                if "+1r" in reason_lower or "timeout" in reason_lower or "not reached" in reason_lower:
+                    # Time-based exit (must check before "vwap" since reason contains setup type)
+                    exit_reason = "time_stop"
+                elif "dxy" in reason_lower:
+                    # DXY flip (must check before "structure" since DXY reasons may contain "structure")
                     exit_reason = "dxy_flip"
-                elif "session" in reason.lower():
+                elif "micro structure" in reason_lower or "micro_structure" in reason_lower:
+                    # Micro (1m) structure break - separate from true HTF
+                    exit_reason = "micro_structure_invalidation"
+                elif "vwap" in reason_lower:
+                    exit_reason = "vwap_invalidation"
+                elif "htf" in reason_lower:
+                    # Reserved for actual HTF (15m/1h) structure breaks
+                    exit_reason = "htf_invalidation"
+                elif "session" in reason_lower:
                     exit_reason = "session_close"
-                elif "window" in reason.lower():
+                elif "window" in reason_lower:
                     exit_reason = "window_expired"
-                elif "daily" in reason.lower() or "risk" in reason.lower():
+                elif "daily" in reason_lower or "risk" in reason_lower:
                     exit_reason = "daily_risk_stop"
 
                 logger.info(

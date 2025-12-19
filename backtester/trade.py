@@ -920,11 +920,13 @@ def close_trade(
     exit_reason_lower = exit_reason.lower() if exit_reason else ""
     invalidation_triggered = exit_reason_lower in (
         "vwap_invalidation",
-        "htf_invalidation",
+        "htf_invalidation",  # Reserved for actual HTF (15m/1h) structure
+        "micro_structure_invalidation",  # 1m structure break
         "dxy_flip",
         "session_close",
         "window_expired",
         "daily_risk_stop",
+        "time_stop",  # +1R not reached within time limit
         "invalidation",
     )
 
