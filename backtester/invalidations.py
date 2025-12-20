@@ -523,11 +523,15 @@ class InvalidationChecker:
 
         # Standard logic for other setups (VWAP_RECLAIM, VWAP_FADE)
         dxy_corr = _sanitize_float(features.get("dxy_corr"))
+        trade_id = trade.trade_id
 
         if dxy_corr is None:
+            # FIX: Reset consecutive counter on missing data to preserve
+            # "3 consecutive bars" requirement for VWAP_RECLAIM.
+            # A None breaks the consecutive sequence.
+            if trade_id in self._dxy_flip_count:
+                self._dxy_flip_count[trade_id] = 0
             return False, None
-
-        trade_id = trade.trade_id
 
         # FIX: For VWAP_RECLAIM, require stronger threshold AND 3-bar persistence
         # DXY is a pre-entry gate (SOP), not an aggressive intra-trade kill switch
