@@ -379,3 +379,4 @@ Bar 4: VWAP hold satisfied (2 bars)
 - `backtester/replay_loop.py` - Upstream guardrails (PDLL, loss streak, etc.)
 - `rule_engine/scoring.py` - Signal scoring with penalty calculations
 
+
