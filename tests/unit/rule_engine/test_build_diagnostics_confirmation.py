@@ -157,3 +157,4 @@ class TestBuildDiagnosticsSecondConfirmation:
         assert diagnostics["second_confirmation_satisfied"] is False
         assert diagnostics["bars_since_reclaim"] == 1
 
+

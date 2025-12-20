@@ -602,8 +602,12 @@ class TestDXYContinuationInvalidation:
         assert is_invalid is False
         assert reason is None
 
-    def test_vwap_reclaim_uses_old_logic(self):
-        """Test that VWAP_RECLAIM uses the old (looser) invalidation logic."""
+    def test_vwap_reclaim_uses_3_bar_persistence(self):
+        """Test that VWAP_RECLAIM requires 3 consecutive bars for DXY flip.
+
+        VWAP_RECLAIM uses stricter invalidation than other setups - it requires
+        3 consecutive bars where DXY correlation flips to >= 0.0 (for long).
+        """
         checker = InvalidationChecker()
 
         signal = Signal(
@@ -673,14 +677,126 @@ class TestDXYContinuationInvalidation:
             source="TEST",
         )
 
-        # Old logic: just correlation > -0.3 triggers invalidation
+        # DXY correlation flipped to >= 0.0 (triggering condition for long)
         features = {
-            "dxy_corr": 0.0,  # Weak correlation
+            "dxy_corr": 0.0,  # Flip condition met
         }
 
+        # Bar 1: condition met, but not invalidated yet (need 3 bars)
         is_invalid, reason = checker.check_dxy_flip(trade, candle, features)
+        assert is_invalid is False  # Not yet, need 3 consecutive bars
 
-        assert is_invalid is True  # Old logic triggers on correlation alone
+        # Bar 2: condition still met
+        is_invalid, reason = checker.check_dxy_flip(trade, candle, features)
+        assert is_invalid is False  # Still not yet
+
+        # Bar 3: condition still met - NOW should trigger
+        is_invalid, reason = checker.check_dxy_flip(trade, candle, features)
+        assert is_invalid is True  # 3-bar persistence met
+        assert "3-bar confirmed" in reason
+
+    def test_vwap_reclaim_none_dxy_corr_resets_counter(self):
+        """Test that None dxy_corr resets the consecutive counter.
+
+        Bug fix: When dxy_corr is None (missing data), the counter should reset
+        because the "3 consecutive bars" requirement means no gaps allowed.
+
+        Scenario:
+        - Bar 1: dxy_corr=0.0 (condition met) → counter=1
+        - Bar 2: dxy_corr=None (missing) → should reset counter to 0
+        - Bar 3: dxy_corr=0.0 (condition met) → counter should be 1 (not 2!)
+        - Bar 4: dxy_corr=0.0 (condition met) → counter=2
+        - Bar 5: dxy_corr=0.0 (condition met) → counter=3, NOW invalidate
+        """
+        checker = InvalidationChecker()
+
+        signal = Signal(
+            timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=timezone.utc),
+            symbol="GC",
+            timeframe="1m",
+            direction="long",
+            setup_type="VWAP_RECLAIM",
+            htf_bias="bullish",
+            score=8.5,
+            confidence="A+",
+            factors={},
+            rationale="Test",
+            validation_flags={},
+            enforcer_tier="EarlyMild",
+        )
+        entry_execution = EntryExecution(
+            signal_timestamp=signal.timestamp,
+            entry_timestamp=signal.timestamp,
+            entry_price=2650.0,
+            signal=signal,
+            executed=True,
+            rejection_reason=None,
+        )
+        trade = Trade(
+            trade_id="test-none-dxy-reset",
+            symbol="GC",
+            timeframe="1m",
+            entry_execution=entry_execution,
+            entry_timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=timezone.utc),
+            entry_price=2650.0,
+            direction="long",
+            setup_type="VWAP_RECLAIM",
+            stop_loss=2648.0,
+            take_profit=2656.0,
+            sl_rationale="Test",
+            tp_rationale="Test",
+            risk_amount=2.0,
+            reward_amount=6.0,
+            r_multiple=3.0,
+            contracts=1,
+            exit_timestamp=None,
+            exit_price=None,
+            exit_reason=None,
+            pnl=None,
+            pnl_percent=None,
+            r_realized=None,
+            pnl_dollars=None,
+            pnl_net=None,
+            slippage_cost=None,
+            commission_cost=None,
+            status="OPEN",
+            duration_bars=None,
+            invalidation_triggered=False,
+            ignore_first_retest_bar=False,
+        )
+
+        candle = Candle(
+            timestamp=datetime(2025, 1, 1, 10, 5, tzinfo=timezone.utc),
+            open=2651.0,
+            high=2652.0,
+            low=2650.0,
+            close=2651.5,
+            volume=100,
+            symbol="GC",
+            timeframe="1m",
+            source="TEST",
+        )
+
+        # Bar 1: condition met (dxy_corr >= 0.0 for long)
+        is_invalid, _ = checker.check_dxy_flip(trade, candle, {"dxy_corr": 0.0})
+        assert is_invalid is False  # counter=1
+
+        # Bar 2: dxy_corr is None (missing data) - should reset counter
+        is_invalid, _ = checker.check_dxy_flip(trade, candle, {"dxy_corr": None})
+        assert is_invalid is False
+
+        # Bar 3: condition met again - counter should be 1 (reset by None)
+        is_invalid, _ = checker.check_dxy_flip(trade, candle, {"dxy_corr": 0.0})
+        assert is_invalid is False  # counter=1 (not 2!)
+
+        # Bar 4: condition met - counter=2
+        is_invalid, _ = checker.check_dxy_flip(trade, candle, {"dxy_corr": 0.0})
+        assert is_invalid is False  # counter=2
+
+        # Bar 5: condition met - counter=3, should trigger now
+        is_invalid, reason = checker.check_dxy_flip(trade, candle, {"dxy_corr": 0.0})
+        assert is_invalid is True  # 3 consecutive bars after the None
+        assert "3-bar confirmed" in reason
 
 
 

@@ -422,3 +422,4 @@ class TestHoverInfo:
         assert pnl_text == "N/A"
         assert r_text == "N/A"
 
+

@@ -74,6 +74,8 @@ class InvalidationChecker:
         }
         # Track consecutive invalidation bars for FADE setups (2-bar confirmation)
         self._fade_invalidation_count: dict[str, int] = {}
+        # Track consecutive DXY flip bars for VWAP_RECLAIM (3-bar persistence required)
+        self._dxy_flip_count: dict[str, int] = {}
 
     def _get_trade_state(self, trade_id: str) -> dict:
         """Get or create trade state.
@@ -316,10 +318,13 @@ class InvalidationChecker:
         )
         return False, None
 
-    def check_htf_structure_invalidation(
+    def check_micro_structure_invalidation(
         self, trade: Trade, candle: Candle, features: dict | None = None
     ) -> tuple[bool, str | None]:
-        """Check if HTF structure breaks opposite to trade direction.
+        """Check if micro (1m) structure breaks opposite to trade direction.
+
+        NOTE: This uses structure labels computed from 1m candle data, NOT HTF (15m/1h).
+        The exit reason is 'micro_structure' to reflect the actual timeframe.
 
         Args:
             trade: Open trade to check
@@ -329,10 +334,62 @@ class InvalidationChecker:
         Returns:
             Tuple of (is_invalid, reason)
 
-        SOP Rules:
-            - Long: Invalid if structure breaks bearish (LH, LL, or bearish BOS/CHoCH)
-            - Short: Invalid if structure breaks bullish (HH, HL, or bullish BOS/CHoCH)
-            - Uses structure labels from features (regardless of entry HTF bias)
+        Rules:
+            - Long: Invalid if structure breaks bearish (LL on 1m)
+            - Short: Invalid if structure breaks bullish (HH on 1m)
+            - Uses structure labels from features (1m timeframe)
+        """
+        # Need structure info from features
+        if features is None:
+            return False, None
+
+        # Get structure label from features (1m timeframe)
+        structure_label = features.get("structure_label") or features.get(
+            "structure_type"
+        )
+
+        # If no structure label available, can't detect invalidation
+        if structure_label is None:
+            return False, None
+
+        # Get computed timeframe for reason message
+        computed_timeframe = features.get("timeframe", "1m")
+
+        # Check for confirmed structure break against trade direction
+        # Long trades: only invalidate on LL (confirmed HL->LL break)
+        # Short trades: only invalidate on HH (confirmed LH->HH break)
+        if trade.direction == "long":
+            # Long trade invalidated only by LL (confirmed bearish break)
+            if structure_label == "LL":
+                reason = f"Micro structure break: LL on {computed_timeframe} (bearish)"
+                logger.info(f"Trade {trade.trade_id} invalidated: {reason}")
+                return True, reason
+        else:  # short
+            # Short trade invalidated only by HH (confirmed bullish break)
+            if structure_label == "HH":
+                reason = f"Micro structure break: HH on {computed_timeframe} (bullish)"
+                logger.info(f"Trade {trade.trade_id} invalidated: {reason}")
+                return True, reason
+
+        return False, None
+
+    def check_htf_structure_invalidation(
+        self, trade: Trade, candle: Candle, features: dict | None = None
+    ) -> tuple[bool, str | None]:
+        """Check if HTF (15m/1h) structure breaks opposite to trade direction.
+
+        Args:
+            trade: Open trade to check
+            candle: Current candle
+            features: Optional feature dictionary containing structure labels
+
+        Returns:
+            Tuple of (is_invalid, reason)
+
+        Rules:
+            - Long: Invalid if structure breaks bearish (LL)
+            - Short: Invalid if structure breaks bullish (HH)
+            - Uses structure labels from features
         """
         # Need structure info from features
         if features is None:
@@ -348,19 +405,18 @@ class InvalidationChecker:
             return False, None
 
         # Check for confirmed structure break against trade direction
-        # Long trades: only invalidate on LL (confirmed HL->LL break)
-        # Short trades: only invalidate on HH (confirmed LH->HH break)
-        # This reduces noise from intermediate labels like LH (for longs) or HL (for shorts)
+        # Long trades: only invalidate on LL (confirmed bearish break)
+        # Short trades: only invalidate on HH (confirmed bullish break)
         if trade.direction == "long":
             # Long trade invalidated only by LL (confirmed bearish break)
             if structure_label == "LL":
-                reason = "HTF break: HL -> LL (confirmed bearish structure)"
+                reason = f"HTF break: LL structure (bearish)"
                 logger.info(f"Trade {trade.trade_id} invalidated: {reason}")
                 return True, reason
         else:  # short
             # Short trade invalidated only by HH (confirmed bullish break)
             if structure_label == "HH":
-                reason = "HTF break: LH -> HH (confirmed bullish structure)"
+                reason = f"HTF break: HH structure (bullish)"
                 logger.info(f"Trade {trade.trade_id} invalidated: {reason}")
                 return True, reason
 
@@ -467,10 +523,55 @@ class InvalidationChecker:
 
         # Standard logic for other setups (VWAP_RECLAIM, VWAP_FADE)
         dxy_corr = _sanitize_float(features.get("dxy_corr"))
+        trade_id = trade.trade_id
 
         if dxy_corr is None:
+            # FIX: Reset consecutive counter on missing data to preserve
+            # "3 consecutive bars" requirement for VWAP_RECLAIM.
+            # A None breaks the consecutive sequence.
+            if trade_id in self._dxy_flip_count:
+                self._dxy_flip_count[trade_id] = 0
             return False, None
 
+        # FIX: For VWAP_RECLAIM, require stronger threshold AND 3-bar persistence
+        # DXY is a pre-entry gate (SOP), not an aggressive intra-trade kill switch
+        # Only exit on hard flip (correlation >= 0.0), persisting for 3+ bars
+        if trade.setup_type == "VWAP_RECLAIM":
+            dxy_flip_bars_required = 3  # Require 3 consecutive bars of flip
+
+            # Check if DXY flip condition is met on THIS bar
+            condition_met = False
+            if trade.direction == "long":
+                # Long: exit only if correlation flips to >= 0.0 (hard flip)
+                condition_met = dxy_corr >= 0.0
+            else:  # short
+                # Short: exit only if correlation becomes strongly inverse
+                condition_met = dxy_corr < -0.6
+
+            # Track consecutive bars meeting condition
+            if condition_met:
+                current_count = self._dxy_flip_count.get(trade_id, 0)
+                self._dxy_flip_count[trade_id] = current_count + 1
+
+                # Require N consecutive bars for VWAP_RECLAIM
+                if self._dxy_flip_count[trade_id] >= dxy_flip_bars_required:
+                    reason = (
+                        f"DXY flip ({dxy_flip_bars_required}-bar confirmed): "
+                        f"correlation {dxy_corr:.3f} indicates DXY structure "
+                        f"breaking against {trade.direction} trade"
+                    )
+                    # Clear counter after invalidation
+                    self._dxy_flip_count[trade_id] = 0
+                    logger.info(f"Trade {trade.trade_id} invalidated: {reason}")
+                    return True, reason
+            else:
+                # Condition NOT met - reset counter
+                if trade_id in self._dxy_flip_count:
+                    self._dxy_flip_count[trade_id] = 0
+
+            return False, None
+
+        # Original logic for VWAP_FADE (unchanged)
         # Long trade: DXY should be negatively correlated (DXY down = GC up)
         if trade.direction == "long":
             if dxy_corr > -0.3:
@@ -664,8 +765,9 @@ class InvalidationChecker:
         if is_invalid:
             return is_invalid, reason
 
-        # Check HTF structure invalidation (priority 3 per SOP)
-        is_invalid, reason = self.check_htf_structure_invalidation(
+        # Check micro structure invalidation (priority 3 per SOP)
+        # NOTE: Uses 1m structure labels, NOT actual HTF (15m/1h)
+        is_invalid, reason = self.check_micro_structure_invalidation(
             trade, candle, features
         )
         if is_invalid:
@@ -703,7 +805,13 @@ class InvalidationChecker:
         """
         if trade_id in self._trade_states:
             del self._trade_states[trade_id]
+        if trade_id in self._fade_invalidation_count:
+            del self._fade_invalidation_count[trade_id]
+        if trade_id in self._dxy_flip_count:
+            del self._dxy_flip_count[trade_id]
 
     def clear_all(self) -> None:
         """Clear all trade states."""
         self._trade_states.clear()
+        self._fade_invalidation_count.clear()
+        self._dxy_flip_count.clear()
