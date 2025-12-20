@@ -533,9 +533,11 @@ class InvalidationChecker:
                 self._dxy_flip_count[trade_id] = 0
             return False, None
 
-        # FIX: For VWAP_RECLAIM, require stronger threshold AND 3-bar persistence
+        # FIX: For VWAP_RECLAIM, require sign flip detection AND 3-bar persistence
         # DXY is a pre-entry gate (SOP), not an aggressive intra-trade kill switch
-        # Only exit on hard flip (correlation >= 0.0), persisting for 3+ bars
+        # Exit when correlation flips against trade direction (sign flip), persisting 3+ bars
+        # Long: exit when corr >= 0.0 (no longer negative)
+        # Short: exit when corr <= 0.0 (no longer positive)
         if trade.setup_type == "VWAP_RECLAIM":
             dxy_flip_bars_required = 3  # Require 3 consecutive bars of flip
 
@@ -545,8 +547,8 @@ class InvalidationChecker:
                 # Long: exit only if correlation flips to >= 0.0 (hard flip)
                 condition_met = dxy_corr >= 0.0
             else:  # short
-                # Short: exit only if correlation becomes strongly inverse
-                condition_met = dxy_corr < -0.6
+                # Short: exit only if correlation loses positive alignment (<= 0.0)
+                condition_met = dxy_corr <= 0.0
 
             # Track consecutive bars meeting condition
             if condition_met:

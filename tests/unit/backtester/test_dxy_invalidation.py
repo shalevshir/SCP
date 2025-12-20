@@ -798,5 +798,129 @@ class TestDXYContinuationInvalidation:
         assert is_invalid is True  # 3 consecutive bars after the None
         assert "3-bar confirmed" in reason
 
+    def test_vwap_reclaim_short_sign_flip_detection(self):
+        """Test that short VWAP_RECLAIM uses sign flip detection (<= 0.0).
+
+        Short VWAP_RECLAIM expects positive correlation (DXY ↑, GC ↓).
+        Invalidation should occur when correlation flips to non-positive (<= 0.0),
+        not when it becomes extremely negative (which would be bullish for GC).
+
+        This test verifies:
+        1. dxy_corr = 0.3 (positive) → NO invalidation
+        2. dxy_corr = 0.0 for 3 bars → invalidation (sign flip)
+        3. dxy_corr = -0.5 for 3 bars → invalidation (sign flip to negative)
+        """
+        checker = InvalidationChecker()
+
+        signal = Signal(
+            timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=timezone.utc),
+            symbol="GC",
+            timeframe="1m",
+            direction="short",
+            setup_type="VWAP_RECLAIM",
+            htf_bias="bearish",
+            score=8.5,
+            confidence="A+",
+            factors={},
+            rationale="Test",
+            validation_flags={},
+            enforcer_tier="EarlyMild",
+        )
+        entry_execution = EntryExecution(
+            signal_timestamp=signal.timestamp,
+            entry_timestamp=signal.timestamp,
+            entry_price=2650.0,
+            signal=signal,
+            executed=True,
+            rejection_reason=None,
+        )
+        trade = Trade(
+            trade_id="test-short-signflip",
+            symbol="GC",
+            timeframe="1m",
+            entry_execution=entry_execution,
+            entry_timestamp=datetime(2025, 1, 1, 10, 0, tzinfo=timezone.utc),
+            entry_price=2650.0,
+            direction="short",
+            setup_type="VWAP_RECLAIM",
+            stop_loss=2652.0,
+            take_profit=2644.0,
+            sl_rationale="Test",
+            tp_rationale="Test",
+            risk_amount=2.0,
+            reward_amount=6.0,
+            r_multiple=3.0,
+            contracts=1,
+            exit_timestamp=None,
+            exit_price=None,
+            exit_reason=None,
+            pnl=None,
+            pnl_percent=None,
+            r_realized=None,
+            pnl_dollars=None,
+            pnl_net=None,
+            slippage_cost=None,
+            commission_cost=None,
+            status="OPEN",
+            duration_bars=None,
+            invalidation_triggered=False,
+            ignore_first_retest_bar=False,
+        )
+
+        candle = Candle(
+            timestamp=datetime(2025, 1, 1, 10, 5, tzinfo=timezone.utc),
+            open=2649.0,
+            high=2650.0,
+            low=2648.0,
+            close=2649.5,
+            volume=100,
+            symbol="GC",
+            timeframe="1m",
+            source="TEST",
+        )
+
+        # Case 1: Positive correlation (0.3) - should NOT trigger
+        features_positive = {"dxy_corr": 0.3}
+        is_invalid, reason = checker.check_dxy_flip(trade, candle, features_positive)
+        assert is_invalid is False
+        assert reason is None
+
+        # Case 2: Correlation at 0.0 (sign flip boundary) - requires 3 bars
+        features_zero = {"dxy_corr": 0.0}
+
+        # Bar 1
+        is_invalid, reason = checker.check_dxy_flip(trade, candle, features_zero)
+        assert is_invalid is False  # Need 3 consecutive bars
+
+        # Bar 2
+        is_invalid, reason = checker.check_dxy_flip(trade, candle, features_zero)
+        assert is_invalid is False  # Still need 1 more
+
+        # Bar 3 - should trigger
+        is_invalid, reason = checker.check_dxy_flip(trade, candle, features_zero)
+        assert is_invalid is True
+        assert "3-bar confirmed" in reason
+        assert "0.000" in reason  # Correlation value in reason
+
+        # Reset for next test
+        checker.reset_trade(trade.trade_id)
+
+        # Case 3: Negative correlation (-0.5) - also should trigger after 3 bars
+        features_negative = {"dxy_corr": -0.5}
+
+        # Bar 1
+        is_invalid, reason = checker.check_dxy_flip(trade, candle, features_negative)
+        assert is_invalid is False
+
+        # Bar 2
+        is_invalid, reason = checker.check_dxy_flip(trade, candle, features_negative)
+        assert is_invalid is False
+
+        # Bar 3 - should trigger
+        is_invalid, reason = checker.check_dxy_flip(trade, candle, features_negative)
+        assert is_invalid is True
+        assert "3-bar confirmed" in reason
+        assert "-0.500" in reason  # Correlation value in reason
+
 
 
