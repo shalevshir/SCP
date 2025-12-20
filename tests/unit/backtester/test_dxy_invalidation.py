@@ -602,8 +602,12 @@ class TestDXYContinuationInvalidation:
         assert is_invalid is False
         assert reason is None
 
-    def test_vwap_reclaim_uses_old_logic(self):
-        """Test that VWAP_RECLAIM uses the old (looser) invalidation logic."""
+    def test_vwap_reclaim_uses_3_bar_persistence(self):
+        """Test that VWAP_RECLAIM requires 3 consecutive bars for DXY flip.
+
+        VWAP_RECLAIM uses stricter invalidation than other setups - it requires
+        3 consecutive bars where DXY correlation flips to >= 0.0 (for long).
+        """
         checker = InvalidationChecker()
 
         signal = Signal(
@@ -673,14 +677,23 @@ class TestDXYContinuationInvalidation:
             source="TEST",
         )
 
-        # Old logic: just correlation > -0.3 triggers invalidation
+        # DXY correlation flipped to >= 0.0 (triggering condition for long)
         features = {
-            "dxy_corr": 0.0,  # Weak correlation
+            "dxy_corr": 0.0,  # Flip condition met
         }
 
+        # Bar 1: condition met, but not invalidated yet (need 3 bars)
         is_invalid, reason = checker.check_dxy_flip(trade, candle, features)
+        assert is_invalid is False  # Not yet, need 3 consecutive bars
 
-        assert is_invalid is True  # Old logic triggers on correlation alone
+        # Bar 2: condition still met
+        is_invalid, reason = checker.check_dxy_flip(trade, candle, features)
+        assert is_invalid is False  # Still not yet
+
+        # Bar 3: condition still met - NOW should trigger
+        is_invalid, reason = checker.check_dxy_flip(trade, candle, features)
+        assert is_invalid is True  # 3-bar persistence met
+        assert "3-bar confirmed" in reason
 
 
 

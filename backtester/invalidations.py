@@ -373,6 +373,55 @@ class InvalidationChecker:
 
         return False, None
 
+    def check_htf_structure_invalidation(
+        self, trade: Trade, candle: Candle, features: dict | None = None
+    ) -> tuple[bool, str | None]:
+        """Check if HTF (15m/1h) structure breaks opposite to trade direction.
+
+        Args:
+            trade: Open trade to check
+            candle: Current candle
+            features: Optional feature dictionary containing structure labels
+
+        Returns:
+            Tuple of (is_invalid, reason)
+
+        Rules:
+            - Long: Invalid if structure breaks bearish (LL)
+            - Short: Invalid if structure breaks bullish (HH)
+            - Uses structure labels from features
+        """
+        # Need structure info from features
+        if features is None:
+            return False, None
+
+        # Get structure label from features
+        structure_label = features.get("structure_label") or features.get(
+            "structure_type"
+        )
+
+        # If no structure label available, can't detect invalidation
+        if structure_label is None:
+            return False, None
+
+        # Check for confirmed structure break against trade direction
+        # Long trades: only invalidate on LL (confirmed bearish break)
+        # Short trades: only invalidate on HH (confirmed bullish break)
+        if trade.direction == "long":
+            # Long trade invalidated only by LL (confirmed bearish break)
+            if structure_label == "LL":
+                reason = f"HTF break: LL structure (bearish)"
+                logger.info(f"Trade {trade.trade_id} invalidated: {reason}")
+                return True, reason
+        else:  # short
+            # Short trade invalidated only by HH (confirmed bullish break)
+            if structure_label == "HH":
+                reason = f"HTF break: HH structure (bullish)"
+                logger.info(f"Trade {trade.trade_id} invalidated: {reason}")
+                return True, reason
+
+        return False, None
+
     def check_dxy_flip(
         self, trade: Trade, candle: Candle, features: dict | None = None
     ) -> tuple[bool, str | None]:
