@@ -879,13 +879,15 @@ class TestDXYContinuationInvalidation:
             source="TEST",
         )
 
-        # Case 1: Positive correlation (0.3) - should NOT trigger
-        features_positive = {"dxy_corr": 0.3}
-        is_invalid, reason = checker.check_dxy_flip(trade, candle, features_positive)
+        # Case 1: Negative correlation (-0.3) - should NOT trigger (aligned for short)
+        # Note: For VWAP_RECLAIM, flip condition is dxy_corr >= 0.0 (inverse model).
+        # Negative correlation is aligned, so it should NOT increment the counter.
+        features_negative_aligned = {"dxy_corr": -0.3}
+        is_invalid, reason = checker.check_dxy_flip(trade, candle, features_negative_aligned)
         assert is_invalid is False
         assert reason is None
 
-        # Case 2: Correlation at 0.0 (sign flip boundary) - requires 3 bars
+        # Case 2: Correlation at 0.0 (flip boundary) - requires 3 bars >= 0.0
         features_zero = {"dxy_corr": 0.0}
 
         # Bar 1
@@ -905,22 +907,23 @@ class TestDXYContinuationInvalidation:
         # Reset for next test
         checker.reset_trade(trade.trade_id)
 
-        # Case 3: Negative correlation (-0.5) - also should trigger after 3 bars
-        features_negative = {"dxy_corr": -0.5}
+        # Case 3: Positive correlation (0.3) - should trigger after 3 bars >= 0.0
+        # Note: Any dxy_corr >= 0.0 triggers flip detection for VWAP_RECLAIM
+        features_positive = {"dxy_corr": 0.3}
 
         # Bar 1
-        is_invalid, reason = checker.check_dxy_flip(trade, candle, features_negative)
+        is_invalid, reason = checker.check_dxy_flip(trade, candle, features_positive)
         assert is_invalid is False
 
         # Bar 2
-        is_invalid, reason = checker.check_dxy_flip(trade, candle, features_negative)
+        is_invalid, reason = checker.check_dxy_flip(trade, candle, features_positive)
         assert is_invalid is False
 
         # Bar 3 - should trigger
-        is_invalid, reason = checker.check_dxy_flip(trade, candle, features_negative)
+        is_invalid, reason = checker.check_dxy_flip(trade, candle, features_positive)
         assert is_invalid is True
         assert "3-bar confirmed" in reason
-        assert "-0.500" in reason  # Correlation value in reason
+        assert "0.300" in reason  # Correlation value in reason
 
 
 

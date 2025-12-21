@@ -36,12 +36,15 @@ class TestVWAPReclaimExpansionIntegration:
             "ema_20": 2645.0,
             "ema_50": 2640.0,
             "dxy_corr": -0.75,
+            "structure_label": "HH",  # Required for validation
             # Context prerequisites
             "structure_clarity": 0.6,
             "liquidity_sweep": True,
             "bos_recent": True,
             "bos_age": 5,
             "bos_direction": "bullish",
+            "choch_detected": False,
+            "structure_conflict_flag": False,
             # Expansion signals
             "expansion_detected": True,
             "expansion_reasons": ["recent_bos", "range_expansion"],
@@ -52,6 +55,7 @@ class TestVWAPReclaimExpansionIntegration:
             direction="long",
             score=8.0,
             confidence="high",
+            structure_1h="HH",  # Required for validation
             liquidity_sweep_detected=True,
             structure_clarity=0.6,
             bos_detected=True,
@@ -107,12 +111,15 @@ class TestVWAPReclaimExpansionIntegration:
             "ema_20": 2645.0,
             "ema_50": 2640.0,
             "dxy_corr": -0.75,
+            "structure_label": "HH",  # Required for validation
             # Context prerequisites (valid)
             "structure_clarity": 0.6,
             "liquidity_sweep": True,
             "bos_recent": False,  # Stale
             "bos_age": 18,  # Old BOS
             "bos_direction": "bullish",
+            "choch_detected": False,
+            "structure_conflict_flag": False,
             # No expansion signals
             "expansion_detected": False,
             "expansion_reasons": [],
@@ -123,6 +130,7 @@ class TestVWAPReclaimExpansionIntegration:
             direction="long",
             score=8.0,
             confidence="high",
+            structure_1h="HH",  # Required for validation
             liquidity_sweep_detected=True,
             structure_clarity=0.6,
             bos_detected=True,
@@ -259,12 +267,15 @@ class TestVWAPReclaimExpansionIntegration:
             "ema_20": 2645.0,
             "ema_50": 2640.0,
             "dxy_corr": -0.75,
+            "structure_label": "HH",  # Required for validation
             # Valid context
             "structure_clarity": 0.6,
             "liquidity_sweep": True,
             "bos_recent": False,
             "bos_age": 12,  # Late but not ancient
             "bos_direction": "bullish",
+            "choch_detected": False,
+            "structure_conflict_flag": False,
             # Has expansion (so entry is ready)
             "expansion_detected": True,
             "expansion_reasons": ["range_expansion", "atr_expansion"],
@@ -275,6 +286,7 @@ class TestVWAPReclaimExpansionIntegration:
             direction="long",
             score=8.0,
             confidence="high",
+            structure_1h="HH",  # Required for validation
             liquidity_sweep_detected=True,
             structure_clarity=0.6,
             bos_detected=True,
@@ -332,12 +344,14 @@ class TestVWAPReclaimExpansionIntegration:
             "ema_20": 2645.0,
             "ema_50": 2640.0,
             "dxy_corr": -0.75,
+            "structure_label": "HH",  # Required for validation
             # Valid context but problematic quality
             "structure_clarity": 0.35,  # LOW clarity to invalidate BOS
             "liquidity_sweep": True,
             "bos_age": 18,  # Late BOS + invalid = -1.0 penalty
             "bos_direction": "bullish",
             "choch_detected": False,
+            "structure_conflict_flag": False,
             "is_structural_chop": True,  # Noise (-1.5 penalty for RECLAIM)
             "atr_compression_ratio": 0.3,  # Severe compression (-0.5 more)
             # Has expansion (so not blocked entirely)
@@ -350,6 +364,7 @@ class TestVWAPReclaimExpansionIntegration:
             direction="long",
             score=8.0,
             confidence="high",
+            structure_1h="HH",  # Required for validation
             liquidity_sweep_detected=True,
             structure_clarity=0.35,  # Match features - LOW to invalidate BOS
             bos_detected=True,

@@ -48,6 +48,8 @@ def create_htf_bias_from_market_state(market_state: dict) -> HTFBias:
         confidence=confidence,
         dxy_alignment=market_state.get("dxy_corr", -0.7) < -0.6,
         # Structure fields for VWAP_RECLAIM
+        structure_1h="HH" if direction == "long" else "LL",  # Required for validation
+        structure_15m="HH" if direction == "long" else "LL",
         liquidity_sweep_detected=True,
         liquidity_sweep_type="bullish" if direction == "long" else "bearish",
         structure_clarity=0.8,  # Above 0.5 threshold
@@ -83,6 +85,7 @@ class TestE2EValidationPipeline:
                 "ema_50": 2640.0,
                 "dxy_corr": -0.75,
                 "structure_type": "HH",
+                "structure_label": "HH",  # Required for reclaim validation
                 # Structure fields required by enhanced validation
                 "bos_direction": "bullish",
                 "choch_detected": False,

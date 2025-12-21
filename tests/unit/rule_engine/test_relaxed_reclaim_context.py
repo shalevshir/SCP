@@ -13,11 +13,14 @@ from rule_engine.htf.vwap.reclaim import validate_reclaim_context
 
 def _make_htf_bias(**kwargs):
     """Helper to create HTFBias with required fields."""
+    direction = kwargs.get("direction", "long")
     defaults = {
         "bias": "bullish",
         "direction": "long",
         "score": 7.0,
         "confidence": "high",
+        "structure_1h": "HH" if direction == "long" else "LL",  # Required for validation
+        "structure_15m": "HH" if direction == "long" else "LL",
     }
     defaults.update(kwargs)
     return HTFBias(**defaults)
@@ -31,6 +34,7 @@ class TestRelaxedReclaimContext:
         features = pd.Series({
             "liquidity_sweep": True,
             "structure_clarity": 0.8,
+            "structure_label": "HH",  # Required for validation
             "bos_recent": True,
             "bos_direction": "bearish",  # Mismatch with long direction
             "choch_detected": False,
@@ -54,6 +58,7 @@ class TestRelaxedReclaimContext:
         features = pd.Series({
             "liquidity_sweep": True,
             "structure_clarity": 0.8,
+            "structure_label": "HH",  # Required for validation
             "bos_recent": True,
             "bos_direction": "bullish",
             "choch_detected": False,
@@ -77,6 +82,7 @@ class TestRelaxedReclaimContext:
         features = pd.Series({
             "liquidity_sweep": False,  # Quality issue, not safety
             "structure_clarity": 0.8,
+            "structure_label": "HH",  # Required for validation
             "bos_recent": True,
             "bos_direction": "bullish",
             "choch_detected": False,
@@ -105,6 +111,7 @@ class TestRelaxedReclaimContext:
         features = pd.Series({
             "liquidity_sweep": True,
             "structure_clarity": 0.3,  # Quality issue, not safety
+            "structure_label": "HH",  # Required for validation
             "bos_recent": True,
             "bos_direction": "bullish",
             "choch_detected": False,
@@ -133,6 +140,7 @@ class TestRelaxedReclaimContext:
         features = pd.Series({
             "liquidity_sweep": True,
             "structure_clarity": 0.8,
+            "structure_label": "HH",  # Required for validation
             "bos_recent": False,  # Quality issue, not safety
             "bos_direction": None,
             "choch_detected": True,
@@ -162,6 +170,7 @@ class TestRelaxedReclaimContext:
         features = pd.Series({
             "liquidity_sweep": True,
             "structure_clarity": 0.8,
+            "structure_label": "HH",  # Required for validation
             "bos_recent": True,
             "bos_direction": "bullish",
             "bos_age": 20,  # Stale (> 15)
@@ -188,6 +197,7 @@ class TestRelaxedReclaimContext:
         features = pd.Series({
             "liquidity_sweep": False,  # Quality issue 1
             "structure_clarity": 0.3,  # Quality issue 2
+            "structure_label": "HH",  # Required for validation
             "bos_recent": False,  # Quality issue 3
             "bos_direction": None,
             "choch_detected": True,
@@ -217,6 +227,7 @@ class TestRelaxedReclaimContext:
         features = pd.Series({
             "liquidity_sweep": True,
             "structure_clarity": 0.8,
+            "structure_label": "HH",  # Required for validation
             "bos_recent": True,
             "bos_direction": "bullish",
             "bos_age": 5,  # Fresh BOS
@@ -247,6 +258,7 @@ class TestRelaxedReclaimContext:
         features = pd.Series({
             "liquidity_sweep": True,
             "structure_clarity": 0.8,
+            "structure_label": "LL",  # Required for validation - bearish for short
             "bos_recent": False,
             "bos_direction": None,
             "choch_detected": True,

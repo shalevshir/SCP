@@ -30,6 +30,7 @@ class TestRejectionDiagnostics:
             "ema_20": 2645,
             "ema_50": 2640,
             "dxy_corr": -0.75,
+            "structure_label": "HH",  # Required for validation
             # Heavy structure penalty
             "is_structural_chop": True,
             "atr_compression_ratio": 0.3,
@@ -38,6 +39,7 @@ class TestRejectionDiagnostics:
             "bos_direction": "bullish",
             "bos_recent": False,
             "choch_detected": False,
+            "structure_conflict_flag": False,
             "liquidity_sweep": False,
             "expansion_detected": True,
         })
@@ -47,6 +49,7 @@ class TestRejectionDiagnostics:
             direction="long",
             score=6.0,
             confidence="low",
+            structure_1h="HH",  # Required for validation
             structure_clarity=0.2,
             bars_since_bos=30,
             liquidity_sweep_detected=False,
@@ -83,6 +86,7 @@ class TestRejectionDiagnostics:
             "ema_20": 2645,
             "ema_50": 2640,
             "dxy_corr": -0.75,
+            "structure_label": "HH",  # Required for validation
             # Multiple penalties
             "is_structural_chop": True,
             "atr_compression_ratio": 0.3,
@@ -92,6 +96,7 @@ class TestRejectionDiagnostics:
             "bos_recent": False,
             "choch_detected": True,
             "choch_direction": "bearish",
+            "structure_conflict_flag": False,
             "liquidity_sweep": False,
             "expansion_detected": False,
         })
@@ -101,6 +106,7 @@ class TestRejectionDiagnostics:
             direction="neutral",
             score=4.0,
             confidence="low",
+            structure_1h="HH",  # Required for validation
             structure_clarity=0.3,
             bars_since_bos=25,
             liquidity_sweep_detected=False,
@@ -131,6 +137,7 @@ class TestRejectionDiagnostics:
             "ema_20": 2645,
             "ema_50": 2640,
             "dxy_corr": -0.75,
+            "structure_label": "HH",  # Required for validation
             # Single large penalty
             "is_structural_chop": False,
             "atr_compression_ratio": 1.0,
@@ -139,6 +146,7 @@ class TestRejectionDiagnostics:
             "bos_direction": "bullish",
             "bos_recent": False,
             "choch_detected": False,
+            "structure_conflict_flag": False,
             "liquidity_sweep": False,
             "expansion_detected": True,
         })
@@ -148,6 +156,7 @@ class TestRejectionDiagnostics:
             direction="long",
             score=7.0,
             confidence="medium",
+            structure_1h="HH",  # Required for validation
             structure_clarity=0.2,
             bars_since_bos=30,
             liquidity_sweep_detected=False,
@@ -178,6 +187,7 @@ class TestRejectionDiagnostics:
             "ema_20": 2645,
             "ema_50": 2640,
             "dxy_corr": -0.75,
+            "structure_label": "HH",  # Required for validation
             # Strong structure
             "is_structural_chop": False,
             "atr_compression_ratio": 1.0,
@@ -186,6 +196,7 @@ class TestRejectionDiagnostics:
             "bos_direction": "bullish",
             "bos_recent": True,
             "choch_detected": False,
+            "structure_conflict_flag": False,
             "liquidity_sweep": True,
             "expansion_detected": True,
         })
@@ -195,6 +206,7 @@ class TestRejectionDiagnostics:
             direction="long",
             score=8.5,
             confidence="high",
+            structure_1h="HH",  # Required for validation
             structure_clarity=0.8,
             bars_since_bos=5,
             liquidity_sweep_detected=True,
@@ -226,6 +238,7 @@ class TestRejectionDiagnostics:
             "ema_20": 2645,
             "ema_50": 2640,
             "dxy_corr": -0.75,
+            "structure_label": "HH",  # Required for validation
             "is_structural_chop": True,  # Penalty
             "atr_compression_ratio": 0.3,  # Penalty
             "structure_clarity": 0.4,  # Borderline
@@ -233,6 +246,7 @@ class TestRejectionDiagnostics:
             "bos_recent": False,
             "bos_direction": "bullish",
             "choch_detected": False,
+            "structure_conflict_flag": False,
             "liquidity_sweep": False,
             "expansion_detected": True,
         })
@@ -242,6 +256,7 @@ class TestRejectionDiagnostics:
             direction="long",
             score=6.5,
             confidence="low",
+            structure_1h="HH",  # Required for validation
             structure_clarity=0.4,
             bars_since_bos=20,
             liquidity_sweep_detected=False,

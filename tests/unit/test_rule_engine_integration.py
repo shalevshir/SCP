@@ -46,6 +46,9 @@ def create_htf_bias_from_context(
         score=score,
         confidence=confidence,
         dxy_alignment=True,
+        # Required structure fields for validation
+        structure_1h="HH" if direction == "long" else "LL",
+        structure_15m="HH" if direction == "long" else "LL",
         # Structure fields for VWAP_RECLAIM
         liquidity_sweep_detected=True,
         liquidity_sweep_type="bullish" if direction == "long" else "bearish",
@@ -81,6 +84,7 @@ class TestRuleEngineIntegration:
                 "ema_20": 2645.0,
                 "ema_50": 2640.0,
                 "dxy_corr": -0.75,
+                "structure_label": "HH",  # Required for validation
                 # Structure fields required by enhanced validation
                 "bos_direction": "bullish",
                 "choch_detected": False,
@@ -138,6 +142,7 @@ class TestRuleEngineIntegration:
                 "ema_20": 2645.0,
                 "ema_50": 2640.0,
                 "dxy_corr": -0.75,
+                "structure_label": "HH",  # Required for validation
                 # Structure fields required by enhanced validation
                 "bos_direction": "bullish",
                 "choch_detected": False,
@@ -181,6 +186,7 @@ class TestRuleEngineIntegration:
                     "ema_20": 2645.0,
                     "ema_50": 2640.0,
                     "dxy_corr": -0.75,
+                    "structure_label": "HH",  # Required for validation
                     # Structure fields required by enhanced validation
                     "bos_direction": "bullish",
                     "choch_detected": False,
@@ -291,6 +297,7 @@ class TestRuleEngineIntegration:
             score=8.5,
             confidence="high",
             dxy_alignment=True,
+            structure_1h="HH",  # Required for validation
             # Structure fields for VWAP_RECLAIM
             liquidity_sweep_detected=True,
             liquidity_sweep_type="bullish",
@@ -315,6 +322,7 @@ class TestRuleEngineIntegration:
                 "ema_20": 2645.0,
                 "ema_50": 2640.0,
                 "dxy_corr": -0.75,
+                "structure_label": "HH",  # Required for validation
                 # Structure fields required by enhanced validation
                 "bos_direction": "bullish",
                 "choch_detected": False,
