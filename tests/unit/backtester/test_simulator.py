@@ -383,14 +383,18 @@ class TestCheckTimeout:
     """Tests for check_timeout() function."""
 
     def test_continuation_timeout_at_20_bars(self):
-        """Test timeout for continuation setup at 20 bars."""
-        assert check_timeout(20, "VWAP_RECLAIM") is True
+        """Test timeout for continuation setup at correct bar limit.
+
+        Note: VWAP_RECLAIM timeout extended from 20 to 60 bars to allow reclaim
+        setups more time. DXY_CONTINUATION remains at 20 bars.
+        """
+        assert check_timeout(60, "VWAP_RECLAIM") is True
         assert check_timeout(20, "DXY_CONTINUATION") is True
 
     def test_continuation_no_timeout_before_20_bars(self):
-        """Test no timeout for continuation setup before 20 bars."""
-        assert check_timeout(19, "VWAP_RECLAIM") is False
-        assert check_timeout(10, "DXY_CONTINUATION") is False
+        """Test no timeout for continuation setup before time limit."""
+        assert check_timeout(59, "VWAP_RECLAIM") is False
+        assert check_timeout(19, "DXY_CONTINUATION") is False
 
     def test_fade_timeout_at_10_bars(self):
         """Test timeout for fade setup at 10 bars."""
@@ -723,11 +727,15 @@ class TestSimulateTradeOutcome:
         assert closed_trade.exit_price == 2665.0
 
     def test_timeout_continuation(self, long_continuation_trade):
-        """Test timeout for continuation setup at 20 bars."""
-        # Create 20 candles that don't hit TP or SL
+        """Test timeout for continuation setup at time limit.
+
+        Note: VWAP_RECLAIM timeout extended from 20 to 60 bars to allow reclaim
+        setups more time to develop.
+        """
+        # Create 60 candles that don't hit TP or SL (VWAP_RECLAIM limit is now 60)
         candles = []
         base_time = datetime(2025, 1, 1, 10, 2, tzinfo=UTC)
-        for i in range(20):
+        for i in range(60):
             candles.append(
                 make_candle(
                     timestamp=base_time + timedelta(minutes=i),
@@ -746,7 +754,7 @@ class TestSimulateTradeOutcome:
 
         assert closed_trade.exit_reason == "timeout"
         assert closed_trade.exit_price == 2651.0  # Last candle close
-        assert closed_trade.duration_bars == 20
+        assert closed_trade.duration_bars == 60
 
     def test_timeout_fade(self, short_fade_trade):
         """Test timeout for fade setup at 10 bars."""
@@ -841,18 +849,13 @@ class TestSimulateTradeOutcome:
 
         closed_trade = simulate_trade_outcome(long_continuation_trade, df)
 
-        # Should timeout at 20 valid candles, not 20 total candles
-        # The key fix: bars_elapsed only counts valid candles, so timeout happens
-        # at the 20th valid candle, not after 20 total candles (which would include skipped ones)
-        assert closed_trade.exit_reason == "timeout"
+        # With VWAP_RECLAIM timeout at 60 bars, this test should NOT timeout
+        # because we only have 20 valid candles (5 initial + 15 after skipped)
+        # The test should end with "end_of_data" instead since there aren't enough
+        # bars to trigger timeout.
+        assert closed_trade.exit_reason == "end_of_data"
         # duration_bars is time-based (timestamp difference), so it will be 22 minutes
-        # because 22 minutes elapsed (20 valid + 2 skipped candles)
-        # But the timeout check uses bars_elapsed which only counts valid candles (20)
         assert closed_trade.duration_bars == 22  # 22 minutes elapsed (time-based)
-        # Verify exit happened at the 20th valid candle's timestamp
-        # (5 initial + 2 skipped + 15 more = 20 valid, last one at minute 21)
-        expected_exit_time = base_time + timedelta(minutes=21)  # 20th valid candle
-        assert closed_trade.exit_timestamp == expected_exit_time
 
     def test_end_of_data(self, long_continuation_trade):
         """Test trade closes at end of dataset if still open."""
@@ -909,17 +912,17 @@ class TestSimulateTradeOutcome:
     def test_invalid_candles_dont_count_toward_timeout(self, long_continuation_trade):
         """Test that invalid candles (NaN/Inf) don't count toward timeout limits.
 
-        SOP requires timeout to be based on valid candles only (20 bars for continuation).
-        If we have 15 valid candles and 10 invalid candles, timeout should occur at
-        the 20th valid candle, not after 25 total candles.
+        SOP requires timeout to be based on valid candles only.
+        VWAP_RECLAIM timeout is 60 bars. If we have 55 valid + 10 invalid + 5 valid,
+        we should have 60 valid candles and timeout should occur at the 60th valid candle.
         """
         import math
 
         candles = []
         base_time = datetime(2025, 1, 1, 10, 2, tzinfo=UTC)
 
-        # Create 15 valid candles (not enough to timeout)
-        for i in range(15):
+        # Create 55 valid candles (not enough to timeout)
+        for i in range(55):
             candles.append(
                 make_candle(
                     timestamp=base_time + timedelta(minutes=i),
@@ -935,7 +938,7 @@ class TestSimulateTradeOutcome:
         for i in range(10):
             candles.append(
                 make_candle(
-                    timestamp=base_time + timedelta(minutes=15 + i),
+                    timestamp=base_time + timedelta(minutes=55 + i),
                     open=math.nan,  # Invalid candle
                     high=2652.0,
                     low=2648.0,
@@ -944,11 +947,11 @@ class TestSimulateTradeOutcome:
                 )
             )
 
-        # Add 5 more valid candles to reach 20 valid candles total
+        # Add 5 more valid candles to reach 60 valid candles total
         for i in range(5):
             candles.append(
                 make_candle(
-                    timestamp=base_time + timedelta(minutes=25 + i),
+                    timestamp=base_time + timedelta(minutes=65 + i),
                     open=2650.0,
                     high=2652.0,
                     low=2648.0,
@@ -962,20 +965,20 @@ class TestSimulateTradeOutcome:
 
         closed_trade = simulate_trade_outcome(long_continuation_trade, df)
 
-        # Should timeout at 20th valid candle (not after 30 total candles)
+        # Should timeout at 60th valid candle (not after 70 total candles)
         # The timeout check uses bars_elapsed which only counts valid candles
         assert closed_trade.exit_reason == "timeout"
-        # duration_bars is time-based (30 minutes = 30 candles worth of time)
-        # but timeout triggers at 20th valid candle due to our fix
-        assert closed_trade.duration_bars == 30  # Time-based: 30 minutes elapsed
+        # duration_bars is time-based (70 minutes = 70 candles worth of time)
+        # but timeout triggers at 60th valid candle
+        assert closed_trade.duration_bars == 70  # Time-based: 70 minutes elapsed
         assert closed_trade.exit_price == 2651.0  # Last valid candle close
 
-        # Verify timeout triggered at the 20th valid candle by checking
-        # that it didn't timeout earlier (at 15 valid candles)
-        # Create a test with only 15 valid candles + 10 invalid - should NOT timeout
-        candles_15_valid = []
-        for i in range(15):
-            candles_15_valid.append(
+        # Verify timeout triggered at the 60th valid candle by checking
+        # that it didn't timeout earlier (at 55 valid candles)
+        # Create a test with only 55 valid candles + 10 invalid - should NOT timeout
+        candles_55_valid = []
+        for i in range(55):
+            candles_55_valid.append(
                 make_candle(
                     timestamp=base_time + timedelta(minutes=i),
                     open=2650.0,
@@ -986,9 +989,9 @@ class TestSimulateTradeOutcome:
                 )
             )
         for i in range(10):
-            candles_15_valid.append(
+            candles_55_valid.append(
                 make_candle(
-                    timestamp=base_time + timedelta(minutes=15 + i),
+                    timestamp=base_time + timedelta(minutes=55 + i),
                     open=math.nan,  # Invalid
                     high=2652.0,
                     low=2648.0,
@@ -996,12 +999,12 @@ class TestSimulateTradeOutcome:
                     volume=100,
                 )
             )
-        df_15 = pd.DataFrame([c.__dict__ for c in candles_15_valid])
-        df_15 = df_15.set_index("timestamp")
+        df_55 = pd.DataFrame([c.__dict__ for c in candles_55_valid])
+        df_55 = df_55.set_index("timestamp")
 
-        closed_15 = simulate_trade_outcome(long_continuation_trade, df_15)
-        # Should NOT timeout (only 15 valid candles, need 20)
-        assert closed_15.exit_reason == "end_of_data"
+        closed_55 = simulate_trade_outcome(long_continuation_trade, df_55)
+        # Should NOT timeout (only 55 valid candles, need 60)
+        assert closed_55.exit_reason == "end_of_data"
 
     def test_invalid_candles_dont_count_toward_fade_timeout(self, short_fade_trade):
         """Test that invalid candles don't count toward fade timeout (10 bars)."""

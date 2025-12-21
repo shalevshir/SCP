@@ -159,19 +159,22 @@ class TestInvalidationChecker:
         )
 
     def test_no_1r_reached_continuation(self, long_continuation_trade):
-        """Test invalidation when +1R not reached within 20 bars for continuation."""
+        """Test invalidation when +1R not reached within time limit for continuation.
+
+        Note: VWAP_RECLAIM timeout extended from 20 to 60 bars.
+        """
         checker = InvalidationChecker()
 
-        # Candle at 19 bars, price hasn't reached +1R (entry + risk = 2655)
+        # Candle at 60 bars, price hasn't reached +1R (entry + risk = 2655)
         candle = make_candle(
-            timestamp=datetime(2025, 1, 1, 10, 20, tzinfo=UTC),
+            timestamp=datetime(2025, 1, 1, 11, 0, tzinfo=UTC),
             open=2652.0,
             high=2653.0,
             low=2651.0,
             close=2652.0,
         )
 
-        is_invalid, reason = checker.check_all(long_continuation_trade, candle, 20)
+        is_invalid, reason = checker.check_all(long_continuation_trade, candle, 60)
 
         assert is_invalid is True
         assert "1R not reached" in reason

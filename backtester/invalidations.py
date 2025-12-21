@@ -25,7 +25,7 @@ logger = get_logger(__name__)
 
 # SOP time limits for +1R achievement
 R1_TIME_LIMITS = {
-    "VWAP_RECLAIM": 20,
+    "VWAP_RECLAIM": 60,  # Extended from 20 to allow reclaim setups more time
     "DXY_CONTINUATION": 20,
     "VWAP_FADE": 10,
 }
@@ -148,13 +148,15 @@ class InvalidationChecker:
                             )
 
     def check_no_1r_reached(
-        self, trade: Trade, bars_elapsed: int
+        self, trade: Trade, bars_elapsed: int, candle: Candle | None = None, month: int | None = None
     ) -> tuple[bool, str | None]:
-        """Check if +1R not reached within time limits.
+        """Check if +1R not reached within time limits (with optional protection).
 
         Args:
             trade: Open trade to check
             bars_elapsed: Number of bars since entry
+            candle: Current candle (for time_stop_protection calculation)
+            month: Current month (for September defensive mode)
 
         Returns:
             Tuple of (is_invalid, reason)
@@ -162,11 +164,37 @@ class InvalidationChecker:
         SOP Rules:
             - Continuation: Must reach +1R within 20 bars
             - Fade: Must reach +1R within 10 bars
+            
+        Time-Stop Protection (narrowly scoped per CEO directive):
+            - VWAP_RECLAIM only
+            - September defensive mode only
+            - Exit at half time limit if < -0.2R
+            - Logged as 'time_stop_protection' for separate measurement
         """
         # Get time limit for this setup type
         time_limit = R1_TIME_LIMITS.get(trade.setup_type, 20)
 
-        # Only check at the time limit
+        # TIME-STOP PROTECTION: Early exit for deep red losses (VWAP_RECLAIM + September only)
+        if (
+            trade.setup_type == "VWAP_RECLAIM"
+            and candle is not None
+            and month == 9
+            and bars_elapsed >= time_limit // 2
+        ):
+            # Calculate current R
+            if trade.direction == "long":
+                current_pnl = candle.close - trade.entry_price
+            else:
+                current_pnl = trade.entry_price - candle.close
+            current_r = current_pnl / trade.risk_amount if trade.risk_amount > 0 else 0
+            
+            # Early exit if deep red (< -0.2R)
+            if current_r < -0.2:
+                reason = f"time_stop_protection: {current_r:.2f}R at bar {bars_elapsed} (September mode)"
+                logger.info(f"Trade {trade.trade_id} invalidated: {reason}")
+                return True, reason
+
+        # Standard time-stop check: only at the time limit
         if bars_elapsed < time_limit:
             return False, None
 
@@ -326,6 +354,13 @@ class InvalidationChecker:
         NOTE: This uses structure labels computed from 1m candle data, NOT HTF (15m/1h).
         The exit reason is 'micro_structure' to reflect the actual timeframe.
 
+        VWAP_RECLAIM SPECIAL HANDLING:
+        Micro invalidation must NOT act as a scalp stop for VWAP_RECLAIM.
+        It may only invalidate if the RECLAIM THESIS is broken, confirmed by:
+        a) VWAP invalidation (price regains VWAP for shorts / loses VWAP for longs)
+        b) HTF structure invalidation (15m/1h)
+        c) Reclaim-specific swing level break
+
         Args:
             trade: Open trade to check
             candle: Current candle
@@ -337,7 +372,7 @@ class InvalidationChecker:
         Rules:
             - Long: Invalid if structure breaks bearish (LL on 1m)
             - Short: Invalid if structure breaks bullish (HH on 1m)
-            - Uses structure labels from features (1m timeframe)
+            - VWAP_RECLAIM: micro break ALONE is NOT sufficient - requires confirmation
         """
         # Need structure info from features
         if features is None:
@@ -355,23 +390,67 @@ class InvalidationChecker:
         # Get computed timeframe for reason message
         computed_timeframe = features.get("timeframe", "1m")
 
-        # Check for confirmed structure break against trade direction
-        # Long trades: only invalidate on LL (confirmed HL->LL break)
-        # Short trades: only invalidate on HH (confirmed LH->HH break)
-        if trade.direction == "long":
-            # Long trade invalidated only by LL (confirmed bearish break)
-            if structure_label == "LL":
-                reason = f"Micro structure break: LL on {computed_timeframe} (bearish)"
-                logger.info(f"Trade {trade.trade_id} invalidated: {reason}")
-                return True, reason
-        else:  # short
-            # Short trade invalidated only by HH (confirmed bullish break)
-            if structure_label == "HH":
-                reason = f"Micro structure break: HH on {computed_timeframe} (bullish)"
-                logger.info(f"Trade {trade.trade_id} invalidated: {reason}")
-                return True, reason
+        # Step 1: Detect micro structure break
+        micro_break_detected = False
+        if trade.direction == "long" and structure_label == "LL":
+            micro_break_detected = True
+        elif trade.direction == "short" and structure_label == "HH":
+            micro_break_detected = True
 
-        return False, None
+        # If no micro break detected, MUST return (False, None)
+        if not micro_break_detected:
+            return False, None
+
+        # Step 2: For VWAP_RECLAIM, micro break ALONE is NOT sufficient
+        # Requires confirmation from VWAP loss/regain OR HTF structure break
+        if trade.setup_type == "VWAP_RECLAIM":
+            confirmation_reason = None
+            
+            # Confirmation A: VWAP invalidation
+            current_vwap = _sanitize_float(features.get("vwap"))
+            if current_vwap is not None:
+                if trade.direction == "long" and candle.close < current_vwap:
+                    confirmation_reason = (
+                        f"Micro break {structure_label} + VWAP loss: "
+                        f"close {candle.close:.2f} < VWAP {current_vwap:.2f}"
+                    )
+                elif trade.direction == "short" and candle.close > current_vwap:
+                    confirmation_reason = (
+                        f"Micro break {structure_label} + VWAP regain: "
+                        f"close {candle.close:.2f} > VWAP {current_vwap:.2f}"
+                    )
+            
+            # Confirmation B: HTF structure break (15m)
+            if confirmation_reason is None:
+                htf_structure = features.get("htf_structure_label") or features.get("structure_15m")
+                if htf_structure is not None:
+                    if trade.direction == "long" and htf_structure in ("LH", "LL"):
+                        confirmation_reason = (
+                            f"Micro break {structure_label} + HTF break: "
+                            f"HTF structure={htf_structure}"
+                        )
+                    elif trade.direction == "short" and htf_structure in ("HH", "HL"):
+                        confirmation_reason = (
+                            f"Micro break {structure_label} + HTF break: "
+                            f"HTF structure={htf_structure}"
+                        )
+            
+            # No confirmation - VWAP_RECLAIM micro break alone is NOT enough to exit
+            if confirmation_reason is None:
+                logger.debug(
+                    f"Trade {trade.trade_id} VWAP_RECLAIM: micro break {structure_label} "
+                    f"NOT confirmed (VWAP/HTF intact) - HOLDING"
+                )
+                return False, None
+            
+            # Confirmed micro break for VWAP_RECLAIM
+            logger.info(f"Trade {trade.trade_id} invalidated: {confirmation_reason}")
+            return True, confirmation_reason
+
+        # Step 3: Non-VWAP_RECLAIM setups use immediate micro invalidation
+        reason = f"Micro structure break: {structure_label} on {computed_timeframe}"
+        logger.info(f"Trade {trade.trade_id} invalidated: {reason}")
+        return True, reason
 
     def check_htf_structure_invalidation(
         self, trade: Trade, candle: Candle, features: dict | None = None
@@ -533,20 +612,21 @@ class InvalidationChecker:
                 self._dxy_flip_count[trade_id] = 0
             return False, None
 
-        # FIX: For VWAP_RECLAIM, require stronger threshold AND 3-bar persistence
-        # DXY is a pre-entry gate (SOP), not an aggressive intra-trade kill switch
-        # Only exit on hard flip (correlation >= 0.0), persisting for 3+ bars
+        # VWAP_RECLAIM DXY invalidation:
+        # Uses raw features["dxy_corr"] field (same as entry scoring uses)
+        # Model is inverse-correlation: alignment = corr <= threshold, flip = corr >= 0.0
+        # Exit requires 3-bar persistence to avoid premature exits
         if trade.setup_type == "VWAP_RECLAIM":
             dxy_flip_bars_required = 3  # Require 3 consecutive bars of flip
 
-            # Check if DXY flip condition is met on THIS bar
-            condition_met = False
-            if trade.direction == "long":
-                # Long: exit only if correlation flips to >= 0.0 (hard flip)
-                condition_met = dxy_corr >= 0.0
-            else:  # short
-                # Short: exit only if correlation becomes strongly inverse
-                condition_met = dxy_corr < -0.6
+            # Log actual value for verification
+            logger.debug(
+                f"Trade {trade.trade_id} DXY exit check: dxy_corr={dxy_corr:.3f}"
+            )
+
+            # Inverse-correlation model: flip when correlation goes non-negative (>= 0.0)
+            # This is consistent with entry which uses dxy_corr < threshold for alignment
+            condition_met = dxy_corr >= 0.0
 
             # Track consecutive bars meeting condition
             if condition_met:
@@ -557,8 +637,8 @@ class InvalidationChecker:
                 if self._dxy_flip_count[trade_id] >= dxy_flip_bars_required:
                     reason = (
                         f"DXY flip ({dxy_flip_bars_required}-bar confirmed): "
-                        f"correlation {dxy_corr:.3f} indicates DXY structure "
-                        f"breaking against {trade.direction} trade"
+                        f"dxy_corr={dxy_corr:.3f} >= 0.0 "
+                        f"(inverse relationship broken for {trade.direction} trade)"
                     )
                     # Clear counter after invalidation
                     self._dxy_flip_count[trade_id] = 0
@@ -755,8 +835,9 @@ class InvalidationChecker:
         # First update state with current candle (pass features for VWAP tracking)
         self.update_state(trade, candle, features)
 
-        # Check +1R time limit
-        is_invalid, reason = self.check_no_1r_reached(trade, bars_elapsed)
+        # Check +1R time limit (with time_stop_protection for VWAP_RECLAIM + September)
+        month = candle.timestamp.month if hasattr(candle.timestamp, 'month') else None
+        is_invalid, reason = self.check_no_1r_reached(trade, bars_elapsed, candle, month)
         if is_invalid:
             return is_invalid, reason
 

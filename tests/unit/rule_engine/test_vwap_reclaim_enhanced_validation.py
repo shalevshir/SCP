@@ -58,6 +58,7 @@ class TestVWAPReclaimEnhancedValidation:
                 "vwap": 2645.0,
                 "rsi": 55.0,
                 "dxy_corr": -0.75,
+                "structure_label": "HH",  # Required for validation
                 # Structure fields - BOS direction matches trade direction
                 "bos_direction": "bullish",  # Correct direction for long setup
                 "choch_detected": False,
@@ -70,6 +71,7 @@ class TestVWAPReclaimEnhancedValidation:
             direction="long",
             score=8.0,
             confidence="high",
+            structure_1h="HH",  # Required for validation
             bos_detected=True,
             structure_clarity=0.8,
             bars_since_bos=5,
@@ -90,6 +92,7 @@ class TestVWAPReclaimEnhancedValidation:
                 "vwap": 2645.0,
                 "rsi": 55.0,
                 "dxy_corr": -0.75,
+                "structure_label": "HH",  # Required for validation
                 # Structure fields - CHoCH direction matches, BOS doesn't
                 "bos_direction": None,  # No BOS direction
                 "choch_detected": True,
@@ -103,6 +106,7 @@ class TestVWAPReclaimEnhancedValidation:
             direction="long",
             score=8.0,
             confidence="high",
+            structure_1h="HH",  # Required for validation
             bos_detected=True,
             structure_clarity=0.8,
             bars_since_bos=5,
@@ -187,6 +191,7 @@ class TestVWAPReclaimEnhancedValidation:
                 "vwap": 2645.0,
                 "rsi": 45.0,
                 "dxy_corr": -0.75,
+                "structure_label": "LL",  # Required for validation - bearish for short
                 # Structure fields - BOS direction matches trade direction
                 "bos_direction": "bearish",  # Correct direction for short setup
                 "choch_detected": False,
@@ -199,6 +204,7 @@ class TestVWAPReclaimEnhancedValidation:
             direction="short",
             score=8.0,
             confidence="high",
+            structure_1h="LL",  # Required for validation
             bos_detected=True,
             structure_clarity=0.8,
             bars_since_bos=5,
@@ -223,6 +229,7 @@ class TestVWAPReclaimEnhancedValidation:
                 "vwap": 2645.0,
                 "rsi": 55.0,
                 "dxy_corr": -0.75,
+                "structure_label": "HH",  # Required for validation
                 # Structure fields - BOS conflicts but CHoCH is correct
                 "bos_direction": "bearish",  # Wrong direction
                 "choch_detected": True,
@@ -236,6 +243,7 @@ class TestVWAPReclaimEnhancedValidation:
             direction="long",
             score=8.0,
             confidence="high",
+            structure_1h="HH",  # Required for validation
             bos_detected=True,
             structure_clarity=0.8,
             bars_since_bos=5,

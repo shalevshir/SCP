@@ -48,6 +48,9 @@ def create_htf_bias_from_context(context: dict) -> HTFBias:
         vwap_trend_confirmed=context.get(
             "vwap_trend_confirmed", True
         ),  # Assume confirmed for tests
+        # Required structure fields for VWAP_RECLAIM validation
+        structure_1h="HH" if direction == "long" else "LL",
+        structure_15m="HH" if direction == "long" else "LL",
         # Add required fields for VWAP_RECLAIM validation
         liquidity_sweep_detected=context.get("liquidity_sweep_detected", True),
         liquidity_sweep_type=context.get(
@@ -79,6 +82,7 @@ class TestScoreSignal:
                 "ema_20": 2645.0,
                 "ema_50": 2640.0,
                 "dxy_corr": -0.75,
+                "structure_label": "HH",  # Required for validation
                 # Structure fields required by enhanced validation
                 "bos_direction": "bullish",
                 "choch_detected": False,
@@ -116,6 +120,7 @@ class TestScoreSignal:
                 "ema_20": 2645.0,
                 "ema_50": 2650.0,
                 "dxy_corr": -0.75,
+                "structure_label": "LL",  # Required for validation - bearish for short
                 # Structure fields required by enhanced validation
                 "bos_direction": "bearish",
                 "choch_detected": False,
@@ -151,6 +156,7 @@ class TestScoreSignal:
                 "ema_20": 2647.0,  # Partial alignment - 1 pt
                 "ema_50": 2652.0,
                 "dxy_corr": -0.55,  # Weak correlation - 0 pts
+                "structure_label": "HH",  # Required for validation
                 # Structure fields required by enhanced validation
                 "bos_direction": "bullish",
                 "choch_detected": False,
@@ -255,6 +261,7 @@ class TestScoreSignal:
                 "ema_20": 2645.0,
                 "ema_50": 2640.0,
                 "dxy_corr": -0.75,
+                "structure_label": "HH",  # Required for validation
                 # Structure fields required by enhanced validation
                 "bos_direction": "bullish",
                 "choch_detected": False,
@@ -290,6 +297,7 @@ class TestDetermineSetupType:
                 "vwap": 2645.0,
                 "rsi": 55.0,
                 "dxy_corr": -0.75,
+                "structure_label": "HH",  # Required for validation
                 # Structure fields required by enhanced validation
                 "bos_direction": "bullish",
                 "choch_detected": False,
@@ -312,6 +320,7 @@ class TestDetermineSetupType:
                 "vwap": 2645.0,
                 "rsi": 45.0,
                 "dxy_corr": -0.75,
+                "structure_label": "LL",  # Required for validation - bearish for short
                 # Structure fields required by enhanced validation
                 "bos_direction": "bearish",
                 "choch_detected": False,
@@ -446,6 +455,7 @@ class TestScoringScenariosFromSpec:
                 "ema_20": 2645.0,
                 "ema_50": 2640.0,
                 "dxy_corr": -0.75,
+                "structure_label": "HH",  # Required for validation
                 # Structure fields required by enhanced validation
                 "bos_direction": "bullish",
                 "choch_detected": False,
@@ -483,6 +493,7 @@ class TestScoringScenariosFromSpec:
                 "ema_20": 2645.0,
                 "ema_50": 2640.0,
                 "dxy_corr": -0.65,
+                "structure_label": "HH",  # Required for validation
                 # Structure fields required by enhanced validation
                 "bos_direction": "bullish",
                 "choch_detected": False,
@@ -547,6 +558,7 @@ class TestScoringScenariosFromSpec:
             "ema_9": 2648.0,
             "ema_20": 2645.0,
             "ema_50": 2640.0,
+            "structure_label": "HH",  # Required for validation
             # Structure fields required by enhanced validation
             "bos_direction": "bullish",
             "choch_detected": False,
@@ -592,6 +604,7 @@ class TestScoringScenariosFromSpec:
                 "ema_20": 2645.0,
                 "ema_50": 2640.0,
                 "dxy_corr": -0.75,
+                "structure_label": "HH",  # Required for validation
                 # Structure fields required by enhanced validation
                 "bos_direction": "bullish",
                 "choch_detected": False,
@@ -1048,6 +1061,7 @@ class TestFullConfluenceScoring:
                 "ema_20": 2645.0,
                 "ema_50": 2640.0,  # Full EMA stack
                 "dxy_corr": -0.75,  # Strong inverse correlation
+                "structure_label": "HH",  # Required for validation
                 # Structure fields required by enhanced validation
                 "bos_direction": "bullish",
                 "choch_detected": False,
@@ -1061,6 +1075,7 @@ class TestFullConfluenceScoring:
             direction="long",
             score=8.5,
             confidence="high",
+            structure_1h="HH",  # Required for validation
             bos_detected=True,
             choch_detected=False,
             structure_clarity=0.9,
@@ -1105,6 +1120,7 @@ class TestFullConfluenceScoring:
                 "ema_20": 2647.0,  # Partial EMA alignment
                 "ema_50": 2652.0,
                 "dxy_corr": -0.55,  # Weak correlation (negative)
+                "structure_label": "HH",  # Required for validation
                 # Structure fields required by enhanced validation
                 "bos_direction": "bullish",
                 "choch_detected": False,
@@ -1118,6 +1134,7 @@ class TestFullConfluenceScoring:
             direction="long",
             score=6.5,  # Medium HTF score (no bonus)
             confidence="medium",
+            structure_1h="HH",  # Required for validation
             bos_detected=True,
             choch_detected=False,
             structure_clarity=0.6,

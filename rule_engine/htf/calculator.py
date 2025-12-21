@@ -255,22 +255,15 @@ def compute_htf_bias_multi_timeframe(
     )
     if is_none_or_nan:
         structure_15m = ""
+    # 15M structure contributes to signal count like 1H does.
+    # This ensures that when both timeframes agree on direction, we reach
+    # the >= 2 signals threshold needed for directional bias.
     if structure_15m in ("HH", "HL"):
-        if bullish_signals > bearish_signals:
-            # Confirms bullish bias
-            total_score += 2.0
-        elif bullish_signals == bearish_signals:
-            # Breaks tie toward bullish
-            bullish_signals += 1
-            total_score += 2.0
+        bullish_signals += 1
+        total_score += 2.0
     elif structure_15m in ("LH", "LL"):
-        if bearish_signals > bullish_signals:
-            # Confirms bearish bias
-            total_score += 2.0
-        elif bullish_signals == bearish_signals:
-            # Breaks tie toward bearish
-            bearish_signals += 1
-            total_score += 2.0
+        bearish_signals += 1
+        total_score += 2.0
 
     # === 15M EMA STACK (Confirmation, 1 point) ===
     # Only evaluate EMAs if all values are present and valid (not None, not 0, not NaN)

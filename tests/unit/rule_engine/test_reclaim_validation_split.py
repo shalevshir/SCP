@@ -22,6 +22,7 @@ class TestContextValidation:
         """Test that valid context passes with sweep + clarity + BOS direction."""
         features = pd.Series({
             "structure_clarity": 0.6,
+            "structure_label": "HH",  # Required for validation
             "liquidity_sweep": True,
             "bos_recent": True,
             "bos_age": 5,
@@ -35,6 +36,7 @@ class TestContextValidation:
             direction="long",
             score=8.0,
             confidence="high",
+            structure_1h="HH",  # Required for validation
             liquidity_sweep_detected=True,
             structure_clarity=0.6,
             bos_detected=True,
@@ -57,10 +59,12 @@ class TestContextValidation:
         """
         features = pd.Series({
             "structure_clarity": 0.6,
+            "structure_label": "HH",  # Required for validation
             "liquidity_sweep": False,
             "bos_recent": True,
             "bos_direction": "bullish",  # Required for long direction
             "choch_detected": False,
+            "structure_conflict_flag": False,
         })
 
         htf_bias = HTFBias(
@@ -68,6 +72,7 @@ class TestContextValidation:
             direction="long",
             score=8.0,
             confidence="high",
+            structure_1h="HH",  # Required for validation
             liquidity_sweep_detected=False,
             structure_clarity=0.6,
         )
@@ -87,10 +92,12 @@ class TestContextValidation:
         """
         features = pd.Series({
             "structure_clarity": 0.3,
+            "structure_label": "HH",  # Required for validation
             "liquidity_sweep": True,
             "bos_recent": True,
             "bos_direction": "bullish",  # Required for long direction
             "choch_detected": False,
+            "structure_conflict_flag": False,
         })
 
         htf_bias = HTFBias(
@@ -98,6 +105,7 @@ class TestContextValidation:
             direction="long",
             score=8.0,
             confidence="high",
+            structure_1h="HH",  # Required for validation
             liquidity_sweep_detected=True,
             structure_clarity=0.3,
         )

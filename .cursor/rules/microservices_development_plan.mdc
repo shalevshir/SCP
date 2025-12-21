@@ -1,0 +1,1356 @@
+---
+description: Step-by-step development plan for implementing the microservices architecture. Covers infrastructure setup, service implementation, integration testing, and validation milestones.
+alwaysApply: false
+---
+
+# Microservices Development Plan
+
+**Objective:** Transform the monolithic backtester into a production-ready distributed trading system with validated inter-service communication.
+
+**Timeline Estimate:** 6-8 weeks (part-time) / 3-4 weeks (full-time)
+
+---
+
+## Phase 0: Infrastructure Foundation (Week 1)
+
+### 0.1 Project Structure Setup
+
+```
+SCP/
+├── services/                    # Microservices (NEW)
+│   ├── data-adapter/
+│   │   ├── Dockerfile
+│   │   ├── pyproject.toml
+│   │   ├── src/
+│   │   │   └── data_adapter/
+│   │   │       ├── __init__.py
+│   │   │       ├── main.py
+│   │   │       ├── config.py
+│   │   │       ├── databento_client.py
+│   │   │       ├── candle_aggregator.py
+│   │   │       ├── gap_detector.py
+│   │   │       └── publisher.py
+│   │   └── tests/
+│   │       └── unit/
+│   │
+│   ├── feature-engine/
+│   │   ├── Dockerfile
+│   │   ├── pyproject.toml
+│   │   ├── src/
+│   │   │   └── feature_engine_svc/
+│   │   │       ├── __init__.py
+│   │   │       ├── main.py
+│   │   │       ├── config.py
+│   │   │       ├── consumer.py
+│   │   │       ├── processor.py      # Wraps StreamingFeatureProcessor
+│   │   │       ├── publisher.py
+│   │   │       └── warmup.py
+│   │   └── tests/
+│   │
+│   ├── htf-bias/
+│   │   ├── Dockerfile
+│   │   ├── pyproject.toml
+│   │   ├── src/
+│   │   │   └── htf_bias_svc/
+│   │   │       ├── __init__.py
+│   │   │       ├── main.py
+│   │   │       ├── config.py
+│   │   │       ├── consumer.py
+│   │   │       ├── calculator.py     # Wraps StreamingHTFBiasCalculator
+│   │   │       └── publisher.py
+│   │   └── tests/
+│   │
+│   ├── bot-core/
+│   │   ├── Dockerfile
+│   │   ├── pyproject.toml
+│   │   ├── src/
+│   │   │   └── bot_core_svc/
+│   │   │       ├── __init__.py
+│   │   │       ├── main.py
+│   │   │       ├── config.py
+│   │   │       ├── consumer.py
+│   │   │       ├── signal_engine.py  # Wraps score_signal
+│   │   │       ├── guardrails.py     # Wraps BehaviorGuardrails
+│   │   │       └── publisher.py
+│   │   └── tests/
+│   │
+│   ├── execution/
+│   │   ├── Dockerfile
+│   │   ├── pyproject.toml
+│   │   ├── src/
+│   │   │   └── execution_svc/
+│   │   │       ├── __init__.py
+│   │   │       ├── main.py
+│   │   │       ├── config.py
+│   │   │       ├── consumer.py
+│   │   │       ├── state_machine.py  # Wraps VWAPReclaimStateMachine
+│   │   │       ├── trade_manager.py
+│   │   │       ├── broker/
+│   │   │       │   ├── __init__.py
+│   │   │       │   ├── base.py
+│   │   │       │   ├── paper.py
+│   │   │       │   └── live.py
+│   │   │       └── publisher.py
+│   │   └── tests/
+│   │
+│   └── shared/                   # Shared utilities
+│       ├── pyproject.toml
+│       └── src/
+│           └── scp_shared/
+│               ├── __init__.py
+│               ├── messaging/
+│               │   ├── __init__.py
+│               │   ├── redis_streams.py
+│               │   ├── schemas.py
+│               │   └── consumer_group.py
+│               ├── database/
+│               │   ├── __init__.py
+│               │   ├── connection.py
+│               │   └── repositories.py
+│               ├── health/
+│               │   ├── __init__.py
+│               │   └── endpoints.py
+│               └── config/
+│                   ├── __init__.py
+│                   └── base.py
+│
+├── infra/                        # Infrastructure (NEW)
+│   ├── docker-compose.yml
+│   ├── docker-compose.dev.yml
+│   ├── docker-compose.test.yml
+│   ├── migrations/
+│   │   ├── 001_initial_schema.sql
+│   │   └── 002_indexes.sql
+│   └── scripts/
+│       ├── init-db.sh
+│       └── seed-test-data.sh
+│
+├── tests/
+│   ├── integration/              # Integration tests (NEW)
+│   │   ├── conftest.py
+│   │   ├── test_data_to_features.py
+│   │   ├── test_features_to_signals.py
+│   │   ├── test_signals_to_trades.py
+│   │   └── test_full_pipeline.py
+│   └── e2e/                      # End-to-end tests (NEW)
+│       ├── conftest.py
+│       ├── test_replay_mode.py
+│       └── test_paper_trading.py
+│
+├── backtester/                   # Existing (keep for reference)
+├── feature_engine/               # Existing (shared with services)
+├── rule_engine/                  # Existing (shared with services)
+├── validation/                   # Existing (shared with services)
+└── common/                       # Existing (shared with services)
+```
+
+### 0.2 Tasks
+
+- [ ] **0.2.1** Create `services/` directory structure
+- [ ] **0.2.2** Create `infra/` directory with Docker Compose files
+- [ ] **0.2.3** Create `services/shared/` package with:
+  - [ ] Redis Streams pub/sub utilities
+  - [ ] Pydantic message schemas
+  - [ ] Database connection helpers
+  - [ ] Health check endpoints (FastAPI)
+- [ ] **0.2.4** Set up PostgreSQL + TimescaleDB with initial schema
+- [ ] **0.2.5** Set up Redis with persistence
+- [ ] **0.2.6** Create Makefile with common commands
+
+### 0.3 Validation Checkpoint
+
+```bash
+# Start infrastructure
+make infra-up
+
+# Verify Redis is running
+redis-cli ping  # Should return PONG
+
+# Verify PostgreSQL is running
+psql -h localhost -U scp -d scp -c "SELECT 1"
+
+# Verify TimescaleDB extension
+psql -h localhost -U scp -d scp -c "SELECT extname FROM pg_extension WHERE extname = 'timescaledb'"
+```
+
+### 0.4 Deliverables
+
+- [ ] `docker-compose.yml` starts Redis + PostgreSQL
+- [ ] Database schema applied successfully
+- [ ] `scp_shared` package installable by all services
+- [ ] Health check endpoint template working
+
+---
+
+## Phase 1: Shared Messaging Layer (Week 1-2)
+
+### 1.1 Redis Streams Utilities
+
+Create robust pub/sub utilities that all services will use.
+
+**Test First (TDD):**
+
+```python
+# tests/unit/shared/test_redis_streams.py
+
+import pytest
+from scp_shared.messaging import RedisStreamPublisher, RedisStreamConsumer
+from scp_shared.messaging.schemas import CandleMessage
+
+class TestRedisStreamPublisher:
+    """Test Redis Streams publishing."""
+    
+    async def test_publish_candle_message(self, redis_client):
+        """Publisher serializes and publishes CandleMessage."""
+        publisher = RedisStreamPublisher(redis_client)
+        
+        candle = CandleMessage(
+            timestamp=datetime(2025, 1, 15, 10, 0, tzinfo=timezone.utc),
+            symbol="GC",
+            timeframe="1m",
+            open=2650.0,
+            high=2652.0,
+            low=2649.0,
+            close=2651.0,
+            volume=1000.0,
+        )
+        
+        message_id = await publisher.publish("candles.1m.gc", candle)
+        
+        assert message_id is not None
+        # Verify message in stream
+        messages = await redis_client.xrange("candles.1m.gc", "-", "+")
+        assert len(messages) == 1
+    
+    async def test_consumer_receives_published_message(self, redis_client):
+        """Consumer receives and deserializes messages."""
+        publisher = RedisStreamPublisher(redis_client)
+        consumer = RedisStreamConsumer(
+            redis_client,
+            stream="candles.1m.gc",
+            group="test-group",
+            consumer_name="test-consumer",
+        )
+        
+        # Publish
+        candle = CandleMessage(...)
+        await publisher.publish("candles.1m.gc", candle)
+        
+        # Consume
+        messages = await consumer.read(count=1, block_ms=1000)
+        
+        assert len(messages) == 1
+        received = messages[0]
+        assert received.symbol == "GC"
+        assert received.close == 2651.0
+```
+
+### 1.2 Implementation
+
+```python
+# services/shared/src/scp_shared/messaging/redis_streams.py
+
+import json
+from datetime import datetime
+from typing import TypeVar, Generic
+import redis.asyncio as redis
+from pydantic import BaseModel
+
+T = TypeVar("T", bound=BaseModel)
+
+
+class RedisStreamPublisher:
+    """Publish Pydantic models to Redis Streams."""
+    
+    def __init__(self, redis_client: redis.Redis):
+        self.redis = redis_client
+    
+    async def publish(self, stream: str, message: BaseModel) -> str:
+        """Publish message to stream.
+        
+        Args:
+            stream: Stream name (e.g., "candles.1m.gc")
+            message: Pydantic model to publish
+            
+        Returns:
+            Message ID from Redis
+        """
+        data = {
+            "type": message.__class__.__name__,
+            "payload": message.model_dump_json(),
+            "published_at": datetime.utcnow().isoformat(),
+        }
+        
+        message_id = await self.redis.xadd(stream, data)
+        return message_id
+
+
+class RedisStreamConsumer(Generic[T]):
+    """Consume and deserialize messages from Redis Streams."""
+    
+    def __init__(
+        self,
+        redis_client: redis.Redis,
+        stream: str,
+        group: str,
+        consumer_name: str,
+        message_type: type[T],
+    ):
+        self.redis = redis_client
+        self.stream = stream
+        self.group = group
+        self.consumer_name = consumer_name
+        self.message_type = message_type
+        self._initialized = False
+    
+    async def ensure_group(self) -> None:
+        """Create consumer group if not exists."""
+        if self._initialized:
+            return
+        try:
+            await self.redis.xgroup_create(
+                self.stream,
+                self.group,
+                id="0",
+                mkstream=True,
+            )
+        except redis.ResponseError as e:
+            if "BUSYGROUP" not in str(e):
+                raise
+        self._initialized = True
+    
+    async def read(
+        self,
+        count: int = 10,
+        block_ms: int = 5000,
+    ) -> list[T]:
+        """Read and deserialize messages.
+        
+        Args:
+            count: Maximum messages to read
+            block_ms: Block timeout in milliseconds
+            
+        Returns:
+            List of deserialized Pydantic models
+        """
+        await self.ensure_group()
+        
+        results = await self.redis.xreadgroup(
+            groupname=self.group,
+            consumername=self.consumer_name,
+            streams={self.stream: ">"},
+            count=count,
+            block=block_ms,
+        )
+        
+        messages = []
+        for stream_name, stream_messages in results:
+            for message_id, data in stream_messages:
+                payload = json.loads(data[b"payload"])
+                model = self.message_type.model_validate(payload)
+                messages.append(model)
+                
+                # Acknowledge
+                await self.redis.xack(self.stream, self.group, message_id)
+        
+        return messages
+```
+
+### 1.3 Tasks
+
+- [ ] **1.3.1** Write tests for `RedisStreamPublisher`
+- [ ] **1.3.2** Implement `RedisStreamPublisher`
+- [ ] **1.3.3** Write tests for `RedisStreamConsumer`
+- [ ] **1.3.4** Implement `RedisStreamConsumer`
+- [ ] **1.3.5** Write tests for consumer group management
+- [ ] **1.3.6** Implement consumer group auto-creation
+- [ ] **1.3.7** Write tests for message acknowledgment
+- [ ] **1.3.8** Implement dead-letter queue for failed messages
+- [ ] **1.3.9** Add connection retry logic with backoff
+
+### 1.4 Validation Checkpoint
+
+```bash
+# Run shared library tests
+cd services/shared
+poetry run pytest tests/ -v
+
+# Manual integration test
+poetry run python -c "
+import asyncio
+import redis.asyncio as redis
+from scp_shared.messaging import RedisStreamPublisher, RedisStreamConsumer
+from scp_shared.messaging.schemas import CandleMessage
+from datetime import datetime, timezone
+
+async def test():
+    client = redis.Redis(host='localhost', port=6379)
+    pub = RedisStreamPublisher(client)
+    
+    candle = CandleMessage(
+        timestamp=datetime.now(timezone.utc),
+        symbol='GC', timeframe='1m',
+        open=2650, high=2652, low=2649, close=2651, volume=1000
+    )
+    
+    msg_id = await pub.publish('test.candles', candle)
+    print(f'Published: {msg_id}')
+    
+    await client.close()
+
+asyncio.run(test())
+"
+```
+
+### 1.5 Deliverables
+
+- [ ] `RedisStreamPublisher` with tests (100% coverage)
+- [ ] `RedisStreamConsumer` with tests (100% coverage)
+- [ ] Consumer group management
+- [ ] Dead-letter queue for failed messages
+- [ ] Connection retry with exponential backoff
+
+---
+
+## Phase 2: Data Adapter Service (Week 2)
+
+### 2.1 Service Overview
+
+The Data Adapter connects to Databento, aggregates ticks into 1m candles, and publishes to Redis Streams.
+
+### 2.2 Test First (TDD)
+
+```python
+# services/data-adapter/tests/unit/test_candle_aggregator.py
+
+import pytest
+from datetime import datetime, timezone
+from data_adapter.candle_aggregator import CandleAggregator
+from scp_shared.messaging.schemas import CandleMessage
+
+
+class TestCandleAggregator:
+    """Test tick → candle aggregation."""
+    
+    def test_first_tick_initializes_candle(self):
+        """First tick in minute starts new candle."""
+        agg = CandleAggregator(symbol="GC", timeframe="1m")
+        
+        tick = Tick(
+            timestamp=datetime(2025, 1, 15, 10, 0, 5, tzinfo=timezone.utc),
+            price=2650.0,
+            volume=10,
+        )
+        
+        result = agg.update(tick)
+        
+        assert result is None  # Candle not closed yet
+        assert agg.current_candle is not None
+        assert agg.current_candle.open == 2650.0
+    
+    def test_minute_boundary_closes_candle(self):
+        """Tick at new minute closes previous candle."""
+        agg = CandleAggregator(symbol="GC", timeframe="1m")
+        
+        # Tick at 10:00:05
+        agg.update(Tick(
+            timestamp=datetime(2025, 1, 15, 10, 0, 5, tzinfo=timezone.utc),
+            price=2650.0, volume=10,
+        ))
+        
+        # Tick at 10:00:30 (high)
+        agg.update(Tick(
+            timestamp=datetime(2025, 1, 15, 10, 0, 30, tzinfo=timezone.utc),
+            price=2655.0, volume=20,
+        ))
+        
+        # Tick at 10:00:45 (low)
+        agg.update(Tick(
+            timestamp=datetime(2025, 1, 15, 10, 0, 45, tzinfo=timezone.utc),
+            price=2648.0, volume=15,
+        ))
+        
+        # Tick at 10:01:00 (closes 10:00 candle)
+        result = agg.update(Tick(
+            timestamp=datetime(2025, 1, 15, 10, 1, 0, tzinfo=timezone.utc),
+            price=2652.0, volume=25,
+        ))
+        
+        assert result is not None
+        assert result.timestamp == datetime(2025, 1, 15, 10, 0, tzinfo=timezone.utc)
+        assert result.open == 2650.0
+        assert result.high == 2655.0
+        assert result.low == 2648.0
+        assert result.close == 2648.0  # Last tick before boundary
+        assert result.volume == 45  # Sum of volumes
+    
+    def test_no_tick_gap_detection(self):
+        """Detect missing candles when gap > 1 minute."""
+        agg = CandleAggregator(symbol="GC", timeframe="1m")
+        
+        agg.update(Tick(
+            timestamp=datetime(2025, 1, 15, 10, 0, 30, tzinfo=timezone.utc),
+            price=2650.0, volume=10,
+        ))
+        
+        # 5-minute gap
+        result = agg.update(Tick(
+            timestamp=datetime(2025, 1, 15, 10, 5, 30, tzinfo=timezone.utc),
+            price=2655.0, volume=20,
+        ))
+        
+        assert agg.gap_detected
+        assert agg.gap_start == datetime(2025, 1, 15, 10, 1, tzinfo=timezone.utc)
+        assert agg.gap_end == datetime(2025, 1, 15, 10, 5, tzinfo=timezone.utc)
+```
+
+### 2.3 Implementation Skeleton
+
+```python
+# services/data-adapter/src/data_adapter/main.py
+
+import asyncio
+import signal
+from contextlib import asynccontextmanager
+
+import redis.asyncio as redis
+from fastapi import FastAPI
+
+from data_adapter.config import Settings
+from data_adapter.databento_client import DatabentoClient
+from data_adapter.candle_aggregator import CandleAggregator
+from data_adapter.gap_detector import GapDetector
+from data_adapter.publisher import CandlePublisher
+from scp_shared.health import health_router
+
+
+settings = Settings()
+shutdown_event = asyncio.Event()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Manage application lifecycle."""
+    # Startup
+    redis_client = redis.Redis.from_url(settings.redis_url)
+    publisher = CandlePublisher(redis_client)
+    
+    gc_aggregator = CandleAggregator(symbol="GC", timeframe="1m")
+    dxy_aggregator = CandleAggregator(symbol="DXY", timeframe="1m")
+    gap_detector = GapDetector(backfill_client=DatabentoClient(settings.databento_api_key))
+    
+    # Start WebSocket consumer
+    task = asyncio.create_task(
+        consume_ticks(
+            settings.databento_ws_url,
+            gc_aggregator,
+            dxy_aggregator,
+            gap_detector,
+            publisher,
+        )
+    )
+    
+    yield
+    
+    # Shutdown
+    shutdown_event.set()
+    task.cancel()
+    await redis_client.close()
+
+
+app = FastAPI(lifespan=lifespan)
+app.include_router(health_router)
+
+
+async def consume_ticks(
+    ws_url: str,
+    gc_agg: CandleAggregator,
+    dxy_agg: CandleAggregator,
+    gap_detector: GapDetector,
+    publisher: CandlePublisher,
+) -> None:
+    """Main loop: consume ticks, aggregate, publish."""
+    async with DatabentoClient(ws_url) as client:
+        async for tick in client.stream_ticks():
+            if shutdown_event.is_set():
+                break
+            
+            # Route to correct aggregator
+            aggregator = gc_agg if tick.symbol == "GC" else dxy_agg
+            
+            # Check for gaps
+            if gap_detector.detect_gap(tick.timestamp, tick.symbol):
+                await gap_detector.backfill(publisher)
+            
+            # Aggregate
+            candle = aggregator.update(tick)
+            
+            if candle is not None:
+                # Session filter
+                if is_trading_hours(candle.timestamp):
+                    await publisher.publish(candle)
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8001)
+```
+
+### 2.4 Tasks
+
+- [ ] **2.4.1** Write tests for `CandleAggregator`
+- [ ] **2.4.2** Implement `CandleAggregator`
+- [ ] **2.4.3** Write tests for `GapDetector`
+- [ ] **2.4.4** Implement `GapDetector` with Databento backfill
+- [ ] **2.4.5** Write tests for session hour filtering
+- [ ] **2.4.6** Implement session hour filter (reuse `SessionValidator`)
+- [ ] **2.4.7** Create Databento WebSocket client (mock for testing)
+- [ ] **2.4.8** Wire up FastAPI application with health endpoints
+- [ ] **2.4.9** Create Dockerfile
+- [ ] **2.4.10** Add to `docker-compose.yml`
+
+### 2.5 Validation Checkpoint
+
+```bash
+# Run unit tests
+cd services/data-adapter
+poetry run pytest tests/unit -v
+
+# Build and start service
+docker-compose up -d data-adapter
+
+# Check health
+curl http://localhost:8001/health
+
+# Verify candles published to Redis
+redis-cli XLEN candles.1m.gc
+redis-cli XRANGE candles.1m.gc - + COUNT 5
+```
+
+### 2.6 Deliverables
+
+- [ ] `CandleAggregator` with 100% test coverage
+- [ ] `GapDetector` with backfill capability
+- [ ] Session hour filtering
+- [ ] Databento WebSocket integration (or mock)
+- [ ] Dockerfile + docker-compose entry
+- [ ] Health endpoint returning status
+
+---
+
+## Phase 3: Feature Engine Service (Week 2-3)
+
+### 3.1 Service Overview
+
+Consumes 1m candles, computes features, publishes enriched data.
+
+### 3.2 Test First (TDD)
+
+```python
+# services/feature-engine/tests/unit/test_processor.py
+
+import pytest
+from datetime import datetime, timezone
+import pandas as pd
+
+from feature_engine_svc.processor import FeatureProcessor
+from scp_shared.messaging.schemas import CandleMessage, FeaturesMessage
+
+
+class TestFeatureProcessor:
+    """Test feature computation wrapper."""
+    
+    def test_process_candle_returns_features(self):
+        """Processing candle pair returns features."""
+        processor = FeatureProcessor(timeframe="1m")
+        
+        gc_candle = CandleMessage(
+            timestamp=datetime(2025, 1, 15, 10, 0, tzinfo=timezone.utc),
+            symbol="GC", timeframe="1m",
+            open=2650, high=2655, low=2648, close=2652, volume=1000,
+        )
+        dxy_candle = CandleMessage(
+            timestamp=datetime(2025, 1, 15, 10, 0, tzinfo=timezone.utc),
+            symbol="DXY", timeframe="1m",
+            open=104.5, high=104.6, low=104.4, close=104.55, volume=0,
+        )
+        
+        features = processor.process(gc_candle, dxy_candle)
+        
+        assert features is not None
+        assert features.close == 2652
+        assert features.ema_9 is not None
+        assert features.vwap is not None
+    
+    def test_warmup_period_returns_partial_features(self):
+        """During warmup, some features are None."""
+        processor = FeatureProcessor(timeframe="1m")
+        
+        # First candle
+        gc = CandleMessage(...)
+        dxy = CandleMessage(...)
+        
+        features = processor.process(gc, dxy)
+        
+        # RSI needs 14 bars, DXY correlation needs 50 bars
+        assert features.rsi is None
+        assert features.dxy_correlation is None
+    
+    def test_after_warmup_all_features_populated(self):
+        """After warmup period, all features populated."""
+        processor = FeatureProcessor(timeframe="1m")
+        
+        # Feed 60 candles (warmup)
+        for i in range(60):
+            gc = make_candle(i, symbol="GC")
+            dxy = make_candle(i, symbol="DXY")
+            features = processor.process(gc, dxy)
+        
+        assert features.rsi is not None
+        assert features.dxy_correlation is not None
+        assert features.structure_label is not None
+```
+
+### 3.3 Integration with Existing Code
+
+```python
+# services/feature-engine/src/feature_engine_svc/processor.py
+
+from feature_engine.streaming import StreamingFeatureProcessor
+from scp_shared.messaging.schemas import CandleMessage, FeaturesMessage
+from common.types import Candle
+
+
+class FeatureProcessor:
+    """Wrapper around StreamingFeatureProcessor for service use."""
+    
+    def __init__(self, timeframe: str = "1m"):
+        self.processor = StreamingFeatureProcessor(
+            timeframe=timeframe,
+            rsi_period=14,
+            ema_periods=[9, 20, 50],
+            dxy_window=50,
+        )
+        self.timeframe = timeframe
+    
+    def process(
+        self,
+        gc_message: CandleMessage,
+        dxy_message: CandleMessage,
+    ) -> FeaturesMessage:
+        """Process candle pair and return features message.
+        
+        Args:
+            gc_message: Gold candle message
+            dxy_message: DXY candle message
+            
+        Returns:
+            FeaturesMessage with computed indicators
+        """
+        # Convert to internal Candle type
+        gc_candle = Candle(
+            timestamp=gc_message.timestamp,
+            open=gc_message.open,
+            high=gc_message.high,
+            low=gc_message.low,
+            close=gc_message.close,
+            volume=gc_message.volume,
+            symbol=gc_message.symbol,
+            timeframe=gc_message.timeframe,
+            source="STREAM",
+        )
+        dxy_candle = Candle(
+            timestamp=dxy_message.timestamp,
+            open=dxy_message.open,
+            high=dxy_message.high,
+            low=dxy_message.low,
+            close=dxy_message.close,
+            volume=dxy_message.volume,
+            symbol=dxy_message.symbol,
+            timeframe=dxy_message.timeframe,
+            source="STREAM",
+        )
+        
+        # Process through existing StreamingFeatureProcessor
+        features_series = self.processor.update(gc_candle, dxy_candle)
+        
+        # Convert to message format
+        return FeaturesMessage(
+            timestamp=gc_message.timestamp,
+            symbol="GC",
+            timeframe=self.timeframe,
+            close=features_series.get("close"),
+            vwap=features_series.get("vwap"),
+            rsi=features_series.get("rsi"),
+            ema_9=features_series.get("ema_9"),
+            ema_20=features_series.get("ema_20"),
+            ema_50=features_series.get("ema_50"),
+            dxy_correlation=features_series.get("dxy_corr"),
+            structure_label=features_series.get("structure_label"),
+            vwap_deviation=features_series.get("vwap_deviation"),
+        )
+```
+
+### 3.4 Tasks
+
+- [ ] **3.4.1** Write tests for `FeatureProcessor` wrapper
+- [ ] **3.4.2** Implement `FeatureProcessor` wrapping `StreamingFeatureProcessor`
+- [ ] **3.4.3** Write tests for candle synchronization (GC + DXY pairing)
+- [ ] **3.4.4** Implement candle buffer for synchronization
+- [ ] **3.4.5** Write tests for warmup from database
+- [ ] **3.4.6** Implement warmup: load last N candles from DB on startup
+- [ ] **3.4.7** Write tests for HTF aggregation (1m → 15m, 1h)
+- [ ] **3.4.8** Implement HTF candle aggregation + feature computation
+- [ ] **3.4.9** Add database persistence for features
+- [ ] **3.4.10** Create Dockerfile + docker-compose entry
+
+### 3.5 Validation Checkpoint
+
+```bash
+# Run unit tests
+cd services/feature-engine
+poetry run pytest tests/ -v
+
+# Integration test: Data Adapter → Feature Engine
+docker-compose up -d data-adapter feature-engine
+
+# Check features published
+redis-cli XLEN features.1m
+redis-cli XRANGE features.1m - + COUNT 5
+
+# Verify HTF features on boundary
+redis-cli XLEN features.15m
+```
+
+### 3.6 Deliverables
+
+- [ ] `FeatureProcessor` with tests
+- [ ] Candle synchronization (GC + DXY pairing)
+- [ ] Warmup from database
+- [ ] HTF aggregation (15m, 1h)
+- [ ] Database persistence
+- [ ] Dockerfile + docker-compose entry
+
+---
+
+## Phase 4: HTF Bias Service (Week 3)
+
+### 4.1 Tasks
+
+- [ ] **4.1.1** Write tests for HTF bias computation wrapper
+- [ ] **4.1.2** Implement wrapper around `StreamingHTFBiasCalculator`
+- [ ] **4.1.3** Write tests for bias update on 15m/1h boundaries
+- [ ] **4.1.4** Implement boundary detection and bias publishing
+- [ ] **4.1.5** Write tests for chop detection
+- [ ] **4.1.6** Implement chop/conflict detection
+- [ ] **4.1.7** Add warmup from feature history
+- [ ] **4.1.8** Create Dockerfile + docker-compose entry
+
+### 4.2 Validation Checkpoint
+
+```bash
+# Run unit tests
+cd services/htf-bias
+poetry run pytest tests/ -v
+
+# Integration: Data Adapter → Feature Engine → HTF Bias
+docker-compose up -d data-adapter feature-engine htf-bias
+
+# Check HTF bias published
+redis-cli XLEN htf.bias
+redis-cli XRANGE htf.bias - + COUNT 5
+```
+
+---
+
+## Phase 5: Bot Core Service (Week 3-4)
+
+### 5.1 Tasks
+
+- [ ] **5.1.1** Write tests for signal generation wrapper
+- [ ] **5.1.2** Implement wrapper around `score_signal`
+- [ ] **5.1.3** Write tests for guardrails integration
+- [ ] **5.1.4** Implement `BehaviorGuardrails` wrapper
+- [ ] **5.1.5** Write tests for session validation
+- [ ] **5.1.6** Implement session filtering
+- [ ] **5.1.7** Write tests for HTF bias caching
+- [ ] **5.1.8** Implement HTF bias cache with TTL
+- [ ] **5.1.9** Write tests for daily state persistence
+- [ ] **5.1.10** Implement daily state DB persistence
+- [ ] **5.1.11** Create Dockerfile + docker-compose entry
+
+### 5.2 Validation Checkpoint
+
+```bash
+# Run unit tests
+cd services/bot-core
+poetry run pytest tests/ -v
+
+# Integration: Full pipeline up to signals
+docker-compose up -d
+
+# Check signals published
+redis-cli XLEN signals.pending
+```
+
+---
+
+## Phase 6: Execution Service (Week 4-5)
+
+### 6.1 Tasks
+
+- [ ] **6.1.1** Write tests for state machine wrapper
+- [ ] **6.1.2** Implement `VWAPReclaimStateMachine` wrapper
+- [ ] **6.1.3** Write tests for paper broker
+- [ ] **6.1.4** Implement paper broker (simulated orders)
+- [ ] **6.1.5** Write tests for trade lifecycle
+- [ ] **6.1.6** Implement trade lifecycle management
+- [ ] **6.1.7** Write tests for SL/TP monitoring
+- [ ] **6.1.8** Implement SL/TP monitoring on each candle
+- [ ] **6.1.9** Write tests for invalidation detection
+- [ ] **6.1.10** Integrate `InvalidationChecker`
+- [ ] **6.1.11** Write tests for position reconciliation
+- [ ] **6.1.12** Implement startup position reconciliation
+- [ ] **6.1.13** Create Dockerfile + docker-compose entry
+
+### 6.2 Validation Checkpoint
+
+```bash
+# Run unit tests
+cd services/execution
+poetry run pytest tests/ -v
+
+# Integration: Full pipeline with paper trading
+docker-compose up -d
+
+# Check trades published
+redis-cli XLEN trades.opened
+redis-cli XLEN trades.closed
+
+# Query database for trade records
+psql -h localhost -U scp -d scp -c "SELECT * FROM trades ORDER BY opened_at DESC LIMIT 10"
+```
+
+---
+
+## Phase 7: Integration Testing (Week 5-6)
+
+### 7.1 Test: Data Adapter → Feature Engine
+
+```python
+# tests/integration/test_data_to_features.py
+
+import pytest
+import asyncio
+from datetime import datetime, timezone
+
+from scp_shared.messaging import RedisStreamPublisher, RedisStreamConsumer
+from scp_shared.messaging.schemas import CandleMessage, FeaturesMessage
+
+
+class TestDataToFeaturesPipeline:
+    """Integration test: candles → features."""
+    
+    @pytest.fixture
+    async def setup_services(self, docker_services):
+        """Ensure Data Adapter and Feature Engine are running."""
+        await docker_services.wait_for_healthy("data-adapter")
+        await docker_services.wait_for_healthy("feature-engine")
+    
+    async def test_published_candle_produces_features(
+        self,
+        setup_services,
+        redis_client,
+    ):
+        """Candle published to stream produces features."""
+        # Publish test candle
+        publisher = RedisStreamPublisher(redis_client)
+        
+        gc_candle = CandleMessage(
+            timestamp=datetime.now(timezone.utc),
+            symbol="GC", timeframe="1m",
+            open=2650, high=2655, low=2648, close=2652, volume=1000,
+        )
+        dxy_candle = CandleMessage(
+            timestamp=datetime.now(timezone.utc),
+            symbol="DXY", timeframe="1m",
+            open=104.5, high=104.6, low=104.4, close=104.55, volume=0,
+        )
+        
+        await publisher.publish("candles.1m.gc", gc_candle)
+        await publisher.publish("candles.1m.dxy", dxy_candle)
+        
+        # Wait for features
+        consumer = RedisStreamConsumer(
+            redis_client,
+            stream="features.1m",
+            group="test",
+            consumer_name="test",
+            message_type=FeaturesMessage,
+        )
+        
+        features = await asyncio.wait_for(
+            consumer.read(count=1, block_ms=5000),
+            timeout=10.0,
+        )
+        
+        assert len(features) == 1
+        assert features[0].close == 2652
+```
+
+### 7.2 Test: Full Pipeline (Replay Mode)
+
+```python
+# tests/integration/test_full_pipeline.py
+
+class TestFullPipelineReplay:
+    """Integration test: replay historical data through full pipeline."""
+    
+    async def test_replay_produces_expected_trades(
+        self,
+        docker_services,
+        redis_client,
+        db_connection,
+    ):
+        """Replaying known data produces expected trade outcomes."""
+        # Load known test dataset (from backtester validation)
+        test_data = load_test_dataset("2025-01-validation")
+        
+        # Inject candles at accelerated pace
+        publisher = RedisStreamPublisher(redis_client)
+        for gc, dxy in test_data.candles:
+            await publisher.publish(f"candles.1m.gc", gc)
+            await publisher.publish(f"candles.1m.dxy", dxy)
+            await asyncio.sleep(0.01)  # 100x speed
+        
+        # Wait for pipeline to process
+        await asyncio.sleep(5.0)
+        
+        # Query trades from database
+        trades = await db_connection.fetch_all("SELECT * FROM trades")
+        
+        # Compare to known expected outcomes
+        assert len(trades) == test_data.expected_trade_count
+        
+        # Verify key trade properties match
+        for expected, actual in zip(test_data.expected_trades, trades):
+            assert actual["direction"] == expected.direction
+            assert abs(actual["entry_price"] - expected.entry_price) < 0.1
+```
+
+### 7.3 Tasks
+
+- [ ] **7.3.1** Write integration test: Data Adapter → Feature Engine
+- [ ] **7.3.2** Write integration test: Feature Engine → HTF Bias
+- [ ] **7.3.3** Write integration test: Bot Core → Execution
+- [ ] **7.3.4** Write integration test: Full pipeline replay
+- [ ] **7.3.5** Create test fixtures from backtester results
+- [ ] **7.3.6** Add docker-compose.test.yml for CI
+- [ ] **7.3.7** Set up GitHub Actions workflow
+
+### 7.4 Validation Checkpoint
+
+```bash
+# Run all integration tests
+make test-integration
+
+# Expected output:
+# tests/integration/test_data_to_features.py::TestDataToFeaturesPipeline::test_published_candle_produces_features PASSED
+# tests/integration/test_features_to_signals.py::TestFeaturesToSignalsPipeline::test_a_plus_signal_generated PASSED
+# tests/integration/test_signals_to_trades.py::TestSignalsToTradesPipeline::test_signal_executed PASSED
+# tests/integration/test_full_pipeline.py::TestFullPipelineReplay::test_replay_produces_expected_trades PASSED
+```
+
+---
+
+## Phase 8: Replay Mode Validation (Week 6)
+
+### 8.1 Objective
+
+Validate that the microservices produce **identical results** to the backtester.
+
+### 8.2 Approach
+
+1. Run backtester on known date range → save results as ground truth
+2. Run microservices in replay mode on same data
+3. Compare trade-by-trade
+
+### 8.3 Replay Mode Implementation
+
+```python
+# services/data-adapter/src/data_adapter/replay_mode.py
+
+class ReplayModeDataAdapter:
+    """Replay historical candles from database instead of live feed."""
+    
+    def __init__(
+        self,
+        db_url: str,
+        redis_url: str,
+        start: datetime,
+        end: datetime,
+        speed_multiplier: float = 1.0,
+    ):
+        self.db = Database(db_url)
+        self.redis = redis.Redis.from_url(redis_url)
+        self.start = start
+        self.end = end
+        self.speed_multiplier = speed_multiplier
+    
+    async def replay(self) -> None:
+        """Replay historical candles at specified speed."""
+        candles = await self.db.fetch_all(
+            "SELECT * FROM candles WHERE timestamp >= $1 AND timestamp < $2 ORDER BY timestamp",
+            self.start, self.end,
+        )
+        
+        publisher = RedisStreamPublisher(self.redis)
+        
+        prev_ts = None
+        for candle in candles:
+            # Simulate time passage
+            if prev_ts is not None:
+                delay = (candle.timestamp - prev_ts).total_seconds()
+                await asyncio.sleep(delay / self.speed_multiplier)
+            
+            await publisher.publish(
+                f"candles.{candle.timeframe}.{candle.symbol.lower()}",
+                CandleMessage.from_db_row(candle),
+            )
+            
+            prev_ts = candle.timestamp
+```
+
+### 8.4 Comparison Script
+
+```python
+# scripts/compare_results.py
+
+def compare_backtest_vs_microservices(
+    backtest_results: list[Trade],
+    microservice_results: list[Trade],
+) -> ComparisonReport:
+    """Compare trade-by-trade results."""
+    report = ComparisonReport()
+    
+    # Match trades by timestamp
+    bt_by_ts = {t.opened_at: t for t in backtest_results}
+    ms_by_ts = {t.opened_at: t for t in microservice_results}
+    
+    all_timestamps = set(bt_by_ts.keys()) | set(ms_by_ts.keys())
+    
+    for ts in sorted(all_timestamps):
+        bt_trade = bt_by_ts.get(ts)
+        ms_trade = ms_by_ts.get(ts)
+        
+        if bt_trade and not ms_trade:
+            report.add_missing_in_microservices(bt_trade)
+        elif ms_trade and not bt_trade:
+            report.add_extra_in_microservices(ms_trade)
+        else:
+            # Compare details
+            if not trades_match(bt_trade, ms_trade):
+                report.add_mismatch(bt_trade, ms_trade)
+            else:
+                report.add_match(bt_trade)
+    
+    return report
+
+
+def trades_match(bt: Trade, ms: Trade) -> bool:
+    """Check if two trades match within tolerance."""
+    return (
+        bt.direction == ms.direction
+        and bt.setup_type == ms.setup_type
+        and abs(bt.entry_price - ms.entry_price) < 0.01
+        and abs(bt.sl_price - ms.sl_price) < 0.01
+        and abs(bt.tp_price - ms.tp_price) < 0.01
+        and bt.exit_reason == ms.exit_reason
+    )
+```
+
+### 8.5 Tasks
+
+- [ ] **8.5.1** Implement replay mode for Data Adapter
+- [ ] **8.5.2** Create comparison script
+- [ ] **8.5.3** Run backtester on November 2025 data
+- [ ] **8.5.4** Run microservices replay on same data
+- [ ] **8.5.5** Analyze discrepancies and fix
+- [ ] **8.5.6** Achieve 100% trade match
+
+### 8.6 Validation Checkpoint
+
+```bash
+# Run backtester
+poetry run python scripts/run_backtest_and_view.py \
+  --start 2025-11-01 --end 2025-11-30 \
+  --output output/backtest_nov2025.json
+
+# Run microservices replay
+docker-compose -f docker-compose.yml -f docker-compose.replay.yml up -d
+poetry run python scripts/replay_historical.py \
+  --start 2025-11-01 --end 2025-11-30 --speed 100
+
+# Compare results
+poetry run python scripts/compare_results.py \
+  --backtest output/backtest_nov2025.json \
+  --microservices output/microservices_nov2025.json
+
+# Expected output:
+# ✅ 47 trades matched
+# ❌ 0 missing in microservices
+# ❌ 0 extra in microservices
+# ❌ 0 mismatches
+# Result: PASS
+```
+
+---
+
+## Phase 9: Paper Trading Validation (Week 7-8)
+
+### 9.1 Objective
+
+Run microservices against live market data in paper mode for 1+ week.
+
+### 9.2 Monitoring Setup
+
+- Grafana dashboard with all metrics
+- PagerDuty alerts for service health
+- Daily report emails
+
+### 9.3 Success Criteria
+
+- [ ] Services run 7+ days without crashes
+- [ ] All signals generated match manual review
+- [ ] Paper trades execute at expected prices
+- [ ] SL/TP triggers correctly
+- [ ] No orphaned positions
+- [ ] State recovery works after intentional restart
+
+### 9.4 Tasks
+
+- [ ] **9.4.1** Set up Grafana dashboard
+- [ ] **9.4.2** Configure alerting
+- [ ] **9.4.3** Run paper trading for 1 week
+- [ ] **9.4.4** Daily review of trades
+- [ ] **9.4.5** Intentional restart test
+- [ ] **9.4.6** Document any issues and fixes
+
+---
+
+## Phase 10: Production Deployment (Week 8+)
+
+### 10.1 Pre-deployment Checklist
+
+- [ ] All integration tests pass
+- [ ] Replay mode matches backtester 100%
+- [ ] Paper trading successful for 1+ week
+- [ ] State recovery tested
+- [ ] Position reconciliation tested
+- [ ] Kill switch tested
+- [ ] Monitoring and alerting in place
+- [ ] Runbook documented
+
+### 10.2 Deployment Steps
+
+1. Deploy to staging environment
+2. Run with live data but paper orders for 24h
+3. Enable live orders with minimal position size
+4. Monitor for 48h
+5. Gradually increase position size to target
+
+### 10.3 Rollback Plan
+
+```bash
+# Immediate halt
+docker-compose down execution
+
+# Revert to backtester mode
+# (Manual trading only until issues resolved)
+```
+
+---
+
+## Appendix A: Makefile Commands
+
+```makefile
+# Makefile
+
+.PHONY: infra-up infra-down test test-integration build-all deploy
+
+# Infrastructure
+infra-up:
+	docker-compose -f infra/docker-compose.yml up -d redis postgres
+
+infra-down:
+	docker-compose -f infra/docker-compose.yml down
+
+# Testing
+test:
+	@for svc in data-adapter feature-engine htf-bias bot-core execution; do \
+		echo "Testing $$svc..."; \
+		cd services/$$svc && poetry run pytest tests/ -v && cd ../..; \
+	done
+
+test-integration:
+	docker-compose -f infra/docker-compose.test.yml up -d
+	poetry run pytest tests/integration/ -v
+	docker-compose -f infra/docker-compose.test.yml down
+
+# Build
+build-all:
+	docker-compose build
+
+# Deploy
+deploy-paper:
+	docker-compose -f docker-compose.yml -f docker-compose.paper.yml up -d
+
+deploy-live:
+	docker-compose -f docker-compose.yml -f docker-compose.live.yml up -d
+
+# Replay
+replay:
+	docker-compose -f docker-compose.yml -f docker-compose.replay.yml up -d
+	poetry run python scripts/replay_historical.py --start $(START) --end $(END)
+
+# Monitoring
+logs:
+	docker-compose logs -f
+
+logs-service:
+	docker-compose logs -f $(SERVICE)
+
+# Database
+migrate:
+	psql -h localhost -U scp -d scp -f infra/migrations/001_initial_schema.sql
+
+seed-test-data:
+	bash infra/scripts/seed-test-data.sh
+```
+
+---
+
+## Appendix B: Success Metrics
+
+| Metric | Target | Measurement |
+|--------|--------|-------------|
+| Service uptime | 99.9% | Prometheus `up` metric |
+| Message latency (p99) | < 100ms | Redis consumer lag |
+| Trade execution latency | < 500ms | Signal → order placement |
+| State recovery time | < 30s | Time to warmup on restart |
+| Test coverage | > 80% | pytest-cov |
+| Integration test pass rate | 100% | CI/CD pipeline |
+| Replay mode accuracy | 100% | Trade-by-trade comparison |
+
+---
+
+## Appendix C: Risk Mitigation
+
+| Risk | Mitigation |
+|------|------------|
+| Service crash during trade | Position reconciliation on restart |
+| Redis failure | Redis Sentinel + persistent storage |
+| Database failure | Replicas + point-in-time recovery |
+| Databento outage | Gap detection + historical backfill |
+| Bad signal | Guardrails + daily loss limit |
+| Code bug in production | Paper trading validation + gradual rollout |

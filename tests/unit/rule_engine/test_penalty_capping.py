@@ -221,6 +221,7 @@ class TestPenaltyCapping:
             "ema_20": 2645,
             "ema_50": 2640,
             "dxy_corr": -0.75,
+            "structure_label": "HH",  # Required for validation
             # Strong structure
             "is_structural_chop": False,
             "atr_compression_ratio": 1.0,
@@ -229,6 +230,7 @@ class TestPenaltyCapping:
             "bos_direction": "bullish",
             "bos_recent": True,
             "choch_detected": False,
+            "structure_conflict_flag": False,
             "liquidity_sweep": True,
             "expansion_detected": True,
         })
@@ -238,6 +240,7 @@ class TestPenaltyCapping:
             direction="long",
             score=8.5,
             confidence="high",
+            structure_1h="HH",  # Required for validation
             structure_clarity=0.8,
             bars_since_bos=5,
             liquidity_sweep_detected=True,
