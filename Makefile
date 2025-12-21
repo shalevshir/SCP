@@ -1,4 +1,4 @@
-.PHONY: test test-unit test-verbose test-parallel test-coverage test-fast lint format check clean help install data-clean data-fetch data-resample data-resample-1h
+.PHONY: test test-unit test-verbose test-parallel test-coverage test-fast lint format check clean help install data-clean data-fetch data-resample data-resample-5m data-resample-1h
 
 help:
 	@echo "SCP Trading Bot - Development Commands"
@@ -18,6 +18,7 @@ help:
 	@echo "  make data-clean        Clean and deduplicate CSV data (remove spreads, select highest volume)"
 	@echo "  make data-fetch        Fetch historical data from Databento (requires API key)"
 	@echo "  make data-resample     Resample 1m data to 15m bars"
+	@echo "  make data-resample-5m  Resample 1m data to 5m bars"
 	@echo "  make data-resample-1h  Resample 1m data to 1h bars"
 	@echo ""
 	@echo "Code Quality:"
@@ -86,6 +87,11 @@ data-fetch:
 data-resample:
 	@echo "Resampling 1m data to 15m bars..."
 	poetry run python scripts/resample_ohlcv_to_15m.py
+	@echo "Resampling complete."
+
+data-resample-5m:
+	@echo "Resampling 1m data to 5m bars..."
+	poetry run python scripts/resample_ohlcv_to_5m.py
 	@echo "Resampling complete."
 
 data-resample-1h:

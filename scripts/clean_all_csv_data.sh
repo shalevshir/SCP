@@ -34,7 +34,7 @@ else
 fi
 
 # Process Dollar Index (DX) data
-if [ -f "$PROJECT_ROOT/data/gc_dx_ohlcv/dxy_ohlcv_1m.csv.csv" ]; then
+if [ -f "$PROJECT_ROOT/data/gc_dx_ohlcv/dxy_ohlcv_1m.csv" ]; then
     echo "Processing Dollar Index (DX) data..."
     poetry run python "$SCRIPT_DIR/clean_csv_data.py" \
         --input "$PROJECT_ROOT/data/gc_dx_ohlcv/dxy_ohlcv_1m.csv.csv" \

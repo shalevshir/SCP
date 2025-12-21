@@ -18,11 +18,10 @@ logs/*
 
 # Exclude large timeframe data (can be regenerated from scripts)
 data/gc_dx_ohlcv/*-1s.csv
-
+data/gc_dx_ohlcv2025/
 db/**
 !.gitkeep
 
-data/feature_integration.csv
 .cursor/rules/sl_tp_rules.mdc
 docs/CEO-Progress-Summary.md
 docs/Critical-Issues-Analysis.md
