@@ -1,0 +1,36 @@
+version: '3.8'
+
+# Development overrides for docker-compose.yml
+# Usage: docker-compose -f docker-compose.yml -f docker-compose.dev.yml up
+
+services:
+  redis:
+    # Enable debug logging in development
+    command: redis-server --appendonly yes --loglevel debug
+    ports:
+      - "6379:6379"
+
+  postgres:
+    # Enable query logging and verbose output
+    environment:
+      POSTGRES_DB: scp_dev
+      POSTGRES_USER: scp
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-scp_dev_password}
+    command: 
+      - "postgres"
+      - "-c"
+      - "log_statement=all"
+      - "-c"
+      - "log_duration=on"
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+      - ./migrations:/docker-entrypoint-initdb.d:ro
+      # Mount scripts for easy access
+      - ./scripts:/scripts:ro
+
+volumes:
+  postgres_dev_data:
+    name: scp_postgres_dev_data
+
