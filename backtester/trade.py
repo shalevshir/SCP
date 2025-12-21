@@ -802,6 +802,20 @@ def close_trade(
         exit_price = trade.take_profit
     elif exit_reason_lower in ("sl", "stop_loss"):
         exit_price = trade.stop_loss
+    elif exit_reason_lower in ("time_stop",):
+        # TIME STOP: Trade didn't reach +1R within time limit
+        # Per SOP: Move stop to break-even, don't accept arbitrary loss
+        # Exit at entry price (break-even) or current close if better
+        if trade.direction == "long":
+            # Long: exit at better of entry price or close
+            exit_price = max(trade.entry_price, exit_candle.close)
+        else:
+            # Short: exit at better of entry price or close
+            exit_price = min(trade.entry_price, exit_candle.close)
+        logger.info(
+            f"Time stop: exiting at {exit_price} (BE={trade.entry_price}, "
+            f"close={exit_candle.close})"
+        )
     elif exit_reason_lower in (
         "vwap_invalidation",
         "htf_invalidation",
