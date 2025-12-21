@@ -23,21 +23,32 @@ logger = get_logger(__name__)
 
 @dataclass
 class VWAPReclaimState:
-    """State tracking for VWAP reclaim sequence.
+    """State tracking for VWAP reclaim sequence (direction-agnostic).
 
     Attributes:
-        started_below: Price was below VWAP in the lookback window
+        started_on_dwell_side: Price was on dwell side (below for long, above for short)
         sweep_detected: Liquidity sweep occurred
         sweep_bar_idx: Bar index where sweep occurred
         displacement_detected: Strong displacement move present
-        reclaim_confirmed: Close above VWAP after complete sequence
+        reclaim_confirmed: Close on reclaim side after complete sequence
     """
 
-    started_below: bool = False
+    started_on_dwell_side: bool = False
     sweep_detected: bool = False
     sweep_bar_idx: int | None = None
     displacement_detected: bool = False
     reclaim_confirmed: bool = False
+    
+    # Migration: backward-compatible alias for started_below
+    @property
+    def started_below(self) -> bool:
+        """Deprecated alias for started_on_dwell_side (backward compatibility)."""
+        return self.started_on_dwell_side
+    
+    @started_below.setter
+    def started_below(self, value: bool) -> None:
+        """Deprecated setter for started_below (backward compatibility)."""
+        self.started_on_dwell_side = value
 
 
 @dataclass
@@ -124,6 +135,8 @@ def validate_reclaim_context(
     SAFETY gates (hard rejection):
         1. BOS/CHoCH direction mismatch with trade direction
         2. Structure conflict flag (mixed HH/LL signals)
+        3. Structure label conflicts with trade direction
+        4. Minimum VWAP deviation not met (entry too close to VWAP)
 
     QUALITY flags (returned for penalty, not rejected):
         1. No liquidity sweep detected
@@ -147,6 +160,38 @@ def validate_reclaim_context(
         ...         pass
     """
     CLARITY_THRESHOLD = 0.4
+    # Minimum VWAP deviation required for entry (percentage)
+    # SOP requires price to have "traded below/above VWAP for 30-60 min"
+    # This translates to meaningful deviation from VWAP, not touching it
+    MIN_VWAP_DEVIATION_PCT = 0.15  # 0.15% minimum deviation
+
+    # HARD REJECT: Check if structure_1h is null
+    # HTF bias must only be computed when BOTH 1H and 15M votes are available
+    # If structure_1h is null, we're trading 15M-only with fake "HTF" alignment
+    structure_1h = htf_bias.structure_1h
+    structure_1h_is_null = (
+        structure_1h is None
+        or (isinstance(structure_1h, float) and pd.isna(structure_1h))
+        or structure_1h == ""
+    )
+    if structure_1h_is_null:
+        logger.warning(
+            f"VWAP_RECLAIM HARD REJECT: structure_1h is null "
+            f"(raw value: {structure_1h!r}, 15m: {htf_bias.structure_15m!r})"
+        )
+        # Return rejection with explicit reason (no exception in live paths)
+        return ReclaimContextResult(
+            context_valid=False,
+            reason="structure_1h_null: HTF 1H structure missing - cannot validate HTF alignment",
+            sweep_detected=False,
+            structure_clarity=htf_bias.structure_clarity,
+            quality_flags={
+                "no_sweep": True,
+                "low_clarity": False,
+                "no_bos": True,
+                "bos_stale": False,
+            },
+        )
 
     # Get structure_clarity from features (1M) as primary source
     # Fallback to htf_bias.structure_clarity (1H) if features not available
@@ -198,6 +243,68 @@ def validate_reclaim_context(
         bos_age = features.get("bos_age")
         if bos_age is not None and not pd.isna(bos_age):
             quality_flags["bos_stale"] = bos_age > 15  # Staleness threshold
+
+    # MANDATORY SAFETY CHECK: Structure label MUST be available (moved OUTSIDE features block)
+    # This is checked BEFORE other gates to ensure no bypass when features is None
+    direction = htf_bias.direction
+    structure_label = None
+    if features is not None:
+        # Get structure_label, handling pd.NA properly (can't use 'or' with NA)
+        raw_label = features.get("structure_label")
+        if raw_label is None or (isinstance(raw_label, float) and pd.isna(raw_label)) or pd.isna(raw_label):
+            raw_label = features.get("last_structure_label")
+        structure_label = raw_label
+    
+    # HARD REJECT if no structure label available at decision time
+    # No guessing, no defaulting, no silent pass-through
+    is_label_missing = (
+        structure_label is None
+        or (isinstance(structure_label, float) and pd.isna(structure_label))
+    )
+    # Handle pandas NA type explicitly
+    try:
+        if pd.isna(structure_label):
+            is_label_missing = True
+    except (TypeError, ValueError):
+        pass
+    
+    if is_label_missing:
+        logger.warning(
+            "VWAP_RECLAIM HARD REJECT: no structure_label available at decision time"
+        )
+        return ReclaimContextResult(
+            context_valid=False,
+            reason="HARD REJECT: No structure label available - cannot safely manage trade",
+            sweep_detected=sweep_detected,
+            structure_clarity=structure_clarity,
+            quality_flags=quality_flags,
+        )
+    
+    # Check structure_label direction alignment (applies to both long and short)
+    if direction == "long" and structure_label in ("LH", "LL"):
+        logger.debug(
+            f"VWAP_RECLAIM SAFETY REJECT: bearish structure_label={structure_label} "
+            f"conflicts with long direction"
+        )
+        return ReclaimContextResult(
+            context_valid=False,
+            reason=f"SAFETY: Bearish micro structure ({structure_label}) conflicts with long",
+            sweep_detected=sweep_detected,
+            structure_clarity=structure_clarity,
+            quality_flags=quality_flags,
+        )
+    elif direction == "short" and structure_label in ("HH", "HL"):
+        logger.debug(
+            f"VWAP_RECLAIM SAFETY REJECT: bullish structure_label={structure_label} "
+            f"conflicts with short direction"
+        )
+        return ReclaimContextResult(
+            context_valid=False,
+            reason=f"SAFETY: Bullish micro structure ({structure_label}) conflicts with short",
+            sweep_detected=sweep_detected,
+            structure_clarity=structure_clarity,
+            quality_flags=quality_flags,
+        )
 
     # SAFETY CHECK 1: BOS or CHoCH alignment with trade direction
     # This is a SAFETY gate - direction mismatch is a hard rejection
@@ -259,6 +366,24 @@ def validate_reclaim_context(
                 structure_clarity=structure_clarity,
                 quality_flags=quality_flags,
             )
+
+        # SAFETY CHECK 3: Minimum VWAP deviation (structure_label check moved outside features block)
+        # Entry should not be at/near VWAP - needs meaningful deviation
+        # SOP requires price to "trade below/above VWAP" before reclaim
+        vwap_deviation = features.get("vwap_deviation")
+        if vwap_deviation is not None and not pd.isna(vwap_deviation):
+            if abs(vwap_deviation) < MIN_VWAP_DEVIATION_PCT:
+                logger.debug(
+                    f"VWAP_RECLAIM SAFETY REJECT: VWAP deviation {vwap_deviation:.3f}% "
+                    f"< minimum {MIN_VWAP_DEVIATION_PCT}% (entry too close to VWAP)"
+                )
+                return ReclaimContextResult(
+                    context_valid=False,
+                    reason=f"SAFETY: VWAP deviation too small ({vwap_deviation:.3f}% < {MIN_VWAP_DEVIATION_PCT}%)",
+                    sweep_detected=sweep_detected,
+                    structure_clarity=structure_clarity,
+                    quality_flags=quality_flags,
+                )
 
     # All SAFETY gates passed - return valid context with quality flags
     logger.info(
@@ -356,17 +481,16 @@ def detect_vwap_reclaim(
     htf_bias: HTFBias,
     lookback: int = 5,
 ) -> tuple[bool, VWAPReclaimState]:
-    """Detect complete VWAP reclaim sequence.
+    """Detect complete VWAP reclaim sequence (direction-aware).
 
     Scans the last N bars to verify:
-    1. Price started below VWAP
-    2. Liquidity sweep detected (from HTF bias)
-    3. Displacement candle present (body > average)
-    4. Currently closed above VWAP
+    LONG: 1. Price started below VWAP, 2. Cross from below to above, 3. Close above
+    SHORT: 1. Price started above VWAP, 2. Cross from above to below, 3. Close below
+    Plus: Liquidity sweep detected and displacement candle present (both directions)
 
     Args:
         df: DataFrame with OHLC + VWAP columns
-        htf_bias: HTFBias object with sweep detection
+        htf_bias: HTFBias object with sweep detection and direction
         lookback: Number of bars to scan (default: 5)
 
     Returns:
@@ -378,6 +502,9 @@ def detect_vwap_reclaim(
         ...     print("Valid VWAP reclaim detected")
     """
     state = VWAPReclaimState()
+    
+    # Get trade direction from HTF bias
+    direction = htf_bias.direction  # "long" or "short"
 
     # Validate required columns
     required_cols = {"open", "high", "low", "close", "vwap"}
@@ -385,18 +512,50 @@ def detect_vwap_reclaim(
         logger.warning(f"Missing required columns: {required_cols - set(df.columns)}")
         return False, state
 
-    # Need at least lookback bars
+    # Need at least lookback bars + dwell bars
+    MIN_DWELL_BARS = 30  # SOP: 30-60 bars minimum
+    min_required_bars = lookback + MIN_DWELL_BARS
+    
     if len(df) < lookback:
         return False, state
+
+    # DWELL GATE: Check if price spent sufficient time on dwell side
+    # This prevents premature reclaim signals on brief touches of VWAP
+    if len(df) >= min_required_bars:
+        # Count bars spent on dwell side in the window BEFORE the recent lookback
+        dwell_df = df.iloc[-(lookback + MIN_DWELL_BARS):-lookback]
+        
+        if direction == "long":
+            dwell_bars = (dwell_df["close"] < dwell_df["vwap"]).sum()
+        else:  # short
+            dwell_bars = (dwell_df["close"] > dwell_df["vwap"]).sum()
+        
+        if dwell_bars < MIN_DWELL_BARS:
+            logger.debug(
+                f"VWAP_RECLAIM rejected: insufficient dwell time "
+                f"({dwell_bars} < {MIN_DWELL_BARS} bars on {'below' if direction == 'long' else 'above'} VWAP)"
+            )
+            return False, state
+        
+        logger.debug(
+            f"VWAP_RECLAIM dwell gate passed: {dwell_bars} bars on dwell side "
+            f"(direction={direction})"
+        )
 
     # Get recent bars
     recent_df = df.iloc[-lookback:]
 
-    # Check 1: Price was below VWAP at some point
-    was_below = (recent_df["close"] < recent_df["vwap"]).any()
-    state.started_below = was_below
+    # Check 1: Price was on dwell side (below for long, above for short)
+    if direction == "long":
+        was_on_side = (recent_df["close"] < recent_df["vwap"]).any()
+    else:  # short
+        was_on_side = (recent_df["close"] > recent_df["vwap"]).any()
+    
+    # Convert numpy.bool_ to Python bool for proper identity comparison
+    state.started_on_dwell_side = bool(was_on_side)
 
-    if not was_below:
+    if not was_on_side:
+        logger.debug(f"VWAP_RECLAIM rejected: price not on dwell side (direction={direction})")
         return False, state
 
     # Check 2: Liquidity sweep detected (from HTF bias)
@@ -406,7 +565,7 @@ def detect_vwap_reclaim(
         return False, state
 
     # Check 3: Displacement candle present
-    # Find the bar that crossed above VWAP
+    # Find the bar that crossed VWAP in the correct direction
     reclaim_bar_idx = None
     for i in range(len(recent_df) - 1):
         curr_close = recent_df["close"].iloc[i]
@@ -414,9 +573,16 @@ def detect_vwap_reclaim(
         curr_vwap = recent_df["vwap"].iloc[i]
         next_vwap = recent_df["vwap"].iloc[i + 1]
 
-        # Crossed from below to above
-        if curr_close < curr_vwap and next_close > next_vwap:
-            reclaim_bar_idx = i + 1  # The bar that crossed above
+        # Direction-aware cross detection
+        if direction == "long":
+            # Crossed from below to above
+            crossed = curr_close < curr_vwap and next_close > next_vwap
+        else:  # short
+            # Crossed from above to below
+            crossed = curr_close > curr_vwap and next_close < next_vwap
+        
+        if crossed:
+            reclaim_bar_idx = i + 1  # The bar that crossed
             break
 
     if reclaim_bar_idx is not None:
@@ -432,7 +598,8 @@ def detect_vwap_reclaim(
         prev_bars = df.iloc[start_idx:abs_idx]
         if len(prev_bars) > 0:
             avg_body = (prev_bars["close"] - prev_bars["open"]).abs().mean()
-            state.displacement_detected = reclaim_body > avg_body
+            # Convert numpy.bool_ to Python bool for proper identity comparison
+            state.displacement_detected = bool(reclaim_body > avg_body)
         else:
             state.displacement_detected = False
     else:
@@ -441,17 +608,23 @@ def detect_vwap_reclaim(
     if not state.displacement_detected:
         return False, state
 
-    # Check 4: Currently closed above VWAP
+    # Check 4: Currently closed on reclaim side (above for long, below for short)
     current_close = recent_df["close"].iloc[-1]
     current_vwap = recent_df["vwap"].iloc[-1]
-    state.reclaim_confirmed = current_close > current_vwap
+    
+    # Convert numpy.bool_ to Python bool for proper identity comparison
+    if direction == "long":
+        state.reclaim_confirmed = bool(current_close > current_vwap)
+    else:  # short
+        state.reclaim_confirmed = bool(current_close < current_vwap)
 
     if not state.reclaim_confirmed:
         return False, state
 
     # All checks passed
     logger.debug(
-        f"Valid VWAP reclaim detected: started_below={state.started_below}, "
+        f"Valid VWAP reclaim detected (direction={direction}): "
+        f"started_on_dwell_side={state.started_on_dwell_side}, "
         f"sweep={state.sweep_detected}, displacement={state.displacement_detected}, "
         f"confirmed={state.reclaim_confirmed}"
     )
