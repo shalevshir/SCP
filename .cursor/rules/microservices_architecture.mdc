@@ -1,8 +1,6 @@
 ---
-description: Microservices architecture plan for production deployment. Defines service boundaries, communication patterns, data flow, and migration path from monolithic backtester to distributed live trading system.
-alwaysApply: false
+alwaysApply: true
 ---
-
 # Microservices Architecture Plan
 
 **Goal:** Transform the current backtesting monolith into a production-ready, distributed trading system with clear service boundaries, fault isolation, and independent scaling.
