@@ -34,12 +34,8 @@ logger = get_logger(__name__)
 # Allows VWAP reclaim to retest and accept without premature stop-out
 ACCEPTANCE_GRACE_BARS_RECLAIM = 8
 
-# SOP timeout limits per setup type
-TIMEOUT_BARS = {
-    "VWAP_RECLAIM": 20,
-    "DXY_CONTINUATION": 20,
-    "VWAP_FADE": 10,
-}
+# SOP timeout limits - import from invalidations.py as single source of truth
+from backtester.invalidations import R1_TIME_LIMITS as TIMEOUT_BARS
 
 
 def is_valid_candle(candle: Candle) -> bool:
