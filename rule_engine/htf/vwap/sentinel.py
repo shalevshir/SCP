@@ -1,10 +1,9 @@
 """RECLAIM_SENTINEL - final gatekeeper for VWAP reclaim signals.
 
-Rejects any reclaim signal that doesn't meet all requirements:
-1. Price crossed VWAP from below in last N bars
-2. Liquidity sweep exists
-3. Displacement candle present (body > avg)
-4. Structure is clean (clarity >= 0.7, no chop)
+Rejects any reclaim signal that doesn't meet all requirements (direction-aware):
+LONG: 1. Price crossed VWAP from below in last N bars
+SHORT: 1. Price crossed VWAP from above in last N bars
+BOTH: 2. Liquidity sweep exists, 3. Displacement candle present, 4. Structure clean
 """
 
 from __future__ import annotations
@@ -25,11 +24,11 @@ def reclaim_sentinel(
     lookback: int = 5,
     displacement_lookback: int = 10,
 ) -> tuple[bool, str | None]:
-    """Final validation before VWAP_RECLAIM signal.
+    """Final validation before VWAP_RECLAIM signal (direction-aware).
 
     Args:
         features: Current bar features (must contain 'close', 'vwap')
-        htf_bias: HTFBias object with structure metrics
+        htf_bias: HTFBias object with structure metrics and direction
         vwap_history: Series of VWAP values for last N bars
         price_history: DataFrame with OHLC for last N bars
         lookback: Bars to check for VWAP cross (default: 5)
@@ -39,12 +38,14 @@ def reclaim_sentinel(
         Tuple of (is_valid, rejection_reason)
 
     Rejects if:
-    1. Price hasn't crossed VWAP from below in last N bars
-    2. No sweep exists (htf_bias.liquidity_sweep_detected)
-    3. No displacement candle exists (body > avg)
-    4. Structure not clean (clarity < 0.7 or chop detected)
+    LONG: 1. Price hasn't crossed VWAP from below in last N bars
+    SHORT: 1. Price hasn't crossed VWAP from above in last N bars
+    BOTH: 2. No sweep, 3. No displacement, 4. Structure not clean
     """
-    # Check 1: Price crossed VWAP from below
+    # Get trade direction from HTF bias
+    direction = htf_bias.direction  # "long" or "short"
+    
+    # Check 1: Price crossed VWAP in correct direction
     if len(price_history) < lookback or len(vwap_history) < lookback:
         return False, "Insufficient price/VWAP history"
 
@@ -52,8 +53,8 @@ def reclaim_sentinel(
     recent_prices = price_history.iloc[-lookback:]
     recent_vwap = vwap_history.iloc[-lookback:]
 
-    # Check if price was below VWAP and then crossed above
-    crossed_from_below = False
+    # Check if price crossed VWAP in the correct direction
+    crossed_correctly = False
     reclaim_bar_idx = None
 
     for i in range(len(recent_prices) - 1):
@@ -62,14 +63,24 @@ def reclaim_sentinel(
         curr_vwap = recent_vwap.iloc[i]
         next_vwap = recent_vwap.iloc[i + 1]
 
-        # Crossed from below to above
-        if curr_close < curr_vwap and next_close > next_vwap:
-            crossed_from_below = True
+        # Direction-aware cross detection
+        if direction == "long":
+            # Crossed from below to above
+            crossed = curr_close < curr_vwap and next_close > next_vwap
+        else:  # short
+            # Crossed from above to below
+            crossed = curr_close > curr_vwap and next_close < next_vwap
+        
+        if crossed:
+            crossed_correctly = True
             reclaim_bar_idx = i + 1
             break
 
-    if not crossed_from_below:
-        return False, "Price hasn't crossed VWAP from below in last 5 bars"
+    if not crossed_correctly:
+        if direction == "long":
+            return False, "Price hasn't crossed VWAP from below in last 5 bars"
+        else:
+            return False, "Price hasn't crossed VWAP from above in last 5 bars"
 
     # Check 2: Liquidity sweep
     if not htf_bias.liquidity_sweep_detected:
