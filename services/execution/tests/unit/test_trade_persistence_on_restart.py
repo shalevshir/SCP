@@ -78,6 +78,7 @@ class TestBarsElapsedPersistence:
         # Create trade that was opened at bar 100
         trade = TradeRecord(
             trade_id="trade-1",
+            signal_id="signal-1",
             symbol="GC",
             direction="long",
             setup_type="VWAP_RECLAIM",
@@ -130,6 +131,7 @@ class TestReached1RPersistence:
         # Create trade that already reached +1R before restart
         trade = TradeRecord(
             trade_id="trade-2",
+            signal_id="signal-2",
             symbol="GC",
             direction="long",
             setup_type="VWAP_RECLAIM",
@@ -187,6 +189,7 @@ class TestFullRecoveryScenario:
         # Create trade that was opened at bar 100 and reached +1R at bar 110
         trade_with_full_state = TradeRecord(
             trade_id="trade-3",
+            signal_id="signal-3",
             symbol="GC",
             direction="long",
             setup_type="VWAP_RECLAIM",

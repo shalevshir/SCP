@@ -13,6 +13,7 @@ class TradeRecord:
     """
     
     trade_id: str
+    signal_id: str  # Source signal ID for correlation
     symbol: str
     direction: str  # "long" | "short"
     setup_type: str  # "VWAP_RECLAIM" | "VWAP_FADE" | "DXY_CONTINUATION"

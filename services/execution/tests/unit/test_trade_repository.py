@@ -27,6 +27,7 @@ def sample_trade() -> TradeRecord:
     """Create sample trade record."""
     return TradeRecord(
         trade_id="test-trade-1",
+        signal_id="test-signal-1",
         symbol="GC",
         direction="long",
         setup_type="VWAP_RECLAIM",

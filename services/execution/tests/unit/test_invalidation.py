@@ -26,6 +26,7 @@ def make_trade(
     
     return TradeRecord(
         trade_id="test-trade-1",
+        signal_id="test-signal-1",
         symbol="GC",
         direction=direction,
         setup_type=setup_type,

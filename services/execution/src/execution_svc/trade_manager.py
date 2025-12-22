@@ -238,6 +238,7 @@ class TradeManager:
             # Create TradeRecord
             trade = TradeRecord(
                 trade_id=trade_id,
+                signal_id=signal.id,
                 symbol="GC",
                 direction=signal.direction,
                 setup_type=signal.setup_type,
@@ -343,7 +344,7 @@ class TradeManager:
             # Publish trade closed event
             trade_msg = TradeMessage(
                 id=trade.trade_id,
-                signal_id=str(trade.trade_id),  # Would need signal_id from DB in production
+                signal_id=trade.signal_id,
                 direction=trade.direction,
                 entry_price=trade.entry_price,
                 sl_price=trade.sl_price,

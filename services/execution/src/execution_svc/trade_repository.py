@@ -225,6 +225,7 @@ class TradeRepository:
         
         return TradeRecord(
             trade_id=str(row["id"]),
+            signal_id=str(row["signal_id"]),
             symbol="GC",  # Hardcoded for Phase 6
             direction=row["direction"],
             setup_type=row["setup_type"],
@@ -270,6 +271,7 @@ class TradeRepository:
             
             trade = TradeRecord(
                 trade_id=str(row["id"]),
+                signal_id=str(row["signal_id"]),
                 symbol="GC",  # Hardcoded for Phase 6
                 direction=row["direction"],
                 setup_type=row["setup_type"],
