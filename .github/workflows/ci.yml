@@ -258,22 +258,29 @@ jobs:
                   print(f"Warning: Coverage file not found for {service}")
                   continue
               
-              tree = ET.parse(xml_file)
-              root = tree.getroot()
-              
-              # Parse coverage data from XML
-              lines_valid = int(root.attrib.get('lines-valid', 0))
-              lines_covered = int(root.attrib.get('lines-covered', 0))
-              line_rate = float(root.attrib.get('line-rate', 0))
-              
-              service_coverage[service] = {
-                  "statements": lines_valid,
-                  "covered": lines_covered,
-                  "percent": line_rate * 100
-              }
-              
-              total_lines += lines_valid
-              covered_lines += lines_covered
+              try:
+                  tree = ET.parse(xml_file)
+                  root = tree.getroot()
+                  
+                  # Parse coverage data from XML
+                  lines_valid = int(root.attrib.get('lines-valid', 0))
+                  lines_covered = int(root.attrib.get('lines-covered', 0))
+                  line_rate = float(root.attrib.get('line-rate', 0))
+                  
+                  service_coverage[service] = {
+                      "statements": lines_valid,
+                      "covered": lines_covered,
+                      "percent": line_rate * 100
+                  }
+                  
+                  total_lines += lines_valid
+                  covered_lines += lines_covered
+              except ET.ParseError as e:
+                  print(f"Error: Failed to parse XML for {service}: {e}")
+                  continue
+              except (ValueError, KeyError) as e:
+                  print(f"Error: Invalid coverage data format for {service}: {e}")
+                  continue
           
           overall_percent = (covered_lines / total_lines * 100) if total_lines > 0 else 0
           
@@ -357,14 +364,52 @@ jobs:
         with:
           script: |
             const fs = require('fs');
-            const coverageReport = fs.readFileSync('coverage_reports/coverage_report.md', 'utf8');
+            const path = require('path');
             
-            await github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: coverageReport
-            });
+            const reportPath = 'coverage_reports/coverage_report.md';
+            
+            // Check if the report file exists
+            if (!fs.existsSync(reportPath)) {
+              console.log('Warning: Coverage report file not found. Skipping PR comment.');
+              const errorMessage = '## ⚠️ Coverage Report Unavailable\n\n' +
+                'The coverage report could not be generated. This may be due to:\n' +
+                '- Test failures in one or more services\n' +
+                '- Malformed coverage XML files\n' +
+                '- Missing coverage artifacts\n\n' +
+                'Please check the "Combine coverage reports" step logs for details.';
+              
+              await github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: errorMessage
+              });
+              return;
+            }
+            
+            try {
+              const coverageReport = fs.readFileSync(reportPath, 'utf8');
+              
+              await github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: coverageReport
+              });
+            } catch (error) {
+              console.error('Error reading or posting coverage report:', error);
+              
+              const errorMessage = '## ❌ Coverage Report Error\n\n' +
+                `Failed to read or post the coverage report: ${error.message}\n\n` +
+                'Please check the workflow logs for details.';
+              
+              await github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: errorMessage
+              });
+            }
 
   integration-tests:
     name: Integration Tests
