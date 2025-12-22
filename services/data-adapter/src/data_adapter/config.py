@@ -1,7 +1,6 @@
 """Configuration for Data Adapter service."""
 
 from pydantic import Field
-
 from scp_shared.config import BaseServiceConfig
 
 
@@ -13,7 +12,7 @@ class DataAdapterConfig(BaseServiceConfig):
 
     # Databento configuration
     databento_api_key: str = Field(
-        ...,
+        default="",
         description="Databento API key for live data",
     )
 
