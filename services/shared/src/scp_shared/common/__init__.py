@@ -8,12 +8,14 @@ from scp_shared.common.exceptions import (
     NormalizationError,
 )
 from scp_shared.common.logger import get_logger
+from scp_shared.common.security import mask_connection_url
 from scp_shared.common.types import Candle
 
 __all__ = [
     "Config",
     "load_config",
     "get_logger",
+    "mask_connection_url",
     "AppError",
     "ConfigError",
     "DataSourceError",
