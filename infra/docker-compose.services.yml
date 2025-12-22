@@ -95,6 +95,8 @@ services:
       REDIS_URL: redis://redis:6379
       DATABASE_URL: postgresql://scp:${POSTGRES_PASSWORD:-scp_dev_password}@postgres:5432/scp
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      - ../config:/app/bot-core/config:ro
     depends_on:
       redis:
         condition: service_healthy
