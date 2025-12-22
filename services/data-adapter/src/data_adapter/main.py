@@ -4,7 +4,7 @@ import asyncio
 from contextlib import asynccontextmanager
 
 import redis.asyncio as redis
-from common.logger import get_logger
+from scp_shared.common import get_logger, mask_connection_url
 from fastapi import FastAPI
 from scp_shared.health import create_health_router
 
@@ -103,7 +103,7 @@ async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
     
     # Startup
     redis_client = redis.Redis.from_url(config.redis_url)
-    logger.info(f"Connected to Redis at {config.redis_url}")
+    logger.info(f"Connected to Redis at {mask_connection_url(config.redis_url)}")
     
     publisher = CandlePublisher(redis_client)
     
