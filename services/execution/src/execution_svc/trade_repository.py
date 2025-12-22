@@ -69,7 +69,7 @@ class TradeRepository:
         # Convert signal_id string to UUID
         signal_uuid = UUID(signal_id)
         
-        row = await self._db_pool.fetch_one(
+        row = await self._db_pool.fetchrow(
             query,
             signal_uuid,
             direction,
@@ -81,8 +81,11 @@ class TradeRepository:
             opened_at,
         )
         
-        trade_id = str(row["id"])
+        trade_id = str(row["id"]) if row else None
+        if trade_id is None:
+            raise ValueError(f"Failed to insert trade: {row} signal_id: {signal_uuid}")
         
+
         logger.info(
             f"Inserted trade {trade_id}: {direction} {setup_type} @ {entry_price:.2f}"
         )
@@ -141,8 +144,9 @@ class TradeRepository:
         # Get trade to calculate P&L
         trade = await self.get_trade(trade_id)
         if trade is None:
-            logger.error(f"Cannot close trade {trade_id}: not found")
-            return
+            error_msg = f"Trade {trade_id} not found"
+            logger.error(f"Cannot close trade: {error_msg}")
+            raise ValueError(error_msg)
         
         # Calculate P&L
         if trade.direction == "long":
@@ -203,7 +207,7 @@ class TradeRepository:
             WHERE id = $1
         """
         
-        row = await self._db_pool.fetch_one(query, UUID(trade_id))
+        row = await self._db_pool.fetchrow(query, UUID(trade_id))
         
         if row is None:
             return None
@@ -247,7 +251,7 @@ class TradeRepository:
             ORDER BY opened_at ASC
         """
         
-        rows = await self._db_pool.fetch_all(query)
+        rows = await self._db_pool.fetch(query)
         
         trades = []
         for row in rows:

@@ -351,6 +351,20 @@ class TradeManager:
                 f"trade_id={trade.trade_id}){status_note}"
             )
         
+        except ValueError as e:
+            # Trade not found in database - this indicates a data inconsistency
+            logger.error(
+                f"Trade {trade.trade_id} not found in database during close operation. "
+                f"This indicates state inconsistency between in-memory tracking and database. "
+                f"Cleaning up local state only. Error: {e}"
+            )
+            # Clean up local state to prevent memory leaks, but DO NOT publish event
+            # since database was never updated
+            if trade.trade_id in self._active_trades:
+                del self._active_trades[trade.trade_id]
+            if trade.trade_id in self._trade_entry_bars:
+                del self._trade_entry_bars[trade.trade_id]
+        
         except Exception as e:
             logger.error(
                 f"Failed to close trade {trade.trade_id} in database: {e}",
@@ -378,7 +392,7 @@ class TradeManager:
         logger.info(f"Restored {len(open_trades)} active trades from database")
         
         # Reconcile broker positions with restored trades
-        if open_trades and hasattr(self._broker, "reconcile_positions"):
+        if open_trades:
             # Build list of (symbol, side, entry_price, quantity) tuples
             position_data = [
                 (trade.symbol, trade.direction, trade.entry_price, 1)  # quantity=1 for Phase 6

@@ -183,7 +183,7 @@ class StateMachineManager:
             ORDER BY created_at DESC
         """
         
-        rows = await self._db_pool.fetch_all(query)
+        rows = await self._db_pool.fetch(query)
         
         restored = 0
         for row in rows:

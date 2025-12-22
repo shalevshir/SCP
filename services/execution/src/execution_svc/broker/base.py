@@ -64,7 +64,7 @@ class BaseBroker(ABC):
     async def place_order(
         self,
         symbol: str,
-        side: Literal["long", "short"],
+        side: str,
         quantity: int,
         price: float | None = None,
     ) -> OrderResult:
@@ -127,5 +127,19 @@ class BaseBroker(ABC):
             ValueError: If no position exists
         """
         pass
+    
+    async def reconcile_positions(
+        self,
+        trades: list[tuple[str, str, float, int]],
+    ) -> None:
+        """Reconcile broker positions with restored trades on startup.
+        
+        Optional method for brokers that need to restore position state
+        after service restart. Default implementation does nothing.
+        
+        Args:
+            trades: List of (symbol, side, entry_price, quantity) tuples
+        """
+        pass  # Optional: brokers can override if they need reconciliation
 
 
