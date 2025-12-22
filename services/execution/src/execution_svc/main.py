@@ -6,6 +6,11 @@ from contextlib import asynccontextmanager
 
 import redis.asyncio as redis
 from fastapi import FastAPI
+from scp_shared.common import get_logger, mask_connection_url
+from scp_shared.database import DatabasePool
+from scp_shared.health import create_health_router
+from scp_shared.messaging import RedisStreamConsumer
+from scp_shared.messaging.schemas import CandleMessage, FeaturesMessage, SignalMessage
 
 from execution_svc.broker import PaperBroker
 from execution_svc.config import ExecutionConfig
@@ -13,11 +18,6 @@ from execution_svc.state_machine_manager import StateMachineManager
 from execution_svc.trade_manager import TradeManager
 from execution_svc.trade_publisher import TradePublisher
 from execution_svc.trade_repository import TradeRepository
-from scp_shared.common import get_logger, mask_connection_url
-from scp_shared.database import DatabasePool
-from scp_shared.health import create_health_router
-from scp_shared.messaging import RedisStreamConsumer
-from scp_shared.messaging.schemas import CandleMessage, FeaturesMessage, SignalMessage
 
 # Configure basic logging before anything else
 logging.basicConfig(
@@ -58,6 +58,8 @@ async def process_streams(
         trade_repository=trade_repo,
         trade_publisher=trade_publisher,
         max_active_trades=config.max_active_trades,
+        pdll_limit=config.pdll_limit,
+        max_trades_per_day=config.max_trades_per_day,
     )
     
     # Restore state from database
@@ -96,7 +98,7 @@ async def process_streams(
     
     # Cleanup counter (run cleanup every N candles to prevent memory leaks)
     cleanup_counter = 0
-    CLEANUP_INTERVAL = 50  # Cleanup every 50 candles (~50 minutes)
+    cleanup_interval = 50  # Cleanup every 50 candles (~50 minutes)
     
     try:
         while not shutdown_event.is_set():
@@ -109,22 +111,25 @@ async def process_streams(
             if features_list:
                 latest_features = features_list[-1]  # Keep most recent
             
-            # Process signals (new trade opportunities)
+            # Process signals (buffer for next bar execution)
             for signal_msg in signals_list:
                 await trade_manager.on_signal(signal_msg)
-                
-                # For Phase 6 simplification: execute immediately at signal price
-                # In production, would wait for confirmation and next bar open
-                if len(trade_manager._active_trades) < config.max_active_trades:
-                    await trade_manager.execute_entry(signal_msg, signal_msg.entry_price)
             
-            # Process candles (SL/TP monitoring)
+            # Process candles (check session reset, execute pending signals, monitor SL/TP)
             for candle_msg in candles_list:
+                # CRITICAL: Check session reset BEFORE execute_pending_signals
+                # to ensure daily limits (PDLL, max trades) are fresh at day boundaries
+                trade_manager.check_session_reset(candle_msg.timestamp)
+                
+                # Execute pending signals at this candle's open
+                await trade_manager.execute_pending_signals(candle_msg.open)
+                
+                # Monitor active trades for SL/TP and invalidation
                 await trade_manager.on_candle(candle_msg, latest_features)
                 cleanup_counter += 1
             
             # Periodic cleanup to prevent memory leaks
-            if cleanup_counter >= CLEANUP_INTERVAL:
+            if cleanup_counter >= cleanup_interval:
                 sm_manager.cleanup_old_state_machines()
                 cleanup_counter = 0
     
