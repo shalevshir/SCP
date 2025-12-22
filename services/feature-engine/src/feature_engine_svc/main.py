@@ -5,11 +5,11 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 
 import redis.asyncio as redis
-from common.logger import get_logger
 from fastapi import FastAPI
+from scp_shared.common import get_logger, mask_connection_url
 from scp_shared.database import DatabasePool
 from scp_shared.health import create_health_router
-from scp_shared.messaging import RedisStreamConsumer
+from scp_shared.messaging import RedisStreamConsumer, CandleSynchronizer
 from scp_shared.messaging.schemas import CandleMessage
 
 from feature_engine_svc.config import FeatureEngineConfig
@@ -17,7 +17,6 @@ from feature_engine_svc.htf_aggregator import HTFCandleAggregator
 from feature_engine_svc.processor import FeatureProcessor
 from feature_engine_svc.publisher import FeaturePublisher
 from feature_engine_svc.repository import FeatureRepository
-from feature_engine_svc.synchronizer import CandleSynchronizer
 
 logger = get_logger(__name__)
 
@@ -349,11 +348,11 @@ async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
     
     # Startup
     redis_client = redis.Redis.from_url(config.redis_url)
-    logger.info(f"Connected to Redis at {config.redis_url}")
+    logger.info(f"Connected to Redis at {mask_connection_url(config.redis_url)}")
     
     db_pool = DatabasePool(config.database_url)
     await db_pool.connect()
-    logger.info(f"Connected to database at {config.database_url}")
+    logger.info(f"Connected to database at {mask_connection_url(config.database_url)}")
     
     # Start processing task
     processing_task = asyncio.create_task(
