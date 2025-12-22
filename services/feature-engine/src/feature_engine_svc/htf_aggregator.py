@@ -94,42 +94,72 @@ class HTFCandleAggregator:
         return results
     
     def _update_15m(self, candle: CandleMessage) -> None:
-        """Update 15m aggregation state."""
+        """Update 15m aggregation state.
+        
+        Validates that incoming candle belongs to current period.
+        If not (e.g., boundary candle was missed), resets and starts new period.
+        """
+        candle_period_start = self._get_15m_start(candle.timestamp)
+        
         if self.current_15m_start is None:
             # Start new 15m period
-            self.current_15m_start = self._get_15m_start(candle.timestamp)
+            self.current_15m_start = candle_period_start
             self.current_15m_open = candle.open
             self.current_15m_high = candle.high
             self.current_15m_low = candle.low
             self.current_15m_close = candle.close
             self.current_15m_volume = candle.volume
-        else:
-            # Update existing 15m period
+        elif self.current_15m_start == candle_period_start:
+            # Candle belongs to current period - update state
             if self.current_15m_high is None or candle.high > self.current_15m_high:
                 self.current_15m_high = candle.high
             if self.current_15m_low is None or candle.low < self.current_15m_low:
                 self.current_15m_low = candle.low
             self.current_15m_close = candle.close
             self.current_15m_volume += candle.volume
+        else:
+            # Candle belongs to different period (boundary was missed)
+            # Reset and start new period
+            self.current_15m_start = candle_period_start
+            self.current_15m_open = candle.open
+            self.current_15m_high = candle.high
+            self.current_15m_low = candle.low
+            self.current_15m_close = candle.close
+            self.current_15m_volume = candle.volume
     
     def _update_1h(self, candle: CandleMessage) -> None:
-        """Update 1h aggregation state."""
+        """Update 1h aggregation state.
+        
+        Validates that incoming candle belongs to current period.
+        If not (e.g., boundary candle was missed), resets and starts new period.
+        """
+        candle_period_start = self._get_1h_start(candle.timestamp)
+        
         if self.current_1h_start is None:
             # Start new 1h period
-            self.current_1h_start = self._get_1h_start(candle.timestamp)
+            self.current_1h_start = candle_period_start
             self.current_1h_open = candle.open
             self.current_1h_high = candle.high
             self.current_1h_low = candle.low
             self.current_1h_close = candle.close
             self.current_1h_volume = candle.volume
-        else:
-            # Update existing 1h period
+        elif self.current_1h_start == candle_period_start:
+            # Candle belongs to current period - update state
             if self.current_1h_high is None or candle.high > self.current_1h_high:
                 self.current_1h_high = candle.high
             if self.current_1h_low is None or candle.low < self.current_1h_low:
                 self.current_1h_low = candle.low
             self.current_1h_close = candle.close
             self.current_1h_volume += candle.volume
+        else:
+            # Candle belongs to different period (boundary was missed)
+            # Reset and start new period
+            self.current_1h_start = candle_period_start
+            self.current_1h_open = candle.open
+            self.current_1h_high = candle.high
+            self.current_1h_low = candle.low
+            self.current_1h_close = candle.close
+            self.current_1h_volume = candle.volume
     
     def _emit_15m_candle(self) -> CandleMessage:
         """Emit completed 15m candle."""

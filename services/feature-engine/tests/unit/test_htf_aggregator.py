@@ -270,4 +270,99 @@ class TestHTFCandleAggregator:
                 assert len(results) == 1
                 assert results[0].symbol == "DXY"
                 assert results[0].timeframe == "15m"
+    
+    def test_missed_boundary_candle_15m(self):
+        """If boundary candle is missed, next period starts correctly.
+        
+        Scenario:
+        - Candles 10:00-10:13 are processed (period 10:00-10:14)
+        - Candle 10:14 (boundary) is MISSED
+        - Candle 10:15 arrives - should start NEW period 10:15-10:29
+        - NOT merge into previous period 10:00-10:14
+        """
+        agg = HTFCandleAggregator()
+        
+        # Feed candles 10:00-10:13 (14 candles, period 10:00-10:14)
+        for i in range(14):
+            candle = CandleMessage(
+                timestamp=datetime(2025, 1, 15, 10, i, tzinfo=timezone.utc),
+                symbol="GC",
+                timeframe="1m",
+                open=2650.0 + i,
+                high=2655.0 + i,
+                low=2648.0 + i,
+                close=2652.0 + i,
+                volume=1000.0,
+            )
+            results = agg.add_1m_candle(candle)
+            assert len(results) == 0  # No boundary yet
+        
+        # Verify state is for period 10:00-10:14
+        assert agg.current_15m_start == datetime(2025, 1, 15, 10, 0, tzinfo=timezone.utc)
+        assert agg.current_15m_open == 2650.0
+        assert agg.current_15m_close == 2665.0  # 2652 + 13
+        
+        # MISS boundary candle 10:14, jump to 10:15
+        # This should start a NEW period, not merge into previous
+        candle = CandleMessage(
+            timestamp=datetime(2025, 1, 15, 10, 15, tzinfo=timezone.utc),
+            symbol="GC",
+            timeframe="1m",
+            open=2700.0,  # Different price to detect merge
+            high=2705.0,
+            low=2698.0,
+            close=2702.0,
+            volume=2000.0,
+        )
+        results = agg.add_1m_candle(candle)
+        
+        # Should have started new period 10:15-10:29
+        assert agg.current_15m_start == datetime(2025, 1, 15, 10, 15, tzinfo=timezone.utc)
+        assert agg.current_15m_open == 2700.0  # New period's open
+        assert agg.current_15m_close == 2702.0  # New period's close
+        assert agg.current_15m_volume == 2000.0  # Only new candle's volume
+        
+        # Previous period's close should NOT be 2702.0 (would indicate merge)
+        # The previous period should have been reset or not contain 10:15 data
+    
+    def test_missed_boundary_candle_1h(self):
+        """If 1h boundary candle is missed, next period starts correctly."""
+        agg = HTFCandleAggregator()
+        
+        # Feed candles 10:00-10:58 (59 candles, period 10:00-10:59)
+        for i in range(59):
+            candle = CandleMessage(
+                timestamp=datetime(2025, 1, 15, 10, i, tzinfo=timezone.utc),
+                symbol="GC",
+                timeframe="1m",
+                open=2650.0 + i * 0.1,
+                high=2655.0 + i * 0.1,
+                low=2648.0 + i * 0.1,
+                close=2652.0 + i * 0.1,
+                volume=1000.0,
+            )
+            agg.add_1m_candle(candle)
+        
+        # Verify state is for period 10:00-10:59
+        assert agg.current_1h_start == datetime(2025, 1, 15, 10, 0, tzinfo=timezone.utc)
+        
+        # MISS boundary candle 10:59, jump to 11:00
+        # This should start a NEW period, not merge into previous
+        candle = CandleMessage(
+            timestamp=datetime(2025, 1, 15, 11, 0, tzinfo=timezone.utc),
+            symbol="GC",
+            timeframe="1m",
+            open=2750.0,  # Different price to detect merge
+            high=2755.0,
+            low=2748.0,
+            close=2752.0,
+            volume=3000.0,
+        )
+        results = agg.add_1m_candle(candle)
+        
+        # Should have started new period 11:00-11:59
+        assert agg.current_1h_start == datetime(2025, 1, 15, 11, 0, tzinfo=timezone.utc)
+        assert agg.current_1h_open == 2750.0  # New period's open
+        assert agg.current_1h_close == 2752.0  # New period's close
+        assert agg.current_1h_volume == 3000.0  # Only new candle's volume
 
