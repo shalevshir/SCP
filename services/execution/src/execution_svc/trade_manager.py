@@ -159,6 +159,15 @@ class TradeManager:
         current_bar = self._sm_manager._bar_counter
         bars_elapsed = current_bar - entry_bar
         
+        # Check if trade just reached +1R (and persist to database)
+        if not trade.reached_1r:
+            state = self._invalidation_checker._get_trade_state(trade.trade_id)
+            if state.get("reached_1r", False):
+                # Trade just reached +1R - persist to database
+                await self._repo.update_reached_1r(trade.trade_id, True)
+                trade.reached_1r = True
+                logger.info(f"Trade {trade.trade_id} reached +1R, persisted to database")
+        
         # Check all exit conditions
         should_exit, reason = self._invalidation_checker.check_all(
             trade, candle, bars_elapsed, features
@@ -205,6 +214,7 @@ class TradeManager:
             
             # Create trade record
             opened_at = datetime.utcnow()
+            entry_bar_idx = self._sm_manager._bar_counter
             trade_id = await self._repo.insert_trade(
                 signal_id=signal.id,
                 direction=signal.direction,
@@ -214,6 +224,7 @@ class TradeManager:
                 tp_price=signal.tp_price,
                 quantity=1,
                 opened_at=opened_at,
+                entry_bar_idx=entry_bar_idx,
             )
             
             # Calculate risk/reward
@@ -236,6 +247,8 @@ class TradeManager:
                 risk_amount=risk_amount,
                 reward_amount=reward_amount,
                 entry_timestamp=opened_at,
+                entry_bar_idx=entry_bar_idx,
+                reached_1r=False,
             )
             
             # Store in active trades
@@ -386,8 +399,24 @@ class TradeManager:
         
         for trade in open_trades:
             self._active_trades[trade.trade_id] = trade
-            # Set entry bar to 0 (unknown on recovery)
-            self._trade_entry_bars[trade.trade_id] = 0
+            
+            # Restore entry_bar_idx from database
+            if trade.entry_bar_idx is not None:
+                self._trade_entry_bars[trade.trade_id] = trade.entry_bar_idx
+            else:
+                # Fallback: use current bar counter if entry_bar_idx not set
+                # (for trades created before migration)
+                self._trade_entry_bars[trade.trade_id] = self._sm_manager._bar_counter
+                logger.warning(
+                    f"Trade {trade.trade_id} has no entry_bar_idx, using current bar counter"
+                )
+            
+            # Restore invalidation checker state
+            self._invalidation_checker.restore_trade_state(
+                trade.trade_id,
+                reached_1r=trade.reached_1r,
+                vwap_reclaimed=False,  # Would need to persist this too for full recovery
+            )
         
         logger.info(f"Restored {len(open_trades)} active trades from database")
         

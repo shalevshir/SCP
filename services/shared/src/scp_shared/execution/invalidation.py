@@ -331,6 +331,25 @@ class InvalidationChecker:
 
         return False, None
 
+    def restore_trade_state(
+        self, trade_id: str, reached_1r: bool = False, vwap_reclaimed: bool = False
+    ) -> None:
+        """Restore trade state from persistence (for service restart recovery).
+
+        Args:
+            trade_id: Trade ID to restore
+            reached_1r: Whether trade has reached +1R
+            vwap_reclaimed: Whether VWAP has been reclaimed (for FADE setups)
+        """
+        self._trade_states[trade_id] = {
+            "reached_1r": reached_1r,
+            "vwap_reclaimed": vwap_reclaimed,
+        }
+        logger.debug(
+            f"Restored state for trade {trade_id}: reached_1r={reached_1r}, "
+            f"vwap_reclaimed={vwap_reclaimed}"
+        )
+
     def reset_trade(self, trade_id: str) -> None:
         """Reset state for a specific trade.
 

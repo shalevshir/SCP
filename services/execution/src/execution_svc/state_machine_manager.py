@@ -201,7 +201,9 @@ class StateMachineManager:
                 if row["confirmations"]:
                     sm.confirmations = set(row["confirmations"])
                 
-                self._state_machines[row["signal_id"]] = sm
+                # Convert UUID to string for consistent key type
+                # (asyncpg returns UUID objects, but all lookups use strings)
+                self._state_machines[str(row["signal_id"])] = sm
                 restored += 1
                 
                 logger.debug(f"Restored state machine for signal {row['signal_id']}")

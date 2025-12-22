@@ -67,7 +67,7 @@ class TradePublisher:
         """
         message_id = await self._publisher.publish(self._closed_stream, trade)
         
-        pnl_str = f"{trade.pnl_points:.2f} points" if trade.pnl_points else "N/A"
+        pnl_str = f"{trade.pnl_points:.2f} points" if trade.pnl_points is not None else "N/A"
         
         logger.info(
             f"Published trade closed: {trade.direction} exit @ {trade.exit_price:.2f} "

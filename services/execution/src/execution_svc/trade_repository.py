@@ -41,6 +41,7 @@ class TradeRepository:
         tp_price: float,
         quantity: int,
         opened_at: datetime,
+        entry_bar_idx: int | None = None,
     ) -> str:
         """Insert new trade record.
         
@@ -53,6 +54,7 @@ class TradeRepository:
             tp_price: Take profit price
             quantity: Number of contracts
             opened_at: Trade open timestamp
+            entry_bar_idx: Bar index when trade was entered
             
         Returns:
             Trade ID (UUID string)
@@ -60,9 +62,9 @@ class TradeRepository:
         query = """
             INSERT INTO trades (
                 signal_id, direction, setup_type, entry_price,
-                sl_price, tp_price, quantity, opened_at, state
+                sl_price, tp_price, quantity, opened_at, entry_bar_idx, state
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'OPEN')
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'OPEN')
             RETURNING id
         """
         
@@ -79,6 +81,7 @@ class TradeRepository:
             tp_price,
             quantity,
             opened_at,
+            entry_bar_idx,
         )
         
         trade_id = str(row["id"]) if row else None
@@ -202,7 +205,7 @@ class TradeRepository:
         query = """
             SELECT id, signal_id, direction, setup_type, entry_price,
                    sl_price, tp_price, quantity, opened_at, closed_at,
-                   exit_price, exit_reason, pnl_points
+                   exit_price, exit_reason, pnl_points, entry_bar_idx, reached_1r
             FROM trades
             WHERE id = $1
         """
@@ -235,6 +238,8 @@ class TradeRepository:
             exit_price=row["exit_price"],
             exit_reason=row["exit_reason"],
             pnl=row["pnl_points"],
+            entry_bar_idx=row["entry_bar_idx"],
+            reached_1r=row["reached_1r"] or False,
         )
     
     async def get_open_trades(self) -> list[TradeRecord]:
@@ -245,7 +250,7 @@ class TradeRepository:
         """
         query = """
             SELECT id, signal_id, direction, setup_type, entry_price,
-                   sl_price, tp_price, quantity, opened_at
+                   sl_price, tp_price, quantity, opened_at, entry_bar_idx, reached_1r
             FROM trades
             WHERE state = 'OPEN'
             ORDER BY opened_at ASC
@@ -274,10 +279,29 @@ class TradeRepository:
                 risk_amount=risk_amount,
                 reward_amount=reward_amount,
                 entry_timestamp=row["opened_at"],
+                entry_bar_idx=row["entry_bar_idx"],
+                reached_1r=row["reached_1r"] or False,
             )
             trades.append(trade)
         
         return trades
+    
+    async def update_reached_1r(self, trade_id: str, reached_1r: bool = True) -> None:
+        """Update reached_1r status for a trade.
+        
+        Args:
+            trade_id: Trade ID
+            reached_1r: Whether trade has reached +1R
+        """
+        query = """
+            UPDATE trades
+            SET reached_1r = $1
+            WHERE id = $2
+        """
+        
+        await self._db_pool.execute(query, reached_1r, UUID(trade_id))
+        
+        logger.debug(f"Updated trade {trade_id} reached_1r={reached_1r}")
     
     async def reconcile_positions(self) -> list[TradeRecord]:
         """Reconcile open trades on startup (for recovery).

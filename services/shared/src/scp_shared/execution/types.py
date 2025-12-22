@@ -26,5 +26,9 @@ class TradeRecord:
     exit_price: float | None = None
     exit_reason: str | None = None
     pnl: float | None = None
+    
+    # State fields for service restart recovery
+    entry_bar_idx: int | None = None  # Bar index when trade was entered
+    reached_1r: bool = False  # Whether trade achieved +1R protection
 
 
