@@ -134,3 +134,128 @@ jobs:
       - name: Check isort import ordering
         run: isort --check-only .
 
+  service-tests:
+    name: Service Tests (${{ matrix.service }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - shared
+          - data-adapter
+          - feature-engine
+          - htf-bias
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install Poetry
+        run: |
+          curl -sSL https://install.python-poetry.org | python3 -
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+      
+      - name: Cache Poetry dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pypoetry
+            services/${{ matrix.service }}/.venv
+          key: poetry-${{ matrix.service }}-${{ runner.os }}-${{ hashFiles(format('services/{0}/poetry.lock', matrix.service)) }}
+          restore-keys: |
+            poetry-${{ matrix.service }}-${{ runner.os }}-
+      
+      - name: Install shared library
+        run: |
+          cd services/shared
+          poetry install --no-interaction --no-ansi
+      
+      - name: Install service dependencies
+        run: |
+          cd services/${{ matrix.service }}
+          poetry install --no-interaction --no-ansi
+      
+      - name: Run service tests
+        run: |
+          cd services/${{ matrix.service }}
+          poetry run pytest tests/ -v --cov=src --cov-report=xml --cov-report=term --junitxml=pytest-results.xml
+      
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-${{ matrix.service }}
+          path: services/${{ matrix.service }}/coverage.xml
+          retention-days: 30
+      
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results-${{ matrix.service }}
+          path: services/${{ matrix.service }}/pytest-results.xml
+          retention-days: 30
+
+  integration-tests:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    if: false  # Disabled until tests are implemented
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Start infrastructure
+        run: |
+          # Will use docker-compose to start Redis + PostgreSQL
+          docker compose -f infra/docker-compose.yml up -d
+          sleep 5
+      
+      - name: Run integration tests
+        run: |
+          # Placeholder for integration tests
+          echo "Integration tests not yet implemented"
+      
+      - name: Stop infrastructure
+        if: always()
+        run: docker compose -f infra/docker-compose.yml down
+
+  e2e-tests:
+    name: E2E Tests
+    runs-on: ubuntu-latest
+    if: false  # Disabled until tests are implemented
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Start all services
+        run: |
+          # Will start full microservices stack
+          docker compose -f infra/docker-compose.yml -f infra/docker-compose.services.yml up -d
+          sleep 10
+      
+      - name: Run E2E tests
+        run: |
+          # Placeholder for E2E tests
+          echo "E2E tests not yet implemented"
+      
+      - name: Stop all services
+        if: always()
+        run: docker compose -f infra/docker-compose.yml -f infra/docker-compose.services.yml down
+
