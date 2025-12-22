@@ -1,0 +1,170 @@
+# RuleEngine Scoring Configuration
+# Defines scoring weights and thresholds for different setup types
+# following Shir Capital SOP requirements
+
+# Setup type configurations
+# Each setup has:
+#   - min_score: Minimum score required for A+ confidence
+#   - weights: Dict of factor names to point values (max 10 total)
+
+setup_types:
+  # VWAP Reclaim: Reclaim setup after price sweeps and reclaims VWAP
+  VWAP_RECLAIM:
+    min_score: 8
+    weights:
+      structure_alignment: 2.5  # Price action matches HTF bias (enhanced with BOS/CHoCH)
+      vwap_relation: 2          # Consistent with trend
+      rsi_state: 1.5            # Mid-reset continuation
+      ema_stack: 1.5            # 9>20>50 or reverse
+      dxy_corr: 1.0             # Inverse correlation intact (<-0.6)
+      fvg_alignment: 0.5        # FVG support for trend direction
+      liquidity_sweep: 0.5      # Liquidity sweep alignment
+      htf_bonus: 0.5            # HTF bias score ≥8
+
+  # VWAP Fade: Counter-trend setup at extreme deviation
+  VWAP_FADE:
+    min_score: 8              # Aligned with other setups (factors implemented but rarely trigger on historical data)
+    weights:
+      vwap_deviation: 3       # Significant deviation from VWAP
+      rsi_extreme: 3          # RSI at overbought/oversold
+      rejection_candle: 2     # Strong rejection candle pattern
+      volume_spike: 2         # Volume confirmation
+
+  # DXY Continuation: Gold trade aligned with DXY inverse correlation
+  DXY_CONTINUATION:
+    min_score: 8
+    weights:
+      structure_alignment: 2.5  # Price action matches HTF bias (enhanced with BOS/CHoCH)
+      dxy_corr: 3               # Strong inverse correlation (primary factor)
+      rsi_mid_reset: 1.5        # RSI in continuation zone
+      vwap_relation: 1.5        # VWAP support/resistance
+      ema_stack: 1              # EMA alignment bonus
+      fvg_alignment: 0.5        # FVG support for trend direction
+
+# Confidence thresholds (global)
+confidence:
+  a_plus: 8.0      # Score >= 8.0 -> A+ (tradeable)
+  watch: 6.0       # Score 6.0-7.9 -> Watch (monitor only)
+  reject: 0.0      # Score < 6.0 -> Reject (invalid)
+
+# VWAP_RECLAIM expansion gate configuration
+# Controls entry timing by requiring expansion signals before execution
+vwap_reclaim:
+  expansion_gate:
+    bos_recency_threshold: 10      # bars - BOS must be within this for full readiness
+    range_expansion_ratio: 1.5     # current range vs median - signals volatility expansion
+    atr_expansion_threshold: 0.7   # ATR ratio must exceed this - signals rising volatility
+    displacement_body_ratio: 2.0   # body vs average body - signals strong momentum
+
+# SOP validation requirements
+validation:
+  # DXY correlation threshold for Gold trades
+  dxy_corr_threshold: -0.6  # Must be < -0.6 for valid inverse correlation
+  
+  # Multi-window DXY correlation weights
+  # Used for enhanced correlation analysis across multiple timeframes
+  # Weights must sum to 1.0
+  dxy_multiwindow_weights:
+    15min: 0.5   # Short-term correlation (recent relationship)
+    30min: 0.3   # Medium-term correlation
+    60min: 0.2   # Long-term correlation (macro trend)
+  
+  # Valid trading sessions (hours in UTC)
+  sessions:
+    - name: "London Open"
+      start: "07:00"
+      end: "09:00"
+    - name: "New York Open"
+      start: "13:30"
+      end: "16:00"
+  
+  # Enforcer tiers and their allowed setup types
+  tiers:
+    Conservative:
+      allowed_setups: ["VWAP_RECLAIM", "DXY_CONTINUATION"]
+      max_trades_per_day: 2
+    Early Mild:
+      allowed_setups: ["VWAP_RECLAIM", "DXY_CONTINUATION"]
+      max_trades_per_day: 2
+    Mild:
+      allowed_setups: ["VWAP_RECLAIM", "VWAP_FADE", "DXY_CONTINUATION"]
+      max_trades_per_day: 3
+    Offensive:
+      allowed_setups: ["VWAP_RECLAIM", "VWAP_FADE", "DXY_CONTINUATION"]
+      max_trades_per_day: 4
+
+# Factor scoring logic definitions
+# These guide how individual factors are evaluated
+factors:
+  structure_alignment:
+    description: "Price action matches HTF bias"
+    max_points: 2
+    criteria:
+      - "Direction matches HTF bias (bullish/bearish)"
+      - "Recent swing structure intact (HH/HL or LH/LL)"
+  
+  vwap_relation:
+    description: "VWAP position consistent with trend"
+    max_points: 2
+    criteria:
+      - "Long: Price above VWAP with confirmation"
+      - "Short: Price below VWAP with confirmation"
+  
+  rsi_state:
+    description: "RSI in optimal zone for setup type"
+    max_points: 2
+    criteria:
+      - "Continuation: RSI 40-60 (mid-reset)"
+      - "Fade: RSI <30 or >70 (extreme)"
+  
+  ema_stack:
+    description: "EMA alignment confirms trend"
+    max_points: 2
+    criteria:
+      - "Bullish: EMA9 > EMA20 > EMA50"
+      - "Bearish: EMA9 < EMA20 < EMA50"
+  
+  dxy_corr:
+    description: "DXY inverse correlation for Gold"
+    max_points: 2
+    criteria:
+      - "Correlation coefficient < -0.6"
+      - "DXY trend opposite to Gold direction"
+    notes: |
+      Can use either single-window or multi-window correlation:
+      - Single-window: calculate_dxy_correlation(window=50)
+      - Multi-window: calculate_multiwindow_dxy_correlation()
+        Returns weighted score across 15/30/60 min windows
+        Provides smoother signal with less noise
+  
+  htf_bonus:
+    description: "Higher timeframe bias bonus"
+    max_points: 1
+    criteria:
+      - "HTF bias score ≥ 8/10"
+      - "HTF structure strongly aligned"
+  
+  fvg_alignment:
+    description: "FVG alignment with bias direction"
+    max_points: 0.5
+    criteria:
+      - "Unfilled FVGs supporting trend direction"
+      - "Positive alignment increases score"
+      - "Score range: -2 to +2 from HTF, normalized to 0 to max_points"
+    notes: |
+      FVG (Fair Value Gap) alignment is calculated by the HTF engine.
+      Only positive contributions are counted in the final score.
+      Opposing FVGs reduce the HTF bias score but don't directly penalize this factor.
+  
+  liquidity_sweep:
+    description: "Liquidity sweep alignment with signal direction"
+    max_points: 0.5
+    criteria:
+      - "Aligned sweep (bullish + long, bearish + short): +0.5 points"
+      - "Opposing sweep: -0.25 points (penalty)"
+      - "No sweep detected: 0 points"
+    notes: |
+      Liquidity sweeps indicate institutional order flow.
+      Aligned sweeps confirm the trade direction.
+      Opposing sweeps suggest caution (reduction in score).
+
