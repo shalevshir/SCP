@@ -293,3 +293,4 @@ class TestCandleSynchronizer:
             sync.add_candle(unknown)
 
 
+

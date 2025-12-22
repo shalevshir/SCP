@@ -229,6 +229,119 @@ class TestDXYContinuationDetector:
         assert result is True
 
 
+class TestATRFallbackLogic:
+    """Test ATR fallback logic for displacement calculation.
+    
+    When ATR is unavailable, the fallback must allow valid displacement candles
+    to pass. The previous fallback (using full range as ATR) made it mathematically
+    impossible for the displacement check to pass since body <= range always.
+    """
+
+    def test_strong_displacement_candle_without_atr_should_pass(self):
+        """Test that a strong displacement candle can pass when ATR is missing.
+        
+        Bug: When ATR is unavailable, fallback used (high - low) as ATR.
+        Since body = |close - open| <= (high - low) always, then
+        displacement = body / (high - low) <= 1.0, which can never
+        satisfy the displacement >= 1.2 requirement.
+        
+        Fix: Use a smaller ATR estimate (e.g., 0.65 * range) to allow
+        high-body-ratio candles to pass.
+        """
+        htf_bias = HTFBias(
+            bias="bullish",
+            direction="long",
+            score=8.5,
+            confidence="high",
+            dxy_corr_1m=-0.4,
+            dxy_corr_5m=-0.5,
+            dxy_structure="LL",
+            bars_since_bos=8,
+            dxy_chop_5m=False,
+            chop_detected=False,
+        )
+
+        # Strong displacement candle: large body, small wicks
+        # Body = 5.0, Range = 6.0, body/range = 0.83
+        # With old fallback (ATR = 6.0): displacement = 5.0/6.0 = 0.83 < 1.2 ❌
+        # With new fallback (ATR = 3.9): displacement = 5.0/3.9 = 1.28 >= 1.2 ✅
+        features = pd.Series(
+            {
+                "open": 100.0,
+                "close": 105.0,  # Body = 5.0
+                "high": 105.5,  # Small upper wick
+                "low": 99.5,  # Small lower wick
+                # ATR intentionally missing
+                "structure_clarity": 0.7,
+                "is_chop": False,
+            }
+        )
+
+        df = pd.DataFrame(
+            {
+                "high": [102, 104, 103],
+                "low": [98, 100, 101],  # HL pattern
+            }
+        )
+
+        # Should detect continuation with strong body-to-range ratio
+        result = detect_dxy_continuation(features, htf_bias, df)
+        assert result is True, (
+            "Strong displacement candle (large body, small wicks) should pass "
+            "even when ATR is missing. Fallback ATR must be small enough to allow "
+            "displacement ratio >= 1.2"
+        )
+
+    def test_weak_body_candle_without_atr_should_fail(self):
+        """Test that weak-bodied candles still fail when ATR is missing.
+        
+        This verifies that the ATR fallback fix (0.65x range) doesn't make
+        the displacement check too lenient. Candles with large wicks and
+        small bodies should still fail.
+        """
+        htf_bias = HTFBias(
+            bias="bullish",
+            direction="long",
+            score=8.5,
+            confidence="high",
+            dxy_corr_1m=-0.4,
+            dxy_corr_5m=-0.5,
+            dxy_structure="LL",
+            bars_since_bos=8,
+            dxy_chop_5m=False,
+            chop_detected=False,
+        )
+
+        # Weak displacement candle: small body, large wicks
+        # Body = 2.0, Range = 6.0, body/range = 0.33
+        # With fallback (ATR = 3.9): displacement = 2.0/3.9 = 0.51 < 1.2 ❌
+        features = pd.Series(
+            {
+                "open": 100.0,
+                "close": 102.0,  # Small body = 2.0
+                "high": 105.5,  # Large upper wick
+                "low": 99.5,  # Large lower wick
+                # ATR intentionally missing
+                "structure_clarity": 0.7,
+                "is_chop": False,
+            }
+        )
+
+        df = pd.DataFrame(
+            {
+                "high": [102, 104, 103],
+                "low": [98, 100, 101],  # HL pattern
+            }
+        )
+
+        # Should reject weak displacement (lots of wicks)
+        result = detect_dxy_continuation(features, htf_bias, df)
+        assert result is False, (
+            "Weak displacement candle (small body, large wicks) should still "
+            "fail the displacement check even with the ATR fallback"
+        )
+
+
 class TestNoiseZoneHandling:
     """Test that noise zone is handled via score penalty, not hard rejection.
     

@@ -175,8 +175,12 @@ def detect_dxy_continuation(
         atr = features.get("atr")
         if atr is None or atr == 0:
             # Fallback: estimate ATR from recent candle range
+            # Use 0.65x range to allow high body-to-wick ratio candles to pass
+            # displacement check (displacement >= 1.2). Using full range would
+            # make it mathematically impossible since body <= range always.
+            # With 0.65x, a candle with 80%+ body-to-range ratio will pass.
             candle_range = current_candle_high - current_candle_low
-            atr = candle_range if candle_range > 0 else 1.0
+            atr = (0.65 * candle_range) if candle_range > 0 else 1.0
 
         displacement = calculate_displacement_strength(
             current_candle_open,
