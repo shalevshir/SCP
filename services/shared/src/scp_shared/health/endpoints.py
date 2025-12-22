@@ -83,7 +83,10 @@ def create_health_router(
         if readiness_checks:
             for check_name, check_func in readiness_checks.items():
                 try:
-                    checks[check_name] = check_func()
+                    result = check_func()
+                    checks[check_name] = result
+                    if not result:
+                        all_ready = False
                 except Exception:
                     checks[check_name] = False
                     all_ready = False
