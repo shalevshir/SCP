@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
+from zoneinfo import ZoneInfo
 
 from scp_shared.common.logger import get_logger
 from scp_shared.database import DatabasePool
@@ -36,34 +37,56 @@ class StateRepository:
     """Repository for persisting daily state.
     
     Handles loading and saving daily trading state to/from the database.
+    Uses the trading timezone to determine the trading date, ensuring
+    consistency with SessionValidator.
     
     Args:
         db_pool: Database connection pool
+        trading_timezone: Timezone string (e.g., "Europe/London") for trading date calculation
     
     Example:
-        >>> repo = StateRepository(db_pool)
+        >>> repo = StateRepository(db_pool, trading_timezone="Europe/London")
         >>> state = await repo.load_today()
         >>> state.trades_count += 1
         >>> await repo.save(state)
     """
     
-    def __init__(self, db_pool: DatabasePool) -> None:
+    def __init__(self, db_pool: DatabasePool, trading_timezone: str) -> None:
         """Initialize state repository.
         
         Args:
             db_pool: Database connection pool
+            trading_timezone: Timezone string (e.g., "Europe/London") for trading date calculation
         """
         self._db_pool = db_pool
+        self._tz = ZoneInfo(trading_timezone)
+        
+        logger.info(f"StateRepository initialized with trading timezone: {trading_timezone}")
+    
+    def _get_trading_date(self) -> date:
+        """Get the current trading date in the trading timezone.
+        
+        Converts the current UTC time to the trading timezone and returns
+        the date. This ensures consistency with SessionValidator which uses
+        the same timezone to determine trading days.
+        
+        Returns:
+            Trading date in the configured timezone
+        """
+        now_utc = datetime.now(timezone.utc)
+        local_dt = now_utc.astimezone(self._tz)
+        return local_dt.date()
     
     async def load_today(self) -> DailyState:
         """Load today's state from database.
         
-        If no record exists for today, returns a fresh state.
+        Uses the trading timezone to determine "today", ensuring consistency
+        with SessionValidator. If no record exists for today, returns a fresh state.
         
         Returns:
-            Daily state for today
+            Daily state for today (in trading timezone)
         """
-        today = date.today()
+        today = self._get_trading_date()
         return await self.load(today)
     
     async def load(self, trading_date: date) -> DailyState:
@@ -149,14 +172,17 @@ class StateRepository:
     async def reset_today(self) -> DailyState:
         """Reset today's state to fresh values.
         
+        Uses the trading timezone to determine "today", ensuring consistency
+        with SessionValidator.
+        
         Returns:
-            Fresh daily state for today
+            Fresh daily state for today (in trading timezone)
         """
-        today = date.today()
+        today = self._get_trading_date()
         fresh_state = DailyState(date=today)
         await self.save(fresh_state)
         
-        logger.info(f"Reset state for {today}")
+        logger.info(f"Reset state for {today} (trading timezone: {self._tz.key})")
         
         return fresh_state
 

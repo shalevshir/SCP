@@ -52,9 +52,13 @@ async def process_features(
     bias_cache = HTFBiasCache(ttl_seconds=config.bias_cache_ttl_seconds)
     signal_engine = SignalEngine()
     signal_publisher = SignalPublisher(redis_client)
-    state_repo = StateRepository(db_pool)
-    guardrails_service = GuardrailsService(state_repo)
     session_service = SessionValidationService(config_path=config.session_config_path)
+    # StateRepository needs the trading timezone to match SessionValidator's date calculation
+    state_repo = StateRepository(
+        db_pool,
+        trading_timezone=session_service.config.timezone,
+    )
+    guardrails_service = GuardrailsService(state_repo)
     
     # Load daily state
     await guardrails_service.load_state()
