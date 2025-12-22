@@ -44,7 +44,45 @@ make shared-test
 # Service-specific tests
 cd services/data-adapter
 poetry run pytest
+
+# Run tests with coverage for a single service
+make service-test-coverage SERVICE=data-adapter
+
+# Run tests with coverage for all services
+make service-test-coverage-all
 ```
+
+### 5. Coverage Reports
+
+The project includes comprehensive test coverage tracking:
+
+**Individual Service Coverage:**
+```bash
+# Test a specific service with detailed coverage
+./scripts/test_coverage_service.sh execution
+
+# Or using Make
+make service-test-coverage SERVICE=execution
+```
+
+**Combined Coverage Report:**
+```bash
+# Test all services and generate combined report
+./scripts/test_coverage_all.sh
+
+# Or using Make
+make service-test-coverage-all
+```
+
+**Output:**
+- Individual reports: `services/<service-name>/coverage_html/index.html`
+- Combined report: `coverage_reports/coverage_report.md`
+- JSON summary: `coverage_reports/coverage_summary.json`
+
+**Coverage Thresholds:**
+- 🟢 Excellent: ≥ 80% coverage
+- 🟡 Good: ≥ 60% coverage
+- 🔴 Needs Improvement: < 60% coverage
 
 ## Service Architecture
 

@@ -1,29 +1,161 @@
-.venv/
-.env
-!.env.example
+# Byte-compiled / optimized / DLL files
 __pycache__/
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-.coverage
-htmlcov/
-*.cover
-.hypothesis/
-dist/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
 build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
 *.egg-info/
-.DS_Store
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+coverage_html/
+coverage.json
+pytest-results.xml
+coverage_reports/
+
+# Translations
+*.mo
+*.pot
+
+# Django stuff:
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+
+# Flask stuff:
+instance/
+.webassets-cache
+
+# Scrapy stuff:
+.scrapy
+
+# Sphinx documentation
+docs/_build/
+
+# PyBuilder
+target/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IPython
+profile_default/
+ipython_config.py
+
+# pyenv
+.python-version
+
+# pipenv
+Pipfile.lock
+
+# PEP 582
+__pypackages__/
+
+# Celery stuff
+celerybeat-schedule
+celerybeat.pid
+
+# SageMath parsed files
+*.sage.py
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Spyder project settings
+.spyderproject
+.spyproject
+
+# Rope project settings
+.ropeproject
+
+# mkdocs documentation
+/site
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Project specific
+# Database files (SQLite)
+db/**
+
+# Backtest output directory
+output/
+
+# Logs (but keep .gitkeep)
 logs/*
 !logs/.gitkeep
+*.log
 
-# Exclude large timeframe data (can be regenerated from scripts)
+# Data files (keep only 1m base data for resampling)
 data/gc_dx_ohlcv/*-1s.csv
-data/gc_dx_ohlcv202*/
-db/**
-!.gitkeep
+data/gc_dx_ohlcv/*-15m.csv
+data/gc_dx_ohlcv/*-1h.csv
+data/gc_dx_ohlcv/*-5m.csv
 
-.cursor/rules/sl_tp_rules.mdc
-docs/CEO-Progress-Summary.md
-docs/Critical-Issues-Analysis.md
-output/
-.cursor/debug.log
+# Keep 1-minute data only (used as base for resampling)
+!data/gc_dx_ohlcv/*-1m.csv
+
+# Development config files with secrets
+config/dev.local.json
+
+# Ruff cache
+.ruff_cache/
