@@ -2,6 +2,7 @@
 
 import asyncio
 from contextlib import asynccontextmanager
+from datetime import datetime
 
 import redis.asyncio as redis
 from common.logger import get_logger
@@ -77,6 +78,7 @@ async def warmup_processor(
 async def warmup_htf_aggregator(
     htf_aggregator: HTFCandleAggregator,
     repository: FeatureRepository,
+    symbol: str = "GC",
 ) -> None:
     """Warmup HTF aggregator with current period's 1m candles.
     
@@ -87,12 +89,13 @@ async def warmup_htf_aggregator(
     Args:
         htf_aggregator: HTF candle aggregator to warmup
         repository: Repository to load candles from
+        symbol: Symbol to warmup (GC or DXY)
     """
     if not config.enable_warmup:
-        logger.info("Warmup disabled for HTF aggregator")
+        logger.info(f"Warmup disabled for HTF aggregator ({symbol})")
         return
     
-    logger.info("Starting warmup for HTF aggregator...")
+    logger.info(f"Starting warmup for HTF aggregator ({symbol})...")
     
     try:
         from datetime import datetime, timezone
@@ -100,13 +103,13 @@ async def warmup_htf_aggregator(
         # Load recent 1m candles (enough to cover current 1h period)
         # Maximum is 59 candles if we start at the last minute of an hour
         candle_pairs = await repository.load_recent_candles(
-            symbol="GC",
+            symbol=symbol,
             timeframe="1m",
             count=60,  # Load up to 1 hour of 1m candles
         )
         
         if not candle_pairs:
-            logger.warning("No 1m candles found for HTF aggregator warmup")
+            logger.warning(f"No 1m candles found for HTF aggregator warmup ({symbol})")
             return
         
         # Get current time to determine current period
@@ -118,32 +121,39 @@ async def warmup_htf_aggregator(
         
         # Filter candles to only include current period(s)
         # We want candles from the start of current hour up to now
-        current_period_candles = [
-            (gc, dxy) for gc, dxy in candle_pairs
-            if gc.timestamp >= current_1h_start and gc.timestamp < now
-        ]
+        # Extract the appropriate candle from each pair
+        if symbol == "GC":
+            current_period_candles = [
+                gc for gc, _ in candle_pairs
+                if gc.timestamp >= current_1h_start and gc.timestamp < now
+            ]
+        else:  # DXY
+            current_period_candles = [
+                dxy for _, dxy in candle_pairs
+                if dxy.timestamp >= current_1h_start and dxy.timestamp < now
+            ]
         
         if not current_period_candles:
-            logger.info("No candles in current period - HTF aggregator starts fresh")
+            logger.info(f"No candles in current period - HTF aggregator starts fresh ({symbol})")
             return
         
         logger.info(
             f"Loaded {len(current_period_candles)} candles for current period "
-            f"(15m start: {current_15m_start}, 1h start: {current_1h_start})"
+            f"({symbol}, 15m start: {current_15m_start}, 1h start: {current_1h_start})"
         )
         
         # Replay through aggregator (discarding any emitted candles since we're mid-period)
-        for gc_candle, _ in current_period_candles:
-            htf_aggregator.add_1m_candle(gc_candle)
+        for candle in current_period_candles:
+            htf_aggregator.add_1m_candle(candle)
         
         logger.info(
-            f"HTF aggregator warmup complete: "
+            f"HTF aggregator warmup complete ({symbol}): "
             f"15m state={'active' if htf_aggregator.current_15m_start else 'empty'}, "
             f"1h state={'active' if htf_aggregator.current_1h_start else 'empty'}"
         )
     
     except Exception as e:
-        logger.error(f"HTF aggregator warmup failed: {e}", exc_info=True)
+        logger.error(f"HTF aggregator warmup failed ({symbol}): {e}", exc_info=True)
         # Continue without warmup
 
 
@@ -161,7 +171,8 @@ async def process_candles(
     
     # Initialize components
     synchronizer = CandleSynchronizer(timeout_seconds=60)
-    htf_aggregator = HTFCandleAggregator()
+    htf_aggregator_gc = HTFCandleAggregator()
+    htf_aggregator_dxy = HTFCandleAggregator()
     
     # Feature processors for each timeframe
     processor_1m = FeatureProcessor(timeframe="1m")
@@ -177,8 +188,9 @@ async def process_candles(
     await warmup_processor(processor_15m, repository, "15m")
     await warmup_processor(processor_1h, repository, "1h")
     
-    # Warmup HTF aggregator with current period's candles
-    await warmup_htf_aggregator(htf_aggregator, repository)
+    # Warmup HTF aggregators with current period's candles
+    await warmup_htf_aggregator(htf_aggregator_gc, repository, symbol="GC")
+    await warmup_htf_aggregator(htf_aggregator_dxy, repository, symbol="DXY")
     
     # Create consumers for GC and DXY candles
     gc_consumer = RedisStreamConsumer(
@@ -213,7 +225,8 @@ async def process_candles(
                         processor_1m,
                         processor_15m,
                         processor_1h,
-                        htf_aggregator,
+                        htf_aggregator_gc,
+                        htf_aggregator_dxy,
                         publisher,
                         repository,
                     )
@@ -226,7 +239,8 @@ async def process_candles(
                         processor_1m,
                         processor_15m,
                         processor_1h,
-                        htf_aggregator,
+                        htf_aggregator_gc,
+                        htf_aggregator_dxy,
                         publisher,
                         repository,
                     )
@@ -249,7 +263,8 @@ async def process_candle_pair(
     processor_1m: FeatureProcessor,
     processor_15m: FeatureProcessor,
     processor_1h: FeatureProcessor,
-    htf_aggregator: HTFCandleAggregator,
+    htf_aggregator_gc: HTFCandleAggregator,
+    htf_aggregator_dxy: HTFCandleAggregator,
     publisher: FeaturePublisher,
     repository: FeatureRepository,
 ) -> None:
@@ -260,7 +275,8 @@ async def process_candle_pair(
         processor_1m: 1m feature processor
         processor_15m: 15m feature processor
         processor_1h: 1h feature processor
-        htf_aggregator: HTF candle aggregator
+        htf_aggregator_gc: HTF candle aggregator for GC
+        htf_aggregator_dxy: HTF candle aggregator for DXY
         publisher: Feature publisher
         repository: Feature repository
     """
@@ -280,29 +296,50 @@ async def process_candle_pair(
         f"(warmed_up={processor_1m.is_warmed_up()})"
     )
     
-    # Check for HTF boundaries
-    htf_candles = htf_aggregator.add_1m_candle(gc_candle)
+    # Add both candles to their respective HTF aggregators
+    htf_candles_gc = htf_aggregator_gc.add_1m_candle(gc_candle)
+    htf_candles_dxy = htf_aggregator_dxy.add_1m_candle(dxy_candle)
     
-    # Process all emitted HTF candles (may be 0, 1, or 2)
+    # Process HTF candles when both GC and DXY have matching HTF candles
+    # Create a map of DXY HTF candles by timeframe and timestamp
+    dxy_htf_map: dict[tuple[str, datetime], CandleMessage] = {}
+    for dxy_htf in htf_candles_dxy:
+        key = (dxy_htf.timeframe, dxy_htf.timestamp)
+        dxy_htf_map[key] = dxy_htf
+    
+    # Process all emitted GC HTF candles (may be 0, 1, or 2)
     # At hourly boundaries, we get both 15m and 1h candles
-    for htf_candle in htf_candles:
-        # Get corresponding DXY HTF candle (assume same timestamp)
-        # In production, would need to aggregate DXY separately
-        # For now, use the current DXY candle as proxy
+    for htf_candle_gc in htf_candles_gc:
+        # Find matching DXY HTF candle
+        key = (htf_candle_gc.timeframe, htf_candle_gc.timestamp)
+        htf_candle_dxy = dxy_htf_map.get(key)
         
-        if htf_candle.timeframe == "15m":
-            # Process 15m features
-            features_15m = processor_15m.process(htf_candle, dxy_candle)
+        if htf_candle_dxy is None:
+            logger.warning(
+                f"No matching DXY {htf_candle_gc.timeframe} candle for "
+                f"GC candle at {htf_candle_gc.timestamp}. Skipping HTF feature processing."
+            )
+            continue
+        
+        if htf_candle_gc.timeframe == "15m":
+            # Process 15m features with matching 15m DXY candle
+            features_15m = processor_15m.process(htf_candle_gc, htf_candle_dxy)
             await publisher.publish(features_15m)
             await repository.save_features(features_15m)
-            logger.info(f"Processed 15m features: {htf_candle.timestamp}")
+            logger.info(
+                f"Processed 15m features: {htf_candle_gc.timestamp} "
+                f"(GC: {htf_candle_gc.close}, DXY: {htf_candle_dxy.close})"
+            )
         
-        elif htf_candle.timeframe == "1h":
-            # Process 1h features
-            features_1h = processor_1h.process(htf_candle, dxy_candle)
+        elif htf_candle_gc.timeframe == "1h":
+            # Process 1h features with matching 1h DXY candle
+            features_1h = processor_1h.process(htf_candle_gc, htf_candle_dxy)
             await publisher.publish(features_1h)
             await repository.save_features(features_1h)
-            logger.info(f"Processed 1h features: {htf_candle.timestamp}")
+            logger.info(
+                f"Processed 1h features: {htf_candle_gc.timestamp} "
+                f"(GC: {htf_candle_gc.close}, DXY: {htf_candle_dxy.close})"
+            )
 
 
 @asynccontextmanager
