@@ -1,6 +1,5 @@
 """Tests for health check endpoints."""
 
-import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -81,7 +80,9 @@ class TestReadinessEndpoint:
         data = response.json()
         assert data["checks"]["db"] is False
         # BUG: This assertion will fail before the fix
-        assert data["ready"] is False, "Service should NOT be ready when check returns False"
+        assert (
+            data["ready"] is False
+        ), "Service should NOT be ready when check returns False"
 
     def test_ready_with_check_that_raises_exception(self) -> None:
         """Ready endpoint returns ready=False when check raises exception."""

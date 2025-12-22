@@ -1,7 +1,7 @@
 """Tests for database connection utilities.
 
-Note: These are minimal tests since we'd need a real database for full integration tests.
-For now, we test the interface and error handling.
+Note: These are minimal tests since we'd need a real database for full
+integration tests. For now, we test the interface and error handling.
 """
 
 import pytest

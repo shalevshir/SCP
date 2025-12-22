@@ -1,7 +1,7 @@
 """FastAPI health check endpoints."""
 
-from datetime import datetime, timezone
-from typing import Any, Callable
+from collections.abc import Callable
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, status
 from pydantic import BaseModel
@@ -64,7 +64,7 @@ def create_health_router(
         """Liveness probe - always returns 200 if service is running."""
         return HealthResponse(
             status="healthy",
-            timestamp=datetime.now(timezone.utc),
+            timestamp=datetime.now(UTC),
             service=service_name,
             version=version,
         )
@@ -93,7 +93,7 @@ def create_health_router(
 
         return ReadinessResponse(
             ready=all_ready,
-            timestamp=datetime.now(timezone.utc),
+            timestamp=datetime.now(UTC),
             service=service_name,
             checks=checks,
         )

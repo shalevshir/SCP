@@ -1,6 +1,6 @@
 """Tests for Pydantic message schemas."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 from pydantic import ValidationError
@@ -20,7 +20,7 @@ class TestCandleMessage:
     def test_valid_candle_message(self) -> None:
         """Valid candle message is accepted."""
         candle = CandleMessage(
-            timestamp=datetime(2025, 1, 15, 10, 0, tzinfo=timezone.utc),
+            timestamp=datetime(2025, 1, 15, 10, 0, tzinfo=UTC),
             symbol="GC",
             timeframe="1m",
             open=2650.0,
@@ -38,7 +38,7 @@ class TestCandleMessage:
         """Negative prices are rejected."""
         with pytest.raises(ValidationError):
             CandleMessage(
-                timestamp=datetime.now(timezone.utc),
+                timestamp=datetime.now(UTC),
                 symbol="GC",
                 timeframe="1m",
                 open=-100.0,  # Invalid
@@ -52,7 +52,7 @@ class TestCandleMessage:
         """Negative volume is rejected."""
         with pytest.raises(ValidationError):
             CandleMessage(
-                timestamp=datetime.now(timezone.utc),
+                timestamp=datetime.now(UTC),
                 symbol="GC",
                 timeframe="1m",
                 open=2650.0,
@@ -65,7 +65,7 @@ class TestCandleMessage:
     def test_json_serialization(self) -> None:
         """Candle can be serialized to JSON."""
         candle = CandleMessage(
-            timestamp=datetime(2025, 1, 15, 10, 0, tzinfo=timezone.utc),
+            timestamp=datetime(2025, 1, 15, 10, 0, tzinfo=UTC),
             symbol="GC",
             timeframe="1m",
             open=2650.0,
@@ -91,7 +91,7 @@ class TestFeaturesMessage:
     def test_valid_features_message(self) -> None:
         """Valid features message is accepted."""
         features = FeaturesMessage(
-            timestamp=datetime.now(timezone.utc),
+            timestamp=datetime.now(UTC),
             symbol="GC",
             timeframe="1m",
             close=2651.0,
@@ -112,7 +112,7 @@ class TestFeaturesMessage:
         """RSI must be between 0 and 100."""
         with pytest.raises(ValidationError):
             FeaturesMessage(
-                timestamp=datetime.now(timezone.utc),
+                timestamp=datetime.now(UTC),
                 symbol="GC",
                 timeframe="1m",
                 close=2651.0,
@@ -123,7 +123,7 @@ class TestFeaturesMessage:
         """Correlation must be between -1 and 1."""
         with pytest.raises(ValidationError):
             FeaturesMessage(
-                timestamp=datetime.now(timezone.utc),
+                timestamp=datetime.now(UTC),
                 symbol="GC",
                 timeframe="1m",
                 close=2651.0,
@@ -133,7 +133,7 @@ class TestFeaturesMessage:
     def test_partial_features_allowed(self) -> None:
         """Features can be None during warmup."""
         features = FeaturesMessage(
-            timestamp=datetime.now(timezone.utc),
+            timestamp=datetime.now(UTC),
             symbol="GC",
             timeframe="1m",
             close=2651.0,
@@ -151,7 +151,7 @@ class TestHTFBiasMessage:
     def test_valid_htf_bias_message(self) -> None:
         """Valid HTF bias message is accepted."""
         bias = HTFBiasMessage(
-            timestamp=datetime.now(timezone.utc),
+            timestamp=datetime.now(UTC),
             bias="bullish",
             score=8.5,
             confidence="A+",
@@ -168,7 +168,7 @@ class TestHTFBiasMessage:
         """Invalid bias value is rejected."""
         with pytest.raises(ValidationError):
             HTFBiasMessage(
-                timestamp=datetime.now(timezone.utc),
+                timestamp=datetime.now(UTC),
                 bias="sideways",  # Invalid
                 score=8.5,
                 confidence="A+",
@@ -180,7 +180,7 @@ class TestHTFBiasMessage:
         """Score must be between 0 and 10."""
         with pytest.raises(ValidationError):
             HTFBiasMessage(
-                timestamp=datetime.now(timezone.utc),
+                timestamp=datetime.now(UTC),
                 bias="bullish",
                 score=15.0,  # Invalid
                 confidence="A+",
@@ -196,7 +196,7 @@ class TestSignalMessage:
         """Valid signal message is accepted."""
         signal = SignalMessage(
             id="550e8400-e29b-41d4-a716-446655440000",
-            timestamp=datetime.now(timezone.utc),
+            timestamp=datetime.now(UTC),
             direction="long",
             setup_type="VWAP_RECLAIM",
             score=9.0,
@@ -215,7 +215,7 @@ class TestSignalMessage:
         with pytest.raises(ValidationError):
             SignalMessage(
                 id="550e8400-e29b-41d4-a716-446655440000",
-                timestamp=datetime.now(timezone.utc),
+                timestamp=datetime.now(UTC),
                 direction="neutral",  # Invalid
                 setup_type="VWAP_RECLAIM",
                 score=9.0,
@@ -240,7 +240,7 @@ class TestTradeMessage:
             sl_price=2645.0,
             tp_price=2663.0,
             quantity=1,
-            opened_at=datetime.now(timezone.utc),
+            opened_at=datetime.now(UTC),
         )
 
         assert trade.direction == "long"
@@ -256,8 +256,8 @@ class TestTradeMessage:
             sl_price=2645.0,
             tp_price=2663.0,
             quantity=1,
-            opened_at=datetime.now(timezone.utc),
-            closed_at=datetime.now(timezone.utc),
+            opened_at=datetime.now(UTC),
+            closed_at=datetime.now(UTC),
             exit_price=2663.0,
             pnl_points=12.0,
             exit_reason="TP_HIT",
