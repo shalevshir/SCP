@@ -57,14 +57,16 @@ echo "========================================="
 echo "Generating combined coverage report"
 echo "========================================="
 
-# Check if coverage-combine is available, if not install it
-if ! command -v coverage &> /dev/null; then
-    echo "Installing coverage tool..."
-    pip install coverage
+# Coverage is managed by Poetry, no need to install separately
+# Just verify it's available via poetry run
+if ! poetry run coverage --version &> /dev/null; then
+    echo "Error: coverage tool not available in Poetry environment"
+    echo "Run: poetry install"
+    exit 1
 fi
 
 # Create a script to parse and combine coverage
-python3 << 'PYTHON_SCRIPT'
+poetry run python << 'PYTHON_SCRIPT'
 import json
 import os
 from pathlib import Path

@@ -299,3 +299,4 @@ All changes maintain backward compatibility:
 - Core logic verified: SHORT detection, dwell gate, structure checks all functional
 
 
+

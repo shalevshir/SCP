@@ -271,3 +271,4 @@ async def test_daily_state_blocks_trading_at_pdll(
     assert daily_state.daily_pnl == -600.0
     # Note: pdll_hit flag is set on first can_trade() check
 
+
