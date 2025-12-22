@@ -16,3 +16,4 @@ COMMENT ON COLUMN trades.reached_1r IS 'Whether trade has reached +1R (grants pr
 -- Create index for querying trades by entry_bar_idx (useful for debugging)
 CREATE INDEX idx_trades_entry_bar_idx ON trades(entry_bar_idx) WHERE entry_bar_idx IS NOT NULL;
 
+
