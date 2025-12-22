@@ -1,0 +1,256 @@
+"""Tests for HTFCandleAggregator."""
+
+import pytest
+from datetime import datetime, timezone
+
+from feature_engine_svc.htf_aggregator import HTFCandleAggregator
+from scp_shared.messaging.schemas import CandleMessage
+
+
+class TestHTFCandleAggregator:
+    """Test HTF candle aggregation (1m to 15m/1h)."""
+    
+    def test_15m_boundary_detection(self):
+        """15m boundaries detected at minutes 14, 29, 44, 59 (end of periods)."""
+        agg = HTFCandleAggregator()
+        
+        # Not a boundary
+        assert not agg.is_15m_boundary(datetime(2025, 1, 15, 10, 5, tzinfo=timezone.utc))
+        assert not agg.is_15m_boundary(datetime(2025, 1, 15, 10, 0, tzinfo=timezone.utc))
+        
+        # Boundaries (end of 15m periods)
+        assert agg.is_15m_boundary(datetime(2025, 1, 15, 10, 14, tzinfo=timezone.utc))
+        assert agg.is_15m_boundary(datetime(2025, 1, 15, 10, 29, tzinfo=timezone.utc))
+        assert agg.is_15m_boundary(datetime(2025, 1, 15, 10, 44, tzinfo=timezone.utc))
+        assert agg.is_15m_boundary(datetime(2025, 1, 15, 10, 59, tzinfo=timezone.utc))
+    
+    def test_1h_boundary_detection(self):
+        """1h boundaries detected at minute 59 (end of period)."""
+        agg = HTFCandleAggregator()
+        
+        # Not a boundary
+        assert not agg.is_1h_boundary(datetime(2025, 1, 15, 10, 5, tzinfo=timezone.utc))
+        assert not agg.is_1h_boundary(datetime(2025, 1, 15, 10, 15, tzinfo=timezone.utc))
+        assert not agg.is_1h_boundary(datetime(2025, 1, 15, 10, 0, tzinfo=timezone.utc))
+        
+        # Boundaries (end of 1h periods)
+        assert agg.is_1h_boundary(datetime(2025, 1, 15, 10, 59, tzinfo=timezone.utc))
+        assert agg.is_1h_boundary(datetime(2025, 1, 15, 11, 59, tzinfo=timezone.utc))
+    
+    def test_15m_aggregation_basic(self):
+        """15 x 1m candles aggregate into 1 x 15m candle."""
+        agg = HTFCandleAggregator()
+        
+        # Feed 15 x 1m candles
+        for i in range(15):
+            candle = CandleMessage(
+                timestamp=datetime(2025, 1, 15, 10, i, tzinfo=timezone.utc),
+                symbol="GC",
+                timeframe="1m",
+                open=2650.0 + i,
+                high=2655.0 + i,
+                low=2648.0 + i,
+                close=2652.0 + i,
+                volume=1000.0,
+            )
+            result = agg.add_1m_candle(candle)
+            
+            # No 15m candle until boundary
+            if i < 14:
+                assert result is None
+            else:
+                # At 10:14, should emit 15m candle for 10:00-10:14
+                assert result is not None
+                candle_15m = result
+                assert candle_15m.timeframe == "15m"
+                assert candle_15m.timestamp == datetime(2025, 1, 15, 10, 0, tzinfo=timezone.utc)
+                assert candle_15m.open == 2650.0  # First candle open
+                assert candle_15m.close == 2666.0  # Last candle close (2652 + 14)
+                assert candle_15m.high == 2669.0  # Max high (2655 + 14)
+                assert candle_15m.low == 2648.0  # Min low (first candle)
+                assert candle_15m.volume == 15000.0  # Sum of volumes
+    
+    def test_1h_aggregation_basic(self):
+        """60 x 1m candles aggregate into 1 x 1h candle."""
+        agg = HTFCandleAggregator()
+        
+        # Feed 60 x 1m candles
+        for i in range(60):
+            candle = CandleMessage(
+                timestamp=datetime(2025, 1, 15, 10, i, tzinfo=timezone.utc),
+                symbol="GC",
+                timeframe="1m",
+                open=2650.0 + i * 0.1,
+                high=2655.0 + i * 0.1,
+                low=2648.0 + i * 0.1,
+                close=2652.0 + i * 0.1,
+                volume=1000.0,
+            )
+            result = agg.add_1m_candle(candle)
+            
+            # 15m candles emitted at 14, 29, 44, 59
+            # 1h candle emitted at 59
+            if i == 59:
+                assert result is not None
+                candle_1h = result
+                assert candle_1h.timeframe == "1h"
+                assert candle_1h.timestamp == datetime(2025, 1, 15, 10, 0, tzinfo=timezone.utc)
+                assert candle_1h.open == 2650.0
+                assert abs(candle_1h.close - 2657.9) < 0.01
+                assert candle_1h.volume == 60000.0
+    
+    def test_multiple_15m_periods(self):
+        """Multiple 15m periods handled correctly."""
+        agg = HTFCandleAggregator()
+        
+        candles_15m = []
+        
+        # Feed 30 x 1m candles (2 x 15m periods)
+        for i in range(30):
+            candle = CandleMessage(
+                timestamp=datetime(2025, 1, 15, 10, i, tzinfo=timezone.utc),
+                symbol="GC",
+                timeframe="1m",
+                open=2650.0,
+                high=2655.0,
+                low=2648.0,
+                close=2652.0,
+                volume=1000.0,
+            )
+            result = agg.add_1m_candle(candle)
+            if result and result.timeframe == "15m":
+                candles_15m.append(result)
+        
+        # Should have 2 x 15m candles
+        assert len(candles_15m) == 2
+        assert candles_15m[0].timestamp == datetime(2025, 1, 15, 10, 0, tzinfo=timezone.utc)
+        assert candles_15m[1].timestamp == datetime(2025, 1, 15, 10, 15, tzinfo=timezone.utc)
+    
+    def test_15m_and_1h_emitted_together(self):
+        """At hour boundary, 1h candle emitted (takes precedence over 15m)."""
+        agg = HTFCandleAggregator()
+        
+        # Feed 60 x 1m candles
+        candles_15m = []
+        candles_1h = []
+        
+        for i in range(60):
+            candle = CandleMessage(
+                timestamp=datetime(2025, 1, 15, 10, i, tzinfo=timezone.utc),
+                symbol="GC",
+                timeframe="1m",
+                open=2650.0,
+                high=2655.0,
+                low=2648.0,
+                close=2652.0,
+                volume=1000.0,
+            )
+            result = agg.add_1m_candle(candle)
+            if result:
+                if result.timeframe == "15m":
+                    candles_15m.append(result)
+                elif result.timeframe == "1h":
+                    candles_1h.append(result)
+        
+        # Should have 3 x 15m candles (at 14, 29, 44)
+        # The 4th 15m period (45-59) is included in the 1h candle
+        assert len(candles_15m) == 3
+        
+        # Should have 1 x 1h candle (at 59)
+        assert len(candles_1h) == 1
+    
+    def test_ohlcv_aggregation_correctness(self):
+        """OHLCV values aggregated correctly."""
+        agg = HTFCandleAggregator()
+        
+        # Feed candles with specific OHLCV values
+        candles_1m = [
+            CandleMessage(
+                timestamp=datetime(2025, 1, 15, 10, 0, tzinfo=timezone.utc),
+                symbol="GC", timeframe="1m",
+                open=2650.0, high=2655.0, low=2648.0, close=2652.0, volume=1000.0,
+            ),
+            CandleMessage(
+                timestamp=datetime(2025, 1, 15, 10, 1, tzinfo=timezone.utc),
+                symbol="GC", timeframe="1m",
+                open=2652.0, high=2660.0, low=2650.0, close=2658.0, volume=1500.0,
+            ),
+            CandleMessage(
+                timestamp=datetime(2025, 1, 15, 10, 2, tzinfo=timezone.utc),
+                symbol="GC", timeframe="1m",
+                open=2658.0, high=2662.0, low=2656.0, close=2660.0, volume=1200.0,
+            ),
+        ]
+        
+        for candle in candles_1m:
+            agg.add_1m_candle(candle)
+        
+        # Check 15m buffer state
+        assert agg.current_15m_open == 2650.0  # First open
+        assert agg.current_15m_high == 2662.0  # Max high
+        assert agg.current_15m_low == 2648.0  # Min low
+        assert agg.current_15m_close == 2660.0  # Last close
+        assert agg.current_15m_volume == 3700.0  # Sum
+    
+    def test_reset_after_boundary(self):
+        """Aggregation state resets after boundary."""
+        agg = HTFCandleAggregator()
+        
+        # Feed 15 candles
+        for i in range(15):
+            candle = CandleMessage(
+                timestamp=datetime(2025, 1, 15, 10, i, tzinfo=timezone.utc),
+                symbol="GC",
+                timeframe="1m",
+                open=2650.0,
+                high=2655.0,
+                low=2648.0,
+                close=2652.0,
+                volume=1000.0,
+            )
+            agg.add_1m_candle(candle)
+        
+        # State should be reset
+        assert agg.current_15m_open is None
+        assert agg.current_15m_volume == 0.0
+        
+        # Add first candle of next period
+        candle = CandleMessage(
+            timestamp=datetime(2025, 1, 15, 10, 15, tzinfo=timezone.utc),
+            symbol="GC",
+            timeframe="1m",
+            open=2660.0,
+            high=2665.0,
+            low=2658.0,
+            close=2662.0,
+            volume=1100.0,
+        )
+        agg.add_1m_candle(candle)
+        
+        # New period started
+        assert agg.current_15m_open == 2660.0
+        assert agg.current_15m_volume == 1100.0
+    
+    def test_dxy_symbol_handled(self):
+        """DXY candles handled same as GC."""
+        agg = HTFCandleAggregator()
+        
+        # Feed 15 x 1m DXY candles
+        for i in range(15):
+            candle = CandleMessage(
+                timestamp=datetime(2025, 1, 15, 10, i, tzinfo=timezone.utc),
+                symbol="DXY",
+                timeframe="1m",
+                open=104.5,
+                high=104.6,
+                low=104.4,
+                close=104.55,
+                volume=0.0,
+            )
+            result = agg.add_1m_candle(candle)
+            
+            if i == 14:
+                assert result is not None
+                assert result.symbol == "DXY"
+                assert result.timeframe == "15m"
+
