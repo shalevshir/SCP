@@ -6,8 +6,8 @@ import pandas as pd
 import pytest
 from scp_shared.indicators.dxy_correlation import calculate_dxy_correlation
 
-# Path to project root (two levels up from this test file)
-PROJECT_ROOT = Path(__file__).parent.parent.parent.parent.parent
+# Path to project root (6 levels up from services/shared/tests/unit/indicators/ to repository root)
+PROJECT_ROOT = Path(__file__).parent.parent.parent.parent.parent.parent
 
 
 class TestDXYCorrelation:

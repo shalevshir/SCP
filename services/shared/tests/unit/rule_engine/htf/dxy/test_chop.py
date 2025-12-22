@@ -10,8 +10,8 @@ import pandas as pd
 import pytest
 from scp_shared.rule_engine.htf.dxy.chop import detect_dxy_chop
 
-# Path to project root
-PROJECT_ROOT = Path(__file__).parent.parent.parent.parent.parent.parent.parent
+# Path to project root (8 levels up from services/shared/tests/unit/rule_engine/htf/dxy/ to repository root)
+PROJECT_ROOT = Path(__file__).parent.parent.parent.parent.parent.parent.parent.parent
 
 
 class TestDXYChopDetection:

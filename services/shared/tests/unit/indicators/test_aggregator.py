@@ -11,8 +11,8 @@ import pandas as pd
 import pytest
 from scp_shared.indicators.aggregator import aggregate_features
 
-# Path to test data
-PROJECT_ROOT = Path(__file__).parent.parent.parent.parent.parent
+# Path to test data (6 levels up from services/shared/tests/unit/indicators/ to repository root)
+PROJECT_ROOT = Path(__file__).parent.parent.parent.parent.parent.parent
 GC_DATA_PATH = PROJECT_ROOT / "data" / "gc_dx_ohlcv" / "GC_ohlcv-1m.csv"
 DXY_DATA_PATH = PROJECT_ROOT / "data" / "gc_dx_ohlcv" / "DX_ohlcv-1m.csv"
 

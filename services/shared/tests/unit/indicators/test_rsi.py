@@ -7,8 +7,8 @@ import pandas as pd
 import pytest
 from scp_shared.indicators.rsi import calculate_rsi
 
-# Path to project root (four levels up from this test file)
-PROJECT_ROOT = Path(__file__).parent.parent.parent.parent.parent
+# Path to project root (6 levels up from services/shared/tests/unit/indicators/ to repository root)
+PROJECT_ROOT = Path(__file__).parent.parent.parent.parent.parent.parent
 
 
 class TestRSICalculation:
