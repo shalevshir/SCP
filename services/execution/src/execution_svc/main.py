@@ -1,37 +1,176 @@
 """Execution Service main entry point."""
 
+import asyncio
+import logging
 from contextlib import asynccontextmanager
 
 import redis.asyncio as redis
 from fastapi import FastAPI
 
+from execution_svc.broker import PaperBroker
 from execution_svc.config import ExecutionConfig
+from execution_svc.state_machine_manager import StateMachineManager
+from execution_svc.trade_manager import TradeManager
+from execution_svc.trade_publisher import TradePublisher
+from execution_svc.trade_repository import TradeRepository
+from scp_shared.common import get_logger, mask_connection_url
+from scp_shared.database import DatabasePool
 from scp_shared.health import create_health_router
+from scp_shared.messaging import RedisStreamConsumer
+from scp_shared.messaging.schemas import CandleMessage, FeaturesMessage, SignalMessage
 
+# Configure basic logging before anything else
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[logging.StreamHandler()]
+)
+
+logger = get_logger(__name__)
+
+# Load configuration
 config = ExecutionConfig()
+
+# Global shutdown event
+shutdown_event = asyncio.Event()
+
+
+async def process_streams(
+    redis_client: redis.Redis,
+    db_pool: DatabasePool,
+) -> None:
+    """Main processing loop: consume signals and candles, manage trades.
+    
+    Args:
+        redis_client: Redis client
+        db_pool: Database pool
+    """
+    logger.info("Starting execution processing loop")
+    
+    # Initialize components
+    broker = PaperBroker()
+    sm_manager = StateMachineManager(db_pool)
+    trade_repo = TradeRepository(db_pool)
+    trade_publisher = TradePublisher(redis_client)
+    trade_manager = TradeManager(
+        broker=broker,
+        state_machine_manager=sm_manager,
+        trade_repository=trade_repo,
+        trade_publisher=trade_publisher,
+        max_active_trades=config.max_active_trades,
+    )
+    
+    # Restore state from database
+    await sm_manager.restore_from_db()
+    await trade_manager.restore_active_trades()
+    
+    # Create consumers
+    signals_consumer = RedisStreamConsumer(
+        redis_client,
+        stream="signals.pending",
+        group="execution",
+        consumer_name="instance-1",
+        message_type=SignalMessage,
+    )
+    
+    candles_consumer = RedisStreamConsumer(
+        redis_client,
+        stream="candles.1m.gc",
+        group="execution",
+        consumer_name="instance-1",
+        message_type=CandleMessage,
+    )
+    
+    features_consumer = RedisStreamConsumer(
+        redis_client,
+        stream="features.1m",
+        group="execution",
+        consumer_name="instance-1",
+        message_type=FeaturesMessage,
+    )
+    
+    logger.info("Execution Service ready - consuming signals and candles")
+    
+    # Cache latest features for invalidation checking
+    latest_features: FeaturesMessage | None = None
+    
+    try:
+        while not shutdown_event.is_set():
+            # Read from all streams
+            signals_list = await signals_consumer.read(count=10, block_ms=1000)
+            candles_list = await candles_consumer.read(count=10, block_ms=1000)
+            features_list = await features_consumer.read(count=10, block_ms=1000)
+            
+            # Update features cache
+            if features_list:
+                latest_features = features_list[-1]  # Keep most recent
+            
+            # Process signals (new trade opportunities)
+            for signal_msg in signals_list:
+                await trade_manager.on_signal(signal_msg)
+                
+                # For Phase 6 simplification: execute immediately at signal price
+                # In production, would wait for confirmation and next bar open
+                if len(trade_manager._active_trades) < config.max_active_trades:
+                    await trade_manager.execute_entry(signal_msg, signal_msg.entry_price)
+            
+            # Process candles (SL/TP monitoring)
+            for candle_msg in candles_list:
+                await trade_manager.on_candle(candle_msg, latest_features)
+    
+    except asyncio.CancelledError:
+        logger.info("Execution processing cancelled")
+        raise
+    except Exception as e:
+        logger.error(f"Error in execution processing loop: {e}", exc_info=True)
+        raise
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
     """Manage application lifecycle."""
-    redis_client = redis.Redis.from_url(config.redis_url)
+    logger.info(f"Starting Execution Service v{config.service_version}")
     
-    # TODO: Initialize VWAPReclaimStateMachine
-    # TODO: Initialize broker client (paper/live)
-    # TODO: Subscribe to signals stream
-    # TODO: Publish trade events
+    # Startup
+    redis_client = redis.Redis.from_url(config.redis_url)
+    logger.info(f"Connected to Redis at {mask_connection_url(config.redis_url)}")
+    
+    db_pool = DatabasePool(config.database_url)
+    await db_pool.connect()
+    logger.info(f"Connected to database at {mask_connection_url(config.database_url)}")
+    
+    # Start processing task
+    processing_task = asyncio.create_task(
+        process_streams(redis_client, db_pool)
+    )
     
     yield
     
-    await redis_client.aclose()
+    # Shutdown
+    logger.info("Shutting down Execution Service")
+    shutdown_event.set()
+    processing_task.cancel()
+    
+    try:
+        await processing_task
+    except asyncio.CancelledError:
+        logger.info("Processing task cancelled successfully")
+    except Exception as e:
+        logger.error(f"Processing task failed: {e}", exc_info=True)
+    finally:
+        await redis_client.aclose()
+        await db_pool.close()
+        logger.info("Execution Service stopped")
 
 
+# Create FastAPI app
 app = FastAPI(
     title="SCP Execution Service",
     version=config.service_version,
     lifespan=lifespan,
 )
 
+# Add health check endpoints
 health_router = create_health_router(
     service_name=config.service_name,
     version=config.service_version,
