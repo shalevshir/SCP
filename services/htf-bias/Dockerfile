@@ -8,9 +8,12 @@ RUN pip install --no-cache-dir poetry==1.7.0
 # Copy shared library first (dependency)
 COPY shared/ ./shared/
 
-# Copy service dependency files
-COPY htf-bias/pyproject.toml htf-bias/poetry.lock* ./
+# Copy service files maintaining directory structure for relative path resolution
+# pyproject.toml references "../shared" so we need htf-bias/pyproject.toml -> shared/
+COPY htf-bias/pyproject.toml htf-bias/poetry.lock* ./htf-bias/
 
+# Install dependencies from the service directory
+WORKDIR /app/htf-bias
 RUN poetry config virtualenvs.create false \
     && poetry install --no-interaction --no-ansi --no-root
 

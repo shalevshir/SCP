@@ -8,9 +8,12 @@ RUN pip install --no-cache-dir poetry==1.7.0
 # Copy shared library first (dependency)
 COPY shared/ ./shared/
 
-# Copy service dependency files
-COPY feature-engine/pyproject.toml feature-engine/poetry.lock* ./
+# Copy service files maintaining directory structure for relative path resolution
+# pyproject.toml references "../shared" so we need feature-engine/pyproject.toml -> shared/
+COPY feature-engine/pyproject.toml feature-engine/poetry.lock* ./feature-engine/
 
+# Install dependencies from the service directory
+WORKDIR /app/feature-engine
 RUN poetry config virtualenvs.create false \
     && poetry install --no-interaction --no-ansi --no-root
 

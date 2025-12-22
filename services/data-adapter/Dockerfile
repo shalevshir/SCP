@@ -9,10 +9,12 @@ RUN pip install --no-cache-dir poetry==1.7.0
 # Copy shared library first (dependency)
 COPY shared/ ./shared/
 
-# Copy service dependency files
-COPY data-adapter/pyproject.toml data-adapter/poetry.lock* ./
+# Copy service files maintaining directory structure for relative path resolution
+# pyproject.toml references "../shared" so we need data-adapter/pyproject.toml -> shared/
+COPY data-adapter/pyproject.toml data-adapter/poetry.lock* ./data-adapter/
 
-# Install dependencies
+# Install dependencies from the service directory
+WORKDIR /app/data-adapter
 RUN poetry config virtualenvs.create false \
     && poetry install --no-interaction --no-ansi --no-root
 

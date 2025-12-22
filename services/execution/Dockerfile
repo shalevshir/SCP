@@ -8,9 +8,12 @@ RUN pip install --no-cache-dir poetry==1.7.0
 # Copy shared library first (dependency)
 COPY shared/ ./shared/
 
-# Copy service dependency files
-COPY execution/pyproject.toml execution/poetry.lock* ./
+# Copy service files maintaining directory structure for relative path resolution
+# pyproject.toml references "../shared" so we need execution/pyproject.toml -> shared/
+COPY execution/pyproject.toml execution/poetry.lock* ./execution/
 
+# Install dependencies from the service directory
+WORKDIR /app/execution
 RUN poetry config virtualenvs.create false \
     && poetry install --no-interaction --no-ansi --no-root
 
