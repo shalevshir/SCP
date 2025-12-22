@@ -8,6 +8,10 @@ __pycache__/
 .coverage
 htmlcov/
 *.cover
+coverage.json
+coverage.xml
+pytest-results.xml
+coverage_reports/
 .hypothesis/
 dist/
 build/
