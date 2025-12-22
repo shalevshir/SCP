@@ -1,15 +1,21 @@
 """Trade lifecycle manager with SL/TP monitoring."""
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal, cast
 
 from scp_shared.common.logger import get_logger
 from scp_shared.common.types import Candle
 from scp_shared.execution import InvalidationChecker
 from scp_shared.execution.types import TradeRecord
-from scp_shared.messaging.schemas import CandleMessage, FeaturesMessage, SignalMessage, TradeMessage
+from scp_shared.messaging.schemas import (
+    CandleMessage,
+    FeaturesMessage,
+    SignalMessage,
+    TradeMessage,
+)
 
 from execution_svc.broker import BaseBroker
+from execution_svc.daily_state import DailyStateTracker
 from execution_svc.state_machine_manager import StateMachineManager
 from execution_svc.trade_publisher import TradePublisher
 from execution_svc.trade_repository import TradeRepository
@@ -41,6 +47,8 @@ class TradeManager:
         trade_repository: TradeRepository,
         trade_publisher: TradePublisher,
         max_active_trades: int = 1,
+        pdll_limit: float = 600.0,
+        max_trades_per_day: int = 2,
     ) -> None:
         """Initialize trade manager.
         
@@ -50,6 +58,8 @@ class TradeManager:
             trade_repository: Trade repository for DB persistence
             trade_publisher: Trade publisher for Redis events
             max_active_trades: Maximum concurrent trades (default: 1)
+            pdll_limit: Per day loss limit in points (default: 600.0)
+            max_trades_per_day: Maximum trades per day (default: 2)
         """
         self._broker = broker
         self._sm_manager = state_machine_manager
@@ -60,6 +70,15 @@ class TradeManager:
         # Active trades (in-memory cache)
         self._active_trades: dict[str, TradeRecord] = {}
         
+        # Pending signals awaiting next bar open execution
+        self._pending_signals: list[SignalMessage] = []
+        
+        # Daily state tracker for PDLL and trade limits
+        self._daily_tracker = DailyStateTracker(
+            pdll_limit=pdll_limit,
+            max_trades_per_day=max_trades_per_day,
+        )
+        
         # Invalidation checker
         self._invalidation_checker = InvalidationChecker()
         
@@ -68,6 +87,8 @@ class TradeManager:
     
     async def on_signal(self, signal: SignalMessage) -> None:
         """Handle incoming signal from Bot Core.
+        
+        Buffers signal for execution at next bar open.
         
         Args:
             signal: Signal message
@@ -80,12 +101,16 @@ class TradeManager:
             )
             return
         
+        # Buffer signal for next bar execution
+        self._pending_signals.append(signal)
+        
         # Create state machine for this signal
         await self._sm_manager.create_from_signal(signal)
         
         logger.info(
-            f"Signal received: {signal.direction} {signal.setup_type} "
-            f"(score={signal.score:.1f}, confidence={signal.confidence}, id={signal.id})"
+            f"Signal buffered for next bar: {signal.direction} {signal.setup_type} "
+            f"(score={signal.score:.1f}, confidence={signal.confidence}, "
+            f"id={signal.id})"
         )
     
     async def on_candle(
@@ -99,6 +124,9 @@ class TradeManager:
             candle: Current candle
             features: Optional features for invalidation checking
         """
+        # Check for session reset (date boundary)
+        self._daily_tracker.check_session_reset(candle.timestamp.date())
+        
         # Increment bar counter
         self._sm_manager.increment_bar_counter()
         
@@ -124,22 +152,36 @@ class TradeManager:
                 "structure_label": features.structure_label,
             }
         
-        # 1. Check active trades for SL/TP and invalidation
-        for trade_id, trade in list(self._active_trades.items()):
+        # Check active trades for SL/TP and invalidation
+        # Note: execute_pending_signals is called from main.py before on_candle
+        for _trade_id, trade in list(self._active_trades.items()):
             await self._check_trade_exit(trade, candle_obj, features_dict)
-        
-        # 2. Check pending signals for confirmation and execution
-        await self._check_pending_signals(candle)
     
-    async def _check_pending_signals(self, candle: CandleMessage) -> None:
-        """Check pending signals for confirmation and execution.
+    async def execute_pending_signals(self, next_bar_open: float) -> None:
+        """Execute buffered signals at next bar open price.
         
         Args:
-            candle: Current candle
+            next_bar_open: Open price of the next bar
         """
-        # Get all pending state machines (simplified - would iterate properly in production)
-        # For Phase 6, we'll check confirmation on next bar and execute
-        pass  # Signals are executed in on_signal for simplification
+        if not self._pending_signals:
+            return
+        
+        logger.info(
+            f"Executing {len(self._pending_signals)} pending signals "
+            f"at open={next_bar_open:.2f}"
+        )
+        
+        for signal in self._pending_signals:
+            # Check daily limits before executing
+            can_trade, reason = self._daily_tracker.can_trade()
+            if not can_trade:
+                logger.info(f"Signal {signal.id} blocked by daily limits: {reason}")
+                continue
+            
+            await self.execute_entry(signal, next_bar_open)
+        
+        # Clear pending signals after execution
+        self._pending_signals.clear()
     
     async def _check_trade_exit(
         self,
@@ -159,19 +201,22 @@ class TradeManager:
         current_bar = self._sm_manager._bar_counter
         bars_elapsed = current_bar - entry_bar
         
-        # Check if trade just reached +1R (and persist to database)
-        if not trade.reached_1r:
-            state = self._invalidation_checker._get_trade_state(trade.trade_id)
-            if state.get("reached_1r", False):
-                # Trade just reached +1R - persist to database
-                await self._repo.update_reached_1r(trade.trade_id, True)
-                trade.reached_1r = True
-                logger.info(f"Trade {trade.trade_id} reached +1R, persisted to database")
-        
-        # Check all exit conditions
+        # Check all exit conditions (this updates internal state via update_state())
         should_exit, reason = self._invalidation_checker.check_all(
             trade, candle, bars_elapsed, features
         )
+        
+        # Check if trade just reached +1R (and persist to database)
+        # MUST happen AFTER check_all() to ensure we persist the current candle's state
+        if not trade.reached_1r:
+            state = self._invalidation_checker._get_trade_state(trade.trade_id)
+            if state.get("reached_1r", False):
+                # Trade just reached +1R - persist to database immediately
+                await self._repo.update_reached_1r(trade.trade_id, True)
+                trade.reached_1r = True
+                logger.info(
+                    f"Trade {trade.trade_id} reached +1R, persisted to database"
+                )
         
         if should_exit:
             # Determine exit price based on reason
@@ -183,7 +228,9 @@ class TradeManager:
                 # Invalidation - exit at close
                 exit_price = candle.close
             
-            await self._close_trade(trade, exit_price, reason or "UNKNOWN", candle.timestamp)
+            await self._close_trade(
+                trade, exit_price, reason or "UNKNOWN", candle.timestamp
+            )
     
     async def execute_entry(
         self,
@@ -200,16 +247,28 @@ class TradeManager:
             TradeRecord if successful, None otherwise
         """
         try:
+            # Check re-entry protection for VWAP_RECLAIM
+            sm = self._sm_manager.get_state_machine(signal.id)
+            if sm is not None and not sm.can_execute():
+                logger.warning(
+                    f"Signal {signal.id} blocked: max executions reached "
+                    f"for reclaim context (execution_count={sm.execution_count})"
+                )
+                return None
+            
             # Place order via broker
             order_result = await self._broker.place_order(
                 symbol="GC",
-                side=signal.direction,
+                side=cast(Literal["long", "short"], signal.direction),
                 quantity=1,  # Hardcoded for Phase 6
                 price=entry_price,
             )
             
             if order_result.status != "filled":
-                logger.error(f"Order not filled for signal {signal.id}: {order_result.status}")
+                logger.error(
+                    f"Order not filled for signal {signal.id}: "
+                    f"{order_result.status}"
+                )
                 return None
             
             # Create trade record
@@ -256,6 +315,9 @@ class TradeManager:
             self._active_trades[trade_id] = trade
             self._trade_entry_bars[trade_id] = self._sm_manager._bar_counter
             
+            # Record trade opened for daily limits tracking
+            self._daily_tracker.record_trade_opened()
+            
             # Mark state machine as executed
             await self._sm_manager.execute(signal.id, self._sm_manager._bar_counter)
             
@@ -273,14 +335,18 @@ class TradeManager:
             await self._publisher.publish_opened(trade_msg)
             
             logger.info(
-                f"Trade executed: {signal.direction} {signal.setup_type} @ {entry_price:.2f} "
-                f"(SL={signal.sl_price:.2f}, TP={signal.tp_price:.2f}, trade_id={trade_id})"
+                f"Trade executed: {signal.direction} {signal.setup_type} "
+                f"@ {entry_price:.2f} (SL={signal.sl_price:.2f}, "
+                f"TP={signal.tp_price:.2f}, trade_id={trade_id})"
             )
             
             return trade
         
         except Exception as e:
-            logger.error(f"Failed to execute entry for signal {signal.id}: {e}", exc_info=True)
+            logger.error(
+                f"Failed to execute entry for signal {signal.id}: {e}",
+                exc_info=True,
+            )
             return None
     
     async def _close_trade(
@@ -313,11 +379,13 @@ class TradeManager:
             )
         except Exception as e:
             logger.error(
-                f"Unexpected error closing broker position for trade {trade.trade_id}: {e}",
+                f"Unexpected error closing broker position for trade "
+                f"{trade.trade_id}: {e}",
                 exc_info=True,
             )
         
-        # Always update trade in database and clean up, even if broker position was missing
+        # Always update trade in database and clean up,
+        # even if broker position was missing
         try:
             await self._repo.close_trade(
                 trade_id=trade.trade_id,
@@ -331,6 +399,9 @@ class TradeManager:
                 pnl_points = exit_price - trade.entry_price
             else:  # short
                 pnl_points = trade.entry_price - exit_price
+            
+            # Record trade closed for daily limits tracking
+            self._daily_tracker.record_trade_closed(pnl_points)
             
             # Remove from active trades (critical - must happen even if broker failed)
             if trade.trade_id in self._active_trades:
@@ -368,9 +439,10 @@ class TradeManager:
         except ValueError as e:
             # Trade not found in database - this indicates a data inconsistency
             logger.error(
-                f"Trade {trade.trade_id} not found in database during close operation. "
-                f"This indicates state inconsistency between in-memory tracking and database. "
-                f"Cleaning up local state only. Error: {e}"
+                f"Trade {trade.trade_id} not found in database during close "
+                f"operation. This indicates state inconsistency between "
+                f"in-memory tracking and database. Cleaning up local state only. "
+                f"Error: {e}"
             )
             # Clean up local state to prevent memory leaks, but DO NOT publish event
             # since database was never updated
@@ -407,16 +479,20 @@ class TradeManager:
             else:
                 # Fallback: use current bar counter if entry_bar_idx not set
                 # (for trades created before migration)
-                self._trade_entry_bars[trade.trade_id] = self._sm_manager._bar_counter
+                self._trade_entry_bars[trade.trade_id] = (
+                    self._sm_manager._bar_counter
+                )
                 logger.warning(
-                    f"Trade {trade.trade_id} has no entry_bar_idx, using current bar counter"
+                    f"Trade {trade.trade_id} has no entry_bar_idx, "
+                    f"using current bar counter"
                 )
             
             # Restore invalidation checker state
             self._invalidation_checker.restore_trade_state(
                 trade.trade_id,
                 reached_1r=trade.reached_1r,
-                vwap_reclaimed=False,  # Would need to persist this too for full recovery
+                # Would need to persist this too for full recovery
+                vwap_reclaimed=False,
             )
         
         logger.info(f"Restored {len(open_trades)} active trades from database")
@@ -425,9 +501,10 @@ class TradeManager:
         if open_trades:
             # Build list of (symbol, side, entry_price, quantity) tuples
             position_data = [
-                (trade.symbol, trade.direction, trade.entry_price, 1)  # quantity=1 for Phase 6
+                # quantity=1 for Phase 6
+                (trade.symbol, trade.direction, trade.entry_price, 1)
                 for trade in open_trades
             ]
-            await self._broker.reconcile_positions(position_data)
+            await self._broker.reconcile_positions(position_data)  # type: ignore[attr-defined]
             logger.info(f"Reconciled broker positions for {len(open_trades)} trades")
 

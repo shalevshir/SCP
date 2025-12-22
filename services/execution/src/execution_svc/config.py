@@ -1,7 +1,6 @@
 """Configuration for Execution service."""
 
 from pydantic import Field
-
 from scp_shared.config import BaseServiceConfig
 
 
@@ -29,5 +28,15 @@ class ExecutionConfig(BaseServiceConfig):
     max_active_trades: int = Field(
         default=1,
         description="Maximum concurrent trades",
+    )
+    
+    pdll_limit: float = Field(
+        default=600.0,
+        description="Per day loss limit in points",
+    )
+    
+    max_trades_per_day: int = Field(
+        default=2,
+        description="Maximum trades per day",
     )
 
