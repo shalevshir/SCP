@@ -1,4 +1,12 @@
 """Rule engine package for SCP trading bot."""
 
-__all__ = []
+from scp_shared.rule_engine.config_loader import ScoringConfig, load_scoring_config
+from scp_shared.rule_engine.scoring import score_signal
+from scp_shared.rule_engine.signal import Signal
 
+__all__ = [
+    "Signal",
+    "score_signal",
+    "ScoringConfig",
+    "load_scoring_config",
+]
