@@ -113,6 +113,17 @@ class TradeManager:
             f"id={signal.id})"
         )
     
+    def check_session_reset(self, current_timestamp: datetime) -> None:
+        """Check for session reset at day boundaries.
+        
+        CRITICAL: Must be called BEFORE execute_pending_signals to ensure
+        daily limits (PDLL, max trades) are fresh for the new trading day.
+        
+        Args:
+            current_timestamp: Current timestamp to extract date from
+        """
+        self._daily_tracker.check_session_reset(current_timestamp.date())
+    
     async def on_candle(
         self,
         candle: CandleMessage,
@@ -124,9 +135,6 @@ class TradeManager:
             candle: Current candle
             features: Optional features for invalidation checking
         """
-        # Check for session reset (date boundary)
-        self._daily_tracker.check_session_reset(candle.timestamp.date())
-        
         # Increment bar counter
         self._sm_manager.increment_bar_counter()
         
@@ -172,6 +180,15 @@ class TradeManager:
         )
         
         for signal in self._pending_signals:
+            # Check concurrent trade limit FIRST
+            # (prevents attempting execution when already at capacity)
+            if len(self._active_trades) >= self._max_active_trades:
+                logger.info(
+                    f"Signal {signal.id} blocked: max active trades reached "
+                    f"({len(self._active_trades)}/{self._max_active_trades})"
+                )
+                continue
+            
             # Check daily limits before executing
             can_trade, reason = self._daily_tracker.can_trade()
             if not can_trade:
@@ -467,7 +484,25 @@ class TradeManager:
         
         Also reconciles broker positions to match restored trades,
         ensuring broker state is consistent with database state.
+        
+        CRITICAL: This method also restores daily state (P&L and trade count)
+        from today's trades to ensure PDLL and trade limit enforcement remains
+        consistent after service restarts.
         """
+        # Step 1: Restore daily state from today's trades
+        # This MUST happen before any trading to prevent exceeding daily limits
+        from datetime import datetime
+        
+        today = datetime.now()
+        todays_trades = await self._repo.get_trades_for_date(today)
+        self._daily_tracker.restore_from_trades(todays_trades, today.date())
+        
+        logger.info(
+            f"Restored daily state: {len(todays_trades)} trades today, "
+            f"daily_pnl={self._daily_tracker.state.daily_pnl:.2f}"
+        )
+        
+        # Step 2: Restore active trades
         open_trades = await self._repo.get_open_trades()
         
         for trade in open_trades:
@@ -497,7 +532,7 @@ class TradeManager:
         
         logger.info(f"Restored {len(open_trades)} active trades from database")
         
-        # Reconcile broker positions with restored trades
+        # Step 3: Reconcile broker positions with restored trades
         if open_trades:
             # Build list of (symbol, side, entry_price, quantity) tuples
             position_data = [

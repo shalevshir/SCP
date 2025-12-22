@@ -169,4 +169,52 @@ class DailyStateTracker:
             Maximum trades allowed per day
         """
         return self._max_trades_per_day
+    
+    def restore_from_trades(
+        self,
+        trades: list,
+        current_date: date,
+    ) -> None:
+        """Restore daily state from historical trades.
+        
+        Called during service startup to restore daily P&L and trade count
+        from trades executed today (before the restart).
+        
+        Args:
+            trades: List of TradeRecord objects from today
+            current_date: Current trading date
+            
+        Example:
+            >>> tracker = DailyStateTracker(pdll_limit=600.0, max_trades_per_day=2)
+            >>> todays_trades = await repo.get_trades_for_date(datetime.now())
+            >>> tracker.restore_from_trades(todays_trades, date.today())
+        """
+        # Reset state to current date
+        self._state = DailyState(date=current_date)
+        
+        # Count all trades (open and closed) opened today
+        self._state.trades_count = len(trades)
+        
+        # Sum P&L from closed trades only (open trades have no P&L yet)
+        total_pnl = 0.0
+        for trade in trades:
+            if trade.pnl is not None:  # Closed trade
+                total_pnl += trade.pnl
+        
+        self._state.daily_pnl = total_pnl
+        
+        # Check if PDLL was already hit
+        if total_pnl <= -self._pdll_limit:
+            self._state.pdll_hit = True
+            logger.warning(
+                f"PDLL already hit after restoration: "
+                f"daily_pnl={total_pnl:.2f} <= -{self._pdll_limit}"
+            )
+        
+        logger.info(
+            f"Daily state restored: date={current_date}, "
+            f"trades_count={self._state.trades_count}, "
+            f"daily_pnl={self._state.daily_pnl:.2f}, "
+            f"pdll_hit={self._state.pdll_hit}"
+        )
 

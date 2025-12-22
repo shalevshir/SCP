@@ -316,5 +316,64 @@ class TradeRepository:
         logger.info(f"Reconciled {len(open_trades)} open trades on startup")
         
         return open_trades
+    
+    async def get_trades_for_date(self, trade_date: datetime) -> list[TradeRecord]:
+        """Get all trades (open and closed) for a specific trading date.
+        
+        Used for restoring daily state (P&L and trade count) after service restart.
+        
+        Args:
+            trade_date: Trading date to query trades for
+            
+        Returns:
+            List of all trades opened on the specified date
+        """
+        query = """
+            SELECT id, signal_id, direction, setup_type, entry_price,
+                   sl_price, tp_price, quantity, opened_at, closed_at,
+                   exit_price, exit_reason, pnl_points, entry_bar_idx, reached_1r
+            FROM trades
+            WHERE DATE(opened_at) = DATE($1)
+            ORDER BY opened_at ASC
+        """
+        
+        rows = await self._db_pool.fetch(query, trade_date)
+        
+        trades = []
+        for row in rows:
+            # Calculate risk_amount and reward_amount
+            if row["direction"] == "long":
+                risk_amount = row["entry_price"] - row["sl_price"]
+                reward_amount = row["tp_price"] - row["entry_price"]
+            else:  # short
+                risk_amount = row["sl_price"] - row["entry_price"]
+                reward_amount = row["entry_price"] - row["tp_price"]
+            
+            trade = TradeRecord(
+                trade_id=str(row["id"]),
+                signal_id=str(row["signal_id"]),
+                symbol="GC",  # Hardcoded for Phase 6
+                direction=row["direction"],
+                setup_type=row["setup_type"],
+                entry_price=row["entry_price"],
+                sl_price=row["sl_price"],
+                tp_price=row["tp_price"],
+                risk_amount=risk_amount,
+                reward_amount=reward_amount,
+                entry_timestamp=row["opened_at"],
+                exit_timestamp=row["closed_at"],
+                exit_price=row["exit_price"],
+                exit_reason=row["exit_reason"],
+                pnl=row["pnl_points"],
+                entry_bar_idx=row["entry_bar_idx"],
+                reached_1r=row["reached_1r"] or False,
+            )
+            trades.append(trade)
+        
+        logger.debug(
+            f"Retrieved {len(trades)} trades for date {trade_date.date()}"
+        )
+        
+        return trades
 
 

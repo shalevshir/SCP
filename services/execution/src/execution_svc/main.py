@@ -115,8 +115,12 @@ async def process_streams(
             for signal_msg in signals_list:
                 await trade_manager.on_signal(signal_msg)
             
-            # Process candles (execute pending signals at open, then monitor SL/TP)
+            # Process candles (check session reset, execute pending signals, monitor SL/TP)
             for candle_msg in candles_list:
+                # CRITICAL: Check session reset BEFORE execute_pending_signals
+                # to ensure daily limits (PDLL, max trades) are fresh at day boundaries
+                trade_manager.check_session_reset(candle_msg.timestamp)
+                
                 # Execute pending signals at this candle's open
                 await trade_manager.execute_pending_signals(candle_msg.open)
                 
