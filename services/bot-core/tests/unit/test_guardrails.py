@@ -25,10 +25,17 @@ class TestGuardrailsService:
     @pytest.fixture
     def default_constraints(self) -> SessionConstraints:
         """Create default session constraints."""
+        from datetime import time
+        
         return SessionConstraints(
+            name="Default",
+            window_start=time(9, 0),
+            window_end=time(17, 0),
+            allowed_tiers=frozenset(["Conservative", "Moderate", "Aggressive"]),
+            allowed_setups=frozenset(["VWAP_RECLAIM", "VWAP_FADE", "DXY_CONTINUATION"]),
+            min_score=8.0,
             max_losses=3,
-            trading_start_hour=9,
-            trading_end_hour=17,
+            dxy_correlation_max=0.8,
         )
     
     @pytest.fixture
@@ -216,12 +223,32 @@ class TestGuardrailsService:
         await service.record_trade_outcome(won=False, pnl=-100.0)
         
         # With limit of 3, should still be allowed
-        constraints_3 = SessionConstraints(max_losses=3)
+        from datetime import time
+        
+        constraints_3 = SessionConstraints(
+            name="Limit3",
+            window_start=time(9, 0),
+            window_end=time(17, 0),
+            allowed_tiers=frozenset(["Conservative"]),
+            allowed_setups=frozenset(["VWAP_RECLAIM"]),
+            min_score=8.0,
+            max_losses=3,
+            dxy_correlation_max=0.8,
+        )
         result = service.evaluate(constraints_3)
         assert result.allowed is True
         
         # With limit of 2, should be blocked
-        constraints_2 = SessionConstraints(max_losses=2)
+        constraints_2 = SessionConstraints(
+            name="Limit2",
+            window_start=time(9, 0),
+            window_end=time(17, 0),
+            allowed_tiers=frozenset(["Conservative"]),
+            allowed_setups=frozenset(["VWAP_RECLAIM"]),
+            min_score=8.0,
+            max_losses=2,
+            dxy_correlation_max=0.8,
+        )
         result = service.evaluate(constraints_2)
         assert result.allowed is False
         assert any("loss streak" in reason.lower() for reason in result.reasons)

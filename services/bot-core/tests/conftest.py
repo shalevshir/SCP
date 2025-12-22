@@ -121,10 +121,17 @@ def sample_signal_message() -> SignalMessage:
 @pytest.fixture
 def sample_session_constraints() -> SessionConstraints:
     """SessionConstraints fixture."""
+    from datetime import time
+    
     return SessionConstraints(
+        name="Default",
+        window_start=time(9, 0),
+        window_end=time(17, 0),
+        allowed_tiers=frozenset(["Conservative", "Moderate", "Aggressive"]),
+        allowed_setups=frozenset(["VWAP_RECLAIM", "VWAP_FADE", "DXY_CONTINUATION"]),
+        min_score=8.0,
         max_losses=3,
-        trading_start_hour=9,
-        trading_end_hour=17,
+        dxy_correlation_max=0.8,
     )
 
 
