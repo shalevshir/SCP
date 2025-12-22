@@ -157,3 +157,195 @@ class TestStateRepositoryTimezone:
         # Verify both use the same timezone
         assert repo._tz.key == validator._tz.key
 
+
+class TestStateRepositoryCRUD:
+    """Test CRUD operations in StateRepository."""
+    
+    @pytest.mark.asyncio
+    async def test_load_returns_fresh_state_when_not_found(self) -> None:
+        """New day returns empty DailyState."""
+        db_pool = MagicMock()
+        conn = AsyncMock()
+        db_pool.acquire.return_value.__aenter__.return_value = conn
+        db_pool.acquire.return_value.__aexit__.return_value = None
+        
+        # Mock: no existing state in database
+        conn.fetchrow = AsyncMock(return_value=None)
+        
+        repo = StateRepository(db_pool, trading_timezone="Europe/London")
+        
+        # Load state for a specific date
+        test_date = date(2024, 3, 15)
+        state = await repo.load(test_date)
+        
+        # Should return fresh state with all zeros
+        assert state.date == test_date
+        assert state.loss_streak == 0
+        assert state.daily_loss == 0.0
+        assert state.trades_count == 0
+        assert state.wins == 0
+        assert state.losses == 0
+        assert state.pdll_hits == 0
+    
+    @pytest.mark.asyncio
+    async def test_save_upserts_state(self) -> None:
+        """INSERT ON CONFLICT works correctly."""
+        db_pool = MagicMock()
+        conn = AsyncMock()
+        db_pool.acquire.return_value.__aenter__.return_value = conn
+        db_pool.acquire.return_value.__aexit__.return_value = None
+        
+        conn.execute = AsyncMock()
+        
+        repo = StateRepository(db_pool, trading_timezone="Europe/London")
+        
+        # Save state
+        state = DailyState(
+            date=date(2024, 3, 15),
+            loss_streak=2,
+            daily_loss=-200.0,
+            trades_count=5,
+            wins=3,
+            losses=2,
+            pdll_hits=0,
+        )
+        
+        await repo.save(state)
+        
+        # Verify execute was called with correct parameters
+        assert conn.execute.call_count == 1
+        call_args = conn.execute.call_args
+        
+        # Check that query contains INSERT ... ON CONFLICT
+        query = call_args[0][0]
+        assert "INSERT INTO daily_state" in query
+        assert "ON CONFLICT" in query
+        assert "DO UPDATE SET" in query
+        
+        # Check that all parameters were passed
+        params = call_args[0][1:]
+        assert params[0] == date(2024, 3, 15)  # date
+        assert params[1] == 2  # loss_streak
+        assert params[2] == -200.0  # daily_loss
+        assert params[3] == 5  # trades_count
+        assert params[4] == 3  # wins
+        assert params[5] == 2  # losses
+        assert params[6] == 0  # pdll_hits
+    
+    @pytest.mark.asyncio
+    async def test_save_updates_all_fields(self) -> None:
+        """All DailyState fields persisted."""
+        db_pool = MagicMock()
+        conn = AsyncMock()
+        db_pool.acquire.return_value.__aenter__.return_value = conn
+        db_pool.acquire.return_value.__aexit__.return_value = None
+        
+        # Mock: return saved state on load
+        conn.fetchrow = AsyncMock(return_value={
+            "date": date(2024, 3, 15),
+            "loss_streak": 2,
+            "daily_loss": -200.0,
+            "trades_count": 5,
+            "wins": 3,
+            "losses": 2,
+            "pdll_hits": 1,
+        })
+        conn.execute = AsyncMock()
+        
+        repo = StateRepository(db_pool, trading_timezone="Europe/London")
+        
+        # Save state with all fields populated
+        state = DailyState(
+            date=date(2024, 3, 15),
+            loss_streak=2,
+            daily_loss=-200.0,
+            trades_count=5,
+            wins=3,
+            losses=2,
+            pdll_hits=1,
+        )
+        
+        await repo.save(state)
+        
+        # Load and verify all fields
+        loaded_state = await repo.load(date(2024, 3, 15))
+        
+        assert loaded_state.date == date(2024, 3, 15)
+        assert loaded_state.loss_streak == 2
+        assert loaded_state.daily_loss == -200.0
+        assert loaded_state.trades_count == 5
+        assert loaded_state.wins == 3
+        assert loaded_state.losses == 2
+        assert loaded_state.pdll_hits == 1
+    
+    @pytest.mark.asyncio
+    async def test_reset_today_clears_and_saves(self) -> None:
+        """Reset creates fresh state in DB."""
+        db_pool = MagicMock()
+        conn = AsyncMock()
+        db_pool.acquire.return_value.__aenter__.return_value = conn
+        db_pool.acquire.return_value.__aexit__.return_value = None
+        
+        conn.execute = AsyncMock()
+        
+        repo = StateRepository(db_pool, trading_timezone="Europe/London")
+        
+        # Reset today
+        fresh_state = await repo.reset_today()
+        
+        # Verify fresh state returned
+        assert fresh_state.loss_streak == 0
+        assert fresh_state.daily_loss == 0.0
+        assert fresh_state.trades_count == 0
+        assert fresh_state.wins == 0
+        assert fresh_state.losses == 0
+        assert fresh_state.pdll_hits == 0
+        
+        # Verify save was called
+        assert conn.execute.call_count == 1
+    
+    # Error handling tests
+    
+    @pytest.mark.asyncio
+    async def test_load_handles_db_connection_error(self) -> None:
+        """Graceful DB failure handling."""
+        db_pool = MagicMock()
+        conn = AsyncMock()
+        db_pool.acquire.return_value.__aenter__.return_value = conn
+        db_pool.acquire.return_value.__aexit__.return_value = None
+        
+        # Simulate database connection error
+        conn.fetchrow = AsyncMock(side_effect=Exception("Database connection failed"))
+        
+        repo = StateRepository(db_pool, trading_timezone="Europe/London")
+        
+        # Should propagate exception
+        with pytest.raises(Exception, match="Database connection failed"):
+            await repo.load(date(2024, 3, 15))
+    
+    @pytest.mark.asyncio
+    async def test_save_handles_db_connection_error(self) -> None:
+        """Transaction rollback on failure."""
+        db_pool = MagicMock()
+        conn = AsyncMock()
+        db_pool.acquire.return_value.__aenter__.return_value = conn
+        db_pool.acquire.return_value.__aexit__.return_value = None
+        
+        # Simulate database connection error
+        conn.execute = AsyncMock(side_effect=Exception("Database connection failed"))
+        
+        repo = StateRepository(db_pool, trading_timezone="Europe/London")
+        
+        state = DailyState(
+            date=date(2024, 3, 15),
+            loss_streak=1,
+            daily_loss=-100.0,
+            trades_count=1,
+            wins=0,
+            losses=1,
+        )
+        
+        # Should propagate exception
+        with pytest.raises(Exception, match="Database connection failed"):
+            await repo.save(state)
+

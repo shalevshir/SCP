@@ -11,6 +11,7 @@ from bot_core_svc.signal_engine import (
     SignalEngine,
     features_message_to_series,
     htf_bias_message_to_htf_bias,
+    signal_to_message,
 )
 
 
@@ -148,4 +149,280 @@ class TestSignalEngine:
         
         assert result is None
         mock_score_signal.assert_called_once()
+
+
+class TestSignalToMessage:
+    """Test signal_to_message function with SL/TP calculations."""
+    
+    @pytest.fixture
+    def base_signal(self) -> Signal:
+        """Create base signal for testing."""
+        return Signal(
+            timestamp=datetime(2024, 3, 15, 10, 30, 0, tzinfo=timezone.utc),
+            symbol="GC",
+            timeframe="1m",
+            direction="long",
+            setup_type="VWAP_RECLAIM",
+            htf_bias="bullish",
+            score=8.5,
+            confidence="A+",
+            factors={
+                "structure_alignment": 2.0,
+                "vwap_relation": 2.0,
+                "htf_aligned": True,
+                "dxy_aligned": True,
+            },
+            rationale="VWAP reclaim with HTF alignment",
+            validation_flags={"session_ok": True},
+            enforcer_tier="Conservative",
+        )
+    
+    @pytest.fixture
+    def base_features(self) -> FeaturesMessage:
+        """Create base features message."""
+        return FeaturesMessage(
+            timestamp=datetime(2024, 3, 15, 10, 30, 0, tzinfo=timezone.utc),
+            symbol="GC",
+            timeframe="1m",
+            close=2050.0,
+            vwap=2045.0,
+            rsi=55.0,
+            ema_9=2048.0,
+            ema_20=2045.0,
+            ema_50=2040.0,
+            dxy_correlation=-0.75,
+            structure_label="HH",
+            vwap_deviation=0.5,
+        )
+    
+    # SL/TP calculation tests (from backtester/trade.py SOP rules)
+    
+    def test_signal_to_message_calculates_vwap_reclaim_sl(
+        self,
+        base_signal: Signal,
+        base_features: FeaturesMessage,
+    ) -> None:
+        """VWAP zone SL with 30-tick buffer."""
+        # Long signal: SL = VWAP - (30 ticks * 0.1)
+        signal_msg = signal_to_message(base_signal, base_features)
+        
+        assert signal_msg.direction == "long"
+        assert signal_msg.entry_price == 2050.0
+        # VWAP = 2045.0, buffer = 30 * 0.1 = 3.0
+        # SL = 2045.0 - 3.0 = 2042.0
+        assert signal_msg.sl_price == 2042.0
+    
+    def test_signal_to_message_enforces_min_sl_20_ticks_vwap_reclaim(
+        self,
+        base_signal: Signal,
+    ) -> None:
+        """Minimum 20-tick SL distance enforced."""
+        # VWAP very close to entry (within 20 ticks)
+        features = FeaturesMessage(
+            timestamp=datetime(2024, 3, 15, 10, 30, 0, tzinfo=timezone.utc),
+            symbol="GC",
+            timeframe="1m",
+            close=2050.0,
+            vwap=2049.5,  # Only 0.5 away = 5 ticks
+            rsi=55.0,
+        )
+        
+        signal_msg = signal_to_message(base_signal, features)
+        
+        # Should enforce minimum 20-tick distance
+        # Entry = 2050.0, SL = 2050.0 - (20 * 0.1) = 2048.0
+        assert signal_msg.sl_price == 2048.0
+    
+    def test_signal_to_message_calculates_vwap_fade_sl(
+        self,
+        base_features: FeaturesMessage,
+    ) -> None:
+        """15-tick minimum for fade."""
+        fade_signal = Signal(
+            timestamp=datetime(2024, 3, 15, 10, 30, 0, tzinfo=timezone.utc),
+            symbol="GC",
+            timeframe="1m",
+            direction="short",
+            setup_type="VWAP_FADE",
+            htf_bias="bearish",
+            score=8.5,
+            confidence="A+",
+            factors={},
+            rationale="Fade test",
+            validation_flags={"session_ok": True},
+            enforcer_tier="Conservative",
+        )
+        
+        signal_msg = signal_to_message(fade_signal, base_features)
+        
+        # Short fade: SL = entry + (15 ticks * 0.1)
+        # Entry = 2050.0, SL = 2050.0 + 1.5 = 2051.5
+        assert signal_msg.sl_price == 2051.5
+    
+    def test_signal_to_message_calculates_dxy_continuation_sl(
+        self,
+        base_features: FeaturesMessage,
+    ) -> None:
+        """25-tick minimum for DXY continuation."""
+        dxy_signal = Signal(
+            timestamp=datetime(2024, 3, 15, 10, 30, 0, tzinfo=timezone.utc),
+            symbol="GC",
+            timeframe="1m",
+            direction="long",
+            setup_type="DXY_CONTINUATION",
+            htf_bias="bullish",
+            score=8.5,
+            confidence="A+",
+            factors={},
+            rationale="DXY continuation test",
+            validation_flags={"session_ok": True},
+            enforcer_tier="Conservative",
+        )
+        
+        signal_msg = signal_to_message(dxy_signal, base_features)
+        
+        # Long continuation: SL = entry - (25 ticks * 0.1)
+        # Entry = 2050.0, SL = 2050.0 - 2.5 = 2047.5
+        assert signal_msg.sl_price == 2047.5
+    
+    def test_signal_to_message_calculates_tp_with_r_multiple(
+        self,
+        base_signal: Signal,
+        base_features: FeaturesMessage,
+    ) -> None:
+        """R-multiple based TP calculation."""
+        signal_msg = signal_to_message(base_signal, base_features)
+        
+        # Long: Risk = entry - SL = 2050.0 - 2042.0 = 8.0
+        # TP = entry + (risk * R_multiple) = 2050.0 + (8.0 * 3.0) = 2074.0
+        risk = signal_msg.entry_price - signal_msg.sl_price
+        assert risk == 8.0
+        
+        # Default continuation R-multiple = 3.0 for non-September months
+        expected_tp = signal_msg.entry_price + (risk * 3.0)
+        assert signal_msg.tp_price == expected_tp
+    
+    # Seasonal R-multiple tests
+    
+    def test_signal_to_message_september_uses_2r(
+        self,
+        base_features: FeaturesMessage,
+    ) -> None:
+        """September defensive: 2R."""
+        sept_signal = Signal(
+            timestamp=datetime(2024, 9, 15, 10, 30, 0, tzinfo=timezone.utc),
+            symbol="GC",
+            timeframe="1m",
+            direction="long",
+            setup_type="DXY_CONTINUATION",
+            htf_bias="bullish",
+            score=8.5,
+            confidence="A+",
+            factors={},
+            rationale="September test",
+            validation_flags={"session_ok": True},
+            enforcer_tier="Conservative",
+        )
+        
+        signal_msg = signal_to_message(sept_signal, base_features)
+        
+        # Risk = 2050.0 - 2047.5 = 2.5
+        # TP = 2050.0 + (2.5 * 2.0) = 2055.0 (September uses 2R)
+        risk = signal_msg.entry_price - signal_msg.sl_price
+        expected_tp = signal_msg.entry_price + (risk * 2.0)
+        assert signal_msg.tp_price == expected_tp
+    
+    def test_signal_to_message_november_december_uses_3r_with_alignment(
+        self,
+        base_features: FeaturesMessage,
+    ) -> None:
+        """Trend season upgrade to 3R with alignment."""
+        nov_fade_signal = Signal(
+            timestamp=datetime(2024, 11, 15, 10, 30, 0, tzinfo=timezone.utc),
+            symbol="GC",
+            timeframe="1m",
+            direction="long",
+            setup_type="VWAP_FADE",
+            htf_bias="bullish",
+            score=8.5,
+            confidence="A+",
+            factors={},
+            rationale="November fade with alignment",
+            validation_flags={"session_ok": True},
+            enforcer_tier="Conservative",
+            diagnostics={
+                "htf_aligned": True,
+                "dxy_aligned": True,
+            },
+        )
+        
+        signal_msg = signal_to_message(nov_fade_signal, base_features)
+        
+        # Fade in Nov/Dec with alignment: upgrade to 3R
+        # Risk = 2050.0 - (2050.0 - 1.5) = 1.5
+        # TP = 2050.0 + (1.5 * 3.0) = 2054.5
+        risk = signal_msg.entry_price - signal_msg.sl_price
+        expected_tp = signal_msg.entry_price + (risk * 3.0)
+        assert signal_msg.tp_price == expected_tp
+    
+    def test_signal_to_message_default_continuation_uses_3r(
+        self,
+        base_signal: Signal,
+        base_features: FeaturesMessage,
+    ) -> None:
+        """Default continuation R-multiple = 3R."""
+        signal_msg = signal_to_message(base_signal, base_features)
+        
+        # Non-September, non-fade: default 3R
+        risk = signal_msg.entry_price - signal_msg.sl_price
+        expected_tp = signal_msg.entry_price + (risk * 3.0)
+        assert signal_msg.tp_price == expected_tp
+    
+    # Edge cases
+    
+    def test_signal_to_message_generates_unique_id(
+        self,
+        base_signal: Signal,
+        base_features: FeaturesMessage,
+    ) -> None:
+        """UUID generation for each signal."""
+        signal_msg1 = signal_to_message(base_signal, base_features)
+        signal_msg2 = signal_to_message(base_signal, base_features)
+        
+        # Each message should have unique ID
+        assert signal_msg1.id != signal_msg2.id
+        # Should be valid UUID format (36 chars with dashes)
+        assert len(signal_msg1.id) == 36
+        assert signal_msg1.id.count("-") == 4
+    
+    def test_signal_to_message_includes_all_factors(
+        self,
+        base_signal: Signal,
+        base_features: FeaturesMessage,
+    ) -> None:
+        """Factors dict with htf_bias, rationale, etc."""
+        signal_msg = signal_to_message(base_signal, base_features)
+        
+        # Verify all expected fields in factors
+        assert "htf_bias" in signal_msg.factors
+        assert signal_msg.factors["htf_bias"] == "bullish"
+        
+        assert "symbol" in signal_msg.factors
+        assert signal_msg.factors["symbol"] == "GC"
+        
+        assert "timeframe" in signal_msg.factors
+        assert signal_msg.factors["timeframe"] == "1m"
+        
+        assert "rationale" in signal_msg.factors
+        assert signal_msg.factors["rationale"] == "VWAP reclaim with HTF alignment"
+        
+        assert "validation_flags" in signal_msg.factors
+        assert signal_msg.factors["validation_flags"]["session_ok"] is True
+        
+        assert "enforcer_tier" in signal_msg.factors
+        assert signal_msg.factors["enforcer_tier"] == "Conservative"
+        
+        # Original signal factors should also be included
+        assert "structure_alignment" in signal_msg.factors
+        assert signal_msg.factors["structure_alignment"] == 2.0
 
