@@ -1,9 +1,11 @@
 """Unit tests for signal engine."""
 
 from datetime import datetime, timezone
+from unittest.mock import Mock, patch
 
 import pytest
 from scp_shared.messaging.schemas import FeaturesMessage, HTFBiasMessage
+from scp_shared.rule_engine.signal import Signal
 
 from bot_core_svc.signal_engine import (
     SignalEngine,
@@ -87,4 +89,63 @@ class TestSignalEngine:
         assert series["dxy_corr"] == -0.75  # Mapped from dxy_correlation to dxy_corr
         assert series["structure_label"] == "HH"
         assert series["vwap_deviation"] == 0.5
+    
+    @patch("bot_core_svc.signal_engine.score_signal")
+    def test_neutral_direction_signal_filtered(self, mock_score_signal: Mock) -> None:
+        """Neutral direction signals are filtered out even if confidence is A+.
+        
+        This test verifies the fix for the edge case where score_signal returns
+        a signal with direction="neutral" (when close == vwap exactly) and
+        confidence="A+". Such signals should be rejected because SignalMessage
+        only accepts "long" or "short" directions.
+        """
+        # Create a signal with neutral direction but A+ confidence
+        # This can occur when close == vwap exactly (very rare edge case)
+        neutral_signal = Signal(
+            timestamp=datetime(2025, 1, 15, 10, 0, tzinfo=timezone.utc),
+            symbol="GC",
+            timeframe="1m",
+            direction="neutral",  # This would cause ValidationError in SignalMessage
+            setup_type="VWAP_RECLAIM",
+            htf_bias="neutral",
+            score=8.5,  # High enough for A+ confidence
+            confidence="A+",
+            factors={"structure_alignment": 2.0, "vwap_relation": 2.0},
+            rationale="Test neutral signal",
+            validation_flags={"session_ok": True},
+            enforcer_tier="Conservative",
+        )
+        
+        mock_score_signal.return_value = neutral_signal
+        
+        engine = SignalEngine()
+        features = FeaturesMessage(
+            timestamp=datetime(2025, 1, 15, 10, 0, tzinfo=timezone.utc),
+            symbol="GC",
+            timeframe="1m",
+            close=2650.0,  # Equal to vwap to trigger neutral
+            vwap=2650.0,
+            rsi=55.0,
+            ema_9=2648.0,
+            ema_20=2645.0,
+            ema_50=2640.0,
+            dxy_correlation=-0.75,
+            structure_label="HH",
+            vwap_deviation=0.0,
+        )
+        htf_bias = HTFBiasMessage(
+            timestamp=datetime(2025, 1, 15, 10, 0, tzinfo=timezone.utc),
+            bias="neutral",
+            score=5.0,
+            confidence="C",
+            dxy_aligned=False,
+            chop_detected=True,
+        )
+        context = {"session_ok": True, "enforcer_tier": "Conservative"}
+        
+        # Should return None (filtered out) instead of raising ValidationError
+        result = engine.generate(features, htf_bias, context)
+        
+        assert result is None
+        mock_score_signal.assert_called_once()
 

@@ -250,6 +250,16 @@ class SignalEngine:
             )
             return None
         
+        # Filter out neutral signals (SignalMessage only accepts "long" or "short")
+        # This can occur when close == vwap exactly (very rare edge case)
+        if signal.direction == "neutral":
+            logger.warning(
+                f"Signal rejected (neutral direction): "
+                f"{signal.setup_type} score={signal.score:.1f} "
+                f"(close={features.close}, vwap={features.vwap})"
+            )
+            return None
+        
         # Convert to message
         signal_msg = signal_to_message(signal, features)
         
