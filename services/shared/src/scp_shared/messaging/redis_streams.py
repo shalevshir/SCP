@@ -1,11 +1,13 @@
 """Redis Streams pub/sub utilities."""
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any, Generic, TypeVar
 
 import redis.asyncio as redis
 from pydantic import BaseModel
+
+from scp_shared.messaging.retry import RetryConfig, with_retry
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -19,16 +21,22 @@ class RedisStreamPublisher:
         >>> msg_id = await publisher.publish("candles.1m.gc", message)
     """
 
-    def __init__(self, redis_client: redis.Redis) -> None:
+    def __init__(
+        self,
+        redis_client: redis.Redis,
+        retry_config: RetryConfig | None = None,
+    ) -> None:
         """Initialize publisher.
         
         Args:
             redis_client: Async Redis client instance
+            retry_config: Retry configuration (uses defaults if None)
         """
         self.redis = redis_client
+        self.retry_config = retry_config or RetryConfig()
 
     async def publish(self, stream: str, message: BaseModel) -> str:
-        """Publish message to stream.
+        """Publish message to stream with automatic retry.
 
         Args:
             stream: Stream name (e.g., "candles.1m.gc")
@@ -37,14 +45,18 @@ class RedisStreamPublisher:
         Returns:
             Message ID from Redis (e.g., "1234567890-0")
         """
-        data = {
-            "type": message.__class__.__name__,
-            "payload": message.model_dump_json(),
-            "published_at": datetime.now(timezone.utc).isoformat(),
-        }
+        @with_retry(self.retry_config)
+        async def _publish() -> str:
+            data = {
+                "type": message.__class__.__name__,
+                "payload": message.model_dump_json(),
+                "published_at": datetime.now(UTC).isoformat(),
+            }
 
-        message_id = await self.redis.xadd(stream, data)
-        return message_id.decode() if isinstance(message_id, bytes) else message_id
+            message_id = await self.redis.xadd(stream, data)
+            return message_id.decode() if isinstance(message_id, bytes) else message_id
+
+        return await _publish()
 
 
 class RedisStreamConsumer(Generic[T]):
@@ -72,6 +84,7 @@ class RedisStreamConsumer(Generic[T]):
         group: str,
         consumer_name: str,
         message_type: type[T],
+        retry_config: RetryConfig | None = None,
     ) -> None:
         """Initialize consumer.
         
@@ -81,13 +94,21 @@ class RedisStreamConsumer(Generic[T]):
             group: Consumer group name
             consumer_name: Unique name for this consumer instance
             message_type: Pydantic model class to deserialize into
+            retry_config: Retry configuration for Redis operations
+                (uses defaults if None)
+        
+        Note:
+            Messages are NOT automatically moved to DLQ. Application code must
+            call move_to_dlq() explicitly when a message fails processing.
         """
         self.redis = redis_client
         self.stream = stream
         self.group = group
         self.consumer_name = consumer_name
         self.message_type = message_type
+        self.retry_config = retry_config or RetryConfig()
         self._initialized = False
+        self._dlq_stream = f"{stream}.dlq"
 
     async def ensure_group(self) -> None:
         """Create consumer group if it doesn't exist.
@@ -97,18 +118,21 @@ class RedisStreamConsumer(Generic[T]):
         if self._initialized:
             return
 
-        try:
-            await self.redis.xgroup_create(
-                self.stream,
-                self.group,
-                id="0",
-                mkstream=True,
-            )
-        except redis.ResponseError as e:
-            # Group already exists
-            if "BUSYGROUP" not in str(e):
-                raise
+        @with_retry(self.retry_config)
+        async def _ensure_group() -> None:
+            try:
+                await self.redis.xgroup_create(
+                    self.stream,
+                    self.group,
+                    id="0",
+                    mkstream=True,
+                )
+            except redis.ResponseError as e:
+                # Group already exists
+                if "BUSYGROUP" not in str(e):
+                    raise
 
+        await _ensure_group()
         self._initialized = True
 
     async def read(
@@ -116,7 +140,7 @@ class RedisStreamConsumer(Generic[T]):
         count: int = 10,
         block_ms: int = 5000,
     ) -> list[T]:
-        """Read and deserialize messages from stream.
+        """Read and deserialize messages from stream with automatic retry.
 
         Args:
             count: Maximum messages to read per call
@@ -124,20 +148,171 @@ class RedisStreamConsumer(Generic[T]):
 
         Returns:
             List of deserialized Pydantic models
+        
+        Note:
+            Only the xreadgroup operation is retried. Acknowledgments are NOT retried
+            to prevent data loss. If acknowledgment fails, the message remains in the
+            pending list and can be recovered via read_pending().
         """
         await self.ensure_group()
 
-        results = await self.redis.xreadgroup(
-            groupname=self.group,
-            consumername=self.consumer_name,
-            streams={self.stream: ">"},
-            count=count,
-            block=block_ms,
-        )
+        # Only retry the read operation, not the entire read+ack loop
+        @with_retry(self.retry_config)
+        async def _read() -> list[tuple[Any, dict[bytes, bytes]]]:
+            results = await self.redis.xreadgroup(
+                groupname=self.group,
+                consumername=self.consumer_name,
+                streams={self.stream: ">"},
+                count=count,
+                block=block_ms,
+            )
+            # Flatten results to list of (message_id, data) tuples
+            flat_messages = []
+            for _stream_name, stream_messages in results:
+                flat_messages.extend(stream_messages)
+            return flat_messages
 
+        # Retry only the read operation
+        raw_messages = await _read()
+
+        # Process and acknowledge messages WITHOUT retry wrapper
+        # If acknowledgment fails, message stays in pending list for recovery
         messages: list[T] = []
-        for stream_name, stream_messages in results:
-            for message_id, data in stream_messages:
+        for message_id, data in raw_messages:
+            # Decode bytes to strings
+            decoded_data: dict[str, Any] = {
+                k.decode() if isinstance(k, bytes) else k: v.decode()
+                if isinstance(v, bytes)
+                else v
+                for k, v in data.items()
+            }
+
+            # Deserialize payload
+            payload = json.loads(decoded_data["payload"])
+            model = self.message_type.model_validate(payload)
+            messages.append(model)
+
+            # Acknowledge message (no retry - if this fails, message stays pending)
+            await self.redis.xack(self.stream, self.group, message_id)
+
+        return messages
+
+    async def read_pending(self, count: int = 10) -> list[T]:
+        """Read pending (unacknowledged) messages with automatic retry.
+        
+        Useful for recovery after crashes.
+        
+        Args:
+            count: Maximum messages to read
+            
+        Returns:
+            List of deserialized Pydantic models
+        
+        Note:
+            Only the xreadgroup operation is retried. Acknowledgments are NOT retried
+            to prevent data loss. If acknowledgment fails, the message remains in the
+            pending list and will be returned on the next read_pending() call.
+        """
+        await self.ensure_group()
+
+        # Only retry the read operation, not the entire read+ack loop
+        @with_retry(self.retry_config)
+        async def _read() -> list[tuple[Any, dict[bytes, bytes]]]:
+            # Get pending messages for this specific consumer
+            results = await self.redis.xreadgroup(
+                groupname=self.group,
+                consumername=self.consumer_name,
+                streams={self.stream: "0"},  # "0" means pending messages
+                count=count,
+            )
+            # Flatten results to list of (message_id, data) tuples
+            flat_messages = []
+            for _stream_name, stream_messages in results:
+                flat_messages.extend(stream_messages)
+            return flat_messages
+
+        # Retry only the read operation
+        raw_messages = await _read()
+
+        # Process and acknowledge messages WITHOUT retry wrapper
+        messages: list[T] = []
+        for message_id, data in raw_messages:
+            # Decode and deserialize (same as read())
+            decoded_data: dict[str, Any] = {
+                k.decode() if isinstance(k, bytes) else k: v.decode()
+                if isinstance(v, bytes)
+                else v
+                for k, v in data.items()
+            }
+
+            payload = json.loads(decoded_data["payload"])
+            model = self.message_type.model_validate(payload)
+            messages.append(model)
+
+            # Re-acknowledge (no retry - if this fails, message stays pending)
+            await self.redis.xack(self.stream, self.group, message_id)
+
+        return messages
+
+    async def move_to_dlq(
+        self,
+        message: T,
+        failure_reason: str,
+    ) -> str:
+        """Move a failed message to the dead-letter queue with automatic retry.
+        
+        This is a MANUAL operation - application code must call this method
+        when a message fails processing. Messages are NOT automatically moved
+        to DLQ; the application is responsible for tracking failure counts
+        and deciding when to call this method.
+        
+        Args:
+            message: The Pydantic model that failed processing
+            failure_reason: Reason for failure (for debugging)
+            
+        Returns:
+            Message ID in the DLQ stream
+        """
+        @with_retry(self.retry_config)
+        async def _move_to_dlq() -> str:
+            dlq_data = {
+                "type": message.__class__.__name__,
+                "payload": message.model_dump_json(),
+                "failure_reason": failure_reason,
+                "original_stream": self.stream,
+                "consumer_group": self.group,
+                "consumer_name": self.consumer_name,
+                "moved_at": datetime.now(UTC).isoformat(),
+            }
+
+            message_id = await self.redis.xadd(self._dlq_stream, dlq_data)
+            return message_id.decode() if isinstance(message_id, bytes) else message_id
+
+        return await _move_to_dlq()
+
+    async def read_from_dlq(self, count: int = 10) -> list[T]:
+        """Read messages from the dead-letter queue with automatic retry.
+        
+        Useful for investigating failures and manual reprocessing.
+        
+        Args:
+            count: Maximum messages to read
+            
+        Returns:
+            List of deserialized Pydantic models
+        """
+        @with_retry(self.retry_config)
+        async def _read_from_dlq() -> list[T]:
+            # Read from DLQ stream
+            results = await self.redis.xrange(
+                self._dlq_stream,
+                b"-",
+                b"+",
+                count=count,
+            )
+
+            messages: list[T] = []
+            for _message_id, data in results:
                 # Decode bytes to strings
                 decoded_data: dict[str, Any] = {
                     k.decode() if isinstance(k, bytes) else k: v.decode()
@@ -151,49 +326,7 @@ class RedisStreamConsumer(Generic[T]):
                 model = self.message_type.model_validate(payload)
                 messages.append(model)
 
-                # Acknowledge message
-                await self.redis.xack(self.stream, self.group, message_id)
+            return messages
 
-        return messages
-
-    async def read_pending(self, count: int = 10) -> list[T]:
-        """Read pending (unacknowledged) messages for this consumer.
-        
-        Useful for recovery after crashes.
-        
-        Args:
-            count: Maximum messages to read
-            
-        Returns:
-            List of deserialized Pydantic models
-        """
-        await self.ensure_group()
-
-        # Get pending messages for this specific consumer
-        results = await self.redis.xreadgroup(
-            groupname=self.group,
-            consumername=self.consumer_name,
-            streams={self.stream: "0"},  # "0" means pending messages
-            count=count,
-        )
-
-        messages: list[T] = []
-        for stream_name, stream_messages in results:
-            for message_id, data in stream_messages:
-                # Decode and deserialize (same as read())
-                decoded_data: dict[str, Any] = {
-                    k.decode() if isinstance(k, bytes) else k: v.decode()
-                    if isinstance(v, bytes)
-                    else v
-                    for k, v in data.items()
-                }
-
-                payload = json.loads(decoded_data["payload"])
-                model = self.message_type.model_validate(payload)
-                messages.append(model)
-
-                # Re-acknowledge
-                await self.redis.xack(self.stream, self.group, message_id)
-
-        return messages
+        return await _read_from_dlq()
 

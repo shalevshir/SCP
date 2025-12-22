@@ -1,7 +1,7 @@
 """Pytest fixtures for shared library tests."""
 
 import asyncio
-from typing import AsyncGenerator
+from collections.abc import AsyncGenerator
 
 import pytest
 import pytest_asyncio

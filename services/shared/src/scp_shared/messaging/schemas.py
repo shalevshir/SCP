@@ -86,7 +86,9 @@ class HTFBiasMessage(BaseModel):
     """
     
     timestamp: datetime = Field(description="Bias computation time (UTC)")
-    bias: str = Field(description="Bias direction", pattern="^(bullish|bearish|neutral)$")
+    bias: str = Field(
+        description="Bias direction", pattern="^(bullish|bearish|neutral)$"
+    )
     score: float = Field(description="Bias score (0-10)", ge=0, le=10)
     confidence: str = Field(description="Confidence level", pattern="^(A\\+|A|B|C)$")
     structure_15m: str | None = Field(default=None, description="15m structure")

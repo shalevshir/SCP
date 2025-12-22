@@ -4,6 +4,7 @@ from scp_shared.messaging.redis_streams import (
     RedisStreamConsumer,
     RedisStreamPublisher,
 )
+from scp_shared.messaging.retry import RetryConfig, with_retry
 from scp_shared.messaging.schemas import (
     CandleMessage,
     FeaturesMessage,
@@ -15,6 +16,8 @@ from scp_shared.messaging.schemas import (
 __all__ = [
     "RedisStreamPublisher",
     "RedisStreamConsumer",
+    "RetryConfig",
+    "with_retry",
     "CandleMessage",
     "FeaturesMessage",
     "HTFBiasMessage",
