@@ -65,7 +65,7 @@ def features_message_to_series(msg: FeaturesMessage) -> pd.Series:
         "ema_9": msg.ema_9,
         "ema_20": msg.ema_20,
         "ema_50": msg.ema_50,
-        "dxy_correlation": msg.dxy_correlation,
+        "dxy_corr": msg.dxy_correlation,  # Map dxy_correlation to dxy_corr for scoring
         "structure_label": msg.structure_label,
         "vwap_deviation": msg.vwap_deviation,
     })

@@ -84,7 +84,7 @@ class TestSignalEngine:
         assert series["ema_9"] == 2648.0
         assert series["ema_20"] == 2645.0
         assert series["ema_50"] == 2640.0
-        assert series["dxy_correlation"] == -0.75
+        assert series["dxy_corr"] == -0.75  # Mapped from dxy_correlation to dxy_corr
         assert series["structure_label"] == "HH"
         assert series["vwap_deviation"] == 0.5
 
