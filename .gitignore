@@ -134,8 +134,18 @@ dmypy.json
 *~
 
 # Project specific
-logs/
+# Database files (SQLite)
+db/**
+
+# Backtest output directory
+output/
+
+# Logs (but keep .gitkeep)
+logs/*
+!logs/.gitkeep
 *.log
+
+# Data files (keep only 1m base data for resampling)
 data/gc_dx_ohlcv/*-1s.csv
 data/gc_dx_ohlcv/*-15m.csv
 data/gc_dx_ohlcv/*-1h.csv
