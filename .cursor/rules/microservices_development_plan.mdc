@@ -876,7 +876,63 @@ redis-cli XLEN features.15m
 
 ## Phase 4: HTF Bias Service (Week 3)
 
-### 4.1 Tasks
+### 4.0 Prerequisites: Monolith Refactor (CRITICAL)
+
+**Context:** Phase 3 validation revealed that services cannot run in Docker due to dependencies on root-level modules (`common/`, `feature_engine/`, `validation/`, `backtester/`) that are outside the `services/` build context. This must be resolved before Phase 4 integration testing.
+
+**Tasks:**
+
+- [ ] **4.0.1** Refactor `common/` → `services/shared/src/scp_shared/common/`
+  - Move logger, types, config, exceptions
+  - Update all imports in shared library
+  - Add tests to verify no breaking changes
+
+- [ ] **4.0.2** Refactor `feature_engine/` → `services/shared/src/scp_shared/feature_engine/`
+  - Move streaming processors (StreamingFeatureProcessor)
+  - Move calculators (EMA, RSI, VWAP, structure, DXY correlation)
+  - Move state management (FeatureState)
+  - Update all imports in shared library
+  - Add tests to verify no breaking changes
+
+- [ ] **4.0.3** Refactor `validation/` → `services/shared/src/scp_shared/validation/`
+  - Move validation rules
+  - Move guardrails logic (BehaviorGuardrails)
+  - Move session validation
+  - Update all imports
+  - Add tests to verify no breaking changes
+
+- [ ] **4.0.4** Update all service imports
+  - **data-adapter**: Update imports from `common.*` to `scp_shared.common.*`
+  - **feature-engine**: Update imports from `common.*` and `feature_engine.*`
+  - **htf-bias**: Update imports from `common.*` and `rule_engine.*`
+  - **bot-core**: Update imports from `common.*`, `rule_engine.*`, `validation.*`
+  - **execution**: Update imports from `common.*`, `backtester.*`
+
+- [ ] **4.0.5** Update all service pyproject.toml dependencies
+  - Remove references to root modules
+  - Add proper dependency on updated scp-shared
+
+- [ ] **4.0.6** Validation checkpoint: Services start successfully
+  - Build all Docker images
+  - Start data-adapter and feature-engine
+  - Verify health checks pass
+  - Test Redis stream integration
+  - Test database persistence
+
+**Estimated Time:** 1-2 days
+
+**Deliverables:**
+- All monolith modules moved to `services/shared/src/scp_shared/`
+- All services updated with new imports
+- All services start successfully in Docker
+- Integration tests pass
+- Documentation updated
+
+**Reference:** `docs/bugfixes/phase-3-validation-checkpoint.md`
+
+---
+
+### 4.1 HTF Bias Service Implementation
 
 - [ ] **4.1.1** Write tests for HTF bias computation wrapper
 - [ ] **4.1.2** Implement wrapper around `StreamingHTFBiasCalculator`
@@ -889,6 +945,8 @@ redis-cli XLEN features.15m
 
 ### 4.2 Validation Checkpoint
 
+**Prerequisites:** Section 4.0 (Monolith Refactor) must be complete
+
 ```bash
 # Run unit tests
 cd services/htf-bias
@@ -897,9 +955,15 @@ poetry run pytest tests/ -v
 # Integration: Data Adapter → Feature Engine → HTF Bias
 docker-compose up -d data-adapter feature-engine htf-bias
 
+# Verify all services healthy
+docker-compose ps
+
 # Check HTF bias published
 redis-cli XLEN htf.bias
 redis-cli XRANGE htf.bias - + COUNT 5
+
+# Verify database persistence
+psql -h localhost -U scp -d scp -c "SELECT COUNT(*) FROM htf_bias_history"
 ```
 
 ---
