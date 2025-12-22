@@ -280,6 +280,153 @@ If you see `dataset_unavailable_range` or subscription errors:
   ```
 - **Or**: Upgrade to a paid Databento subscription at https://databento.com/pricing
 
+---
+
+## Test Coverage Scripts
+
+### `test_coverage_service.sh` - Run Coverage for Single Service
+
+Runs tests with coverage for a specific microservice and generates detailed reports.
+
+**Requirements:**
+- Poetry installed
+- Service dependencies installed
+
+**Usage:**
+
+```bash
+# Run coverage for a specific service
+./scripts/test_coverage_service.sh execution
+./scripts/test_coverage_service.sh bot-core
+./scripts/test_coverage_service.sh shared
+
+# Available services:
+# - shared
+# - bot-core
+# - data-adapter
+# - execution
+# - feature-engine
+# - htf-bias
+```
+
+**Features:**
+- Installs dependencies automatically
+- Runs all tests with coverage tracking
+- Generates multiple report formats:
+  - Terminal output with missing lines
+  - HTML report (interactive, browse `coverage_html/index.html`)
+  - XML report (for CI/CD integration)
+  - JSON report (for programmatic analysis)
+- JUnit XML test results
+
+**Output Locations:**
+```
+services/<service-name>/
+  ├── coverage_html/index.html   # Interactive HTML report
+  ├── coverage.xml                # XML format for CI/CD
+  ├── coverage.json               # JSON format
+  └── pytest-results.xml          # Test results
+```
+
+---
+
+### `test_coverage_all.sh` - Run Coverage for All Services
+
+Runs tests with coverage for all microservices and generates a combined coverage report.
+
+**Requirements:**
+- Poetry installed
+- Python 3.11+
+
+**Usage:**
+
+```bash
+# Run coverage for all services
+./scripts/test_coverage_all.sh
+```
+
+**Features:**
+- Runs tests for all 6 microservices in sequence
+- Tracks which services pass/fail
+- Generates individual coverage reports for each service
+- Combines coverage data into unified report
+- Creates summary in JSON and Markdown formats
+- Provides coverage status with visual indicators:
+  - 🟢 Excellent: >= 80% coverage
+  - 🟡 Good: >= 60% coverage
+  - 🔴 Needs Improvement: < 60% coverage
+
+**Output:**
+```
+coverage_reports/
+  ├── shared-coverage.xml
+  ├── bot-core-coverage.xml
+  ├── data-adapter-coverage.xml
+  ├── execution-coverage.xml
+  ├── feature-engine-coverage.xml
+  ├── htf-bias-coverage.xml
+  ├── coverage_summary.json       # JSON summary
+  └── coverage_report.md          # Markdown report
+```
+
+**Example Output:**
+
+```
+==========================================
+Combined Coverage Report
+==========================================
+
+Service              Statements   Covered    Coverage
+----------------------------------------------------
+shared               450          405        90.0%
+bot-core             280          245        87.5%
+data-adapter         190          165        86.8%
+execution            520          442        85.0%
+feature-engine       310          263        84.8%
+htf-bias             220          187        85.0%
+----------------------------------------------------
+TOTAL                1970         1707       86.6%
+==================================================
+```
+
+---
+
+## CI/CD Integration
+
+The test coverage scripts are integrated into the GitHub Actions CI/CD pipeline:
+
+**Service Tests Job:**
+- Runs tests for all services in parallel using a matrix strategy
+- Generates coverage reports for each service
+- Uploads individual coverage artifacts
+
+**Combined Coverage Job:**
+- Runs after all service tests complete
+- Downloads all coverage artifacts
+- Combines coverage data into unified report
+- Posts coverage report as PR comment
+- Uploads combined report as artifact
+
+**Running Locally:**
+
+```bash
+# Test individual service (fast feedback)
+./scripts/test_coverage_service.sh execution
+
+# Test all services (full coverage report)
+./scripts/test_coverage_all.sh
+
+# Or use Make commands (if defined)
+make test-coverage
+```
+
+**Coverage Thresholds:**
+- Minimum Green: 80% (Excellent)
+- Minimum Orange: 60% (Good)
+- Below 60%: Needs Improvement
+
+---
+
 ## Security Note
 
 ⚠️ **Never commit API keys or secrets to the repository.** Always use environment variables for sensitive credentials.
