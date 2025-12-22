@@ -184,3 +184,4 @@ class TestProcessCandlePair:
         mock_publisher.publish.assert_not_called()
         mock_repo.save_bias.assert_not_called()
 
+

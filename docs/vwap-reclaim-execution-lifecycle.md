@@ -380,3 +380,4 @@ Bar 4: VWAP hold satisfied (2 bars)
 - `rule_engine/scoring.py` - Signal scoring with penalty calculations
 
 
+

@@ -158,3 +158,4 @@ class TestBuildDiagnosticsSecondConfirmation:
         assert diagnostics["bars_since_reclaim"] == 1
 
 
+

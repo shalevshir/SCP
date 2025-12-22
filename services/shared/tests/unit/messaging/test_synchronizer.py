@@ -292,3 +292,4 @@ class TestCandleSynchronizer:
         with pytest.raises(ValueError, match="Unknown symbol"):
             sync.add_candle(unknown)
 
+
