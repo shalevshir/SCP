@@ -1,7 +1,7 @@
 # Force use of bash for all recipes (required for db-reset and other advanced shell features)
 SHELL := /bin/bash
 
-.PHONY: test test-unit test-verbose test-parallel test-coverage test-fast lint format check clean help install data-clean data-fetch data-resample data-resample-5m data-resample-1h infra-up infra-down infra-logs infra-ps db-migrate db-reset db-shell shared-install shared-test services-up services-down services-build services-logs services-ps
+.PHONY: test test-unit test-verbose test-parallel test-coverage test-fast lint format check clean help install data-clean data-fetch data-resample data-resample-5m data-resample-1h infra-up infra-down infra-logs infra-ps db-migrate db-reset db-shell shared-install shared-test service-test-coverage service-test-coverage-all services-up services-down services-build services-logs services-ps
 
 help:
 	@echo "SCP Trading Bot - Development Commands"
@@ -29,13 +29,15 @@ help:
 	@echo "  make db-shell          Open PostgreSQL shell"
 	@echo ""
 	@echo "Testing:"
-	@echo "  make test              Run all tests"
-	@echo "  make test-unit         Run unit tests only"
-	@echo "  make test-verbose      Run tests with verbose output"
-	@echo "  make test-parallel     Run tests in parallel"
-	@echo "  make test-coverage     Run tests with coverage report"
-	@echo "  make test-fast         Run tests in parallel with minimal output"
-	@echo "  make shared-test       Run shared library tests"
+	@echo "  make test                          Run all tests"
+	@echo "  make test-unit                     Run unit tests only"
+	@echo "  make test-verbose                  Run tests with verbose output"
+	@echo "  make test-parallel                 Run tests in parallel"
+	@echo "  make test-coverage                 Run tests with coverage report"
+	@echo "  make test-fast                     Run tests in parallel with minimal output"
+	@echo "  make shared-test                   Run shared library tests"
+	@echo "  make service-test-coverage         Run coverage for a single service (SERVICE=name)"
+	@echo "  make service-test-coverage-all     Run coverage for all services + combined report"
 	@echo ""
 	@echo "Data Management:"
 	@echo "  make data-clean        Clean and deduplicate CSV data (remove spreads, select highest volume)"
@@ -205,6 +207,22 @@ shared-test:
 	@echo "Running shared library tests..."
 	cd services/shared && poetry run pytest -v
 	@echo "✓ Shared library tests passed"
+
+service-test-coverage:
+	@if [ -z "$(SERVICE)" ]; then \
+		echo "Error: SERVICE not specified."; \
+		echo "Usage: make service-test-coverage SERVICE=<service-name>"; \
+		echo "Available services: shared, bot-core, data-adapter, execution, feature-engine, htf-bias"; \
+		exit 1; \
+	fi
+	@echo "Running coverage for service: $(SERVICE)"
+	./scripts/test_coverage_service.sh $(SERVICE)
+
+service-test-coverage-all:
+	@echo "Running coverage for all services..."
+	./scripts/test_coverage_all.sh
+	@echo "✓ All service tests complete"
+	@echo "View combined report at: coverage_reports/coverage_report.md"
 
 # ============================================================================
 # Microservices Commands

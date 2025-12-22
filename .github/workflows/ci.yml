@@ -142,7 +142,9 @@ jobs:
       matrix:
         service:
           - shared
+          - bot-core
           - data-adapter
+          - execution
           - feature-engine
           - htf-bias
     
@@ -200,6 +202,214 @@ jobs:
           name: test-results-${{ matrix.service }}
           path: services/${{ matrix.service }}/pytest-results.xml
           retention-days: 30
+
+  combined-coverage:
+    name: Combined Coverage Report
+    runs-on: ubuntu-latest
+    needs: service-tests
+    if: always()
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install coverage tool
+        run: pip install coverage
+      
+      - name: Create coverage directory
+        run: mkdir -p coverage_reports
+      
+      - name: Download all coverage reports
+        uses: actions/download-artifact@v4
+        with:
+          pattern: coverage-*
+          path: coverage_artifacts
+      
+      - name: Combine coverage reports
+        run: |
+          # Move coverage files to coverage_reports directory
+          for service in shared bot-core data-adapter execution feature-engine htf-bias; do
+            if [ -d "coverage_artifacts/coverage-${service}" ]; then
+              cp "coverage_artifacts/coverage-${service}/coverage.xml" "coverage_reports/${service}-coverage.xml" || true
+            fi
+          done
+          
+          # Generate combined report
+          python3 << 'PYTHON_SCRIPT'
+          import json
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+          
+          coverage_dir = Path("coverage_reports")
+          services = ["shared", "bot-core", "data-adapter", "execution", "feature-engine", "htf-bias"]
+          
+          total_lines = 0
+          covered_lines = 0
+          service_coverage = {}
+          
+          for service in services:
+              xml_file = coverage_dir / f"{service}-coverage.xml"
+              if not xml_file.exists():
+                  print(f"Warning: Coverage file not found for {service}")
+                  continue
+              
+              try:
+                  tree = ET.parse(xml_file)
+                  root = tree.getroot()
+                  
+                  # Parse coverage data from XML
+                  lines_valid = int(root.attrib.get('lines-valid', 0))
+                  lines_covered = int(root.attrib.get('lines-covered', 0))
+                  line_rate = float(root.attrib.get('line-rate', 0))
+                  
+                  service_coverage[service] = {
+                      "statements": lines_valid,
+                      "covered": lines_covered,
+                      "percent": line_rate * 100
+                  }
+                  
+                  total_lines += lines_valid
+                  covered_lines += lines_covered
+              except ET.ParseError as e:
+                  print(f"Error: Failed to parse XML for {service}: {e}")
+                  continue
+              except (ValueError, KeyError) as e:
+                  print(f"Error: Invalid coverage data format for {service}: {e}")
+                  continue
+          
+          overall_percent = (covered_lines / total_lines * 100) if total_lines > 0 else 0
+          
+          print("\n" + "="*60)
+          print("Combined Coverage Report")
+          print("="*60)
+          print(f"\n{'Service':<20} {'Statements':<12} {'Covered':<10} {'Coverage':<10}")
+          print("-" * 60)
+          
+          for service, cov in service_coverage.items():
+              print(f"{service:<20} {cov['statements']:<12} {cov['covered']:<10} {cov['percent']:.1f}%")
+          
+          print("-" * 60)
+          print(f"{'TOTAL':<20} {total_lines:<12} {covered_lines:<10} {overall_percent:.1f}%")
+          print("="*60)
+          
+          # Write summary to file
+          summary_file = coverage_dir / "coverage_summary.json"
+          with open(summary_file, 'w') as f:
+              json.dump({
+                  "services": service_coverage,
+                  "total": {
+                      "statements": total_lines,
+                      "covered": covered_lines,
+                      "percent": overall_percent
+                  }
+              }, f, indent=2)
+          
+          print(f"\nCombined coverage summary saved to: {summary_file}")
+          
+          # Create markdown report
+          md_file = coverage_dir / "coverage_report.md"
+          with open(md_file, 'w') as f:
+              f.write("# Test Coverage Report\n\n")
+              f.write("## Service Coverage\n\n")
+              f.write("| Service | Statements | Covered | Coverage |\n")
+              f.write("|---------|------------|---------|----------|\n")
+              for service, cov in service_coverage.items():
+                  f.write(f"| {service} | {cov['statements']} | {cov['covered']} | {cov['percent']:.1f}% |\n")
+              f.write(f"| **TOTAL** | **{total_lines}** | **{covered_lines}** | **{overall_percent:.1f}%** |\n")
+              f.write("\n")
+              
+              # Add coverage status badge
+              if overall_percent >= 80:
+                  status = "🟢 Excellent"
+              elif overall_percent >= 60:
+                  status = "🟡 Good"
+              else:
+                  status = "🔴 Needs Improvement"
+              
+              f.write(f"\n**Overall Status:** {status}\n\n")
+              f.write(f"- ✅ Coverage >= 80%: Excellent\n")
+              f.write(f"- ⚠️  Coverage >= 60%: Good\n")
+              f.write(f"- ❌ Coverage < 60%: Needs Improvement\n")
+          
+          print(f"Markdown report saved to: {md_file}")
+          
+          # Write to GitHub step summary
+          with open(md_file, 'r') as f:
+              md_content = f.read()
+          
+          import os
+          github_step_summary = os.getenv('GITHUB_STEP_SUMMARY')
+          if github_step_summary:
+              with open(github_step_summary, 'a') as f:
+                  f.write(md_content)
+          
+          PYTHON_SCRIPT
+      
+      - name: Upload combined coverage report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: combined-coverage-report
+          path: coverage_reports/
+          retention-days: 30
+      
+      - name: Comment coverage on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            
+            const reportPath = 'coverage_reports/coverage_report.md';
+            
+            // Check if the report file exists
+            if (!fs.existsSync(reportPath)) {
+              console.log('Warning: Coverage report file not found. Skipping PR comment.');
+              const errorMessage = '## ⚠️ Coverage Report Unavailable\n\n' +
+                'The coverage report could not be generated. This may be due to:\n' +
+                '- Test failures in one or more services\n' +
+                '- Malformed coverage XML files\n' +
+                '- Missing coverage artifacts\n\n' +
+                'Please check the "Combine coverage reports" step logs for details.';
+              
+              await github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: errorMessage
+              });
+              return;
+            }
+            
+            try {
+              const coverageReport = fs.readFileSync(reportPath, 'utf8');
+              
+              await github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: coverageReport
+              });
+            } catch (error) {
+              console.error('Error reading or posting coverage report:', error);
+              
+              const errorMessage = '## ❌ Coverage Report Error\n\n' +
+                `Failed to read or post the coverage report: ${error.message}\n\n` +
+                'Please check the workflow logs for details.';
+              
+              await github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: errorMessage
+              });
+            }
 
   integration-tests:
     name: Integration Tests
