@@ -47,12 +47,17 @@ def mask_connection_url(url: str) -> str:
             auth_part, host_part = masked_netloc.rsplit("@", 1)
             
             if ":" in auth_part:
-                # Has username:password
+                # Has username:password or :password (password only)
                 username = auth_part.split(":")[0]
-                masked_netloc = f"{username}:***@{host_part}"
+                if username:
+                    # username:password format - mask password, preserve username
+                    masked_netloc = f"{username}:***@{host_part}"
+                else:
+                    # :password format (password only, no username) - mask password
+                    masked_netloc = f":***@{host_part}"
             else:
-                # Just password (no username)
-                masked_netloc = f"***@{host_part}"
+                # Just username (no password) - preserve username, no masking needed
+                masked_netloc = f"{auth_part}@{host_part}"
         
         # Reconstruct URL with masked credentials
         masked_parsed = parsed._replace(netloc=masked_netloc)

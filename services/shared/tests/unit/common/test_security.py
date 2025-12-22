@@ -41,12 +41,14 @@ class TestMaskConnectionUrl:
         assert masked == url
     
     def test_handles_url_with_username_only(self):
-        """Handles URL with username but no password."""
+        """Handles URL with username but no password - preserves username."""
         url = "postgresql://user@localhost:5432/mydb"
         masked = mask_connection_url(url)
         
-        # Should still mask to be safe
-        assert "***" in masked or masked == url
+        # Username is not sensitive, so it should be preserved
+        assert masked == url
+        assert "user" in masked
+        assert "***" not in masked
     
     def test_handles_invalid_url_gracefully(self):
         """Returns safe message if URL parsing fails."""
