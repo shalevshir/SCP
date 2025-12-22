@@ -153,7 +153,7 @@ SCP/
 │       └── test_paper_trading.py
 │
 ├── backtester/                   # Existing (keep for reference)
-├── feature_engine/               # Existing (shared with services)
+├── feature_engine/               # Existing monolith (migrated to scp_shared.indicators)
 ├── rule_engine/                  # Existing (shared with services)
 ├── validation/                   # Existing (shared with services)
 └── common/                       # Existing (shared with services)
@@ -748,7 +748,7 @@ class TestFeatureProcessor:
 ```python
 # services/feature-engine/src/feature_engine_svc/processor.py
 
-from feature_engine.streaming import StreamingFeatureProcessor
+from scp_shared.indicators.streaming import StreamingFeatureProcessor
 from scp_shared.messaging.schemas import CandleMessage, FeaturesMessage
 from common.types import Candle
 

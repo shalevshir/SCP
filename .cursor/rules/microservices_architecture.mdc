@@ -787,19 +787,21 @@ Trace spans across services:
 
 ## 9. Current Module Mapping
 
-| Current Module | Target Service | Key Classes to Migrate |
-|----------------|----------------|------------------------|
-| `data_layer/clients.py` | Data Adapter | `LocalCSVClient` → `DatabentoClient` |
-| `data_layer/loader.py` | Data Adapter | `HistoricalDataLoader` |
-| `feature_engine/streaming.py` | Feature Engine | `StreamingFeatureProcessor` |
-| `feature_engine/state.py` | Feature Engine | `FeatureState` |
-| `rule_engine/htf/streaming.py` | HTF Bias | `StreamingHTFBiasCalculator` |
-| `rule_engine/htf/*.py` | HTF Bias | All HTF calculators |
-| `rule_engine/scoring.py` | Bot Core | `score_signal` |
-| `validation/*.py` | Bot Core | `ValidationEngine`, `BehaviorGuardrails` |
-| `backtester/trade.py` | Execution | `Trade`, `create_trade_from_entry` |
-| `backtester/invalidations.py` | Execution | `InvalidationChecker` |
-| `feature_engine/vwap_reclaim_state_machine.py` | Execution | `VWAPReclaimStateMachine` |
+| Current Module | Target Location | Key Classes |
+|----------------|-----------------|-------------|
+| `data_layer/clients.py` | Data Adapter Service | `LocalCSVClient` → `DatabentoClient` |
+| `data_layer/loader.py` | Data Adapter Service | `HistoricalDataLoader` |
+| `feature_engine/streaming.py` | `scp_shared.indicators` | `StreamingFeatureProcessor` |
+| `feature_engine/state.py` | `scp_shared.indicators` | `FeatureState` |
+| `rule_engine/htf/streaming.py` | `scp_shared.rule_engine.htf` | `StreamingHTFBiasCalculator` |
+| `rule_engine/htf/*.py` | `scp_shared.rule_engine.htf` | All HTF calculators |
+| `rule_engine/scoring.py` | Bot Core Service | `score_signal` |
+| `validation/*.py` | `scp_shared.validation` | `ValidationEngine`, `BehaviorGuardrails` |
+| `backtester/trade.py` | Execution Service | `Trade`, `create_trade_from_entry` |
+| `backtester/invalidations.py` | Execution Service | `InvalidationChecker` |
+| `feature_engine/vwap_reclaim_state_machine.py` | Execution Service | `VWAPReclaimStateMachine` |
+
+**Note:** `scp_shared.indicators` was previously named `scp_shared.feature_engine` but was renamed to avoid confusion with the Feature Engine **service**. The shared library contains pure calculation algorithms (EMA, RSI, VWAP, structure detection), while the service handles Redis streams, database persistence, and HTTP endpoints.
 
 ---
 
