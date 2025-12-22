@@ -10,4 +10,8 @@ class FeatureEngineConfig(BaseServiceConfig):
 
     service_name: str = Field(default="feature-engine")
     service_version: str = Field(default="0.1.0")
+    
+    # Warmup settings
+    warmup_candles: int = Field(default=60, description="Number of candles to load for warmup")
+    enable_warmup: bool = Field(default=True, description="Enable warmup from database")
 
