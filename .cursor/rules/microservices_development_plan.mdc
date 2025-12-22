@@ -957,33 +957,33 @@ redis-cli XLEN features.15m
   - Confidence conversion (low/medium/high → A+/A/B/C)
   - BiasPublisher for Redis stream publishing
 
-- [ ] **4.1.3** Write tests for bias update on 15m/1h boundaries
+- [x] **4.1.3** Write tests for bias update on 15m/1h boundaries
   - **Note:** Boundary detection handled by StreamingHTFBiasCalculator (tested in shared library)
 
-- [ ] **4.1.4** Implement boundary detection and bias publishing
+- [x] **4.1.4** Implement boundary detection and bias publishing
   - **Note:** Boundary detection handled by StreamingHTFBiasCalculator
   - Publishing implemented in BiasPublisher
 
-- [ ] **4.1.5** Write tests for chop detection
+- [x] **4.1.5** Write tests for chop detection
   - **Note:** Chop detection handled by StreamingHTFBiasCalculator (tested in shared library)
 
-- [ ] **4.1.6** Implement chop/conflict detection
+- [x] **4.1.6** Implement chop/conflict detection
   - **Note:** Handled by StreamingHTFBiasCalculator, passed through in HTFBiasMessage
 
-- [ ] **4.1.7** Add warmup from feature history
-  - **Pending:** Full service lifecycle with warmup
+- [x] **4.1.7** Add warmup from feature history
+  - **Note:** Full service lifecycle with warmup implemented
 
-- [ ] **4.1.8** Create Dockerfile + docker-compose entry
-  - **Pending:** Complete service implementation
+- [x] **4.1.8** Create Dockerfile + docker-compose entry
+  - **Note:** Complete service implementation finished
 
-### 4.1 Deliverables (Partial)
+### 4.1 Deliverables
 
 - [x] HTFBiasProcessor wrapper with tests (5 tests, 100% pass) ✅
 - [x] BiasPublisher for Redis stream publishing ✅
 - [x] Confidence conversion logic ✅
-- [ ] Full service lifecycle (main.py with warmup, processing loop)
-- [ ] Database persistence for HTF bias history
-- [ ] Dockerfile + docker-compose entry
+- [x] Full service lifecycle (main.py with warmup, processing loop) ✅
+- [x] Database persistence for HTF bias history ✅
+- [x] Dockerfile + docker-compose entry ✅
 
 **Status:** ✅ **PHASE 4 COMPLETE** (December 22, 2025)
 
