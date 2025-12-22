@@ -94,6 +94,10 @@ async def process_streams(
     # Cache latest features for invalidation checking
     latest_features: FeaturesMessage | None = None
     
+    # Cleanup counter (run cleanup every N candles to prevent memory leaks)
+    cleanup_counter = 0
+    CLEANUP_INTERVAL = 50  # Cleanup every 50 candles (~50 minutes)
+    
     try:
         while not shutdown_event.is_set():
             # Read from all streams
@@ -117,6 +121,12 @@ async def process_streams(
             # Process candles (SL/TP monitoring)
             for candle_msg in candles_list:
                 await trade_manager.on_candle(candle_msg, latest_features)
+                cleanup_counter += 1
+            
+            # Periodic cleanup to prevent memory leaks
+            if cleanup_counter >= CLEANUP_INTERVAL:
+                sm_manager.cleanup_old_state_machines()
+                cleanup_counter = 0
     
     except asyncio.CancelledError:
         logger.info("Execution processing cancelled")

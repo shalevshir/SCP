@@ -269,11 +269,18 @@ class StateMachineManager:
         )
     
     def cleanup_old_state_machines(self) -> None:
-        """Remove expired/invalidated state machines from memory."""
+        """Remove terminal state machines from memory to prevent leaks.
+        
+        Removes state machines in terminal states (EXECUTED, EXPIRED, INVALIDATED)
+        to prevent unbounded memory growth as trades accumulate over time.
+        Active state machines (PENDING, CONFIRMED, etc.) are preserved.
+        """
         to_remove = []
         
         for signal_id, sm in self._state_machines.items():
+            # Remove terminal states: EXECUTED, EXPIRED, INVALIDATED
             if sm.current_state in (
+                VWAPReclaimState.EXECUTED,
                 VWAPReclaimState.EXPIRED,
                 VWAPReclaimState.INVALIDATED,
             ):
@@ -284,6 +291,6 @@ class StateMachineManager:
             logger.debug(f"Cleaned up state machine for signal {signal_id}")
         
         if to_remove:
-            logger.info(f"Cleaned up {len(to_remove)} old state machines")
+            logger.info(f"Cleaned up {len(to_remove)} terminal state machines")
 
 
