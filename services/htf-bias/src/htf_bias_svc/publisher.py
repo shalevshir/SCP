@@ -30,3 +30,4 @@ class BiasPublisher:
         """
         return await self.publisher.publish("htf.bias", bias)
 
+

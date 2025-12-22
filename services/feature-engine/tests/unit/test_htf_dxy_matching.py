@@ -284,3 +284,4 @@ class TestHTFDXYMatching:
         # In the actual process_candle_pair, this would result in a warning
         # and the 15m features would not be processed (no matching DXY candle)
 
+

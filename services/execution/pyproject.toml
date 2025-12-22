@@ -10,6 +10,9 @@ packages = [
 [tool.poetry.dependencies]
 python = ">=3.11,<3.13"
 scp-shared = {path = "../shared", develop = true}
+fastapi = "^0.115.0"
+uvicorn = {extras = ["standard"], version = "^0.24.0"}
+redis = {extras = ["hiredis"], version = "^5.0.0"}
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.3.0"
@@ -22,8 +25,8 @@ testpaths = ["tests"]
 pythonpath = ["src"]
 
 [tool.pyright]
-include = ["src"]
-extraPaths = ["../shared/src"]
+include = ["src", "tests"]
+extraPaths = ["src", "../shared/src"]
 reportMissingImports = true
 
 [build-system]

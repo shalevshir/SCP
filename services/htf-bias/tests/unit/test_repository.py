@@ -221,3 +221,4 @@ class TestBiasRepository:
         gc, dxy = pairs[0]
         assert gc.timestamp == datetime(2025, 1, 15, 10, 0, tzinfo=timezone.utc)
 
+

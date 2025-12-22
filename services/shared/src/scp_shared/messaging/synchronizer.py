@@ -112,3 +112,4 @@ class CandleSynchronizer:
         self.gc_buffer.clear()
         self.dxy_buffer.clear()
 
+
