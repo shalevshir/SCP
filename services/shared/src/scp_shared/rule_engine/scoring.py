@@ -706,7 +706,7 @@ def score_signal(features: pd.Series, htf_bias: HTFBias, context: dict) -> Signa
     quality_flags = None
 
     if setup_type == "VWAP_RECLAIM":
-        from rule_engine.htf.vwap.reclaim import validate_reclaim_context
+        from scp_shared.rule_engine.htf.vwap.reclaim import validate_reclaim_context
 
         context_result = validate_reclaim_context(htf_bias, features)
         quality_flags = context_result.quality_flags
@@ -894,13 +894,15 @@ def determine_setup_type(features: pd.Series, htf_bias: HTFBias) -> str:
     vwap_dev = abs((close - vwap) / vwap * 100) if vwap != 0 else 0
 
     # VWAP_FADE: Strict structure-based validation
-    from rule_engine.setup_detectors.vwap_fade import detect_vwap_fade
+    from scp_shared.rule_engine.setup_detectors.vwap_fade import detect_vwap_fade
 
     if detect_vwap_fade(features, htf_bias, df=None):
         return "VWAP_FADE"
 
     # DXY_CONTINUATION: Strict multi-factor validation
-    from rule_engine.setup_detectors.dxy_continuation import detect_dxy_continuation
+    from scp_shared.rule_engine.setup_detectors.dxy_continuation import (
+        detect_dxy_continuation,
+    )
 
     if detect_dxy_continuation(features, htf_bias):
         return "DXY_CONTINUATION"
@@ -909,7 +911,7 @@ def determine_setup_type(features: pd.Series, htf_bias: HTFBias) -> str:
     # Context validation determines if setup type is VWAP_RECLAIM
     # Entry readiness is checked later in scoring to apply penalties
     # Import here to avoid circular dependency
-    from rule_engine.htf.vwap.reclaim import validate_reclaim_context
+    from scp_shared.rule_engine.htf.vwap.reclaim import validate_reclaim_context
 
     context_result = validate_reclaim_context(htf_bias, features)
 

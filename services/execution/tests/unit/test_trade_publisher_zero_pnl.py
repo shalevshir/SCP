@@ -171,3 +171,4 @@ class TestTradePublisherZeroPnL:
             log_call = mock_logger.info.call_args[0][0]
             assert "pnl=N/A" in log_call
 
+
