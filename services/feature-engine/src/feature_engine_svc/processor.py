@@ -4,9 +4,9 @@ This module wraps the existing StreamingFeatureProcessor to convert between
 message types (CandleMessage <-> Candle) and handle service-level concerns.
 """
 
-from feature_engine.streaming import StreamingFeatureProcessor
+from scp_shared.indicators.streaming import StreamingFeatureProcessor
 from scp_shared.messaging.schemas import CandleMessage, FeaturesMessage
-from common.types import Candle
+from scp_shared.common import Candle
 
 
 class FeatureProcessor:

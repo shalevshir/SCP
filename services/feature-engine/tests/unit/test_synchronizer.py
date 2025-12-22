@@ -3,7 +3,7 @@
 import pytest
 from datetime import datetime, timezone
 
-from feature_engine_svc.synchronizer import CandleSynchronizer
+from scp_shared.messaging import CandleSynchronizer
 from scp_shared.messaging.schemas import CandleMessage
 
 
