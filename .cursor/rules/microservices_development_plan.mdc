@@ -146,16 +146,16 @@ SCP/
 
 ### 0.2 Tasks
 
-- [ ] **0.2.1** Create `services/` directory structure
-- [ ] **0.2.2** Create `infra/` directory with Docker Compose files
-- [ ] **0.2.3** Create `services/shared/` package with:
-  - [ ] Redis Streams pub/sub utilities
-  - [ ] Pydantic message schemas
-  - [ ] Database connection helpers
-  - [ ] Health check endpoints (FastAPI)
-- [ ] **0.2.4** Set up PostgreSQL + TimescaleDB with initial schema
-- [ ] **0.2.5** Set up Redis with persistence
-- [ ] **0.2.6** Create Makefile with common commands
+- [x] **0.2.1** Create `services/` directory structure
+- [x] **0.2.2** Create `infra/` directory with Docker Compose files
+- [x] **0.2.3** Create `services/shared/` package with:
+  - [x] Redis Streams pub/sub utilities
+  - [x] Pydantic message schemas
+  - [x] Database connection helpers
+  - [x] Health check endpoints (FastAPI)
+- [x] **0.2.4** Set up PostgreSQL + TimescaleDB with initial schema
+- [x] **0.2.5** Set up Redis with persistence
+- [x] **0.2.6** Create Makefile with common commands
 
 ### 0.3 Validation Checkpoint
 
@@ -175,10 +175,10 @@ psql -h localhost -U scp -d scp -c "SELECT extname FROM pg_extension WHERE extna
 
 ### 0.4 Deliverables
 
-- [ ] `docker-compose.yml` starts Redis + PostgreSQL
-- [ ] Database schema applied successfully
-- [ ] `scp_shared` package installable by all services
-- [ ] Health check endpoint template working
+- [x] `docker-compose.yml` starts Redis + PostgreSQL
+- [x] Database schema applied successfully
+- [x] `scp_shared` package installable by all services
+- [x] Health check endpoint template working
 
 ---
 
