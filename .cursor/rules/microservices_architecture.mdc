@@ -19,7 +19,86 @@ alwaysApply: true
 
 ---
 
-## 2. System Architecture Diagram
+## 2. Architecture Principles
+
+### 2.1 Shared Library Rules
+
+The `scp_shared` library contains code shared between microservices. To maintain clean architecture and avoid monolith dependencies:
+
+1. **No monolith dependencies**: `scp_shared` must NOT import from:
+   - `data_layer/` - Contains batch processing logic for backtester only
+   - `backtester/` - Backtester-specific simulation logic
+   - `rule_engine/` (monolith root) - Use `scp_shared.rule_engine` instead
+   - `validation/` (monolith root) - Use `scp_shared.validation` instead
+   - `feature_engine/` (monolith root) - Use `scp_shared.indicators` instead
+
+2. **No backtester-only code**: Functions that only work with:
+   - Batch DataFrames (pre-loaded entire dataset)
+   - `MultiTimeframeData` objects (backtester's synchronized data structure)
+   - Vectorized operations requiring future data
+   
+   These belong in the monolith, not `scp_shared`.
+
+3. **Streaming-first design**: Shared library algorithms must work:
+   - Bar-by-bar (incremental processing)
+   - With zero lookahead (no future data access)
+   - From message streams (Redis/pub-sub)
+   
+   Not from pre-loaded DataFrames.
+
+4. **Minimal surface area**: Only export what microservices actually use.
+   - If a function isn't imported by any service, it doesn't belong in shared
+   - Use `grep` to verify imports before adding new exports
+   - Remove dead code aggressively
+
+5. **Type checking guards**: If backtester-only code must reference shared types:
+   - Use `TYPE_CHECKING` guards for import-time only
+   - Never execute backtester-only code paths in services
+   - Document clearly: "Backtester use only"
+
+### 2.2 Code Organization
+
+**Monolith (Backtester):**
+```
+SCP/
+├── data_layer/              # Batch data loading, CSV processing
+├── feature_engine/          # Vectorized feature computation
+├── rule_engine/             # Batch signal scoring
+├── validation/              # Batch validation
+└── backtester/              # Simulation loop
+```
+
+**Shared Library (Microservices):**
+```
+services/shared/src/scp_shared/
+├── common/                  # Logging, types, utilities
+├── config/                  # Config loading
+├── database/                # PostgreSQL/TimescaleDB clients
+├── health/                  # Health check endpoints
+├── indicators/              # Streaming indicators (EMA, RSI, VWAP, structure)
+├── messaging/               # Redis Streams, schemas
+├── rule_engine/             # Signal scoring logic
+│   ├── scoring.py          # Core scoring algorithm
+│   ├── signal.py           # Signal type
+│   └── htf/
+│       ├── types.py        # HTFBias type
+│       └── validation.py   # HTF validation helpers
+└── validation/              # Guardrails, session validation
+```
+
+**Services (Production):**
+```
+services/
+├── data-adapter/            # Live data ingestion
+├── feature-engine/          # Streaming feature computation
+├── htf-bias/                # HTF bias calculation
+├── bot-core/                # Signal generation
+└── execution/               # Trade execution
+```
+
+---
+
+## 3. System Architecture Diagram
 
 ```
                     ┌─────────────────┐
