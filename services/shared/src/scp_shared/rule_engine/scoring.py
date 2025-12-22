@@ -767,10 +767,14 @@ def score_signal(features: pd.Series, htf_bias: HTFBias, context: dict) -> Signa
     if htf_penalties < -1.0:
         factor_scores["htf_weak_bias"] = -1.0
         adjusted_score = adjusted_score - htf_penalties - 1.0  # Adjust score
+        htf_penalties = -1.0  # Update variable for use in total penalty calculation
         logger.debug(f"HTF penalties capped: {htf_penalties:.2f} -> -1.0")
     
     # Apply total penalty cap
-    all_penalties = structure_penalties + timing_penalties + min(htf_penalties, -1.0)
+    # Use max() to cap negative penalties at -1.0 (no more negative than -1.0)
+    # When htf_penalties = 0, max(0, -1.0) = 0 (correct: no penalty)
+    # When htf_penalties < 0, max(htf_penalties, -1.0) caps at -1.0
+    all_penalties = structure_penalties + timing_penalties + max(htf_penalties, -1.0)
     if all_penalties < -4.0:
         # Scale all penalties proportionally to reach -4.0 total
         scale_factor = -4.0 / all_penalties
@@ -832,7 +836,6 @@ def score_signal(features: pd.Series, htf_bias: HTFBias, context: dict) -> Signa
     diagnostics["rejection_analysis"] = rejection_analysis
 
     # Create validation flags
-    features.get("dxy_corr")
     validation_flags = {
         "session_ok": context.get("session_ok", True),
         "tier_ok": True,
@@ -1502,7 +1505,7 @@ def calculate_rejection_candle(
     # Need: upper wick + close near VWAP + bearish close
     elif htf_bias.direction == "short":
         has_strong_wick = upper_wick > body * 2
-        has_moderate_wick = upper_wick > max(open_price, min_wick_threshold)
+        has_moderate_wick = upper_wick > max(body, min_wick_threshold)
         correct_body = bearish_close
 
         if has_strong_wick:
