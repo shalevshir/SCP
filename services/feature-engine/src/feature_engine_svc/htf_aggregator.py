@@ -45,14 +45,16 @@ class HTFCandleAggregator:
         # Current symbol
         self.symbol: str | None = None
     
-    def add_1m_candle(self, candle: CandleMessage) -> CandleMessage | None:
-        """Add 1m candle and return HTF candle if boundary crossed.
+    def add_1m_candle(self, candle: CandleMessage) -> list[CandleMessage]:
+        """Add 1m candle and return HTF candles if boundary crossed.
         
         Args:
             candle: 1-minute candle
             
         Returns:
-            15m or 1h candle if boundary crossed, None otherwise
+            List of HTF candles (may contain 0, 1, or 2 candles).
+            At hourly boundaries, returns [15m_candle, 1h_candle] to ensure
+            both 15m and 1h features are computed.
         """
         self.symbol = candle.symbol
         
@@ -62,24 +64,34 @@ class HTFCandleAggregator:
         # Update 1h aggregation
         self._update_1h(candle)
         
-        # Check for 1h boundary (takes precedence)
+        results: list[CandleMessage] = []
+        
+        # Check for 1h boundary - emit BOTH 15m and 1h candles
         if self.is_1h_boundary(candle.timestamp):
-            # Emit 1h candle (includes last candle)
+            # First emit 15m candle (minute 59 is also a 15m boundary)
+            candle_15m = self._emit_15m_candle()
+            results.append(candle_15m)
+            
+            # Then emit 1h candle
             candle_1h = self._emit_1h_candle()
+            results.append(candle_1h)
+            
             # Reset both 15m and 1h
             self._reset_15m()
             self._reset_1h()
-            return candle_1h
+            return results
         
-        # Check for 15m boundary
+        # Check for 15m boundary (non-hourly)
         if self.is_15m_boundary(candle.timestamp):
-            # Emit 15m candle (includes last candle)
+            # Emit 15m candle
             candle_15m = self._emit_15m_candle()
+            results.append(candle_15m)
+            
             # Reset only 15m
             self._reset_15m()
-            return candle_15m
+            return results
         
-        return None
+        return results
     
     def _update_15m(self, candle: CandleMessage) -> None:
         """Update 15m aggregation state."""

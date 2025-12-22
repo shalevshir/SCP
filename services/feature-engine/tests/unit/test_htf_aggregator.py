@@ -53,15 +53,15 @@ class TestHTFCandleAggregator:
                 close=2652.0 + i,
                 volume=1000.0,
             )
-            result = agg.add_1m_candle(candle)
+            results = agg.add_1m_candle(candle)
             
             # No 15m candle until boundary
             if i < 14:
-                assert result is None
+                assert len(results) == 0
             else:
                 # At 10:14, should emit 15m candle for 10:00-10:14
-                assert result is not None
-                candle_15m = result
+                assert len(results) == 1
+                candle_15m = results[0]
                 assert candle_15m.timeframe == "15m"
                 assert candle_15m.timestamp == datetime(2025, 1, 15, 10, 0, tzinfo=timezone.utc)
                 assert candle_15m.open == 2650.0  # First candle open
@@ -71,7 +71,7 @@ class TestHTFCandleAggregator:
                 assert candle_15m.volume == 15000.0  # Sum of volumes
     
     def test_1h_aggregation_basic(self):
-        """60 x 1m candles aggregate into 1 x 1h candle."""
+        """60 x 1m candles aggregate into 1 x 1h candle + 4 x 15m candles."""
         agg = HTFCandleAggregator()
         
         # Feed 60 x 1m candles
@@ -86,13 +86,19 @@ class TestHTFCandleAggregator:
                 close=2652.0 + i * 0.1,
                 volume=1000.0,
             )
-            result = agg.add_1m_candle(candle)
+            results = agg.add_1m_candle(candle)
             
-            # 15m candles emitted at 14, 29, 44, 59
-            # 1h candle emitted at 59
+            # 15m candles emitted at 14, 29, 44
+            # At 59: BOTH 15m and 1h emitted (2 candles)
             if i == 59:
-                assert result is not None
-                candle_1h = result
+                assert len(results) == 2
+                # Results should be [15m, 1h] - 15m first
+                candle_15m = results[0]
+                candle_1h = results[1]
+                
+                assert candle_15m.timeframe == "15m"
+                assert candle_15m.timestamp == datetime(2025, 1, 15, 10, 45, tzinfo=timezone.utc)
+                
                 assert candle_1h.timeframe == "1h"
                 assert candle_1h.timestamp == datetime(2025, 1, 15, 10, 0, tzinfo=timezone.utc)
                 assert candle_1h.open == 2650.0
@@ -117,9 +123,10 @@ class TestHTFCandleAggregator:
                 close=2652.0,
                 volume=1000.0,
             )
-            result = agg.add_1m_candle(candle)
-            if result and result.timeframe == "15m":
-                candles_15m.append(result)
+            results = agg.add_1m_candle(candle)
+            for result in results:
+                if result.timeframe == "15m":
+                    candles_15m.append(result)
         
         # Should have 2 x 15m candles
         assert len(candles_15m) == 2
@@ -127,7 +134,12 @@ class TestHTFCandleAggregator:
         assert candles_15m[1].timestamp == datetime(2025, 1, 15, 10, 15, tzinfo=timezone.utc)
     
     def test_15m_and_1h_emitted_together(self):
-        """At hour boundary, 1h candle emitted (takes precedence over 15m)."""
+        """At hour boundary, BOTH 15m and 1h candles emitted.
+        
+        This is critical: at minute 59, both the 15m candle (45-59) and
+        the 1h candle must be returned. Otherwise the 15m features for
+        that period are never computed/published.
+        """
         agg = HTFCandleAggregator()
         
         # Feed 60 x 1m candles
@@ -145,19 +157,24 @@ class TestHTFCandleAggregator:
                 close=2652.0,
                 volume=1000.0,
             )
-            result = agg.add_1m_candle(candle)
-            if result:
+            results = agg.add_1m_candle(candle)
+            for result in results:
                 if result.timeframe == "15m":
                     candles_15m.append(result)
                 elif result.timeframe == "1h":
                     candles_1h.append(result)
         
-        # Should have 3 x 15m candles (at 14, 29, 44)
-        # The 4th 15m period (45-59) is included in the 1h candle
-        assert len(candles_15m) == 3
+        # MUST have 4 x 15m candles (at 14, 29, 44, 59)
+        # Each 15m period needs its own features computed
+        assert len(candles_15m) == 4
+        assert candles_15m[0].timestamp == datetime(2025, 1, 15, 10, 0, tzinfo=timezone.utc)
+        assert candles_15m[1].timestamp == datetime(2025, 1, 15, 10, 15, tzinfo=timezone.utc)
+        assert candles_15m[2].timestamp == datetime(2025, 1, 15, 10, 30, tzinfo=timezone.utc)
+        assert candles_15m[3].timestamp == datetime(2025, 1, 15, 10, 45, tzinfo=timezone.utc)
         
         # Should have 1 x 1h candle (at 59)
         assert len(candles_1h) == 1
+        assert candles_1h[0].timestamp == datetime(2025, 1, 15, 10, 0, tzinfo=timezone.utc)
     
     def test_ohlcv_aggregation_correctness(self):
         """OHLCV values aggregated correctly."""
@@ -247,10 +264,10 @@ class TestHTFCandleAggregator:
                 close=104.55,
                 volume=0.0,
             )
-            result = agg.add_1m_candle(candle)
+            results = agg.add_1m_candle(candle)
             
             if i == 14:
-                assert result is not None
-                assert result.symbol == "DXY"
-                assert result.timeframe == "15m"
+                assert len(results) == 1
+                assert results[0].symbol == "DXY"
+                assert results[0].timeframe == "15m"
 

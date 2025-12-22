@@ -31,8 +31,8 @@ class TestHTFAggregatorWarmup:
         
         # Feed warmup candles (no emission expected)
         for candle in warmup_candles:
-            result = agg.add_1m_candle(candle)
-            assert result is None  # Mid-period, no emission
+            results = agg.add_1m_candle(candle)
+            assert len(results) == 0  # Mid-period, no emission
         
         # Verify aggregator state has warmup data
         assert agg.current_15m_open == 2650.0  # First candle's open
@@ -53,11 +53,12 @@ class TestHTFAggregatorWarmup:
                 close=2652.0 + i,
                 volume=1000.0,
             )
-            result = agg.add_1m_candle(candle)
+            results = agg.add_1m_candle(candle)
             
             # At minute 14, should emit complete 15m candle
             if i == 14:
-                assert result is not None
+                assert len(results) == 1
+                result = results[0]
                 assert result.timeframe == "15m"
                 assert result.open == 2650.0  # CORRECT: First candle from warmup
                 assert result.close == 2666.0  # Last candle (2652 + 14)
@@ -84,10 +85,11 @@ class TestHTFAggregatorWarmup:
                 close=2652.0 + i,
                 volume=1000.0,
             )
-            result = agg.add_1m_candle(candle)
+            results = agg.add_1m_candle(candle)
             
             if i == 14:
-                assert result is not None
+                assert len(results) == 1
+                result = results[0]
                 assert result.timeframe == "15m"
                 # INCORRECT: Open is from 10:05 instead of 10:00
                 assert result.open == 2655.0  # Wrong! Should be 2650.0
@@ -130,13 +132,17 @@ class TestHTFAggregatorWarmup:
                 close=2652.0 + i * 0.1,
                 volume=1000.0,
             )
-            result = agg.add_1m_candle(candle)
+            results = agg.add_1m_candle(candle)
             
             if i == 59:
-                assert result is not None
-                assert result.timeframe == "1h"
-                assert result.open == 2650.0  # Correct from warmup
-                assert result.volume == 60000.0  # All 60 candles
+                # At hourly boundary, both 15m and 1h emitted
+                assert len(results) == 2
+                candle_15m = results[0]
+                candle_1h = results[1]
+                assert candle_15m.timeframe == "15m"
+                assert candle_1h.timeframe == "1h"
+                assert candle_1h.open == 2650.0  # Correct from warmup
+                assert candle_1h.volume == 60000.0  # All 60 candles
     
     def test_warmup_with_partial_15m_period(self):
         """Warmup handles partial 15m period correctly."""
@@ -173,9 +179,10 @@ class TestHTFAggregatorWarmup:
                 close=2652.0,
                 volume=1000.0,
             )
-            result = agg.add_1m_candle(candle)
+            results = agg.add_1m_candle(candle)
             
             if i == 29:
-                assert result is not None
+                assert len(results) == 1
+                result = results[0]
                 assert result.volume == 15000.0  # Complete 15m period
 

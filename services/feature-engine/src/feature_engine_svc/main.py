@@ -281,9 +281,11 @@ async def process_candle_pair(
     )
     
     # Check for HTF boundaries
-    htf_candle = htf_aggregator.add_1m_candle(gc_candle)
+    htf_candles = htf_aggregator.add_1m_candle(gc_candle)
     
-    if htf_candle:
+    # Process all emitted HTF candles (may be 0, 1, or 2)
+    # At hourly boundaries, we get both 15m and 1h candles
+    for htf_candle in htf_candles:
         # Get corresponding DXY HTF candle (assume same timestamp)
         # In production, would need to aggregate DXY separately
         # For now, use the current DXY candle as proxy
