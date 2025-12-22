@@ -2201,6 +2201,7 @@ numpy = "^1.26.0"
 pandas = "^2.0.3"
 pydantic = "^2.9.0"
 pydantic-settings = "^2.5.0"
+pyyaml = "^6.0.0"
 redis = {version = "^5.0.0", extras = ["hiredis"]}
 uvicorn = {version = "^0.24.0", extras = ["standard"]}
 

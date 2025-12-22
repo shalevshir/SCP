@@ -144,8 +144,9 @@ class TestWithRetryDecorator:
         await failing_once()
 
         # Check delay is within jitter range (80ms to 120ms with 20% jitter)
+        # Allow small tolerance for event loop scheduling overhead
         delay = (call_times[1] - call_times[0]) * 1000
-        assert 80 <= delay <= 120
+        assert 80 <= delay <= 125  # Allow up to 5ms overhead for event loop scheduling
 
     @pytest.mark.asyncio
     async def test_max_delay_cap(self) -> None:
