@@ -1,0 +1,18 @@
+{
+  "include": [
+    "services/**/src",
+    "services/shared/src"
+  ],
+  "exclude": [
+    "**/__pycache__",
+    "**/node_modules",
+    "**/.venv",
+    "**/venv"
+  ],
+  "extraPaths": [
+    "services/shared/src"
+  ],
+  "reportMissingImports": true,
+  "reportMissingTypeStubs": false,
+  "pythonVersion": "3.11"
+}
