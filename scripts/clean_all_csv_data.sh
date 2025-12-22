@@ -37,24 +37,13 @@ fi
 if [ -f "$PROJECT_ROOT/data/gc_dx_ohlcv/dxy_ohlcv_1m.csv" ]; then
     echo "Processing Dollar Index (DX) data..."
     poetry run python "$SCRIPT_DIR/clean_csv_data.py" \
-        --input "$PROJECT_ROOT/data/gc_dx_ohlcv/dxy_ohlcv_1m.csv.csv" \
+        --input "$PROJECT_ROOT/data/gc_dx_ohlcv/dxy_ohlcv_1m.csv" \
         --output "$PROJECT_ROOT/data/gc_dx_ohlcv/DX_ohlcv-1m.csv" \
         --prefix DX
     echo "✓ Dollar Index (DX) data cleaned successfully"
     echo ""
 else
-    echo "⚠ Warning: dxy_ohlcv_1m.csv.csv not found, skipping DX processing"
-    echo ""
-fi
-
-# Also check for alternative DX filename (without double .csv)
-if [ -f "$PROJECT_ROOT/data/gc_dx_ohlcv/dxy_ohlcv_1m.csv" ]; then
-    echo "Processing Dollar Index (DX) data (alternative filename)..."
-    poetry run python "$SCRIPT_DIR/clean_csv_data.py" \
-        --input "$PROJECT_ROOT/data/gc_dx_ohlcv/dxy_ohlcv_1m.csv" \
-        --output "$PROJECT_ROOT/data/gc_dx_ohlcv/DX_ohlcv-1m.csv" \
-        --prefix DX
-    echo "✓ Dollar Index (DX) data cleaned successfully"
+    echo "⚠ Warning: dxy_ohlcv_1m.csv not found, skipping DX processing"
     echo ""
 fi
 

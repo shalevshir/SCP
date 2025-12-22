@@ -1,0 +1,38 @@
+version: '3.8'
+
+# Test overrides for docker-compose.yml
+# Usage: docker-compose -f docker-compose.yml -f docker-compose.test.yml up
+# Ephemeral containers for CI/testing - no persistent volumes
+
+services:
+  redis:
+    container_name: scp-redis-test
+    ports:
+      - "6380:6379"  # Different port to avoid conflicts
+    volumes: []  # No persistent volume
+    tmpfs:
+      - /data
+    restart: "no"
+
+  postgres:
+    container_name: scp-postgres-test
+    ports:
+      - "5433:5432"  # Different port to avoid conflicts
+    environment:
+      POSTGRES_DB: scp_test
+      POSTGRES_USER: scp_test
+      POSTGRES_PASSWORD: scp_test_password
+    volumes:
+      - ./migrations:/docker-entrypoint-initdb.d:ro
+    tmpfs:
+      - /var/lib/postgresql/data
+    restart: "no"
+
+volumes:
+  redis_data: null
+  postgres_data: null
+
+networks:
+  default:
+    name: scp_test_network
+
