@@ -1,7 +1,7 @@
 # Force use of bash for all recipes (required for db-reset and other advanced shell features)
 SHELL := /bin/bash
 
-.PHONY: test test-unit test-verbose test-parallel test-coverage test-fast lint format check clean help install data-clean data-fetch data-resample data-resample-5m data-resample-1h infra-up infra-down infra-logs infra-ps db-migrate db-reset db-shell shared-install shared-test
+.PHONY: test test-unit test-verbose test-parallel test-coverage test-fast lint format check clean help install data-clean data-fetch data-resample data-resample-5m data-resample-1h infra-up infra-down infra-logs infra-ps db-migrate db-reset db-shell shared-install shared-test services-up services-down services-build services-logs services-ps
 
 help:
 	@echo "SCP Trading Bot - Development Commands"
@@ -15,6 +15,13 @@ help:
 	@echo "  make infra-down        Stop infrastructure containers"
 	@echo "  make infra-logs        View infrastructure logs"
 	@echo "  make infra-ps          Show running containers"
+	@echo ""
+	@echo "Microservices:"
+	@echo "  make services-up       Start all microservices (builds if needed)"
+	@echo "  make services-down     Stop all microservices"
+	@echo "  make services-build    Build all microservice images"
+	@echo "  make services-logs     View microservice logs"
+	@echo "  make services-ps       Show running microservices"
 	@echo ""
 	@echo "Database:"
 	@echo "  make db-migrate        Apply database migrations"
@@ -198,3 +205,35 @@ shared-test:
 	@echo "Running shared library tests..."
 	cd services/shared && poetry run pytest -v
 	@echo "✓ Shared library tests passed"
+
+# ============================================================================
+# Microservices Commands
+# ============================================================================
+
+services-up:
+	@echo "Starting all microservices..."
+	docker compose -f infra/docker-compose.yml -f infra/docker-compose.services.yml up -d --build
+	@echo "✓ All services are running"
+	@echo "  Data Adapter:    http://localhost:8001/health"
+	@echo "  Feature Engine:  http://localhost:8002/health"
+	@echo "  HTF Bias:        http://localhost:8003/health"
+	@echo "  Bot Core:        http://localhost:8004/health"
+	@echo "  Execution:       http://localhost:8005/health"
+
+services-down:
+	@echo "Stopping all microservices..."
+	docker compose -f infra/docker-compose.yml -f infra/docker-compose.services.yml down
+	@echo "✓ All services stopped"
+
+services-build:
+	@echo "Building all microservice images..."
+	docker compose -f infra/docker-compose.yml -f infra/docker-compose.services.yml build
+	@echo "✓ All images built"
+
+services-logs:
+	@echo "Tailing microservice logs (Ctrl+C to stop)..."
+	docker compose -f infra/docker-compose.yml -f infra/docker-compose.services.yml logs -f
+
+services-ps:
+	@echo "Running services:"
+	docker compose -f infra/docker-compose.yml -f infra/docker-compose.services.yml ps
