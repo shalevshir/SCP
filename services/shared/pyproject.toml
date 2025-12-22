@@ -62,3 +62,7 @@ warn_return_any = true
 no_implicit_reexport = true
 strict_equality = true
 
+[tool.pyright]
+include = ["src"]
+reportMissingImports = true
+
