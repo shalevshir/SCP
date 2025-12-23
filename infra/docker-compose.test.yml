@@ -20,18 +20,20 @@ services:
       POSTGRES_DB: scp_test
       POSTGRES_USER: scp_test
       POSTGRES_PASSWORD: scp_test_password
+      PGDATA: /var/lib/postgresql/data/pgdata
     volumes: !reset
       - ./migrations:/docker-entrypoint-initdb.d:ro
     tmpfs:
       - /var/lib/postgresql/data
     restart: "no"
     healthcheck:
-      # Verify database is ready AND migrations have run (check for 'candles' table)
-      test: ["CMD-SHELL", "pg_isready -U scp_test -d scp_test && psql -U scp_test -d scp_test -c '\\dt candles' | grep -q candles"]
+      # Simple health check - just verify postgres is accepting connections
+      # Migration verification happens in CI step
+      test: ["CMD-SHELL", "pg_isready -U scp_test -d scp_test"]
       interval: 5s
-      timeout: 5s
-      retries: 12
-      start_period: 30s
+      timeout: 3s
+      retries: 10
+      start_period: 20s
 
   # Service overrides to use test database credentials
   data-adapter:
