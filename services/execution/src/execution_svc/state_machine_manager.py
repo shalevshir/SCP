@@ -1,5 +1,6 @@
 """State machine manager for VWAP reclaim lifecycle tracking."""
 
+import json
 from datetime import datetime
 
 from scp_shared.common.logger import get_logger
@@ -242,11 +243,11 @@ class StateMachineManager:
                 updated_at = NOW()
         """
         
-        # Convert confirmations to list for JSON
-        confirmations_list = list(sm.confirmations) if sm.confirmations else []
+        # Convert confirmations to JSON string for JSONB column
+        confirmations_json = json.dumps(list(sm.confirmations) if sm.confirmations else [])
         
-        # Convert transition history to JSON-serializable format
-        transition_history = [
+        # Convert transition history to JSON string for JSONB column
+        transition_history_json = json.dumps([
             {
                 "from_state": t.from_state.value,
                 "to_state": t.to_state.value,
@@ -255,7 +256,7 @@ class StateMachineManager:
                 "timestamp": t.timestamp.isoformat(),
             }
             for t in sm.transition_history
-        ]
+        ])
         
         await self._db_pool.execute(
             query,
@@ -263,9 +264,9 @@ class StateMachineManager:
             sm.current_state.value,
             sm.detection_bar_idx,
             sm.reclaim_direction,
-            confirmations_list,
+            confirmations_json,  # JSON string, not list
             sm.execution_count,
-            transition_history,
+            transition_history_json,  # JSON string, not list
         )
     
     def cleanup_old_state_machines(self) -> None:

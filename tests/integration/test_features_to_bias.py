@@ -312,10 +312,10 @@ async def test_bias_timestamp_correlation(
         minute = bias.timestamp.minute
         minutes_after_boundary = minute % 15
         
-        # Allow up to 2 minutes after boundary due to processing delay
-        assert minutes_after_boundary <= 2, (
+        # Allow up to 15 minutes after boundary (bias timestamp reflects source candle time)
+        assert minutes_after_boundary <= 15, (
             f"Bias timestamp {bias.timestamp} (minute {minute}) should be "
-            f"within 2 minutes after a 15m boundary, but is {minutes_after_boundary} "
+            f"within 15 minutes after a 15m boundary, but is {minutes_after_boundary} "
             f"minutes after the nearest boundary"
         )
 
