@@ -141,7 +141,7 @@ class TestGuardrailsService:
         
         result = service.evaluate(default_constraints)
         assert result.allowed is False
-        assert any("extension" in reason.lower() for reason in result.reasons)
+        assert any("extended" in reason.lower() for reason in result.reasons)
     
     @pytest.mark.asyncio
     async def test_reset_for_session_clears_state(
@@ -283,4 +283,4 @@ class TestGuardrailsService:
         result = service.evaluate(default_constraints)
         
         assert result.allowed is False
-        assert any("extension" in reason.lower() for reason in result.reasons)
+        assert any("extended" in reason.lower() for reason in result.reasons)

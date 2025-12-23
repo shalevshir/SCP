@@ -216,21 +216,30 @@ class TestSignalToMessage:
         self,
         base_signal: Signal,
     ) -> None:
-        """Minimum 20-tick SL distance enforced."""
-        # VWAP very close to entry (within 20 ticks)
+        """Minimum 20-tick SL distance enforced when VWAP-based SL is too close.
+        
+        For long trades, the minimum is enforced when:
+        entry - (VWAP - 30_ticks) < 20_ticks
+        
+        This happens when VWAP is above entry - 10 ticks, i.e., when VWAP > 2049.0
+        """
+        # Use VWAP above entry to trigger minimum enforcement
+        # Entry = 2050.0, VWAP = 2051.5 (above entry)
         features = FeaturesMessage(
             timestamp=datetime(2024, 3, 15, 10, 30, 0, tzinfo=timezone.utc),
             symbol="GC",
             timeframe="1m",
             close=2050.0,
-            vwap=2049.5,  # Only 0.5 away = 5 ticks
+            vwap=2051.5,  # Above entry - will trigger minimum
             rsi=55.0,
         )
         
         signal_msg = signal_to_message(base_signal, features)
         
-        # Should enforce minimum 20-tick distance
-        # Entry = 2050.0, SL = 2050.0 - (20 * 0.1) = 2048.0
+        # Calculation:
+        # Step 1: VWAP - 30 ticks = 2051.5 - 3.0 = 2048.5
+        # Step 2: Risk distance = 2050.0 - 2048.5 = 1.5 = 15 ticks
+        # Step 3: Since 15 < 20, enforce minimum: SL = 2050.0 - 2.0 = 2048.0
         assert signal_msg.sl_price == 2048.0
     
     def test_signal_to_message_calculates_vwap_fade_sl(

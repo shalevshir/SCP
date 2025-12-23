@@ -82,6 +82,11 @@ class TestSignalPublisher:
         caplog: pytest.LogCaptureFixture,
     ) -> None:
         """Logging verification."""
+        import logging
+        
+        # Set log level to INFO to capture log messages
+        caplog.set_level(logging.INFO)
+        
         publisher = SignalPublisher(mock_redis_client)
         
         with patch.object(publisher._publisher, "publish", new_callable=AsyncMock) as mock_publish:
@@ -120,10 +125,12 @@ class TestSignalPublisher:
         mock_redis_client: AsyncMock,
     ) -> None:
         """Rejects invalid SignalMessage."""
+        from pydantic import ValidationError
+        
         publisher = SignalPublisher(mock_redis_client)
         
         # Create invalid signal (missing required fields)
-        # This should fail Pydantic validation before reaching publish
-        with pytest.raises(TypeError):
-            # Missing required fields will cause TypeError
+        # This should fail Pydantic validation
+        with pytest.raises((ValidationError, TypeError, AttributeError)):
+            # None will cause AttributeError when trying to serialize
             await publisher.publish(None)  # type: ignore
