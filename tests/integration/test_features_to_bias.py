@@ -79,17 +79,22 @@ async def test_htf_boundary_triggers_bias_update(
     # Try to read bias updates
     bias_list = await bias_consumer.read(count=5, block_ms=5000)
     
-    # We should have at least one bias update at the 15m boundary
-    if len(bias_list) > 0:
-        latest_bias = bias_list[-1]
-        
-        # Verify bias message structure
-        assert latest_bias.bias in ["bullish", "bearish", "neutral"]
-        assert latest_bias.score is not None
-        assert latest_bias.confidence in ["A+", "A", "B", "C"]
-        
-        # With uptrend, should lean bullish or neutral (not bearish)
-        assert latest_bias.bias != "bearish", "Uptrend should not produce bearish bias"
+    # CRITICAL: HTF bias must update at 15m boundaries - test should not pass silently
+    assert len(bias_list) > 0, (
+        "HTF Bias service should have produced at least one bias update at the 15m boundary. "
+        "Published candles from 10:00 to 10:19, crossing 10:15 boundary. "
+        "If no bias received, the HTF boundary detection is broken."
+    )
+    
+    latest_bias = bias_list[-1]
+    
+    # Verify bias message structure
+    assert latest_bias.bias in ["bullish", "bearish", "neutral"]
+    assert latest_bias.score is not None
+    assert latest_bias.confidence in ["A+", "A", "B", "C"]
+    
+    # With uptrend, should lean bullish or neutral (not bearish)
+    assert latest_bias.bias != "bearish", "Uptrend should not produce bearish bias"
 
 
 @pytest.mark.integration
@@ -149,13 +154,19 @@ async def test_bias_includes_structure_info(
     
     bias_list = await bias_consumer.read(count=10, block_ms=5000)
     
-    if len(bias_list) > 0:
-        latest_bias = bias_list[-1]
-        
-        # Verify structure fields exist
-        # (May be None initially but should be present after structure forms)
-        assert hasattr(latest_bias, "structure_15m")
-        assert hasattr(latest_bias, "structure_1h")
+    # Should receive bias updates after publishing 30 candles across 15m boundaries
+    assert len(bias_list) > 0, (
+        "HTF Bias service should have produced bias updates. "
+        "Published 30 candles with clear bullish structure. "
+        "If no bias received, the service is not processing features."
+    )
+    
+    latest_bias = bias_list[-1]
+    
+    # Verify structure fields exist
+    # (May be None initially but should be present after structure forms)
+    assert hasattr(latest_bias, "structure_15m")
+    assert hasattr(latest_bias, "structure_1h")
 
 
 @pytest.mark.integration
@@ -214,17 +225,23 @@ async def test_bias_detects_chop(
     
     bias_list = await bias_consumer.read(count=10, block_ms=5000)
     
-    if len(bias_list) > 0:
-        latest_bias = bias_list[-1]
-        
-        # Verify chop detection field exists
-        assert hasattr(latest_bias, "chop_detected")
-        
-        # With ranging price action, should detect chop
-        # (or at least not have strong directional bias)
-        if latest_bias.bias != "neutral":
-            # If not neutral, confidence should be lower (not A+)
-            assert latest_bias.confidence in ["A", "B", "C"]
+    # Should receive bias updates after publishing 30 candles of choppy price action
+    assert len(bias_list) > 0, (
+        "HTF Bias service should have produced bias updates. "
+        "Published 30 candles with ranging/choppy price action. "
+        "If no bias received, the service is not processing features."
+    )
+    
+    latest_bias = bias_list[-1]
+    
+    # Verify chop detection field exists
+    assert hasattr(latest_bias, "chop_detected")
+    
+    # With ranging price action, should detect chop
+    # (or at least not have strong directional bias)
+    if latest_bias.bias != "neutral":
+        # If not neutral, confidence should be lower (not A+)
+        assert latest_bias.confidence in ["A", "B", "C"]
 
 
 @pytest.mark.integration
@@ -281,18 +298,24 @@ async def test_bias_timestamp_correlation(
     
     bias_list = await bias_consumer.read(count=10, block_ms=5000)
     
-    if len(bias_list) > 0:
-        # Verify bias timestamps are at or near 15m boundaries
-        for bias in bias_list:
-            # Check that minute is within 2 minutes after any 15m boundary
-            # (0-2, 15-17, 30-32, 45-47)
-            minute = bias.timestamp.minute
-            minutes_after_boundary = minute % 15
-            
-            # Allow up to 2 minutes after boundary due to processing delay
-            assert minutes_after_boundary <= 2, (
-                f"Bias timestamp {bias.timestamp} (minute {minute}) should be "
-                f"within 2 minutes after a 15m boundary, but is {minutes_after_boundary} "
-                f"minutes after the nearest boundary"
-            )
+    # Should receive bias updates at 15m boundary (10:15)
+    assert len(bias_list) > 0, (
+        "HTF Bias service should have produced bias updates at 15m boundaries. "
+        "Published candles from 10:00 to 10:24, crossing 10:15 boundary. "
+        "If no bias received, boundary detection is broken."
+    )
+    
+    # Verify bias timestamps are at or near 15m boundaries
+    for bias in bias_list:
+        # Check that minute is within 2 minutes after any 15m boundary
+        # (0-2, 15-17, 30-32, 45-47)
+        minute = bias.timestamp.minute
+        minutes_after_boundary = minute % 15
+        
+        # Allow up to 2 minutes after boundary due to processing delay
+        assert minutes_after_boundary <= 2, (
+            f"Bias timestamp {bias.timestamp} (minute {minute}) should be "
+            f"within 2 minutes after a 15m boundary, but is {minutes_after_boundary} "
+            f"minutes after the nearest boundary"
+        )
 

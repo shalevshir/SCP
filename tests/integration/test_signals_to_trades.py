@@ -5,6 +5,7 @@ SL/TP monitoring, and trade closure.
 """
 
 import asyncio
+import uuid
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -48,7 +49,7 @@ async def test_signal_triggers_trade_execution(
     
     # Create and publish a signal
     signal = SignalMessage(
-        id="test-signal-1",
+        id=str(uuid.uuid4()),  # Valid UUID format
         timestamp=datetime.now(timezone.utc),
         direction="long",
         setup_type="VWAP_RECLAIM",
@@ -143,7 +144,7 @@ async def test_sl_hit_closes_trade(
     
     # Publish signal
     signal = SignalMessage(
-        id="test-signal-sl",
+        id=str(uuid.uuid4()),  # Valid UUID format
         timestamp=datetime.now(timezone.utc),
         direction="long",
         setup_type="VWAP_RECLAIM",
@@ -235,7 +236,7 @@ async def test_tp_hit_closes_trade(
     
     # Publish signal
     signal = SignalMessage(
-        id="test-signal-tp",
+        id=str(uuid.uuid4()),  # Valid UUID format
         timestamp=datetime.now(timezone.utc),
         direction="long",
         setup_type="VWAP_RECLAIM",
@@ -318,7 +319,7 @@ async def test_invalidation_closes_trade(
     
     # Publish signal
     signal = SignalMessage(
-        id="test-signal-invalid",
+        id=str(uuid.uuid4()),  # Valid UUID format
         timestamp=datetime.now(timezone.utc),
         direction="long",
         setup_type="VWAP_RECLAIM",
@@ -382,12 +383,17 @@ async def test_invalidation_closes_trade(
     # Check if trade was closed due to invalidation
     closed = await trades_closed_consumer.read(count=1, block_ms=3000)
     
-    if len(closed) > 0:
-        closed_trade = closed[0]
-        # Should be closed for invalidation (VWAP or otherwise)
-        # Exit reason should indicate invalidation
-        assert closed_trade.exit_reason is not None
-        # Verify it's not SL or TP
-        assert "SL" not in closed_trade.exit_reason
-        assert "TP" not in closed_trade.exit_reason
+    # CRITICAL: Invalidation must close the trade - test should not pass silently
+    assert len(closed) > 0, (
+        "Trade should have been closed by invalidation. "
+        "If no trade was closed, the invalidation feature is broken."
+    )
+    
+    closed_trade = closed[0]
+    # Should be closed for invalidation (VWAP or otherwise)
+    # Exit reason should indicate invalidation
+    assert closed_trade.exit_reason is not None
+    # Verify it's not SL or TP
+    assert "SL" not in closed_trade.exit_reason
+    assert "TP" not in closed_trade.exit_reason
 
