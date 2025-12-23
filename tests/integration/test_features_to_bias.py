@@ -86,7 +86,7 @@ async def test_htf_boundary_triggers_bias_update(
         # Verify bias message structure
         assert latest_bias.bias in ["bullish", "bearish", "neutral"]
         assert latest_bias.score is not None
-        assert latest_bias.confidence in ["high", "medium", "low"]
+        assert latest_bias.confidence in ["A+", "A", "B", "C"]
         
         # With uptrend, should lean bullish or neutral (not bearish)
         assert latest_bias.bias != "bearish", "Uptrend should not produce bearish bias"
@@ -223,8 +223,8 @@ async def test_bias_detects_chop(
         # With ranging price action, should detect chop
         # (or at least not have strong directional bias)
         if latest_bias.bias != "neutral":
-            # If not neutral, confidence should be lower
-            assert latest_bias.confidence in ["low", "medium"]
+            # If not neutral, confidence should be lower (not A+)
+            assert latest_bias.confidence in ["A", "B", "C"]
 
 
 @pytest.mark.integration

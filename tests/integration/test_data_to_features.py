@@ -77,13 +77,19 @@ async def test_published_candles_produce_features(
     # Wait for feature engine to process candles
     await asyncio.sleep(2.0)
     
-    # Consume features from stream
-    features_list = await features_consumer.read(count=10, block_ms=5000)
+    # Consume features from stream (read all 70 published candles)
+    features_list = await features_consumer.read(count=100, block_ms=5000)
     
     # Verify we received features
     assert len(features_list) > 0, "No features received from Feature Engine"
     
-    # Check latest feature
+    # After warmup (60+ bars), should have computed indicators
+    assert len(features_list) >= 60, (
+        f"Expected at least 60 features for warmup validation, got {len(features_list)}. "
+        "Feature Engine may not have processed all candles."
+    )
+    
+    # Check latest feature (after warmup)
     latest_features = features_list[-1]
     
     # Verify basic fields
@@ -91,12 +97,10 @@ async def test_published_candles_produce_features(
     assert latest_features.timeframe == "1m"
     assert latest_features.close is not None
     
-    # After warmup, should have computed indicators
-    # (may be None initially but should be populated after 60 bars)
-    if len(features_list) >= 60:
-        assert latest_features.vwap is not None, "VWAP should be computed after warmup"
-        assert latest_features.ema_9 is not None, "EMA should be computed after warmup"
-        assert latest_features.rsi is not None, "RSI should be computed after warmup"
+    # After warmup, all indicators should be computed
+    assert latest_features.vwap is not None, "VWAP should be computed after warmup"
+    assert latest_features.ema_9 is not None, "EMA should be computed after warmup"
+    assert latest_features.rsi is not None, "RSI should be computed after warmup"
 
 
 @pytest.mark.integration
@@ -159,19 +163,26 @@ async def test_features_include_correlation(
     # Wait for processing
     await asyncio.sleep(2.0)
     
-    # Get latest features
-    features_list = await features_consumer.read(count=20, block_ms=5000)
+    # Get all features (read all 60 published candles)
+    features_list = await features_consumer.read(count=100, block_ms=5000)
     
     assert len(features_list) > 0, "No features received"
     
+    # After warmup (50+ bars needed for correlation), verify we have enough data
+    assert len(features_list) >= 50, (
+        f"Expected at least 50 features for correlation validation, got {len(features_list)}. "
+        "Feature Engine may not have processed all candles."
+    )
+    
     # Check that later features have correlation computed
-    # (correlation needs 50+ bars, so check last few features)
+    # (correlation needs 50+ bars, so check last 10 features)
     features_with_corr = [f for f in features_list[-10:] if f.dxy_correlation is not None]
     
     assert len(features_with_corr) > 0, "DXY correlation should be computed after warmup"
     
     # Verify correlation is negative (inverse relationship)
     latest_corr = features_with_corr[-1].dxy_correlation
+    assert latest_corr is not None, "Latest correlation should not be None (filtered above)"
     assert latest_corr < -0.3, f"Expected negative correlation, got {latest_corr}"
 
 
