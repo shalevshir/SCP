@@ -444,8 +444,8 @@ jobs:
       
       - name: Start infrastructure and services
         run: |
-          # Start test infrastructure (Redis on 6380, PostgreSQL on 5433)
-          docker compose -f infra/docker-compose.yml -f infra/docker-compose.test.yml up -d
+          # Start test infrastructure (Redis on 6380, PostgreSQL on 5433) + all services
+          docker compose -f infra/docker-compose.yml -f infra/docker-compose.services.yml -f infra/docker-compose.test.yml up -d
           
           # Wait for services to be healthy
           echo "Waiting for services to start..."
@@ -464,6 +464,32 @@ jobs:
             echo "Waiting for services... (attempt $i/30)"
             sleep 2
           done
+          
+          # Verify all services are actually healthy
+          if ! curl -s http://localhost:8001/health > /dev/null 2>&1 || \
+             ! curl -s http://localhost:8002/health > /dev/null 2>&1 || \
+             ! curl -s http://localhost:8003/health > /dev/null 2>&1 || \
+             ! curl -s http://localhost:8004/health > /dev/null 2>&1 || \
+             ! curl -s http://localhost:8005/health > /dev/null 2>&1; then
+            echo "❌ ERROR: Services failed to become healthy after 60 seconds"
+            echo "Checking individual service health:"
+            for port in 8001 8002 8003 8004 8005; do
+              if curl -s http://localhost:$port/health > /dev/null 2>&1; then
+                echo "  ✓ Port $port: healthy"
+              else
+                echo "  ✗ Port $port: NOT healthy"
+              fi
+            done
+            echo ""
+            echo "=== Container Status ==="
+            docker compose -f infra/docker-compose.yml -f infra/docker-compose.services.yml -f infra/docker-compose.test.yml ps
+            echo ""
+            echo "=== Service Logs ==="
+            docker compose -f infra/docker-compose.yml -f infra/docker-compose.services.yml -f infra/docker-compose.test.yml logs --tail=50
+            exit 1
+          fi
+          
+          echo "✅ All services verified healthy"
       
       - name: Run integration tests
         run: |
@@ -483,19 +509,19 @@ jobs:
         if: failure()
         run: |
           echo "=== Data Adapter Logs ==="
-          docker compose -f infra/docker-compose.yml -f infra/docker-compose.test.yml logs data-adapter
+          docker compose -f infra/docker-compose.yml -f infra/docker-compose.services.yml -f infra/docker-compose.test.yml logs data-adapter
           echo "=== Feature Engine Logs ==="
-          docker compose -f infra/docker-compose.yml -f infra/docker-compose.test.yml logs feature-engine
+          docker compose -f infra/docker-compose.yml -f infra/docker-compose.services.yml -f infra/docker-compose.test.yml logs feature-engine
           echo "=== HTF Bias Logs ==="
-          docker compose -f infra/docker-compose.yml -f infra/docker-compose.test.yml logs htf-bias
+          docker compose -f infra/docker-compose.yml -f infra/docker-compose.services.yml -f infra/docker-compose.test.yml logs htf-bias
           echo "=== Bot Core Logs ==="
-          docker compose -f infra/docker-compose.yml -f infra/docker-compose.test.yml logs bot-core
+          docker compose -f infra/docker-compose.yml -f infra/docker-compose.services.yml -f infra/docker-compose.test.yml logs bot-core
           echo "=== Execution Logs ==="
-          docker compose -f infra/docker-compose.yml -f infra/docker-compose.test.yml logs execution
+          docker compose -f infra/docker-compose.yml -f infra/docker-compose.services.yml -f infra/docker-compose.test.yml logs execution
       
       - name: Stop infrastructure
         if: always()
-        run: docker compose -f infra/docker-compose.yml -f infra/docker-compose.test.yml down -v
+        run: docker compose -f infra/docker-compose.yml -f infra/docker-compose.services.yml -f infra/docker-compose.test.yml down -v
 
   e2e-tests:
     name: E2E Tests

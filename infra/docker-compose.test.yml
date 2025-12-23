@@ -1,5 +1,5 @@
-# Test overrides for docker-compose.yml
-# Usage: docker-compose -f docker-compose.yml -f docker-compose.test.yml up
+# Test overrides for docker-compose.yml + docker-compose.services.yml
+# Usage: docker-compose -f docker-compose.yml -f docker-compose.services.yml -f docker-compose.test.yml up
 # Ephemeral containers for CI/testing - no persistent volumes
 
 services:
@@ -24,6 +24,37 @@ services:
       - ./migrations:/docker-entrypoint-initdb.d:ro
     tmpfs:
       - /var/lib/postgresql/data
+    restart: "no"
+
+  # Service overrides to use test database credentials
+  data-adapter:
+    container_name: scp-data-adapter-test
+    environment:
+      DATABASE_URL: postgresql://scp_test:scp_test_password@postgres:5432/scp_test
+    restart: "no"
+
+  feature-engine:
+    container_name: scp-feature-engine-test
+    environment:
+      DATABASE_URL: postgresql://scp_test:scp_test_password@postgres:5432/scp_test
+    restart: "no"
+
+  htf-bias:
+    container_name: scp-htf-bias-test
+    environment:
+      DATABASE_URL: postgresql://scp_test:scp_test_password@postgres:5432/scp_test
+    restart: "no"
+
+  bot-core:
+    container_name: scp-bot-core-test
+    environment:
+      DATABASE_URL: postgresql://scp_test:scp_test_password@postgres:5432/scp_test
+    restart: "no"
+
+  execution:
+    container_name: scp-execution-test
+    environment:
+      DATABASE_URL: postgresql://scp_test:scp_test_password@postgres:5432/scp_test
     restart: "no"
 
 volumes:
