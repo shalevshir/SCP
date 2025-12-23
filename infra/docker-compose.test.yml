@@ -20,7 +20,7 @@ services:
       POSTGRES_DB: scp_test
       POSTGRES_USER: scp_test
       POSTGRES_PASSWORD: scp_test_password
-    volumes:
+    volumes: !reset
       - ./migrations:/docker-entrypoint-initdb.d:ro
     tmpfs:
       - /var/lib/postgresql/data
