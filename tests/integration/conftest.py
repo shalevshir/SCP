@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from typing import Any, AsyncGenerator
 
 import pytest
+import pytest_asyncio
 import redis.asyncio as redis
 from scp_shared.database import DatabasePool
 from scp_shared.messaging import RedisStreamPublisher
@@ -20,7 +21,7 @@ def event_loop():
     loop.close()
 
 
-@pytest.fixture(scope="function")
+@pytest_asyncio.fixture(scope="function")
 async def redis_client() -> AsyncGenerator[redis.Redis, None]:
     """Provide Redis client connected to test instance.
     
@@ -43,7 +44,7 @@ async def redis_client() -> AsyncGenerator[redis.Redis, None]:
         await client.aclose()
 
 
-@pytest.fixture(scope="function")
+@pytest_asyncio.fixture(scope="function")
 async def db_pool() -> AsyncGenerator[DatabasePool, None]:
     """Provide database pool connected to test PostgreSQL.
     
@@ -63,7 +64,7 @@ async def db_pool() -> AsyncGenerator[DatabasePool, None]:
         await pool.close()
 
 
-@pytest.fixture(scope="function")
+@pytest_asyncio.fixture(scope="function")
 async def clean_streams(redis_client: redis.Redis) -> None:
     """Clean Redis streams before each test.
     
@@ -94,7 +95,7 @@ async def clean_streams(redis_client: redis.Redis) -> None:
             pass
 
 
-@pytest.fixture(scope="function")
+@pytest_asyncio.fixture(scope="function")
 async def clean_database(db_pool: DatabasePool) -> None:
     """Clean database tables before each test.
     
@@ -120,7 +121,7 @@ async def clean_database(db_pool: DatabasePool) -> None:
             pass
 
 
-@pytest.fixture(scope="function")
+@pytest_asyncio.fixture(scope="function")
 async def redis_publisher(redis_client: redis.Redis) -> RedisStreamPublisher:
     """Provide Redis stream publisher for test data injection.
     
