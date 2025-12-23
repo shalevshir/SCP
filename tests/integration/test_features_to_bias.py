@@ -284,12 +284,15 @@ async def test_bias_timestamp_correlation(
     if len(bias_list) > 0:
         # Verify bias timestamps are at or near 15m boundaries
         for bias in bias_list:
-            # Check that minute is 0, 15, 30, or 45 (15m boundaries)
+            # Check that minute is within 2 minutes after any 15m boundary
+            # (0-2, 15-17, 30-32, 45-47)
             minute = bias.timestamp.minute
-            is_boundary = minute in [0, 15, 30, 45]
+            minutes_after_boundary = minute % 15
             
-            # Allow some tolerance (may be slightly after boundary due to processing)
-            assert is_boundary or minute <= 2, (
-                f"Bias timestamp {bias.timestamp} should be near 15m boundary"
+            # Allow up to 2 minutes after boundary due to processing delay
+            assert minutes_after_boundary <= 2, (
+                f"Bias timestamp {bias.timestamp} (minute {minute}) should be "
+                f"within 2 minutes after a 15m boundary, but is {minutes_after_boundary} "
+                f"minutes after the nearest boundary"
             )
 
