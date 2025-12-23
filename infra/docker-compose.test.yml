@@ -1,5 +1,3 @@
-version: '3.8'
-
 # Test overrides for docker-compose.yml
 # Usage: docker-compose -f docker-compose.yml -f docker-compose.test.yml up
 # Ephemeral containers for CI/testing - no persistent volumes
@@ -9,7 +7,7 @@ services:
     container_name: scp-redis-test
     ports:
       - "6380:6379"  # Different port to avoid conflicts
-    volumes: []  # No persistent volume
+    volumes: !reset []  # Clear all volumes from base
     tmpfs:
       - /data
     restart: "no"
