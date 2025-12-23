@@ -50,8 +50,6 @@ async def test_signal_triggers_trade_execution(
     signal = SignalMessage(
         id="test-signal-1",
         timestamp=datetime.now(timezone.utc),
-        symbol="GC",
-        timeframe="1m",
         direction="long",
         setup_type="VWAP_RECLAIM",
         score=9.5,
@@ -147,8 +145,6 @@ async def test_sl_hit_closes_trade(
     signal = SignalMessage(
         id="test-signal-sl",
         timestamp=datetime.now(timezone.utc),
-        symbol="GC",
-        timeframe="1m",
         direction="long",
         setup_type="VWAP_RECLAIM",
         score=9.0,
@@ -241,8 +237,6 @@ async def test_tp_hit_closes_trade(
     signal = SignalMessage(
         id="test-signal-tp",
         timestamp=datetime.now(timezone.utc),
-        symbol="GC",
-        timeframe="1m",
         direction="long",
         setup_type="VWAP_RECLAIM",
         score=9.5,
@@ -326,8 +320,6 @@ async def test_invalidation_closes_trade(
     signal = SignalMessage(
         id="test-signal-invalid",
         timestamp=datetime.now(timezone.utc),
-        symbol="GC",
-        timeframe="1m",
         direction="long",
         setup_type="VWAP_RECLAIM",
         score=9.0,
