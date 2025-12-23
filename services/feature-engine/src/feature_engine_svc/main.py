@@ -207,26 +207,17 @@ async def process_candles(
         message_type=CandleMessage,
     )
     
-    logger.info(f"Feature Engine ready - consuming from GC stream: candles.1m.gc, DXY stream: candles.1m.dxy")
+    logger.info("Feature Engine ready - consuming candles")
     
     try:
-        iteration = 0
         while not shutdown_event.is_set():
             # Read from both streams
             gc_candles = await gc_consumer.read(count=10, block_ms=1000)
             dxy_candles = await dxy_consumer.read(count=10, block_ms=1000)
             
-            # Log every 10 iterations or when messages received
-            iteration += 1
-            if gc_candles or dxy_candles or iteration % 10 == 0:
-                logger.info(f"Read iteration {iteration}: GC={len(gc_candles)} candles, DXY={len(dxy_candles)} candles")
-            
             # Add to synchronizer
             for candle in gc_candles:
                 pair = synchronizer.add_candle(candle)
-                if not pair:
-                    stats = synchronizer.get_buffer_stats()
-                    logger.debug(f"GC candle buffered (no pair yet): {candle.timestamp}, buffer: {stats}")
                 if pair:
                     await process_candle_pair(
                         pair,
@@ -357,8 +348,7 @@ async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
     
     # Startup
     redis_client = redis.Redis.from_url(config.redis_url)
-    logger.info(f"Connected to Redis: {config.redis_url}")  # Log full URL to verify test Redis
-    logger.info(f"Database URL: {config.database_url[:60]}")  # Log DB URL to verify
+    logger.info(f"Connected to Redis at {mask_connection_url(config.redis_url)}")
     
     db_pool = DatabasePool(config.database_url)
     await db_pool.connect()
