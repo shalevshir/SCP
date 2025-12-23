@@ -431,8 +431,16 @@ jobs:
       
       - name: Install project and test dependencies
         run: |
+          # Install shared library first (required by integration tests)
+          cd services/shared
           uv pip install --system -e .
-          uv pip install --system pytest pytest-asyncio pytest-xdist redis pyyaml pydantic requests
+          cd ../..
+          
+          # Install main project
+          uv pip install --system -e .
+          
+          # Install test dependencies
+          uv pip install --system pytest pytest-asyncio pytest-xdist redis pyyaml pydantic requests asyncpg
       
       - name: Start infrastructure and services
         run: |
