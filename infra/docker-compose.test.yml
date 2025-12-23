@@ -35,4 +35,3 @@ volumes:
 networks:
   default:
     name: scp_test_network
-
