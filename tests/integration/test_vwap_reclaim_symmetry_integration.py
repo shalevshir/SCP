@@ -14,6 +14,9 @@ from rule_engine.htf.vwap.reclaim import detect_vwap_reclaim, validate_reclaim_c
 from rule_engine.htf.vwap.sentinel import reclaim_sentinel
 
 
+pytestmark = pytest.mark.integration
+
+
 class TestVWAPReclaimSymmetryIntegration:
     """Integration tests for VWAP_RECLAIM symmetry fixes."""
 
