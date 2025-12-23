@@ -414,7 +414,7 @@ jobs:
   integration-tests:
     name: Integration Tests
     runs-on: ubuntu-latest
-    if: false  # Disabled until tests are implemented
+    needs: [test, service-tests]  # Run after unit tests pass
     
     steps:
       - name: Checkout code
@@ -425,20 +425,68 @@ jobs:
         with:
           python-version: '3.11'
       
-      - name: Start infrastructure
+      - name: Install uv
+        run: pip install uv
+      
+      - name: Install project and test dependencies
         run: |
-          # Will use docker-compose to start Redis + PostgreSQL
-          docker compose -f infra/docker-compose.yml up -d
-          sleep 5
+          uv pip install --system -e .
+          uv pip install --system pytest pytest-asyncio pytest-xdist redis pyyaml pydantic requests
+      
+      - name: Start infrastructure and services
+        run: |
+          # Start test infrastructure (Redis on 6380, PostgreSQL on 5433)
+          docker compose -f infra/docker-compose.yml -f infra/docker-compose.test.yml up -d
+          
+          # Wait for services to be healthy
+          echo "Waiting for services to start..."
+          sleep 15
+          
+          # Check service health
+          for i in {1..30}; do
+            if curl -s http://localhost:8001/health > /dev/null 2>&1 && \
+               curl -s http://localhost:8002/health > /dev/null 2>&1 && \
+               curl -s http://localhost:8003/health > /dev/null 2>&1 && \
+               curl -s http://localhost:8004/health > /dev/null 2>&1 && \
+               curl -s http://localhost:8005/health > /dev/null 2>&1; then
+              echo "All services healthy"
+              break
+            fi
+            echo "Waiting for services... (attempt $i/30)"
+            sleep 2
+          done
       
       - name: Run integration tests
         run: |
-          # Placeholder for integration tests
-          echo "Integration tests not yet implemented"
+          pytest tests/integration/ -v -m integration --junitxml=integration-results.xml
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+      
+      - name: Upload integration test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: integration-test-results
+          path: integration-results.xml
+          retention-days: 30
+      
+      - name: Show service logs on failure
+        if: failure()
+        run: |
+          echo "=== Data Adapter Logs ==="
+          docker compose -f infra/docker-compose.yml -f infra/docker-compose.test.yml logs data-adapter
+          echo "=== Feature Engine Logs ==="
+          docker compose -f infra/docker-compose.yml -f infra/docker-compose.test.yml logs feature-engine
+          echo "=== HTF Bias Logs ==="
+          docker compose -f infra/docker-compose.yml -f infra/docker-compose.test.yml logs htf-bias
+          echo "=== Bot Core Logs ==="
+          docker compose -f infra/docker-compose.yml -f infra/docker-compose.test.yml logs bot-core
+          echo "=== Execution Logs ==="
+          docker compose -f infra/docker-compose.yml -f infra/docker-compose.test.yml logs execution
       
       - name: Stop infrastructure
         if: always()
-        run: docker compose -f infra/docker-compose.yml down
+        run: docker compose -f infra/docker-compose.yml -f infra/docker-compose.test.yml down -v
 
   e2e-tests:
     name: E2E Tests
