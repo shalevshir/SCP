@@ -447,9 +447,32 @@ jobs:
           # Start test infrastructure (Redis on 6380, PostgreSQL on 5433) + all services
           docker compose -f infra/docker-compose.yml -f infra/docker-compose.services.yml -f infra/docker-compose.test.yml up -d
           
-          # Wait for services to be healthy
+          # Wait for PostgreSQL to be ready
+          echo "Waiting for PostgreSQL to initialize..."
+          sleep 10
+          
+          # Verify migrations have run
+          echo "Verifying database migrations..."
+          for i in {1..30}; do
+            if docker exec scp-postgres-test psql -U scp_test -d scp_test -c '\dt candles' 2>/dev/null | grep -q candles; then
+              echo "✅ Migrations complete - candles table exists"
+              break
+            fi
+            if [ $i -eq 30 ]; then
+              echo "❌ ERROR: Migrations failed to complete after 30 seconds"
+              echo "Showing database tables:"
+              docker exec scp-postgres-test psql -U scp_test -d scp_test -c '\dt' || true
+              echo "Showing migration logs:"
+              docker logs scp-postgres-test
+              exit 1
+            fi
+            echo "Waiting for migrations... (attempt $i/30)"
+            sleep 1
+          done
+          
+          # Wait for services to start
           echo "Waiting for services to start..."
-          sleep 15
+          sleep 10
           
           # Check service health
           for i in {1..30}; do

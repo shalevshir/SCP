@@ -193,7 +193,7 @@ def ensure_services_healthy(docker_services: dict[str, str]) -> None:
             raise RuntimeError(
                 f"Service {service_name} did not become healthy within timeout. "
                 f"Ensure services are running: docker-compose -f infra/docker-compose.yml "
-                f"-f infra/docker-compose.test.yml up -d"
+                f"-f infra/docker-compose.services.yml -f infra/docker-compose.test.yml up -d"
             )
 
 

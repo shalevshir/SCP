@@ -29,10 +29,12 @@ services:
       - ./migrations:/docker-entrypoint-initdb.d:ro
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U scp -d scp"]
+      # Verify database is ready AND migrations have run (check for 'candles' table)
+      test: ["CMD-SHELL", "pg_isready -U scp -d scp && psql -U scp -d scp -c '\\dt candles' | grep -q candles"]
       interval: 10s
-      timeout: 3s
-      retries: 3
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
 volumes:
   redis_data:
