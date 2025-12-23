@@ -185,7 +185,7 @@ class TestVWAPReclaimStateMachineEdgeCases:
         # Should raise ValueError when not in PENDING_ACCEPTANCE state
         with pytest.raises(ValueError, match="Must be PENDING_ACCEPTANCE"):
             sm.on_confirmation(bar_idx=100, confirmation_type="vwap_hold")
-    
+
     def test_execution_before_confirmation_is_blocked(self) -> None:
         """Execution before confirmation is blocked."""
         sm = VWAPReclaimStateMachine()
@@ -212,3 +212,123 @@ class TestVWAPReclaimStateMachineEdgeCases:
     def test_max_executions_constant(self) -> None:
         """MAX_EXECUTIONS_PER_RECLAIM is defined."""
         assert MAX_EXECUTIONS_PER_RECLAIM == 1
+
+    def test_confirmation_on_expired_raises_error(self) -> None:
+        """Confirmation on expired state raises ValueError."""
+        sm = VWAPReclaimStateMachine(max_confirm_window=5)
+        sm.on_reclaim_detected(bar_idx=100, direction="above")
+        sm.on_expiration(bar_idx=110)
+        
+        with pytest.raises(ValueError, match="EXPIRED"):
+            sm.on_confirmation(bar_idx=111, confirmation_type="vwap_hold")
+
+    def test_confirmation_on_invalidated_raises_error(self) -> None:
+        """Confirmation on invalidated state raises ValueError."""
+        sm = VWAPReclaimStateMachine()
+        sm.on_reclaim_detected(bar_idx=100, direction="above")
+        sm.on_invalidation(bar_idx=101, reason="HTF_BREAK")
+        
+        with pytest.raises(ValueError, match="INVALIDATED"):
+            sm.on_confirmation(bar_idx=102, confirmation_type="vwap_hold")
+
+    def test_multiple_confirmations_allowed(self) -> None:
+        """Multiple confirmations can be added."""
+        sm = VWAPReclaimStateMachine()
+        sm.on_reclaim_detected(bar_idx=100, direction="above")
+        
+        sm.on_confirmation(bar_idx=101, confirmation_type="vwap_hold")
+        sm.on_confirmation(bar_idx=102, confirmation_type="volume_expansion")
+        
+        assert "vwap_hold" in sm.confirmations
+        assert "volume_expansion" in sm.confirmations
+
+    def test_execution_not_confirmed_raises_error(self) -> None:
+        """Execution when not confirmed raises ValueError."""
+        sm = VWAPReclaimStateMachine()
+        sm.on_reclaim_detected(bar_idx=100, direction="above")
+        
+        # Still in PENDING_ACCEPTANCE
+        with pytest.raises(ValueError, match="Must be CONFIRMED"):
+            sm.on_execution(bar_idx=101)
+
+    def test_expiration_ignored_from_invalid_state(self) -> None:
+        """Expiration is ignored when not in valid state."""
+        sm = VWAPReclaimStateMachine()
+        # No detection, so expiration does nothing
+        sm.on_expiration(bar_idx=100)
+        assert sm.current_state == VWAPReclaimState.NONE
+
+    def test_invalidation_ignored_when_already_invalidated(self) -> None:
+        """Second invalidation is ignored."""
+        sm = VWAPReclaimStateMachine()
+        sm.on_reclaim_detected(bar_idx=100, direction="above")
+        
+        sm.on_invalidation(bar_idx=101, reason="FIRST")
+        initial_history_len = len(sm.transition_history)
+        
+        sm.on_invalidation(bar_idx=102, reason="SECOND")
+        
+        # No new transition should be added
+        assert len(sm.transition_history) == initial_history_len
+
+    def test_on_stop_out_transitions_to_invalidated(self) -> None:
+        """Stop-out transitions to INVALIDATED state."""
+        sm = VWAPReclaimStateMachine()
+        sm.on_reclaim_detected(bar_idx=100, direction="above")
+        sm.on_confirmation(bar_idx=101, confirmation_type="vwap_hold")
+        sm.on_execution(bar_idx=102)
+        
+        sm.on_stop_out(bar_idx=105)
+        
+        assert sm.current_state == VWAPReclaimState.INVALIDATED
+
+    def test_on_stop_out_ignored_when_already_invalidated(self) -> None:
+        """Second stop-out is ignored."""
+        sm = VWAPReclaimStateMachine()
+        sm.on_reclaim_detected(bar_idx=100, direction="above")
+        sm.on_invalidation(bar_idx=101, reason="FIRST")
+        initial_history_len = len(sm.transition_history)
+        
+        sm.on_stop_out(bar_idx=102)
+        
+        # No new transition
+        assert len(sm.transition_history) == initial_history_len
+
+    def test_has_execution_capacity(self) -> None:
+        """Test has_execution_capacity method."""
+        sm = VWAPReclaimStateMachine()
+        
+        # Initially has capacity
+        assert sm.has_execution_capacity() is True
+        
+        # After one execution, no capacity
+        sm.on_reclaim_detected(bar_idx=100, direction="above")
+        sm.on_confirmation(bar_idx=101, confirmation_type="vwap_hold")
+        sm.on_execution(bar_idx=102)
+        
+        assert sm.has_execution_capacity() is False
+
+    def test_bars_since_detection(self) -> None:
+        """Test bars_since_detection method."""
+        sm = VWAPReclaimStateMachine()
+        
+        # No detection
+        assert sm.bars_since_detection(100) == 0
+        
+        # After detection
+        sm.on_reclaim_detected(bar_idx=100, direction="above")
+        assert sm.bars_since_detection(105) == 5
+        assert sm.bars_since_detection(100) == 0
+
+    def test_detection_while_in_pending_resets(self) -> None:
+        """Detection while already pending resets state."""
+        sm = VWAPReclaimStateMachine()
+        
+        # First detection
+        sm.on_reclaim_detected(bar_idx=100, direction="above")
+        assert sm.detection_bar_idx == 100
+        
+        # Second detection while still pending - should reset
+        sm.on_reclaim_detected(bar_idx=200, direction="below")
+        assert sm.detection_bar_idx == 200
+        assert sm.reclaim_direction == "below"
