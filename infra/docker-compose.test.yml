@@ -58,6 +58,8 @@ services:
     container_name: scp-bot-core-test
     environment:
       DATABASE_URL: postgresql://scp_test:scp_test_password@postgres:5432/scp_test
+    volumes:
+      - ../config:/config:ro  # Mount config at /config for load_scoring_config() to find
     restart: "no"
 
   execution:
