@@ -203,9 +203,16 @@ class StateMachineManager:
                 sm.reclaim_direction = "above" if db_direction == "long" else "below"
                 sm.execution_count = row["execution_count"] or 0
                 
-                # Restore confirmations
+                # Restore confirmations - parse JSON string back to list
                 if row["confirmations"]:
-                    sm.confirmations = set(row["confirmations"])
+                    # asyncpg returns the JSONB as-is; since we stored a JSON string,
+                    # we get a string back that needs to be parsed
+                    confirmations_data = row["confirmations"]
+                    if isinstance(confirmations_data, str):
+                        confirmations_list = json.loads(confirmations_data)
+                    else:
+                        confirmations_list = confirmations_data  # Already parsed
+                    sm.confirmations = set(confirmations_list)
                 
                 # Convert UUID to string for consistent key type
                 # (asyncpg returns UUID objects, but all lookups use strings)

@@ -267,7 +267,9 @@ class TradeManager:
         try:
             # Check confirmation and re-entry protection for VWAP_RECLAIM
             # check_confirmation() handles auto-confirm for Phase 6 and returns can_execute()
-            if not self._sm_manager.check_confirmation(signal.id):
+            confirmation_result = self._sm_manager.check_confirmation(signal.id)
+            
+            if not confirmation_result:
                 sm = self._sm_manager.get_state_machine(signal.id)
                 exec_count = sm.execution_count if sm else 0
                 logger.warning(
@@ -283,7 +285,6 @@ class TradeManager:
                 quantity=1,  # Hardcoded for Phase 6
                 price=entry_price,
             )
-            
             
             if order_result.status != "filled":
                 logger.error(
@@ -354,7 +355,6 @@ class TradeManager:
                 opened_at=opened_at,
             )
             await self._publisher.publish_opened(trade_msg)
-            
             
             logger.info(
                 f"Trade executed: {signal.direction} {signal.setup_type} "
