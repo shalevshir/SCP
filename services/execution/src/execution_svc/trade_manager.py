@@ -309,12 +309,15 @@ class TradeManager:
             )
             
             # Calculate risk/reward
+            # Convert Decimal prices to float for arithmetic compatibility
+            sl_price = float(signal.sl_price)
+            tp_price = float(signal.tp_price)
             if signal.direction == "long":
-                risk_amount = entry_price - signal.sl_price
-                reward_amount = signal.tp_price - entry_price
+                risk_amount = entry_price - sl_price
+                reward_amount = tp_price - entry_price
             else:  # short
-                risk_amount = signal.sl_price - entry_price
-                reward_amount = entry_price - signal.tp_price
+                risk_amount = sl_price - entry_price
+                reward_amount = entry_price - tp_price
             
             # Create TradeRecord
             trade = TradeRecord(
@@ -324,8 +327,8 @@ class TradeManager:
                 direction=signal.direction,
                 setup_type=signal.setup_type,
                 entry_price=entry_price,
-                sl_price=signal.sl_price,
-                tp_price=signal.tp_price,
+                sl_price=sl_price,  # Use converted float
+                tp_price=tp_price,  # Use converted float
                 risk_amount=risk_amount,
                 reward_amount=reward_amount,
                 entry_timestamp=opened_at,

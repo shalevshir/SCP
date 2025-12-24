@@ -188,11 +188,12 @@ class PaperBroker(BaseBroker):
         # Store order
         self._orders[order_id] = result
         
-        # Calculate P&L
+        # Calculate P&L (convert Decimal to float for arithmetic)
+        entry_price_float = float(position.entry_price)
         if position.side == "long":
-            pnl = price - position.entry_price
+            pnl = price - entry_price_float
         else:  # short
-            pnl = position.entry_price - price
+            pnl = entry_price_float - price
         
         pnl_total = pnl * position.quantity
         
