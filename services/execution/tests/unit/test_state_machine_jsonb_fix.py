@@ -71,7 +71,8 @@ class TestStateMachineJSONBPersistence:
         assert isinstance(confirmations_arg, list), (
             f"Expected confirmations to be a Python list, got {type(confirmations_arg).__name__}"
         )
-        assert confirmations_arg == ["vwap_hold", "auto_confirm"]
+        # Check contents regardless of order (confirmations come from a set)
+        assert set(confirmations_arg) == {"vwap_hold", "auto_confirm"}
         
         # Should NOT be JSON string
         assert not isinstance(confirmations_arg, str), (
