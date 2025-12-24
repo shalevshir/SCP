@@ -96,13 +96,17 @@ async def test_signal_triggers_trade_execution(
     await asyncio.sleep(3.0)
     
     # Check trades.opened stream
-    opened_trades = await trades_opened_consumer.read(count=5, block_ms=5000)
+    opened_trades = await trades_opened_consumer.read(count=10, block_ms=5000)
     
     assert len(opened_trades) > 0, "No trades opened after signal"
     
-    # Verify trade details
-    trade = opened_trades[0]
-    assert trade.signal_id == signal.id
+    # Find the trade matching our signal (there may be stale trades from service's in-memory buffer)
+    matching_trades = [t for t in opened_trades if t.signal_id == signal.id]
+    assert len(matching_trades) > 0, (
+        f"Trade for signal {signal.id} not found. "
+        f"Found trades with signal_ids: {[t.signal_id for t in opened_trades]}"
+    )
+    trade = matching_trades[0]
     assert trade.direction == "long"
     assert trade.entry_price == 2650.0
     assert trade.sl_price == 2640.0
@@ -199,9 +203,12 @@ async def test_sl_hit_closes_trade(
     
     assert last_entry_candle is not None, "No candles were created"
     
-    # Verify trade opened
-    opened = await trades_opened_consumer.read(count=1, block_ms=5000)
+    # Verify trade opened - look for our specific signal
+    opened = await trades_opened_consumer.read(count=10, block_ms=5000)
     assert len(opened) > 0, "Trade not opened"
+    matching = [t for t in opened if t.signal_id == signal.id]
+    assert len(matching) > 0, f"Trade for signal {signal.id} not found"
+    opened_trade = matching[0]
     
     # Publish candle that hits SL (low touches or breaks SL price)
     sl_candle = CandleMessage(
@@ -218,13 +225,14 @@ async def test_sl_hit_closes_trade(
     await redis_publisher.publish("candles.1m.gc", sl_candle)
     await asyncio.sleep(1.5)
     
-    # Check trades.closed stream
-    closed = await trades_closed_consumer.read(count=1, block_ms=3000)
+    # Check trades.closed stream - look for our specific signal
+    closed = await trades_closed_consumer.read(count=10, block_ms=3000)
     
     assert len(closed) > 0, "Trade not closed after SL hit"
     
-    closed_trade = closed[0]
-    assert closed_trade.signal_id == signal.id
+    matching_closed = [t for t in closed if t.signal_id == signal.id]
+    assert len(matching_closed) > 0, f"Closed trade for signal {signal.id} not found"
+    closed_trade = matching_closed[0]
     assert closed_trade.exit_price == 2640.0, "Exit price should match SL"
     assert "SL" in (closed_trade.exit_reason or ""), "Exit reason should indicate SL"
     
@@ -306,9 +314,11 @@ async def test_tp_hit_closes_trade(
     
     assert last_entry_candle is not None, "No candles were created"
     
-    # Verify opened
-    opened = await trades_opened_consumer.read(count=1, block_ms=5000)
+    # Verify opened - look for our specific signal
+    opened = await trades_opened_consumer.read(count=10, block_ms=5000)
     assert len(opened) > 0
+    matching = [t for t in opened if t.signal_id == signal.id]
+    assert len(matching) > 0, f"Trade for signal {signal.id} not found"
     
     # Publish candle that hits TP (high reaches TP price)
     tp_candle = CandleMessage(
@@ -325,12 +335,14 @@ async def test_tp_hit_closes_trade(
     await redis_publisher.publish("candles.1m.gc", tp_candle)
     await asyncio.sleep(1.5)
     
-    # Check trades.closed
-    closed = await trades_closed_consumer.read(count=1, block_ms=3000)
+    # Check trades.closed - look for our specific signal
+    closed = await trades_closed_consumer.read(count=10, block_ms=3000)
     
     assert len(closed) > 0, "Trade not closed after TP hit"
     
-    closed_trade = closed[0]
+    matching_closed = [t for t in closed if t.signal_id == signal.id]
+    assert len(matching_closed) > 0, f"Closed trade for signal {signal.id} not found"
+    closed_trade = matching_closed[0]
     assert closed_trade.exit_price == 2680.0, "Exit price should match TP"
     assert "TP" in (closed_trade.exit_reason or ""), "Exit reason should indicate TP"
     
@@ -415,8 +427,10 @@ async def test_invalidation_closes_trade(
     assert last_entry_candle is not None, "No candles were created"
     
     # FIRST verify trade was opened before testing invalidation
-    opened = await trades_opened_consumer.read(count=1, block_ms=5000)
+    opened = await trades_opened_consumer.read(count=10, block_ms=5000)
     assert len(opened) > 0, "Trade not opened - cannot test invalidation"
+    matching = [t for t in opened if t.signal_id == signal.id]
+    assert len(matching) > 0, f"Trade for signal {signal.id} not found"
     
     # Publish features showing VWAP invalidation (price below VWAP for long)
     invalid_features = FeaturesMessage(
@@ -459,7 +473,10 @@ async def test_invalidation_closes_trade(
         "If no trade was closed, the invalidation feature is broken."
     )
     
-    closed_trade = closed[0]
+    # Find our specific trade
+    matching_closed = [t for t in closed if t.signal_id == signal.id]
+    assert len(matching_closed) > 0, f"Closed trade for signal {signal.id} not found"
+    closed_trade = matching_closed[0]
     # Should be closed for invalidation (VWAP or otherwise)
     # Exit reason should indicate invalidation
     assert closed_trade.exit_reason is not None

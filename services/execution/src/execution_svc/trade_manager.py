@@ -327,8 +327,8 @@ class TradeManager:
                 direction=signal.direction,
                 setup_type=signal.setup_type,
                 entry_price=entry_price,
-                sl_price=sl_price,  # Use converted float
-                tp_price=tp_price,  # Use converted float
+                sl_price=signal.sl_price,
+                tp_price=signal.tp_price,
                 risk_amount=risk_amount,
                 reward_amount=reward_amount,
                 entry_timestamp=opened_at,

@@ -199,7 +199,8 @@ class DailyStateTracker:
         total_pnl = 0.0
         for trade in trades:
             if trade.pnl is not None:  # Closed trade
-                total_pnl += trade.pnl
+                # Convert Decimal to float for arithmetic compatibility
+                total_pnl += float(trade.pnl)
         
         self._state.daily_pnl = total_pnl
         

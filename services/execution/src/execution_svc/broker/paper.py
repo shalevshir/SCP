@@ -190,10 +190,11 @@ class PaperBroker(BaseBroker):
         
         # Calculate P&L (convert Decimal to float for arithmetic)
         entry_price_float = float(position.entry_price)
+        price_float = float(price)  # price may also be Decimal
         if position.side == "long":
-            pnl = price - entry_price_float
+            pnl = price_float - entry_price_float
         else:  # short
-            pnl = entry_price_float - price
+            pnl = entry_price_float - price_float
         
         pnl_total = pnl * position.quantity
         
@@ -202,7 +203,7 @@ class PaperBroker(BaseBroker):
         
         logger.info(
             f"Paper position closed: {position.side} {position.quantity} {symbol} "
-            f"@ {price:.2f} (entry={position.entry_price:.2f}, pnl={pnl_total:.2f} points, "
+            f"@ {price_float:.2f} (entry={entry_price_float:.2f}, pnl={pnl_total:.2f} points, "
             f"order_id={order_id})"
         )
         
