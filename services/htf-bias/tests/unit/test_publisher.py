@@ -14,7 +14,6 @@ def create_bias_message() -> HTFBiasMessage:
     return HTFBiasMessage(
         timestamp=datetime.now(timezone.utc),
         bias="bullish",
-        direction="long",
         score=7.5,
         confidence="A+",
         structure_15m="HL",
@@ -52,7 +51,6 @@ class TestBiasPublisher:
         bias = HTFBiasMessage(
             timestamp=datetime.now(timezone.utc),
             bias="bearish",
-            direction="short",
             score=8.0,
             confidence="A+",
             structure_15m="LH",
@@ -77,7 +75,6 @@ class TestBiasPublisher:
         bias = HTFBiasMessage(
             timestamp=datetime.now(timezone.utc),
             bias="neutral",
-            direction="neutral",
             score=3.0,
             confidence="C",
             structure_15m=None,
