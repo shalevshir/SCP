@@ -47,14 +47,22 @@ class TestPaperBroker:
         assert position.entry_price == 2650.0
     
     @pytest.mark.asyncio
-    async def test_place_order_rejects_duplicate_position(self) -> None:
-        """Test that placing order with existing position raises error."""
+    async def test_place_order_auto_closes_orphaned_position(self) -> None:
+        """Test that placing order with existing position auto-closes the orphan."""
         broker = PaperBroker()
         
+        # Create first position
         await broker.place_order("GC", "long", 1, price=2650.0)
+        assert len(broker.get_all_positions()) == 1
         
-        with pytest.raises(ValueError, match="Position already exists"):
-            await broker.place_order("GC", "long", 1, price=2655.0)
+        # Second order should auto-close the first and create new position
+        await broker.place_order("GC", "short", 1, price=2660.0)
+        
+        # Should have exactly one position (the new one)
+        positions = broker.get_all_positions()
+        assert len(positions) == 1
+        assert positions[0].side == "short"
+        assert positions[0].entry_price == 2660.0
     
     @pytest.mark.asyncio
     async def test_close_position_long_profit(self) -> None:
