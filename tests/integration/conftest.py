@@ -25,14 +25,19 @@ def event_loop():
 async def redis_client() -> AsyncGenerator[redis.Redis, None]:
     """Provide Redis client connected to test instance.
     
-    Connects to test Redis on port 6380 (configured in docker-compose.test.yml).
+    Connects to Redis on port specified by REDIS_PORT env var:
+    - Local development (default): 6379 (same as services via launch.json)
+    - CI/Docker: 6380 (test Redis via docker-compose.test.yml)
     
     Yields:
         Redis client for integration tests
     """
+    import os
+    redis_port = int(os.environ.get("REDIS_PORT", "6379"))
+    
     client = redis.Redis(
         host="localhost",
-        port=6380,
+        port=redis_port,
         decode_responses=False,  # Keep binary for stream handling
     )
     
@@ -48,14 +53,19 @@ async def redis_client() -> AsyncGenerator[redis.Redis, None]:
 async def db_pool() -> AsyncGenerator[DatabasePool, None]:
     """Provide database pool connected to test PostgreSQL.
     
-    Connects to test PostgreSQL on port 5433 (configured in docker-compose.test.yml).
+    Connects to PostgreSQL using DATABASE_URL env var or defaults:
+    - Local development (default): port 5432 with scp/scp_dev_password
+    - CI/Docker: port 5433 with scp_test/scp_test_password
     
     Yields:
         Database pool for integration tests
     """
-    pool = DatabasePool(
-        "postgresql://scp_test:scp_test_password@localhost:5433/scp_test"
+    import os
+    database_url = os.environ.get(
+        "DATABASE_URL",
+        "postgresql://scp:scp_dev_password@localhost:5432/scp"  # Match launch.json
     )
+    pool = DatabasePool(database_url)
     
     try:
         await pool.connect()

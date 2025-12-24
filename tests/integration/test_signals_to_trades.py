@@ -177,16 +177,17 @@ async def test_sl_hit_closes_trade(
     await asyncio.sleep(0.5)
     
     # Execute trade with multiple candles to ensure processing
+    # Use close prices ABOVE VWAP to avoid VWAP invalidation before SL candle
     last_entry_candle = None
     for i in range(3):
         entry_candle = CandleMessage(
             timestamp=signal.timestamp + timedelta(minutes=i + 1),
             symbol="GC",
             timeframe="1m",
-            open=2650.0,
-            high=2651.0,
-            low=2649.0,
-            close=2650.5,
+            open=2660.0,
+            high=2662.0,
+            low=2658.0,
+            close=2661.0,  # Above VWAP to avoid invalidation
             volume=1000.0,
         )
         last_entry_candle = entry_candle
@@ -207,8 +208,8 @@ async def test_sl_hit_closes_trade(
         timestamp=last_entry_candle.timestamp + timedelta(minutes=1),
         symbol="GC",
         timeframe="1m",
-        open=2648.0,
-        high=2649.0,
+        open=2645.0,
+        high=2646.0,
         low=2639.0,  # Hits SL at 2640.0
         close=2641.0,
         volume=1000.0,
@@ -283,16 +284,17 @@ async def test_tp_hit_closes_trade(
     await asyncio.sleep(0.5)
     
     # Execute trade with multiple candles to ensure processing
+    # Use close prices ABOVE VWAP to avoid VWAP invalidation before TP candle
     last_entry_candle = None
     for i in range(3):
         entry_candle = CandleMessage(
             timestamp=signal.timestamp + timedelta(minutes=i + 1),
             symbol="GC",
             timeframe="1m",
-            open=2650.0,
-            high=2651.0,
-            low=2649.0,
-            close=2650.5,
+            open=2660.0,
+            high=2662.0,
+            low=2658.0,
+            close=2661.0,  # Above VWAP to avoid invalidation
             volume=1000.0,
         )
         last_entry_candle = entry_candle
@@ -313,10 +315,10 @@ async def test_tp_hit_closes_trade(
         timestamp=last_entry_candle.timestamp + timedelta(minutes=1),
         symbol="GC",
         timeframe="1m",
-        open=2670.0,
+        open=2675.0,
         high=2681.0,  # Hits TP at 2680.0
-        low=2669.0,
-        close=2678.0,
+        low=2674.0,
+        close=2679.0,  # Above VWAP
         volume=1000.0,
     )
     
@@ -333,9 +335,11 @@ async def test_tp_hit_closes_trade(
     assert "TP" in (closed_trade.exit_reason or ""), "Exit reason should indicate TP"
     
     # Verify positive PnL
+    # Entry is at candle open (2660), not signal entry_price (2650)
+    # PnL = 2680 - 2660 = 20 points
     assert closed_trade.pnl_points is not None
     assert closed_trade.pnl_points > 0, "TP hit should result in positive PnL"
-    assert closed_trade.pnl_points == 30.0, "PnL should be 30 points (2680 - 2650)"
+    assert closed_trade.pnl_points == 20.0, "PnL should be 20 points (2680 - 2660 entry candle open)"
 
 
 @pytest.mark.integration
@@ -388,16 +392,17 @@ async def test_invalidation_closes_trade(
     await asyncio.sleep(0.5)
     
     # Execute trade with multiple candles to ensure processing
+    # Use close prices ABOVE VWAP to avoid early invalidation
     last_entry_candle = None
     for i in range(3):
         entry_candle = CandleMessage(
             timestamp=signal.timestamp + timedelta(minutes=i + 1),
             symbol="GC",
             timeframe="1m",
-            open=2650.0,
-            high=2651.0,
-            low=2649.0,
-            close=2650.5,
+            open=2660.0,
+            high=2662.0,
+            low=2658.0,
+            close=2661.0,  # Above VWAP to avoid early invalidation
             volume=1000.0,
         )
         last_entry_candle = entry_candle

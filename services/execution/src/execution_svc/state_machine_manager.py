@@ -54,6 +54,7 @@ class StateMachineManager:
         direction = "above" if signal.direction == "long" else "below"
         sm.on_reclaim_detected(bar_idx=self._bar_counter, direction=direction)
         
+        
         # Store state machine
         self._state_machines[signal.id] = sm
         
@@ -84,6 +85,7 @@ class StateMachineManager:
         if sm is None:
             return False
         
+        
         # Auto-confirm on next bar (simplified for Phase 6)
         if sm.current_state == VWAPReclaimState.PENDING_ACCEPTANCE:
             if bar_idx is None:
@@ -94,7 +96,8 @@ class StateMachineManager:
                 sm.on_confirmation(bar_idx=bar_idx, confirmation_type="auto_confirm")
                 logger.info(f"Auto-confirmed signal {signal_id} at bar {bar_idx}")
         
-        return sm.can_execute()
+        can_exec = sm.can_execute()
+        return can_exec
     
     def check_expiration(self, signal_id: str, bar_idx: int | None = None) -> bool:
         """Check if signal has expired.
@@ -195,7 +198,9 @@ class StateMachineManager:
                 # Restore state (simplified - would need full deserialization in production)
                 sm.current_state = VWAPReclaimState(row["state"])
                 sm.detection_bar_idx = row["detection_bar_idx"]
-                sm.reclaim_direction = row["reclaim_direction"]
+                # Map DB format ("long"/"short") back to internal format ("above"/"below")
+                db_direction = row["reclaim_direction"]
+                sm.reclaim_direction = "above" if db_direction == "long" else "below"
                 sm.execution_count = row["execution_count"] or 0
                 
                 # Restore confirmations
@@ -258,12 +263,17 @@ class StateMachineManager:
             for t in sm.transition_history
         ])
         
+        # Map internal direction ("above"/"below") to DB format ("long"/"short")
+        # State machine uses "above"/"below" for VWAP position,
+        # DB constraint expects "long"/"short" for trade direction
+        db_direction = "long" if sm.reclaim_direction == "above" else "short"
+        
         await self._db_pool.execute(
             query,
             signal_id,
             sm.current_state.value,
             sm.detection_bar_idx,
-            sm.reclaim_direction,
+            db_direction,
             confirmations_json,  # JSON string, not list
             sm.execution_count,
             transition_history_json,  # JSON string, not list

@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 
 import redis.asyncio as redis
 from fastapi import FastAPI
+
 from scp_shared.common import get_logger, mask_connection_url
 from scp_shared.database import DatabasePool
 from scp_shared.health import create_health_router
@@ -120,6 +121,11 @@ async def process_streams(
                 # CRITICAL: Check session reset BEFORE execute_pending_signals
                 # to ensure daily limits (PDLL, max trades) are fresh at day boundaries
                 trade_manager.check_session_reset(candle_msg.timestamp)
+                
+                # Increment bar counter BEFORE execute_pending_signals so that
+                # check_confirmation() can confirm signals from the previous bar
+                # (confirmation requires bar_idx > detection_bar_idx)
+                trade_manager._sm_manager.increment_bar_counter()
                 
                 # Execute pending signals at this candle's open
                 await trade_manager.execute_pending_signals(candle_msg.open)

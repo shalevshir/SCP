@@ -135,8 +135,8 @@ class TradeManager:
             candle: Current candle
             features: Optional features for invalidation checking
         """
-        # Increment bar counter
-        self._sm_manager.increment_bar_counter()
+        # Note: bar counter is now incremented in main.py before execute_pending_signals
+        # to ensure confirmation can happen before execution
         
         # Convert to internal Candle type
         candle_obj = Candle(
@@ -223,6 +223,7 @@ class TradeManager:
             trade, candle, bars_elapsed, features
         )
         
+        
         # Check if trade just reached +1R (and persist to database)
         # MUST happen AFTER check_all() to ensure we persist the current candle's state
         if not trade.reached_1r:
@@ -264,12 +265,14 @@ class TradeManager:
             TradeRecord if successful, None otherwise
         """
         try:
-            # Check re-entry protection for VWAP_RECLAIM
-            sm = self._sm_manager.get_state_machine(signal.id)
-            if sm is not None and not sm.can_execute():
+            # Check confirmation and re-entry protection for VWAP_RECLAIM
+            # check_confirmation() handles auto-confirm for Phase 6 and returns can_execute()
+            if not self._sm_manager.check_confirmation(signal.id):
+                sm = self._sm_manager.get_state_machine(signal.id)
+                exec_count = sm.execution_count if sm else 0
                 logger.warning(
-                    f"Signal {signal.id} blocked: max executions reached "
-                    f"for reclaim context (execution_count={sm.execution_count})"
+                    f"Signal {signal.id} blocked: not confirmed or max executions reached "
+                    f"(execution_count={exec_count})"
                 )
                 return None
             
@@ -280,6 +283,7 @@ class TradeManager:
                 quantity=1,  # Hardcoded for Phase 6
                 price=entry_price,
             )
+            
             
             if order_result.status != "filled":
                 logger.error(
@@ -351,6 +355,7 @@ class TradeManager:
             )
             await self._publisher.publish_opened(trade_msg)
             
+            
             logger.info(
                 f"Trade executed: {signal.direction} {signal.setup_type} "
                 f"@ {entry_price:.2f} (SL={signal.sl_price:.2f}, "
@@ -383,6 +388,7 @@ class TradeManager:
         """
         broker_position_closed = False
         
+        
         # Try to close position via broker (may not exist if orphaned)
         try:
             await self._broker.close_position(symbol=trade.symbol, price=exit_price)
@@ -410,6 +416,7 @@ class TradeManager:
                 exit_reason=exit_reason,
                 closed_at=closed_at,
             )
+            
             
             # Calculate P&L
             if trade.direction == "long":
@@ -445,6 +452,7 @@ class TradeManager:
                 exit_reason=exit_reason,
             )
             await self._publisher.publish_closed(trade_msg)
+            
             
             status_note = " (orphaned trade)" if not broker_position_closed else ""
             logger.info(
