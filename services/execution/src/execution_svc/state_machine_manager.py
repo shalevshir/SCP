@@ -248,11 +248,12 @@ class StateMachineManager:
                 updated_at = NOW()
         """
         
-        # Convert confirmations to JSON string for JSONB column
-        confirmations_json = json.dumps(list(sm.confirmations) if sm.confirmations else [])
+        # Convert confirmations to Python list for JSONB column
+        # asyncpg handles JSONB serialization automatically from Python objects
+        confirmations_list = list(sm.confirmations) if sm.confirmations else []
         
-        # Convert transition history to JSON string for JSONB column
-        transition_history_json = json.dumps([
+        # Convert transition history to Python list of dicts for JSONB column
+        transition_history_list = [
             {
                 "from_state": t.from_state.value,
                 "to_state": t.to_state.value,
@@ -261,7 +262,7 @@ class StateMachineManager:
                 "timestamp": t.timestamp.isoformat(),
             }
             for t in sm.transition_history
-        ])
+        ]
         
         # Map internal direction ("above"/"below") to DB format ("long"/"short")
         # State machine uses "above"/"below" for VWAP position,
@@ -274,9 +275,9 @@ class StateMachineManager:
             sm.current_state.value,
             sm.detection_bar_idx,
             db_direction,
-            confirmations_json,  # JSON string, not list
+            confirmations_list,  # Python list - asyncpg handles JSONB conversion
             sm.execution_count,
-            transition_history_json,  # JSON string, not list
+            transition_history_list,  # Python list - asyncpg handles JSONB conversion
         )
     
     def cleanup_old_state_machines(self) -> None:
