@@ -445,7 +445,8 @@ jobs:
       - name: Start infrastructure and services
         run: |
           # Start test infrastructure (Redis on 6380, PostgreSQL on 5433) + all services
-          docker compose -f infra/docker-compose.yml -f infra/docker-compose.services.yml -f infra/docker-compose.test.yml up -d
+          # Always rebuild to ensure latest code is included in containers
+          docker compose -f infra/docker-compose.yml -f infra/docker-compose.services.yml -f infra/docker-compose.test.yml up -d --build
           
           # Wait for PostgreSQL to be ready
           echo "Waiting for PostgreSQL to initialize..."
