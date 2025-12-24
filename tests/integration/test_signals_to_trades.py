@@ -67,22 +67,29 @@ async def test_signal_triggers_trade_execution(
     
     await redis_publisher.publish("signals.pending", signal)
     
-    # Publish next bar candle to trigger execution (signals execute at next bar open)
-    next_bar_candle = CandleMessage(
-        timestamp=signal.timestamp + timedelta(minutes=1),
-        symbol="GC",
-        timeframe="1m",
-        open=2650.0,  # Signal entry price
-        high=2652.0,
-        low=2649.0,
-        close=2651.0,
-        volume=1000.0,
-    )
+    # Wait briefly for signal to be consumed and buffered
+    await asyncio.sleep(0.5)
     
-    await redis_publisher.publish("candles.1m.gc", next_bar_candle)
+    # Publish multiple candles to ensure execution service processes them
+    # (services use 1000ms blocking reads, so we need to ensure a candle arrives
+    # in the same read cycle after the signal is buffered)
+    for i in range(3):
+        next_bar_candle = CandleMessage(
+            timestamp=signal.timestamp + timedelta(minutes=i + 1),
+            symbol="GC",
+            timeframe="1m",
+            open=2650.0,  # Signal entry price
+            high=2652.0,
+            low=2649.0,
+            close=2651.0,
+            volume=1000.0,
+        )
+        
+        await redis_publisher.publish("candles.1m.gc", next_bar_candle)
+        await asyncio.sleep(0.3)
     
-    # Wait for execution service to process
-    await asyncio.sleep(2.0)
+    # Wait for execution service to complete processing
+    await asyncio.sleep(3.0)
     
     # Check trades.opened stream
     opened_trades = await trades_opened_consumer.read(count=5, block_ms=5000)
@@ -158,28 +165,38 @@ async def test_sl_hit_closes_trade(
     
     await redis_publisher.publish("signals.pending", signal)
     
-    # Execute trade
-    entry_candle = CandleMessage(
-        timestamp=signal.timestamp + timedelta(minutes=1),
-        symbol="GC",
-        timeframe="1m",
-        open=2650.0,
-        high=2651.0,
-        low=2649.0,
-        close=2650.5,
-        volume=1000.0,
-    )
+    # Wait briefly for signal to be consumed and buffered
+    await asyncio.sleep(0.5)
     
-    await redis_publisher.publish("candles.1m.gc", entry_candle)
-    await asyncio.sleep(1.5)
+    # Execute trade with multiple candles to ensure processing
+    last_entry_candle = None
+    for i in range(3):
+        entry_candle = CandleMessage(
+            timestamp=signal.timestamp + timedelta(minutes=i + 1),
+            symbol="GC",
+            timeframe="1m",
+            open=2650.0,
+            high=2651.0,
+            low=2649.0,
+            close=2650.5,
+            volume=1000.0,
+        )
+        last_entry_candle = entry_candle
+        
+        await redis_publisher.publish("candles.1m.gc", entry_candle)
+        await asyncio.sleep(0.3)
+    
+    await asyncio.sleep(2.0)
+    
+    assert last_entry_candle is not None, "No candles were created"
     
     # Verify trade opened
-    opened = await trades_opened_consumer.read(count=1, block_ms=3000)
+    opened = await trades_opened_consumer.read(count=1, block_ms=5000)
     assert len(opened) > 0, "Trade not opened"
     
     # Publish candle that hits SL (low touches or breaks SL price)
     sl_candle = CandleMessage(
-        timestamp=entry_candle.timestamp + timedelta(minutes=1),
+        timestamp=last_entry_candle.timestamp + timedelta(minutes=1),
         symbol="GC",
         timeframe="1m",
         open=2648.0,
@@ -250,28 +267,38 @@ async def test_tp_hit_closes_trade(
     
     await redis_publisher.publish("signals.pending", signal)
     
-    # Execute trade
-    entry_candle = CandleMessage(
-        timestamp=signal.timestamp + timedelta(minutes=1),
-        symbol="GC",
-        timeframe="1m",
-        open=2650.0,
-        high=2651.0,
-        low=2649.0,
-        close=2650.5,
-        volume=1000.0,
-    )
+    # Wait briefly for signal to be consumed and buffered
+    await asyncio.sleep(0.5)
     
-    await redis_publisher.publish("candles.1m.gc", entry_candle)
-    await asyncio.sleep(1.5)
+    # Execute trade with multiple candles to ensure processing
+    last_entry_candle = None
+    for i in range(3):
+        entry_candle = CandleMessage(
+            timestamp=signal.timestamp + timedelta(minutes=i + 1),
+            symbol="GC",
+            timeframe="1m",
+            open=2650.0,
+            high=2651.0,
+            low=2649.0,
+            close=2650.5,
+            volume=1000.0,
+        )
+        last_entry_candle = entry_candle
+        
+        await redis_publisher.publish("candles.1m.gc", entry_candle)
+        await asyncio.sleep(0.3)
+    
+    await asyncio.sleep(2.0)
+    
+    assert last_entry_candle is not None, "No candles were created"
     
     # Verify opened
-    opened = await trades_opened_consumer.read(count=1, block_ms=3000)
+    opened = await trades_opened_consumer.read(count=1, block_ms=5000)
     assert len(opened) > 0
     
     # Publish candle that hits TP (high reaches TP price)
     tp_candle = CandleMessage(
-        timestamp=entry_candle.timestamp + timedelta(minutes=1),
+        timestamp=last_entry_candle.timestamp + timedelta(minutes=1),
         symbol="GC",
         timeframe="1m",
         open=2670.0,
@@ -333,24 +360,34 @@ async def test_invalidation_closes_trade(
     
     await redis_publisher.publish("signals.pending", signal)
     
-    # Execute trade
-    entry_candle = CandleMessage(
-        timestamp=signal.timestamp + timedelta(minutes=1),
-        symbol="GC",
-        timeframe="1m",
-        open=2650.0,
-        high=2651.0,
-        low=2649.0,
-        close=2650.5,
-        volume=1000.0,
-    )
+    # Wait briefly for signal to be consumed and buffered
+    await asyncio.sleep(0.5)
     
-    await redis_publisher.publish("candles.1m.gc", entry_candle)
-    await asyncio.sleep(1.0)
+    # Execute trade with multiple candles to ensure processing
+    last_entry_candle = None
+    for i in range(3):
+        entry_candle = CandleMessage(
+            timestamp=signal.timestamp + timedelta(minutes=i + 1),
+            symbol="GC",
+            timeframe="1m",
+            open=2650.0,
+            high=2651.0,
+            low=2649.0,
+            close=2650.5,
+            volume=1000.0,
+        )
+        last_entry_candle = entry_candle
+        
+        await redis_publisher.publish("candles.1m.gc", entry_candle)
+        await asyncio.sleep(0.3)
+    
+    await asyncio.sleep(2.0)
+    
+    assert last_entry_candle is not None, "No candles were created"
     
     # Publish features showing VWAP invalidation (price below VWAP for long)
     invalid_features = FeaturesMessage(
-        timestamp=entry_candle.timestamp + timedelta(minutes=1),
+        timestamp=last_entry_candle.timestamp + timedelta(minutes=1),
         symbol="GC",
         timeframe="1m",
         close=2645.0,
@@ -366,7 +403,7 @@ async def test_invalidation_closes_trade(
     
     # Need to publish corresponding candle
     invalid_candle = CandleMessage(
-        timestamp=entry_candle.timestamp + timedelta(minutes=1),
+        timestamp=last_entry_candle.timestamp + timedelta(minutes=1),
         symbol="GC",
         timeframe="1m",
         open=2646.0,

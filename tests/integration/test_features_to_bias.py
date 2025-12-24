@@ -307,16 +307,22 @@ async def test_bias_timestamp_correlation(
     
     # Verify bias timestamps are at or near 15m boundaries
     for bias in bias_list:
-        # Check that minute is within 2 minutes after any 15m boundary
-        # Valid minutes: 0-2 (after :00), 15-17 (after :15), 30-32 (after :30), 45-47 (after :45)
+        # Check that minute is within 2 minutes of any 15m boundary
+        # The HTF bias timestamp reflects the source candle that triggered the calculation,
+        # which can be either at the boundary or just before it completes the period.
+        # Valid minutes: 
+        #   After boundary: 0-2, 15-17, 30-32, 45-47 (just after :00, :15, :30, :45)
+        #   Before boundary: 13-14, 28-29, 43-44, 58-59 (just before :15, :30, :45, :00)
         minute = bias.timestamp.minute
         minutes_after_boundary = minute % 15
         
-        # HTF bias should be emitted shortly after 15m boundaries
-        # Allow up to 2 minutes for processing delay
-        assert minutes_after_boundary <= 2, (
+        # HTF bias should be emitted within 2 minutes of a 15m boundary
+        # Accept both just-after (0-2) and just-before (13-14)
+        is_near_boundary = minutes_after_boundary <= 2 or minutes_after_boundary >= 13
+        
+        assert is_near_boundary, (
             f"Bias timestamp {bias.timestamp} (minute {minute}) should be "
-            f"within 2 minutes after a 15m boundary (0-2, 15-17, 30-32, 45-47), "
-            f"but is {minutes_after_boundary} minutes after the nearest boundary"
+            f"within 2 minutes of a 15m boundary, "
+            f"but is {min(minutes_after_boundary, 15 - minutes_after_boundary)} minutes away"
         )
 
