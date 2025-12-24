@@ -47,3 +47,39 @@ class TestDatabasePool:
         # Should not raise
         await pool.close()
 
+
+class TestDatabasePoolNotConnected:
+    """Test DatabasePool error handling when not connected."""
+    
+    @pytest.mark.asyncio
+    async def test_execute_not_connected_raises_error(self) -> None:
+        """Execute raises RuntimeError when not connected."""
+        pool = DatabasePool("postgresql://user:pass@localhost/db")
+        
+        with pytest.raises(RuntimeError, match="not connected"):
+            await pool.execute("SELECT 1")
+    
+    @pytest.mark.asyncio
+    async def test_fetch_not_connected_raises_error(self) -> None:
+        """Fetch raises RuntimeError when not connected."""
+        pool = DatabasePool("postgresql://user:pass@localhost/db")
+        
+        with pytest.raises(RuntimeError, match="not connected"):
+            await pool.fetch("SELECT 1")
+    
+    @pytest.mark.asyncio
+    async def test_fetchrow_not_connected_raises_error(self) -> None:
+        """Fetchrow raises RuntimeError when not connected."""
+        pool = DatabasePool("postgresql://user:pass@localhost/db")
+        
+        with pytest.raises(RuntimeError, match="not connected"):
+            await pool.fetchrow("SELECT 1")
+    
+    @pytest.mark.asyncio
+    async def test_fetchval_not_connected_raises_error(self) -> None:
+        """Fetchval raises RuntimeError when not connected."""
+        pool = DatabasePool("postgresql://user:pass@localhost/db")
+        
+        with pytest.raises(RuntimeError, match="not connected"):
+            await pool.fetchval("SELECT 1")
+
