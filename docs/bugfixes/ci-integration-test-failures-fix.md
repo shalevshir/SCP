@@ -186,13 +186,20 @@ With these fixes, the 4 failing integration tests should now pass:
 
 ---
 
-### Fix 4: Scoring None-Safe EMA Comparisons
+### Fix 4: None-Safe Feature Value Handling
 
-**File:** `services/shared/src/scp_shared/rule_engine/scoring.py`
+**Files:** 
+- `services/shared/src/scp_shared/rule_engine/scoring.py`
+- `services/shared/src/scp_shared/rule_engine/setup_detectors/vwap_fade.py`
+- `services/shared/src/scp_shared/rule_engine/setup_detectors/dxy_continuation.py`
 
-Bot-core was receiving features with `None` values for EMAs (not yet calculated), causing `TypeError: '>' not supported between instances of 'NoneType' and 'NoneType'` in `determine_direction()` and `calculate_ema_stack()`.
+Bot-core was receiving features with `None` values (indicators not yet calculated), causing:
+- `TypeError: '>' not supported between instances of 'NoneType' and 'NoneType'` in comparisons
+- `TypeError: unsupported format string passed to NoneType.__format__` in logging
 
-**Solution:** Add explicit None handling before comparisons:
+**Root cause:** `.get(key, default)` returns `None` when the key exists but value is `None`, not the default.
+
+**Solution:** Explicit None checks before using values:
 
 ```python
 def determine_direction(features: pd.Series, htf_bias: HTFBias) -> str:
@@ -211,6 +218,22 @@ def determine_direction(features: pd.Series, htf_bias: HTFBias) -> str:
 ```
 
 This allows scoring to work even when indicators haven't been calculated yet (warmup period).
+
+**Also fixed in setup detectors:**
+
+```python
+# vwap_fade.py
+structure_clarity = features.get("structure_clarity")
+if structure_clarity is None:
+    structure_clarity = 0.0
+
+rsi = features.get("rsi")
+if rsi is None:
+    rsi = 50.0
+
+# Now safe to use in f-strings and comparisons
+logger.info(f"clarity={structure_clarity:.2f}, rsi={rsi:.1f}")
+```
 
 ### Fix 5: Paper Broker Orphaned Position Handling
 
@@ -243,11 +266,13 @@ This allows integration tests to run sequentially without manual broker state cl
 1. `services/shared/src/scp_shared/rule_engine/config_loader.py` - Smart config path detection
 2. `services/execution/src/execution_svc/state_machine_manager.py` - Explicit JSON serialization
 3. `infra/docker-compose.test.yml` - Add config volume mount for bot-core
-4. `services/shared/src/scp_shared/rule_engine/scoring.py` - None-safe EMA comparisons
-5. `services/execution/src/execution_svc/broker/paper.py` - Auto-close orphaned positions
-6. `services/execution/tests/unit/test_paper_broker.py` - Updated test for new behavior
-7. `services/execution/tests/unit/test_state_machine_jsonb_fix.py` - Updated for JSON serialization
-8. `services/execution/tests/unit/test_trade_manager.py` - Removed obsolete test, fixed mock
+4. `services/shared/src/scp_shared/rule_engine/scoring.py` - None-safe feature handling
+5. `services/shared/src/scp_shared/rule_engine/setup_detectors/vwap_fade.py` - None-safe logging
+6. `services/shared/src/scp_shared/rule_engine/setup_detectors/dxy_continuation.py` - None-safe clarity check
+7. `services/execution/src/execution_svc/broker/paper.py` - Auto-close orphaned positions
+8. `services/execution/tests/unit/test_paper_broker.py` - Updated test for new behavior
+9. `services/execution/tests/unit/test_state_machine_jsonb_fix.py` - Updated for JSON serialization
+10. `services/execution/tests/unit/test_trade_manager.py` - Removed obsolete test, fixed mock
 
 ---
 
