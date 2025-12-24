@@ -130,9 +130,9 @@ async def test_concurrent_trade_limit_with_buffered_signals(trade_manager):
     assert len(trade_manager._pending_signals) == 2
     assert len(trade_manager._active_trades) == 0
     
-    # Mock state machine manager to allow execution (bypass re-entry check)
+    # Mock check_confirmation to allow execution (bypass re-entry check)
     # In production, state machines would be confirmed before execute_pending_signals runs
-    trade_manager._sm_manager.get_state_machine = MagicMock(return_value=None)
+    trade_manager._sm_manager.check_confirmation = MagicMock(return_value=True)
     
     # Track execute_entry calls to verify the bug
     original_execute = trade_manager.execute_entry
@@ -173,8 +173,8 @@ async def test_concurrent_limit_with_daily_limit_interaction(trade_manager):
     
     Verify that concurrent limit is checked BEFORE daily limit exhaustion.
     """
-    # Bypass state machine re-entry check
-    trade_manager._sm_manager.get_state_machine = MagicMock(return_value=None)
+    # Bypass confirmation check to test concurrent limit logic
+    trade_manager._sm_manager.check_confirmation = MagicMock(return_value=True)
     
     # Buffer 3 signals (more than max_active_trades=1)
     signals = [create_signal() for _ in range(3)]
@@ -203,8 +203,8 @@ async def test_sequential_execution_respects_concurrent_limit(trade_manager):
     
     If we execute signals, close the trade, then execute more, it should work.
     """
-    # Bypass state machine re-entry check
-    trade_manager._sm_manager.get_state_machine = MagicMock(return_value=None)
+    # Bypass confirmation check to test concurrent limit logic
+    trade_manager._sm_manager.check_confirmation = MagicMock(return_value=True)
     
     # First signal
     signal1 = create_signal()

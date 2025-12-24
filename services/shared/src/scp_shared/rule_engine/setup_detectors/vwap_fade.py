@@ -53,12 +53,24 @@ def detect_vwap_fade(
     VWAP_DEVIATION_THRESHOLD = 0.25  # Lowered from 0.3% (was 0.5% originally)
 
     direction = htf_bias.direction
-    structure_clarity = features.get("structure_clarity", 0.0)
-    rsi = features.get("rsi", 50.0)
-    vwap = features.get("vwap", 0)
-    close = features.get("close", 0)
+    
+    # Handle None values explicitly (features may have None instead of missing keys)
+    structure_clarity = features.get("structure_clarity")
+    if structure_clarity is None:
+        structure_clarity = 0.0
+    
+    rsi = features.get("rsi")
+    if rsi is None:
+        rsi = 50.0
+    
+    vwap = features.get("vwap") or 0
+    close = features.get("close") or 0
     choch_detected = features.get("choch_detected", False)
-    trend_confidence = features.get("trend_confidence", 1.0)
+    
+    trend_confidence = features.get("trend_confidence")
+    if trend_confidence is None:
+        trend_confidence = 1.0
+    
     last_structure_label = features.get("last_structure_label")
 
     # Check sweep from both HTFBias AND features (1M features have sweep)

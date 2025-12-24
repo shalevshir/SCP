@@ -41,7 +41,8 @@ def load_scoring_config(config_path: str | None = None) -> ScoringConfig:
 
     Args:
         config_path: Path to scoring config file. If None, loads default
-                    config/scoring_config.yaml from project root.
+                    config/scoring_config.yaml from project root or /config
+                    (for Docker containers).
 
     Returns:
         ScoringConfig object containing parsed configuration
@@ -56,10 +57,16 @@ def load_scoring_config(config_path: str | None = None) -> ScoringConfig:
     """
     # Determine config file path
     if config_path is None:
-        # Default to config/scoring_config.yaml from project root
-        # Navigate from services/shared/src/scp_shared/rule_engine to project root
-        project_root = Path(__file__).parent.parent.parent.parent.parent.parent
-        config_path = str(project_root / "config" / "scoring_config.yaml")
+        # Try multiple locations:
+        # 1. /config/scoring_config.yaml (Docker container mount)
+        # 2. config/scoring_config.yaml from project root (local development)
+        docker_config = Path("/config/scoring_config.yaml")
+        if docker_config.exists():
+            config_path = str(docker_config)
+        else:
+            # Navigate from services/shared/src/scp_shared/rule_engine to project root
+            project_root = Path(__file__).parent.parent.parent.parent.parent.parent
+            config_path = str(project_root / "config" / "scoring_config.yaml")
 
     config_file = Path(config_path)
 

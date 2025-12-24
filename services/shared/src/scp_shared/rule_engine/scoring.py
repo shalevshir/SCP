@@ -1230,9 +1230,21 @@ def calculate_ema_stack(
     Awards points if EMAs are properly aligned with HTF direction.
     When HTF is neutral, scores based on EMA stack quality alone.
     """
-    ema_9 = features.get("ema_9", 0)
-    ema_20 = features.get("ema_20", 0)
-    ema_50 = features.get("ema_50", 0)
+    ema_9 = features.get("ema_9")
+    ema_20 = features.get("ema_20")
+    ema_50 = features.get("ema_50")
+    
+    # Handle None values (EMAs may not be available yet)
+    if ema_9 is None:
+        ema_9 = 0
+    if ema_20 is None:
+        ema_20 = 0
+    if ema_50 is None:
+        ema_50 = 0
+    
+    # If EMAs aren't available (all zero or invalid), return 0
+    if ema_9 <= 0 or ema_20 <= 0 or ema_50 <= 0:
+        return 0.0
 
     # Determine effective direction
     effective_direction = htf_bias.direction
@@ -1588,23 +1600,31 @@ def determine_direction(features: pd.Series, htf_bias: HTFBias) -> str:
     Returns:
         Direction: "long", "short", or "neutral"
     """
-    close = features.get("close", 0)
-    vwap = features.get("vwap", 0)
-    ema_9 = features.get("ema_9", 0)
-    ema_20 = features.get("ema_20", 0)
+    close = features.get("close") or 0
+    vwap = features.get("vwap") or 0
+    ema_9 = features.get("ema_9")
+    ema_20 = features.get("ema_20")
+    
+    # Handle None values for EMAs (may not be available yet)
+    if ema_9 is None:
+        ema_9 = 0
+    if ema_20 is None:
+        ema_20 = 0
 
     # Bullish indicators
     bullish_signals = 0
     if close > vwap:
         bullish_signals += 1
-    if ema_9 > ema_20:
+    # Only use EMA signal if both EMAs are valid (non-zero)
+    if ema_9 > 0 and ema_20 > 0 and ema_9 > ema_20:
         bullish_signals += 1
 
     # Bearish indicators
     bearish_signals = 0
     if close < vwap:
         bearish_signals += 1
-    if ema_9 < ema_20:
+    # Only use EMA signal if both EMAs are valid (non-zero)
+    if ema_9 > 0 and ema_20 > 0 and ema_9 < ema_20:
         bearish_signals += 1
 
     result = "neutral"
