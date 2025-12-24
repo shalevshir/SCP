@@ -47,6 +47,10 @@ async def test_signal_triggers_trade_execution(
         message_type=TradeMessage,
     )
     
+    # CRITICAL: Create consumer group BEFORE any messages are published
+    # Messages published before group exists won't be delivered to that group
+    await trades_opened_consumer.ensure_group()
+    
     # Create and publish a signal
     signal = SignalMessage(
         id=str(uuid.uuid4()),  # Valid UUID format
@@ -148,6 +152,10 @@ async def test_sl_hit_closes_trade(
         consumer_name="test-sl-closed-1",
         message_type=TradeMessage,
     )
+    
+    # CRITICAL: Create consumer groups BEFORE any messages are published
+    await trades_opened_consumer.ensure_group()
+    await trades_closed_consumer.ensure_group()
     
     # Publish signal
     signal = SignalMessage(
@@ -251,6 +259,10 @@ async def test_tp_hit_closes_trade(
         message_type=TradeMessage,
     )
     
+    # CRITICAL: Create consumer groups BEFORE any messages are published
+    await trades_opened_consumer.ensure_group()
+    await trades_closed_consumer.ensure_group()
+    
     # Publish signal
     signal = SignalMessage(
         id=str(uuid.uuid4()),  # Valid UUID format
@@ -336,6 +348,14 @@ async def test_invalidation_closes_trade(
     ensure_services_healthy: None,
 ) -> None:
     """Test that invalidation (VWAP loss) closes the trade early."""
+    trades_opened_consumer = RedisStreamConsumer(
+        redis_client,
+        stream="trades.opened",
+        group="integration-test-invalid-opened",
+        consumer_name="test-invalid-opened-1",
+        message_type=TradeMessage,
+    )
+    
     trades_closed_consumer = RedisStreamConsumer(
         redis_client,
         stream="trades.closed",
@@ -343,6 +363,10 @@ async def test_invalidation_closes_trade(
         consumer_name="test-invalid-1",
         message_type=TradeMessage,
     )
+    
+    # CRITICAL: Create consumer groups BEFORE any messages are published
+    await trades_opened_consumer.ensure_group()
+    await trades_closed_consumer.ensure_group()
     
     # Publish signal
     signal = SignalMessage(
@@ -384,6 +408,10 @@ async def test_invalidation_closes_trade(
     await asyncio.sleep(2.0)
     
     assert last_entry_candle is not None, "No candles were created"
+    
+    # FIRST verify trade was opened before testing invalidation
+    opened = await trades_opened_consumer.read(count=1, block_ms=5000)
+    assert len(opened) > 0, "Trade not opened - cannot test invalidation"
     
     # Publish features showing VWAP invalidation (price below VWAP for long)
     invalid_features = FeaturesMessage(

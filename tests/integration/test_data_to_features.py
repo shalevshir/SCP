@@ -37,6 +37,9 @@ async def test_published_candles_produce_features(
         message_type=FeaturesMessage,
     )
     
+    # CRITICAL: Create consumer group BEFORE any messages are published
+    await features_consumer.ensure_group()
+    
     # Publish 70 candles to ensure warmup completes (need 60+ for correlations)
     base_timestamp = datetime(2025, 1, 15, 10, 0, 0, tzinfo=timezone.utc)
     
@@ -125,6 +128,9 @@ async def test_features_include_correlation(
         message_type=FeaturesMessage,
     )
     
+    # CRITICAL: Create consumer group BEFORE any messages are published
+    await features_consumer.ensure_group()
+    
     # Publish 60 candles with clear inverse correlation
     base_timestamp = datetime(2025, 1, 15, 10, 0, 0, tzinfo=timezone.utc)
     
@@ -204,6 +210,9 @@ async def test_features_timestamp_matches_candles(
         consumer_name="test-ts-1",
         message_type=FeaturesMessage,
     )
+    
+    # CRITICAL: Create consumer group BEFORE any messages are published
+    await features_consumer.ensure_group()
     
     # Publish a few candles with specific timestamps
     test_timestamp = datetime(2025, 1, 15, 14, 30, 0, tzinfo=timezone.utc)

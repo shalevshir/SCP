@@ -58,6 +58,10 @@ async def test_full_pipeline_candles_to_trades(
         message_type=TradeMessage,
     )
     
+    # CRITICAL: Create consumer groups BEFORE any messages are published
+    await trades_opened_consumer.ensure_group()
+    await trades_closed_consumer.ensure_group()
+    
     # Generate realistic bullish trend data
     base_timestamp = datetime(2025, 1, 15, 10, 0, 0, tzinfo=timezone.utc)
     

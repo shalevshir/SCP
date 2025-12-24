@@ -68,7 +68,9 @@ async def db_pool() -> AsyncGenerator[DatabasePool, None]:
 async def clean_streams(redis_client: redis.Redis) -> None:
     """Clean Redis streams before each test.
     
-    Deletes all streams used by services to ensure clean test state.
+    Uses XTRIM to clear messages while preserving consumer groups.
+    This is critical because messages published BEFORE a consumer group
+    is created are NOT delivered to that group.
     
     Args:
         redis_client: Redis client fixture
@@ -89,10 +91,75 @@ async def clean_streams(redis_client: redis.Redis) -> None:
     
     for stream in streams_to_clean:
         try:
-            await redis_client.delete(stream)
+            # Use XTRIM to remove all messages but keep consumer groups intact
+            # MAXLEN 0 removes all entries
+            await redis_client.xtrim(stream, maxlen=0)
         except Exception:
             # Stream might not exist, that's ok
             pass
+    
+    # Also acknowledge any pending messages in consumer groups
+    # to prevent them from being redelivered
+    # Include both service consumer groups and test consumer groups
+    consumer_groups = [
+        # Service consumer groups
+        ("signals.pending", "execution"),
+        ("candles.1m.gc", "execution"),
+        ("features.1m", "execution"),
+        ("candles.1m.gc", "feature-engine"),
+        ("candles.1m.dxy", "feature-engine"),
+        ("features.1m", "htf-bias"),
+        # Test consumer groups (various tests use different group names)
+        ("trades.opened", "integration-test-trades"),
+        ("trades.opened", "integration-test-sl"),
+        ("trades.opened", "integration-test-tp"),
+        ("trades.opened", "integration-test-invalid-opened"),
+        ("trades.opened", "integration-test-pipeline"),
+        ("trades.closed", "integration-test-sl-closed"),
+        ("trades.closed", "integration-test-tp-closed"),
+        ("trades.closed", "integration-test-invalid"),
+        ("trades.closed", "integration-test-pipeline-closed"),
+        ("htf.bias", "integration-test-bias"),
+        ("htf.bias", "integration-test-structure"),
+        ("htf.bias", "integration-test-chop"),
+        ("htf.bias", "integration-test-timestamp"),
+        ("features.1m", "integration-test"),
+        ("features.1m", "integration-test-corr"),
+        ("features.1m", "integration-test-ts"),
+    ]
+    
+    for stream, group in consumer_groups:
+        try:
+            # Get pending messages and acknowledge them
+            # xpending returns dict with 'pending' count or similar structure
+            pending = await redis_client.xpending(stream, group)
+            # Handle various response formats
+            pending_count = 0
+            if isinstance(pending, dict):
+                pending_count = pending.get("pending", 0)
+            elif isinstance(pending, (list, tuple)) and len(pending) > 0:
+                # Some versions return [count, first_id, last_id, consumers]
+                pending_count = pending[0] if isinstance(pending[0], int) else 0
+            
+            if pending_count > 0:
+                # Read and ack all pending
+                messages = await redis_client.xreadgroup(
+                    groupname=group,
+                    consumername="cleanup",
+                    streams={stream: "0"},
+                    count=1000,
+                )
+                if messages:
+                    for _, stream_messages in messages:
+                        for msg_id, _ in stream_messages:
+                            await redis_client.xack(stream, group, msg_id)
+        except Exception:
+            # Group might not exist, that's ok
+            pass
+    
+    # Wait briefly for services to complete any in-flight reads
+    # This ensures services are in a clean state before test proceeds
+    await asyncio.sleep(0.5)
 
 
 @pytest_asyncio.fixture(scope="function")

@@ -34,6 +34,9 @@ async def test_htf_boundary_triggers_bias_update(
         message_type=HTFBiasMessage,
     )
     
+    # CRITICAL: Create consumer group BEFORE any messages are published
+    await bias_consumer.ensure_group()
+    
     # Publish candles building up to 15m boundary
     # Start at 10:00, go to 10:15 (15m boundary)
     base_timestamp = datetime(2025, 1, 15, 10, 0, 0, tzinfo=timezone.utc)
@@ -114,6 +117,9 @@ async def test_bias_includes_structure_info(
         message_type=HTFBiasMessage,
     )
     
+    # CRITICAL: Create consumer group BEFORE any messages are published
+    await bias_consumer.ensure_group()
+    
     # Publish enough candles to establish structure
     base_timestamp = datetime(2025, 1, 15, 10, 0, 0, tzinfo=timezone.utc)
     
@@ -185,6 +191,9 @@ async def test_bias_detects_chop(
         consumer_name="test-chop-1",
         message_type=HTFBiasMessage,
     )
+    
+    # CRITICAL: Create consumer group BEFORE any messages are published
+    await bias_consumer.ensure_group()
     
     # Publish candles with no clear direction (chop)
     base_timestamp = datetime(2025, 1, 15, 10, 0, 0, tzinfo=timezone.utc)
@@ -260,6 +269,9 @@ async def test_bias_timestamp_correlation(
         consumer_name="test-ts-bias-1",
         message_type=HTFBiasMessage,
     )
+    
+    # CRITICAL: Create consumer group BEFORE any messages are published
+    await bias_consumer.ensure_group()
     
     # Publish candles crossing specific 15m boundary
     # 10:00 to 10:20 crosses 10:15 boundary
