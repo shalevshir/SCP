@@ -218,4 +218,12 @@ class DailyStateTracker:
             f"daily_pnl={self._state.daily_pnl:.2f}, "
             f"pdll_hit={self._state.pdll_hit}"
         )
+    
+    def reset_state(self) -> None:
+        """Reset daily state to initial values.
+        
+        Used for testing to clear state between test runs.
+        """
+        self._state = DailyState(date=date.today())
+        logger.info("Daily state reset to initial values")
 

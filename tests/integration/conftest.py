@@ -260,12 +260,16 @@ def docker_services() -> dict[str, str]:
 def ensure_services_healthy(docker_services: dict[str, str]) -> None:
     """Ensure all services are healthy before running tests.
     
+    Also resets execution service state to ensure clean test isolation.
+    
     Args:
         docker_services: Dictionary of service health URLs
         
     Raises:
         RuntimeError: If any service fails to become healthy
     """
+    import requests
+    
     for service_name, health_url in docker_services.items():
         if not wait_for_service_health(health_url):
             raise RuntimeError(
@@ -273,6 +277,19 @@ def ensure_services_healthy(docker_services: dict[str, str]) -> None:
                 f"Ensure services are running: docker-compose -f infra/docker-compose.yml "
                 f"-f infra/docker-compose.services.yml -f infra/docker-compose.test.yml up -d"
             )
+    
+    # Reset execution service state to ensure clean test isolation
+    # This clears in-memory state (active trades, pending signals, etc.)
+    try:
+        reset_response = requests.post("http://localhost:8005/admin/reset", timeout=5)
+        if reset_response.status_code != 200:
+            raise RuntimeError(
+                f"Failed to reset execution service: {reset_response.text}"
+            )
+    except requests.exceptions.RequestException as e:
+        raise RuntimeError(
+            f"Failed to reset execution service state: {e}"
+        )
 
 
 def make_candle(

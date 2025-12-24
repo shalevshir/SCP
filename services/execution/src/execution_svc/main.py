@@ -3,6 +3,7 @@
 import asyncio
 import logging
 from contextlib import asynccontextmanager
+from typing import Optional
 
 import redis.asyncio as redis
 from fastapi import FastAPI
@@ -35,6 +36,11 @@ config = ExecutionConfig()
 # Global shutdown event
 shutdown_event = asyncio.Event()
 
+# Global references for reset endpoint (populated in process_streams)
+_trade_manager: Optional[TradeManager] = None
+_broker: Optional[PaperBroker] = None
+_sm_manager: Optional[StateMachineManager] = None
+
 
 async def process_streams(
     redis_client: redis.Redis,
@@ -46,6 +52,8 @@ async def process_streams(
         redis_client: Redis client
         db_pool: Database pool
     """
+    global _trade_manager, _broker, _sm_manager
+    
     logger.info("Starting execution processing loop")
     
     # Initialize components
@@ -62,6 +70,11 @@ async def process_streams(
         pdll_limit=config.pdll_limit,
         max_trades_per_day=config.max_trades_per_day,
     )
+    
+    # Store global references for reset endpoint
+    _trade_manager = trade_manager
+    _broker = broker
+    _sm_manager = sm_manager
     
     # Restore state from database
     await sm_manager.restore_from_db()
@@ -197,6 +210,45 @@ health_router = create_health_router(
     version=config.service_version,
 )
 app.include_router(health_router)
+
+
+@app.post("/admin/reset")
+async def reset_state() -> dict[str, str]:
+    """Reset service state for testing.
+    
+    Clears all in-memory state:
+    - Active trades
+    - Pending signals
+    - State machines
+    - Daily tracker
+    - Broker positions
+    
+    This endpoint is intended for integration testing only.
+    
+    Returns:
+        Status message
+    """
+    global _trade_manager, _broker, _sm_manager
+    
+    if _trade_manager is None or _broker is None or _sm_manager is None:
+        return {"status": "error", "message": "Service not fully initialized"}
+    
+    # Reset trade manager state
+    _trade_manager._active_trades.clear()
+    _trade_manager._pending_signals.clear()
+    _trade_manager._trade_entry_bars.clear()
+    _trade_manager._daily_tracker.reset_state()
+    
+    # Reset state machine manager
+    _sm_manager._state_machines.clear()
+    _sm_manager._bar_counter = 0
+    
+    # Reset broker
+    _broker.reset_state()
+    
+    logger.info("Execution service state reset via /admin/reset endpoint")
+    
+    return {"status": "ok", "message": "State reset successfully"}
 
 
 if __name__ == "__main__":
