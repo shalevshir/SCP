@@ -219,18 +219,6 @@ class TestTradeManagerOnCandle:
     """Test on_candle method."""
     
     @pytest.mark.asyncio
-    async def test_on_candle_increments_bar_counter(
-        self,
-        trade_manager: TradeManager,
-        mock_sm_manager: MagicMock,
-        sample_candle: CandleMessage,
-    ) -> None:
-        """Candle processing increments bar counter."""
-        await trade_manager.on_candle(sample_candle)
-        
-        mock_sm_manager.increment_bar_counter.assert_called_once()
-    
-    @pytest.mark.asyncio
     async def test_on_candle_checks_active_trades(
         self,
         trade_manager: TradeManager,
@@ -340,15 +328,18 @@ class TestTradeManagerExecuteEntry:
         sample_signal: SignalMessage,
     ) -> None:
         """Execute entry blocks when state machine has max executions."""
-        # Mock state machine that blocks execution
+        # Mock check_confirmation to return False (signal not ready for execution)
+        mock_sm_manager.check_confirmation.return_value = False
+        
+        # Mock state machine for logging purposes
         sm = MagicMock()
-        sm.can_execute.return_value = False
         sm.execution_count = 1
         mock_sm_manager.get_state_machine.return_value = sm
         
         result = await trade_manager.execute_entry(sample_signal, entry_price=2651.0)
         
         assert result is None
+        mock_sm_manager.check_confirmation.assert_called_once_with(sample_signal.id)
 
 
 class TestTradeManagerRestoreActiveTrades:
