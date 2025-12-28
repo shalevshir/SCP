@@ -106,9 +106,18 @@ class HTFBiasCache:
         """Get latest cached bias (for backwards compatibility).
         
         Returns:
-            Latest cached bias message or None if empty
+            Latest cached bias message or None if empty/expired
         """
         with self._lock:
+            if self._latest is None:
+                return None
+            
+            # Check wall-clock TTL expiration
+            now = datetime.now(timezone.utc)
+            age = (now - self._latest.timestamp).total_seconds()
+            if age > self._ttl_seconds:
+                return None
+            
             return self._latest
     
     def get_or_default(self) -> HTFBiasMessage:
@@ -186,12 +195,18 @@ class HTFBiasCache:
     
     @property
     def is_expired(self) -> bool:
-        """Check if cache is expired (always False with history-based cache).
+        """Check if cache is expired based on wall-clock TTL.
         
         Returns:
-            True if cache is empty
+            True if cache is empty or TTL has expired
         """
-        return self.is_empty
+        with self._lock:
+            if self._latest is None:
+                return True
+            
+            now = datetime.now(timezone.utc)
+            age = (now - self._latest.timestamp).total_seconds()
+            return age > self._ttl_seconds
     
     @property
     def age_seconds(self) -> float | None:

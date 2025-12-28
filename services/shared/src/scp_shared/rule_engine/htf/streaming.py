@@ -125,7 +125,7 @@ class StreamingHTFBiasCalculator:
                 self.features_15m = self.processor_15m.update(gc_15m_candle, dxy_bar)
             else:
                 # Fallback if no aggregation happened (shouldn't occur)
-            self.features_15m = self.processor_15m.update(gc_bar, dxy_bar)
+                self.features_15m = self.processor_15m.update(gc_bar, dxy_bar)
             # Store properly aggregated 15M bar in historical buffer
             self._emit_15m_to_buffer()
             logger.debug(f"15M bar closed at {gc_bar.timestamp}")
@@ -149,7 +149,7 @@ class StreamingHTFBiasCalculator:
                 self.features_1h = self.processor_1h.update(gc_1h_candle, dxy_bar)
             else:
                 # Fallback if no aggregation happened (shouldn't occur)
-            self.features_1h = self.processor_1h.update(gc_bar, dxy_bar)
+                self.features_1h = self.processor_1h.update(gc_bar, dxy_bar)
             # Store properly aggregated 1H bar in historical buffer
             self._emit_1h_to_buffer()
             logger.info(
@@ -313,6 +313,28 @@ class StreamingHTFBiasCalculator:
         self._gc_15m_low = None
         self._gc_15m_close = None
         self._gc_15m_volume = 0.0
+
+    def _add_to_15m_buffer(self, gc_bar: Candle) -> None:
+        """Add a 15M GC bar directly to the buffer.
+        
+        Used for warmup and testing. For streaming, use update() instead.
+        
+        Args:
+            gc_bar: 15M GC candle to add
+        """
+        self.df_15m_buffer.append({
+            "timestamp": gc_bar.timestamp,
+            "open": gc_bar.open,
+            "high": gc_bar.high,
+            "low": gc_bar.low,
+            "close": gc_bar.close,
+            "volume": gc_bar.volume,
+        })
+        
+        # Limit buffer size (keep last 200 bars)
+        max_buffer_size = 200
+        if len(self.df_15m_buffer) > max_buffer_size:
+            self.df_15m_buffer = self.df_15m_buffer[-max_buffer_size:]
     
     def _emit_1h_to_buffer(self) -> None:
         """Emit completed 1H aggregated candles to buffers and reset."""
@@ -357,6 +379,41 @@ class StreamingHTFBiasCalculator:
         self._dxy_1h_high = None
         self._dxy_1h_low = None
         self._dxy_1h_close = None
+
+    def _add_to_1h_buffer(self, gc_bar: Candle, dxy_bar: Candle) -> None:
+        """Add 1H GC and DXY bars directly to the buffers.
+        
+        Used for warmup and testing. For streaming, use update() instead.
+        
+        Args:
+            gc_bar: 1H GC candle to add
+            dxy_bar: 1H DXY candle to add
+        """
+        # Add GC bar
+        self.df_1h_buffer.append({
+            "timestamp": gc_bar.timestamp,
+            "open": gc_bar.open,
+            "high": gc_bar.high,
+            "low": gc_bar.low,
+            "close": gc_bar.close,
+            "volume": gc_bar.volume,
+        })
+
+        # Add DXY bar
+        self.dxy_1h_buffer.append({
+            "timestamp": dxy_bar.timestamp,
+            "open": dxy_bar.open,
+            "high": dxy_bar.high,
+            "low": dxy_bar.low,
+            "close": dxy_bar.close,
+        })
+
+        # Limit buffer size (keep last 200 bars)
+        max_buffer_size = 200
+        if len(self.df_1h_buffer) > max_buffer_size:
+            self.df_1h_buffer = self.df_1h_buffer[-max_buffer_size:]
+        if len(self.dxy_1h_buffer) > max_buffer_size:
+            self.dxy_1h_buffer = self.dxy_1h_buffer[-max_buffer_size:]
     
     def _get_15m_start(self, timestamp: datetime) -> datetime:
         """Get start timestamp of 15M period containing timestamp."""
