@@ -42,6 +42,7 @@ shutdown_event = asyncio.Event()
 _trade_manager: Optional[TradeManager] = None
 _broker: Optional[PaperBroker] = None
 _sm_manager: Optional[StateMachineManager] = None
+_synchronizer: Optional[CandleFeatureSynchronizer] = None
 
 
 async def process_streams(
@@ -112,9 +113,11 @@ async def process_streams(
     # Synchronizer to pair candles with their matching features by timestamp
     # Use a larger timeout (5 minutes of data-time) to handle:
     # 1. High-speed replay where many messages arrive in quick succession
+    global _synchronizer  # noqa: PLW0603 - intentional global for reset endpoint
     # 2. Gaps in historical data (e.g., trading hours only)
     # The cleanup uses DATA timestamps, not wall-clock time.
     synchronizer = CandleFeatureSynchronizer(timeout_seconds=300)
+    _synchronizer = synchronizer  # Store global reference for reset endpoint
     
     # Cleanup counter (run cleanup every N candles to prevent memory leaks)
     cleanup_counter = 0
@@ -278,13 +281,14 @@ async def reset_state() -> dict[str, str]:
     - State machines
     - Daily tracker
     - Broker positions
+    - Synchronizer buffers
     
     This endpoint is intended for integration testing only.
     
     Returns:
         Status message
     """
-    global _trade_manager, _broker, _sm_manager
+    global _trade_manager, _broker, _sm_manager, _synchronizer
     
     if _trade_manager is None or _broker is None or _sm_manager is None:
         return {"status": "error", "message": "Service not fully initialized"}
@@ -301,6 +305,10 @@ async def reset_state() -> dict[str, str]:
     
     # Reset broker
     _broker.reset_state()
+    
+    # Reset synchronizer buffers (critical for test isolation)
+    if _synchronizer is not None:
+        _synchronizer.clear()
     
     logger.info("Execution service state reset via /admin/reset endpoint")
     

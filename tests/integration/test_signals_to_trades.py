@@ -74,12 +74,14 @@ async def test_signal_triggers_trade_execution(
     # Wait briefly for signal to be consumed and buffered
     await asyncio.sleep(0.5)
     
-    # Publish multiple candles to ensure execution service processes them
-    # (services use 1000ms blocking reads, so we need to ensure a candle arrives
-    # in the same read cycle after the signal is buffered)
+    # Publish multiple candles AND matching features to ensure execution service processes them.
+    # The execution service uses a CandleFeatureSynchronizer that requires BOTH
+    # candle AND features with matching timestamps before processing.
     for i in range(3):
+        bar_timestamp = signal.timestamp + timedelta(minutes=i + 1)
+        
         next_bar_candle = CandleMessage(
-            timestamp=signal.timestamp + timedelta(minutes=i + 1),
+            timestamp=bar_timestamp,
             symbol="GC",
             timeframe="1m",
             open=2650.0,  # Signal entry price
@@ -89,7 +91,24 @@ async def test_signal_triggers_trade_execution(
             volume=1000.0,
         )
         
+        # CRITICAL: Execution service requires matching features for each candle
+        next_bar_features = FeaturesMessage(
+            timestamp=bar_timestamp,
+            symbol="GC",
+            timeframe="1m",
+            close=2651.0,
+            vwap=2650.0,  # VWAP at entry price - no invalidation
+            rsi=50.0,
+            ema_9=2651.0,
+            ema_20=2650.0,
+            ema_50=2648.0,
+            dxy_correlation=-0.3,
+            structure_label="HL",
+            vwap_deviation=0.04,
+        )
+        
         await redis_publisher.publish("candles.1m.gc", next_bar_candle)
+        await redis_publisher.publish("features.1m", next_bar_features)
         await asyncio.sleep(0.3)
     
     # Wait for execution service to complete processing
@@ -180,12 +199,14 @@ async def test_sl_hit_closes_trade(
     # Wait briefly for signal to be consumed and buffered
     await asyncio.sleep(0.5)
     
-    # Execute trade with multiple candles to ensure processing
+    # Execute trade with multiple candles AND matching features
     # Use close prices ABOVE VWAP to avoid VWAP invalidation before SL candle
     last_entry_candle = None
     for i in range(3):
+        bar_timestamp = signal.timestamp + timedelta(minutes=i + 1)
+        
         entry_candle = CandleMessage(
-            timestamp=signal.timestamp + timedelta(minutes=i + 1),
+            timestamp=bar_timestamp,
             symbol="GC",
             timeframe="1m",
             open=2660.0,
@@ -194,9 +215,26 @@ async def test_sl_hit_closes_trade(
             close=2661.0,  # Above VWAP to avoid invalidation
             volume=1000.0,
         )
+        
+        # CRITICAL: Matching features for each candle
+        entry_features = FeaturesMessage(
+            timestamp=bar_timestamp,
+            symbol="GC",
+            timeframe="1m",
+            close=2661.0,
+            vwap=2655.0,  # VWAP below close - no invalidation for long
+            rsi=55.0,
+            ema_9=2660.0,
+            ema_20=2658.0,
+            ema_50=2655.0,
+            dxy_correlation=-0.3,
+            structure_label="HL",
+            vwap_deviation=0.23,
+        )
         last_entry_candle = entry_candle
         
         await redis_publisher.publish("candles.1m.gc", entry_candle)
+        await redis_publisher.publish("features.1m", entry_features)
         await asyncio.sleep(0.3)
     
     await asyncio.sleep(2.0)
@@ -210,9 +248,10 @@ async def test_sl_hit_closes_trade(
     assert len(matching) > 0, f"Trade for signal {signal.id} not found"
     opened_trade = matching[0]
     
-    # Publish candle that hits SL (low touches or breaks SL price)
+    # Publish candle that hits SL (low touches or breaks SL price) with matching features
+    sl_timestamp = last_entry_candle.timestamp + timedelta(minutes=1)
     sl_candle = CandleMessage(
-        timestamp=last_entry_candle.timestamp + timedelta(minutes=1),
+        timestamp=sl_timestamp,
         symbol="GC",
         timeframe="1m",
         open=2645.0,
@@ -221,8 +260,23 @@ async def test_sl_hit_closes_trade(
         close=2641.0,
         volume=1000.0,
     )
+    sl_features = FeaturesMessage(
+        timestamp=sl_timestamp,
+        symbol="GC",
+        timeframe="1m",
+        close=2641.0,
+        vwap=2650.0,
+        rsi=35.0,
+        ema_9=2645.0,
+        ema_20=2650.0,
+        ema_50=2655.0,
+        dxy_correlation=-0.3,
+        structure_label="LL",
+        vwap_deviation=-0.35,
+    )
     
     await redis_publisher.publish("candles.1m.gc", sl_candle)
+    await redis_publisher.publish("features.1m", sl_features)
     await asyncio.sleep(1.5)
     
     # Check trades.closed stream - look for our specific signal
@@ -291,12 +345,14 @@ async def test_tp_hit_closes_trade(
     # Wait briefly for signal to be consumed and buffered
     await asyncio.sleep(0.5)
     
-    # Execute trade with multiple candles to ensure processing
+    # Execute trade with multiple candles AND matching features
     # Use close prices ABOVE VWAP to avoid VWAP invalidation before TP candle
     last_entry_candle = None
     for i in range(3):
+        bar_timestamp = signal.timestamp + timedelta(minutes=i + 1)
+        
         entry_candle = CandleMessage(
-            timestamp=signal.timestamp + timedelta(minutes=i + 1),
+            timestamp=bar_timestamp,
             symbol="GC",
             timeframe="1m",
             open=2660.0,
@@ -305,9 +361,26 @@ async def test_tp_hit_closes_trade(
             close=2661.0,  # Above VWAP to avoid invalidation
             volume=1000.0,
         )
+        
+        # CRITICAL: Matching features for each candle
+        entry_features = FeaturesMessage(
+            timestamp=bar_timestamp,
+            symbol="GC",
+            timeframe="1m",
+            close=2661.0,
+            vwap=2655.0,  # VWAP below close - no invalidation for long
+            rsi=60.0,
+            ema_9=2660.0,
+            ema_20=2658.0,
+            ema_50=2655.0,
+            dxy_correlation=-0.3,
+            structure_label="HH",
+            vwap_deviation=0.23,
+        )
         last_entry_candle = entry_candle
         
         await redis_publisher.publish("candles.1m.gc", entry_candle)
+        await redis_publisher.publish("features.1m", entry_features)
         await asyncio.sleep(0.3)
     
     await asyncio.sleep(2.0)
@@ -320,9 +393,10 @@ async def test_tp_hit_closes_trade(
     matching = [t for t in opened if t.signal_id == signal.id]
     assert len(matching) > 0, f"Trade for signal {signal.id} not found"
     
-    # Publish candle that hits TP (high reaches TP price)
+    # Publish candle that hits TP (high reaches TP price) with matching features
+    tp_timestamp = last_entry_candle.timestamp + timedelta(minutes=1)
     tp_candle = CandleMessage(
-        timestamp=last_entry_candle.timestamp + timedelta(minutes=1),
+        timestamp=tp_timestamp,
         symbol="GC",
         timeframe="1m",
         open=2675.0,
@@ -331,8 +405,23 @@ async def test_tp_hit_closes_trade(
         close=2679.0,  # Above VWAP
         volume=1000.0,
     )
+    tp_features = FeaturesMessage(
+        timestamp=tp_timestamp,
+        symbol="GC",
+        timeframe="1m",
+        close=2679.0,
+        vwap=2665.0,  # VWAP well below - healthy trend
+        rsi=70.0,
+        ema_9=2675.0,
+        ema_20=2670.0,
+        ema_50=2660.0,
+        dxy_correlation=-0.3,
+        structure_label="HH",
+        vwap_deviation=0.53,
+    )
     
     await redis_publisher.publish("candles.1m.gc", tp_candle)
+    await redis_publisher.publish("features.1m", tp_features)
     await asyncio.sleep(1.5)
     
     # Check trades.closed - look for our specific signal
@@ -403,12 +492,14 @@ async def test_invalidation_closes_trade(
     # Wait briefly for signal to be consumed and buffered
     await asyncio.sleep(0.5)
     
-    # Execute trade with multiple candles to ensure processing
+    # Execute trade with multiple candles AND matching features
     # Use close prices ABOVE VWAP to avoid early invalidation
     last_entry_candle = None
     for i in range(3):
+        bar_timestamp = signal.timestamp + timedelta(minutes=i + 1)
+        
         entry_candle = CandleMessage(
-            timestamp=signal.timestamp + timedelta(minutes=i + 1),
+            timestamp=bar_timestamp,
             symbol="GC",
             timeframe="1m",
             open=2660.0,
@@ -417,9 +508,26 @@ async def test_invalidation_closes_trade(
             close=2661.0,  # Above VWAP to avoid early invalidation
             volume=1000.0,
         )
+        
+        # CRITICAL: Matching features for each candle
+        entry_features = FeaturesMessage(
+            timestamp=bar_timestamp,
+            symbol="GC",
+            timeframe="1m",
+            close=2661.0,
+            vwap=2655.0,  # VWAP below close - no invalidation for long
+            rsi=55.0,
+            ema_9=2660.0,
+            ema_20=2658.0,
+            ema_50=2655.0,
+            dxy_correlation=-0.3,
+            structure_label="HL",
+            vwap_deviation=0.23,
+        )
         last_entry_candle = entry_candle
         
         await redis_publisher.publish("candles.1m.gc", entry_candle)
+        await redis_publisher.publish("features.1m", entry_features)
         await asyncio.sleep(0.3)
     
     await asyncio.sleep(2.0)
@@ -432,25 +540,11 @@ async def test_invalidation_closes_trade(
     matching = [t for t in opened if t.signal_id == signal.id]
     assert len(matching) > 0, f"Trade for signal {signal.id} not found"
     
-    # Publish features showing VWAP invalidation (price below VWAP for long)
-    invalid_features = FeaturesMessage(
-        timestamp=last_entry_candle.timestamp + timedelta(minutes=1),
-        symbol="GC",
-        timeframe="1m",
-        close=2645.0,
-        vwap=2648.0,  # VWAP above price - invalidation for long
-        rsi=None,
-        ema_9=None,
-        ema_20=None,
-        ema_50=None,
-        dxy_correlation=None,
-        structure_label=None,
-        vwap_deviation=None,
-    )
+    # Publish candle AND features showing VWAP invalidation (price below VWAP for long)
+    invalid_timestamp = last_entry_candle.timestamp + timedelta(minutes=1)
     
-    # Need to publish corresponding candle
     invalid_candle = CandleMessage(
-        timestamp=last_entry_candle.timestamp + timedelta(minutes=1),
+        timestamp=invalid_timestamp,
         symbol="GC",
         timeframe="1m",
         open=2646.0,
@@ -460,8 +554,23 @@ async def test_invalidation_closes_trade(
         volume=1000.0,
     )
     
-    await redis_publisher.publish("features.1m", invalid_features)
+    invalid_features = FeaturesMessage(
+        timestamp=invalid_timestamp,
+        symbol="GC",
+        timeframe="1m",
+        close=2645.0,
+        vwap=2648.0,  # VWAP above price - invalidation for long
+        rsi=40.0,
+        ema_9=2647.0,
+        ema_20=2650.0,
+        ema_50=2655.0,
+        dxy_correlation=-0.3,
+        structure_label="LH",
+        vwap_deviation=-0.11,
+    )
+    
     await redis_publisher.publish("candles.1m.gc", invalid_candle)
+    await redis_publisher.publish("features.1m", invalid_features)
     await asyncio.sleep(2.0)
     
     # Check if trade was closed due to invalidation
