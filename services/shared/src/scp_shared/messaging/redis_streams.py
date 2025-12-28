@@ -159,18 +159,37 @@ class RedisStreamConsumer(Generic[T]):
         # Only retry the read operation, not the entire read+ack loop
         @with_retry(self.retry_config)
         async def _read() -> list[tuple[Any, dict[bytes, bytes]]]:
-            results = await self.redis.xreadgroup(
-                groupname=self.group,
-                consumername=self.consumer_name,
-                streams={self.stream: ">"},
-                count=count,
-                block=block_ms,
-            )
-            # Flatten results to list of (message_id, data) tuples
-            flat_messages = []
-            for _stream_name, stream_messages in results:
-                flat_messages.extend(stream_messages)
-            return flat_messages
+            try:
+                results = await self.redis.xreadgroup(
+                    groupname=self.group,
+                    consumername=self.consumer_name,
+                    streams={self.stream: ">"},
+                    count=count,
+                    block=block_ms,
+                )
+                # Flatten results to list of (message_id, data) tuples
+                flat_messages = []
+                for _stream_name, stream_messages in results:
+                    flat_messages.extend(stream_messages)
+                return flat_messages
+            except redis.ResponseError as e:
+                # If consumer group was deleted (e.g., by test cleanup), recreate it
+                if "NOGROUP" in str(e):
+                    self._initialized = False  # Force recreation
+                    await self.ensure_group()
+                    # Retry the read after recreating group
+                    results = await self.redis.xreadgroup(
+                        groupname=self.group,
+                        consumername=self.consumer_name,
+                        streams={self.stream: ">"},
+                        count=count,
+                        block=block_ms,
+                    )
+                    flat_messages = []
+                    for _stream_name, stream_messages in results:
+                        flat_messages.extend(stream_messages)
+                    return flat_messages
+                raise
 
         # Retry only the read operation
         raw_messages = await _read()

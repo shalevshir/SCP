@@ -96,7 +96,9 @@ def detect_dxy_continuation(
         return False
 
     # 3.5. Structure clarity check (use structure fields directly)
-    structure_clarity = features.get("structure_clarity", 0.0)
+    structure_clarity = features.get("structure_clarity")
+    if structure_clarity is None:
+        structure_clarity = 0.0
     if structure_clarity < 0.5:
         logger.debug(
             f"DXY continuation rejected: low clarity "
