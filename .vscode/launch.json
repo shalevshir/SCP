@@ -1,24 +1,149 @@
 {
   "version": "0.2.0",
   "configurations": [
+    // ===== MICROSERVICES DEBUG CONFIGURATIONS =====
     {
-      "name": "FeatureEngine Integration Script",
-      "type": "python",
+      "name": "Data Adapter Service",
+      "type": "debugpy",
       "request": "launch",
-      "program": "${workspaceFolder}/scripts/run_feature_integration.py",
-      "console": "integratedTerminal",
-      "justMyCode": false,
+      "module": "uvicorn",
       "python": "${workspaceFolder}/.venv/bin/python",
       "args": [
-        "--timeframe",
-        "1m",
-        "--start",
-        "2025-09-30T09:00:00+00:00",
-        "--end",
-        "2025-10-07T13:00:00+00:00",
-        "--output",
-        "data/feature_integration.csv"
-      ]
+        "data_adapter.main:app",
+        "--host", "0.0.0.0",
+        "--port", "8001",
+        "--reload"
+      ],
+      "cwd": "${workspaceFolder}/services/data-adapter",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/services/data-adapter/src:${workspaceFolder}/services/shared/src",
+        "REDIS_URL": "redis://localhost:6379",
+        "DATABENTO_API_KEY": "",
+        "LOG_LEVEL": "DEBUG"
+      },
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "presentation": {
+        "group": "services",
+        "order": 1
+      },
+      "consoleName": "🔌 Data Adapter"
+    },
+    {
+      "name": "Feature Engine Service",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "uvicorn",
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "args": [
+        "feature_engine_svc.main:app",
+        "--host", "0.0.0.0",
+        "--port", "8002",
+        "--reload"
+      ],
+      "cwd": "${workspaceFolder}/services/feature-engine",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/services/feature-engine/src:${workspaceFolder}/services/shared/src",
+        "REDIS_URL": "redis://localhost:6379",
+        "DATABASE_URL": "postgresql://scp:scp_dev_password@localhost:5432/scp",
+        "ENABLE_WARMUP": "false",
+        "LOG_LEVEL": "DEBUG"
+      },
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "presentation": {
+        "group": "services",
+        "order": 2
+      },
+      "consoleName": "⚙️ Feature Engine"
+    },
+    {
+      "name": "HTF Bias Service",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "uvicorn",
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "args": [
+        "htf_bias_svc.main:app",
+        "--host", "0.0.0.0",
+        "--port", "8003",
+        "--reload"
+      ],
+      "cwd": "${workspaceFolder}/services/htf-bias",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/services/htf-bias/src:${workspaceFolder}/services/shared/src",
+        "REDIS_URL": "redis://localhost:6379",
+        "DATABASE_URL": "postgresql://scp:scp_dev_password@localhost:5432/scp",
+        "ENABLE_WARMUP": "false",
+        "LOG_LEVEL": "DEBUG"
+      },
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "presentation": {
+        "group": "services",
+        "order": 3
+      },
+      "consoleName": "📊 HTF Bias"
+    },
+    {
+      "name": "Bot Core Service",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "uvicorn",
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "args": [
+        "bot_core_svc.main:app",
+        "--host", "0.0.0.0",
+        "--port", "8004",
+        "--reload"
+      ],
+      "cwd": "${workspaceFolder}/services/bot-core",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/services/bot-core/src:${workspaceFolder}/services/shared/src",
+        "REDIS_URL": "redis://localhost:6379",
+        "DATABASE_URL": "postgresql://scp:scp_dev_password@localhost:5432/scp",
+        "SESSION_CONFIG_PATH": "${workspaceFolder}/config/validation.yaml",
+        "ENFORCER_TIER": "EarlyMild",
+        "LOG_LEVEL": "DEBUG"
+      },
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "presentation": {
+        "group": "services",
+        "order": 4
+      },
+      "consoleName": "🤖 Bot Core"
+    },
+    {
+      "name": "Execution Service",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "uvicorn",
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "args": [
+        "execution_svc.main:app",
+        "--host", "0.0.0.0",
+        "--port", "8005",
+        "--reload"
+      ],
+      "cwd": "${workspaceFolder}/services/execution",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/services/execution/src:${workspaceFolder}/services/shared/src",
+        "REDIS_URL": "redis://localhost:6379",
+        "DATABASE_URL": "postgresql://scp:scp_dev_password@localhost:5432/scp",
+        "BROKER_MODE": "paper",
+        "PDLL_LIMIT": "1000.0",
+        "MAX_ACTIVE_TRADES": "3",
+        "MAX_TRADES_PER_DAY": "10",
+        "LOG_LEVEL": "DEBUG"
+      },
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "presentation": {
+        "group": "services",
+        "order": 5
+      },
+      "consoleName": "💹 Execution"
     },
     {
       "name": "Debug Backtest Viewer (Load Results)",
@@ -90,7 +215,35 @@
         "PYTHONPATH": "${workspaceFolder}"
       }
     }
+  ],
+  "compounds": [
+    {
+      "name": "All Microservices",
+      "configurations": [
+        "Data Adapter Service",
+        "Feature Engine Service",
+        "HTF Bias Service",
+        "Bot Core Service",
+        "Execution Service"
+      ],
+      "stopAll": true,
+      "presentation": {
+        "group": "microservices",
+        "order": 1
+      }
+    },
+    {
+      "name": "Core Pipeline (Feature → Bot → Execution)",
+      "configurations": [
+        "Feature Engine Service",
+        "Bot Core Service",
+        "Execution Service"
+      ],
+      "stopAll": true,
+      "presentation": {
+        "group": "microservices",
+        "order": 2
+      }
+    }
   ]
 }
-
-

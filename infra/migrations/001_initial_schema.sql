@@ -8,7 +8,7 @@ CREATE EXTENSION IF NOT EXISTS timescaledb;
 -- CANDLES TABLE
 -- ============================================================================
 -- Hypertable for efficient time-range queries on OHLCV data
-CREATE TABLE candles (
+CREATE TABLE IF NOT EXISTS candles (
     timestamp TIMESTAMPTZ NOT NULL,
     symbol VARCHAR(10) NOT NULL,
     timeframe VARCHAR(5) NOT NULL,
@@ -21,13 +21,13 @@ CREATE TABLE candles (
 );
 
 -- Convert to hypertable (partitioned by time)
-SELECT create_hypertable('candles', 'timestamp');
+SELECT create_hypertable('candles', 'timestamp', if_not_exists => TRUE);
 
 -- ============================================================================
 -- FEATURES TABLE
 -- ============================================================================
 -- Computed features for warmup recovery after service restarts
-CREATE TABLE features (
+CREATE TABLE IF NOT EXISTS features (
     timestamp TIMESTAMPTZ NOT NULL,
     symbol VARCHAR(10) NOT NULL,
     timeframe VARCHAR(5) NOT NULL,
@@ -44,13 +44,13 @@ CREATE TABLE features (
 );
 
 -- Convert to hypertable
-SELECT create_hypertable('features', 'timestamp');
+SELECT create_hypertable('features', 'timestamp', if_not_exists => TRUE);
 
 -- ============================================================================
 -- HTF BIAS HISTORY TABLE
 -- ============================================================================
 -- Higher-timeframe bias audit trail
-CREATE TABLE htf_bias_history (
+CREATE TABLE IF NOT EXISTS htf_bias_history (
     timestamp TIMESTAMPTZ NOT NULL,
     bias VARCHAR(10) NOT NULL CHECK (bias IN ('bullish', 'bearish', 'neutral')),
     score NUMERIC(4,2) NOT NULL CHECK (score >= 0 AND score <= 10),
@@ -63,13 +63,13 @@ CREATE TABLE htf_bias_history (
 );
 
 -- Convert to hypertable
-SELECT create_hypertable('htf_bias_history', 'timestamp');
+SELECT create_hypertable('htf_bias_history', 'timestamp', if_not_exists => TRUE);
 
 -- ============================================================================
 -- TRADES TABLE
 -- ============================================================================
 -- Full trade lifecycle with audit trail
-CREATE TABLE trades (
+CREATE TABLE IF NOT EXISTS trades (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     signal_id UUID NOT NULL,
     direction VARCHAR(10) NOT NULL CHECK (direction IN ('long', 'short')),
@@ -96,7 +96,7 @@ CREATE TABLE trades (
 -- STATE MACHINE SNAPSHOTS TABLE
 -- ============================================================================
 -- For execution service recovery - tracks active VWAP reclaim state machines
-CREATE TABLE state_machine_snapshots (
+CREATE TABLE IF NOT EXISTS state_machine_snapshots (
     signal_id UUID PRIMARY KEY,
     state VARCHAR(20) NOT NULL,
     detection_bar_idx INTEGER,
@@ -112,7 +112,7 @@ CREATE TABLE state_machine_snapshots (
 -- DAILY STATE TABLE
 -- ============================================================================
 -- For Bot Core recovery - daily counters and guardrails
-CREATE TABLE daily_state (
+CREATE TABLE IF NOT EXISTS daily_state (
     date DATE PRIMARY KEY,
     loss_streak INTEGER DEFAULT 0 CHECK (loss_streak >= 0),
     daily_loss NUMERIC(12,2) DEFAULT 0,
@@ -135,16 +135,19 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS update_trades_updated_at ON trades;
 CREATE TRIGGER update_trades_updated_at
     BEFORE UPDATE ON trades
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_state_machines_updated_at ON state_machine_snapshots;
 CREATE TRIGGER update_state_machines_updated_at
     BEFORE UPDATE ON state_machine_snapshots
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_daily_state_updated_at ON daily_state;
 CREATE TRIGGER update_daily_state_updated_at
     BEFORE UPDATE ON daily_state
     FOR EACH ROW

@@ -1,5 +1,6 @@
 """State machine manager for VWAP reclaim lifecycle tracking."""
 
+import json
 from datetime import datetime
 
 from scp_shared.common.logger import get_logger
@@ -53,6 +54,7 @@ class StateMachineManager:
         direction = "above" if signal.direction == "long" else "below"
         sm.on_reclaim_detected(bar_idx=self._bar_counter, direction=direction)
         
+        
         # Store state machine
         self._state_machines[signal.id] = sm
         
@@ -83,6 +85,7 @@ class StateMachineManager:
         if sm is None:
             return False
         
+        
         # Auto-confirm on next bar (simplified for Phase 6)
         if sm.current_state == VWAPReclaimState.PENDING_ACCEPTANCE:
             if bar_idx is None:
@@ -93,7 +96,8 @@ class StateMachineManager:
                 sm.on_confirmation(bar_idx=bar_idx, confirmation_type="auto_confirm")
                 logger.info(f"Auto-confirmed signal {signal_id} at bar {bar_idx}")
         
-        return sm.can_execute()
+        can_exec = sm.can_execute()
+        return can_exec
     
     def check_expiration(self, signal_id: str, bar_idx: int | None = None) -> bool:
         """Check if signal has expired.
@@ -194,12 +198,21 @@ class StateMachineManager:
                 # Restore state (simplified - would need full deserialization in production)
                 sm.current_state = VWAPReclaimState(row["state"])
                 sm.detection_bar_idx = row["detection_bar_idx"]
-                sm.reclaim_direction = row["reclaim_direction"]
+                # Map DB format ("long"/"short") back to internal format ("above"/"below")
+                db_direction = row["reclaim_direction"]
+                sm.reclaim_direction = "above" if db_direction == "long" else "below"
                 sm.execution_count = row["execution_count"] or 0
                 
-                # Restore confirmations
+                # Restore confirmations - parse JSON string back to list
                 if row["confirmations"]:
-                    sm.confirmations = set(row["confirmations"])
+                    # asyncpg returns the JSONB as-is; since we stored a JSON string,
+                    # we get a string back that needs to be parsed
+                    confirmations_data = row["confirmations"]
+                    if isinstance(confirmations_data, str):
+                        confirmations_list = json.loads(confirmations_data)
+                    else:
+                        confirmations_list = confirmations_data  # Already parsed
+                    sm.confirmations = set(confirmations_list)
                 
                 # Convert UUID to string for consistent key type
                 # (asyncpg returns UUID objects, but all lookups use strings)
@@ -242,11 +255,13 @@ class StateMachineManager:
                 updated_at = NOW()
         """
         
-        # Convert confirmations to list for JSON
+        # Convert confirmations to JSON string for JSONB column
+        # Use json.dumps() to ensure consistent serialization across asyncpg versions
         confirmations_list = list(sm.confirmations) if sm.confirmations else []
+        confirmations_json = json.dumps(confirmations_list)
         
-        # Convert transition history to JSON-serializable format
-        transition_history = [
+        # Convert transition history to JSON string for JSONB column
+        transition_history_list = [
             {
                 "from_state": t.from_state.value,
                 "to_state": t.to_state.value,
@@ -256,16 +271,22 @@ class StateMachineManager:
             }
             for t in sm.transition_history
         ]
+        transition_history_json = json.dumps(transition_history_list)
+        
+        # Map internal direction ("above"/"below") to DB format ("long"/"short")
+        # State machine uses "above"/"below" for VWAP position,
+        # DB constraint expects "long"/"short" for trade direction
+        db_direction = "long" if sm.reclaim_direction == "above" else "short"
         
         await self._db_pool.execute(
             query,
             signal_id,
             sm.current_state.value,
             sm.detection_bar_idx,
-            sm.reclaim_direction,
-            confirmations_list,
+            db_direction,
+            confirmations_json,  # JSON string for JSONB column
             sm.execution_count,
-            transition_history,
+            transition_history_json,  # JSON string for JSONB column
         )
     
     def cleanup_old_state_machines(self) -> None:

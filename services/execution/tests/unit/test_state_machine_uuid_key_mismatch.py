@@ -54,7 +54,7 @@ class TestStateMachineUUIDKeyMismatch:
                 "signal_id": signal_id_uuid,  # UUID object, not string!
                 "state": "pending",  # VWAPReclaimState.PENDING_ACCEPTANCE value
                 "detection_bar_idx": 100,
-                "reclaim_direction": "above",
+                "reclaim_direction": "long",  # DB format: "long"/"short", not "above"/"below"
                 "confirmations": [],
                 "execution_count": 0,
             }
@@ -98,7 +98,7 @@ class TestStateMachineUUIDKeyMismatch:
                 "signal_id": signal_id_uuid,
                 "state": "pending",
                 "detection_bar_idx": 100,
-                "reclaim_direction": "above",
+                "reclaim_direction": "long",  # DB format: "long"/"short"
                 "confirmations": [],
                 "execution_count": 0,
             }
@@ -131,7 +131,7 @@ class TestStateMachineUUIDKeyMismatch:
                 "signal_id": signal_id_uuid,
                 "state": "confirmed",  # Ready to execute
                 "detection_bar_idx": 100,
-                "reclaim_direction": "above",
+                "reclaim_direction": "long",  # DB format: "long"/"short"
                 "confirmations": ["vwap_hold"],
                 "execution_count": 0,
             }
@@ -171,7 +171,7 @@ class TestStateMachineUUIDKeyMismatch:
                 "signal_id": uuid_obj,
                 "state": "pending",
                 "detection_bar_idx": 100 + i,
-                "reclaim_direction": "above",
+                "reclaim_direction": "long",  # DB format: "long"/"short"
                 "confirmations": [],
                 "execution_count": 0,
             }

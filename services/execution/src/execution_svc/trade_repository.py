@@ -151,19 +151,24 @@ class TradeRepository:
             logger.error(f"Cannot close trade: {error_msg}")
             raise ValueError(error_msg)
         
-        # Calculate P&L
+        # Calculate P&L (convert Decimal to float for arithmetic)
+        entry_price_float = float(trade.entry_price)
         if trade.direction == "long":
-            pnl_points = exit_price - trade.entry_price
+            pnl_points = exit_price - entry_price_float
         else:  # short
-            pnl_points = trade.entry_price - exit_price
+            pnl_points = entry_price_float - exit_price
         
-        # Calculate R-multiple
-        r_multiple = pnl_points / trade.risk_amount if trade.risk_amount > 0 else 0.0
+        # Calculate R-multiple (convert Decimal to float for arithmetic)
+        risk_amount_float = float(trade.risk_amount) if trade.risk_amount else 0.0
+        r_multiple = pnl_points / risk_amount_float if risk_amount_float > 0 else 0.0
         
         # Determine state
         state = "CLOSED"
         if "SL" in exit_reason:
             state = "CLOSED"  # Stopped out is still closed
+        
+        # Truncate exit_reason to fit VARCHAR(30) column
+        exit_reason_truncated = exit_reason[:30] if len(exit_reason) > 30 else exit_reason
         
         # Update trade
         query = """
@@ -181,7 +186,7 @@ class TradeRepository:
             query,
             closed_at,
             exit_price,
-            exit_reason,
+            exit_reason_truncated,
             pnl_points,
             r_multiple,
             state,

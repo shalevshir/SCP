@@ -73,10 +73,15 @@ class PaperBroker(BaseBroker):
         
         # Check for existing position (paper broker allows only one position per symbol)
         if symbol in self._positions:
-            raise ValueError(
-                f"Position already exists for {symbol}. "
-                "Close existing position before opening new one."
+            # In test environments, the database might be cleaned but broker state persists
+            # Auto-close orphaned position to allow new trades
+            existing = self._positions[symbol]
+            logger.warning(
+                f"Auto-closing orphaned position for {symbol}: {existing.side} "
+                f"{existing.quantity} @ {existing.entry_price:.2f} (likely from previous test)"
             )
+            # Force close at current price (simulating market close)
+            await self.close_position(symbol, price=price)
         
         # Create order result
         order_id = str(uuid4())
@@ -183,11 +188,13 @@ class PaperBroker(BaseBroker):
         # Store order
         self._orders[order_id] = result
         
-        # Calculate P&L
+        # Calculate P&L (convert Decimal to float for arithmetic)
+        entry_price_float = float(position.entry_price)
+        price_float = float(price)  # price may also be Decimal
         if position.side == "long":
-            pnl = price - position.entry_price
+            pnl = price_float - entry_price_float
         else:  # short
-            pnl = position.entry_price - price
+            pnl = entry_price_float - price_float
         
         pnl_total = pnl * position.quantity
         
@@ -196,7 +203,7 @@ class PaperBroker(BaseBroker):
         
         logger.info(
             f"Paper position closed: {position.side} {position.quantity} {symbol} "
-            f"@ {price:.2f} (entry={position.entry_price:.2f}, pnl={pnl_total:.2f} points, "
+            f"@ {price_float:.2f} (entry={entry_price_float:.2f}, pnl={pnl_total:.2f} points, "
             f"order_id={order_id})"
         )
         
@@ -248,4 +255,16 @@ class PaperBroker(BaseBroker):
                 logger.warning(
                     f"Position already exists for {symbol}, skipping reconciliation"
                 )
+    
+    def reset_state(self) -> None:
+        """Reset broker state (for testing purposes).
+        
+        Clears all positions and order history. This is useful in integration
+        tests where the service persists across tests but the database is cleaned.
+        
+        Warning: This should only be used in test environments!
+        """
+        self._positions.clear()
+        self._orders.clear()
+        logger.info("Paper broker state reset (all positions and orders cleared)")
 

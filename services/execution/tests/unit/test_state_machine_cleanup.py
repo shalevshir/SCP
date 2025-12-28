@@ -27,7 +27,6 @@ def sample_signal() -> SignalMessage:
     """Create sample signal message."""
     return SignalMessage(
         id="signal-1",
-        signal_id="signal-1",
         timestamp="2025-01-15T10:00:00Z",
         direction="long",
         setup_type="VWAP_RECLAIM",
@@ -239,7 +238,6 @@ class TestStateMachineCleanupIntegration:
         for i in range(100):
             signal = SignalMessage(
                 id=f"signal-{i}",
-                signal_id=f"signal-{i}",
                 timestamp="2025-01-15T10:00:00Z",
                 direction="long",
                 setup_type="VWAP_RECLAIM",
