@@ -24,9 +24,12 @@ class BotCoreConfig(BaseServiceConfig):
     )
     
     # Bias cache configuration
+    # HTF bias updates every 15 minutes at boundaries (e.g., 06:14, 06:29, 06:44, 06:59)
+    # TTL must be >= 15 minutes (900s) so features between updates have valid bias
+    # Using 1800s (30 min) to handle gaps and ensure coverage
     bias_cache_ttl_seconds: int = Field(
-        default=300,
-        description="TTL for HTF bias cache in seconds (default: 300 = 5 minutes)"
+        default=1800,
+        description="TTL for HTF bias cache in seconds (default: 1800 = 30 minutes)"
     )
     
     # State persistence

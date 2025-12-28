@@ -1,0 +1,51 @@
+# Docker Compose configuration for replay mode validation
+#
+# This extends the base docker-compose configuration with replay-specific settings:
+# - Disables session filtering for historical data
+# - Configures services for faster processing
+# - No live data connections
+#
+# Usage:
+#   docker-compose -f docker-compose.yml -f docker-compose.services.yml -f docker-compose.replay.yml up -d
+
+version: '3.8'
+
+services:
+  # Data Adapter: Use replay mode (session filtering disabled)
+  data-adapter:
+    environment:
+      - SESSION_FILTER_ENABLED=false
+      - LOG_LEVEL=INFO
+  
+  # Feature Engine: Configure for faster processing
+  feature-engine:
+    environment:
+      - LOG_LEVEL=INFO
+      - WARMUP_ENABLED=true
+    volumes:
+      - ../.cursor:/app/.cursor
+  
+  # HTF Bias: Configure for faster processing
+  htf-bias:
+    environment:
+      - LOG_LEVEL=INFO
+    volumes:
+      - ../.cursor:/app/.cursor
+  
+  # Bot Core: Replay mode configuration
+  bot-core:
+    environment:
+      - LOG_LEVEL=INFO
+      - SESSION_VALIDATION_ENABLED=false  # Disable session validation for historical data
+    volumes:
+      - ../.cursor:/app/.cursor
+  
+  # Execution: Paper mode with replay settings
+  execution:
+    environment:
+      - LOG_LEVEL=INFO
+      - BROKER_MODE=paper
+    volumes:
+      - ../.cursor:/app/.cursor
+
+

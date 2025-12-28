@@ -1,7 +1,7 @@
 # Force use of bash for all recipes (required for db-reset and other advanced shell features)
 SHELL := /bin/bash
 
-.PHONY: test test-unit test-verbose test-parallel test-coverage test-fast lint format check clean help install data-clean data-fetch data-resample data-resample-5m data-resample-1h infra-up infra-down infra-logs infra-ps db-migrate db-reset db-shell shared-install shared-test service-test-coverage service-test-coverage-all services-up services-down services-build services-logs services-ps
+.PHONY: test test-unit test-verbose test-parallel test-coverage test-fast lint format check clean help install data-clean data-fetch data-resample data-resample-5m data-resample-1h infra-up infra-down infra-logs infra-ps db-migrate db-reset db-shell shared-install shared-test service-test-coverage service-test-coverage-all services-up services-down services-build services-logs services-ps replay compare-results validate-replay replay-clean
 
 help:
 	@echo "SCP Trading Bot - Development Commands"
@@ -50,6 +50,12 @@ help:
 	@echo "  make lint              Run linters (ruff, mypy)"
 	@echo "  make format            Run code formatters (black, isort)"
 	@echo "  make check             Run all checks (lint + test)"
+	@echo ""
+	@echo "Replay Mode & Validation:"
+	@echo "  make replay START=... END=... [SPEED=0]    Run replay (SPEED=0 is turbo mode)"
+	@echo "  make compare-results BACKTEST=...          Compare backtest vs microservices"
+	@echo "  make validate-replay START=... END=...     Full validation (replay + compare)"
+	@echo "  make replay-clean                          Clean replay artifacts"
 	@echo ""
 	@echo "Cleanup:"
 	@echo "  make clean             Remove test artifacts and caches"
@@ -255,3 +261,95 @@ services-logs:
 services-ps:
 	@echo "Running services:"
 	docker compose -f infra/docker-compose.yml -f infra/docker-compose.services.yml ps
+
+# ============================================================================
+# Replay Mode & Validation Commands (Phase 8)
+# ============================================================================
+
+replay:
+	@if [ -z "$(START)" ] || [ -z "$(END)" ]; then \
+		echo "Error: START and END required."; \
+		echo "Usage: make replay START=2024-11-01 END=2024-11-30 [SPEED=0]"; \
+		exit 1; \
+	fi
+	@echo "Running replay validation..."
+	@echo "  Date range: $(START) to $(END)"
+	@if [ -z "$(SPEED)" ] || [ "$(SPEED)" = "0" ]; then \
+		echo "  Speed: TURBO (no delays, maximum speed)"; \
+	else \
+		echo "  Speed: $(SPEED)x"; \
+	fi
+	@echo ""
+	@echo "Step 1/3: Running backtester..."
+	poetry run python scripts/run_backtest_and_view.py \
+		--start $(START) --end $(END) --no-view \
+		--output-file output/backtest_validation_$(START)_$(END).json
+	@echo ""
+	@echo "Step 2/3: Starting microservices..."
+	docker compose -f infra/docker-compose.yml -f infra/docker-compose.services.yml -f infra/docker-compose.replay.yml up -d
+	@sleep 5
+	@echo ""
+	@echo "Step 3/3: Replaying historical data..."
+	@if [ -z "$(SPEED)" ]; then \
+		poetry run python scripts/replay_historical.py \
+			--start $(START) --end $(END) \
+			--speed 0 \
+			--processing-delay 10; \
+	else \
+		poetry run python scripts/replay_historical.py \
+			--start $(START) --end $(END) \
+			--speed $(SPEED) \
+			--processing-delay 10; \
+	fi
+	@echo ""
+	@echo "✓ Replay complete. Run 'make compare-results' to analyze."
+
+compare-results:
+	@if [ -z "$(BACKTEST)" ]; then \
+		echo "Error: BACKTEST file required."; \
+		echo "Usage: make compare-results BACKTEST=output/backtest_validation.json"; \
+		exit 1; \
+	fi
+	@echo "Comparing results..."
+	poetry run python scripts/compare_results.py \
+		--backtest $(BACKTEST) \
+		--database postgresql://scp:scp_dev_password@localhost:5432/scp \
+		--output output/comparison_report_$(shell date +%Y%m%d_%H%M%S).json
+
+validate-replay:
+	@if [ -z "$(START)" ] || [ -z "$(END)" ]; then \
+		echo "Error: START and END required."; \
+		echo "Usage: make validate-replay START=2024-11-01 END=2024-11-30"; \
+		exit 1; \
+	fi
+	@echo "Running full validation workflow..."
+	@$(MAKE) replay START=$(START) END=$(END) SPEED=0
+	@echo ""
+	@echo "Comparing results..."
+	@$(MAKE) compare-results BACKTEST=output/backtest_validation_$(START)_$(END).json
+	@echo ""
+	@echo "✓ Validation complete!"
+
+replay-clean:
+	@echo "Cleaning replay artifacts..."
+	@echo "Warning: This will clear Redis streams and database trades!"
+	@read -p "Are you sure? [y/N] " -n 1 -r; \
+	echo; \
+	if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
+		echo "Stopping services..."; \
+		docker compose -f infra/docker-compose.yml -f infra/docker-compose.services.yml down; \
+		echo "Starting infrastructure..."; \
+		docker compose -f infra/docker-compose.yml up -d; \
+		sleep 5; \
+		echo "Cleaning Redis streams..."; \
+		docker exec scp-redis redis-cli FLUSHDB; \
+		echo "Cleaning database tables..."; \
+		docker exec scp-postgres psql -U scp -d scp -c "TRUNCATE TABLE trades CASCADE"; \
+		docker exec scp-postgres psql -U scp -d scp -c "TRUNCATE TABLE state_machine_snapshots CASCADE"; \
+		docker exec scp-postgres psql -U scp -d scp -c "TRUNCATE TABLE daily_state CASCADE"; \
+		docker exec scp-postgres psql -U scp -d scp -c "TRUNCATE TABLE features CASCADE"; \
+		docker exec scp-postgres psql -U scp -d scp -c "TRUNCATE TABLE htf_bias_history CASCADE"; \
+		echo "✓ Replay environment cleaned and reset"; \
+	else \
+		echo "Cancelled"; \
+	fi

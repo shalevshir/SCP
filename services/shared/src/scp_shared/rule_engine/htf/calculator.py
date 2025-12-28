@@ -334,6 +334,17 @@ def compute_htf_bias_multi_timeframe(
         f"score={total_score:.1f})"
     )
 
+    # #region agent log
+    import json as _json
+    import os as _os
+    _debug_log_path = _os.environ.get("DEBUG_LOG_PATH", "/Users/shalev/Code/SCP/.cursor/debug.log")
+    try:
+        _os.makedirs(_os.path.dirname(_debug_log_path), exist_ok=True)
+        with open(_debug_log_path, "a") as _f:
+            _f.write(_json.dumps({"location": "htf:calculator.py:compute", "message": "htf_bias_computed", "data": {"bias": htf_bias, "direction": htf_direction, "score": total_score, "bullish_signals": bullish_signals, "bearish_signals": bearish_signals, "structure_1h": structure_1h, "structure_15m": structure_15m, "emas_1h_valid": emas_1h_valid, "ema_9_1h": ema_9_1h, "ema_20_1h": ema_20_1h, "ema_50_1h": ema_50_1h}, "timestamp": int(__import__("time").time() * 1000), "sessionId": "debug-session", "hypothesisId": "J"}) + "\n")
+    except: pass
+    # #endregion
+
     return htf_bias, htf_direction, total_score
 
 

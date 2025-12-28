@@ -1,6 +1,7 @@
 """Feature Engine Service main entry point."""
 
 import asyncio
+import json
 from contextlib import asynccontextmanager
 from datetime import datetime
 
@@ -19,6 +20,19 @@ from feature_engine_svc.publisher import FeaturePublisher
 from feature_engine_svc.repository import FeatureRepository
 
 logger = get_logger(__name__)
+
+# #region agent log
+import os
+import time as _time_module
+_DEBUG_LOG_PATH = os.environ.get("DEBUG_LOG_PATH", "/Users/shalev/Code/SCP/.cursor/debug.log")
+_DEBUG_COUNTERS = {"gc_received": 0, "dxy_received": 0, "pairs_formed": 0, "features_published": 0, "read_start": 0, "read_loops": 0}
+def _debug_log(loc: str, msg: str, data: dict, hyp: str) -> None:
+    try:
+        os.makedirs(os.path.dirname(_DEBUG_LOG_PATH), exist_ok=True)
+        with open(_DEBUG_LOG_PATH, "a") as f:
+            f.write(json.dumps({"location": loc, "message": msg, "data": data, "timestamp": int(_time_module.time() * 1000), "sessionId": "debug-session", "hypothesisId": hyp}) + "\n")
+    except: pass
+# #endregion
 
 # Load configuration
 config = FeatureEngineConfig()
@@ -169,7 +183,12 @@ async def process_candles(
     logger.info("Starting candle processing loop")
     
     # Initialize components
-    synchronizer = CandleSynchronizer(timeout_seconds=60)
+    # Use a larger timeout (5 minutes of data-time) to handle:
+    # 1. High-speed replay where many candles arrive in quick succession
+    # 2. Gaps in historical data (e.g., trading hours only)
+    # The cleanup uses DATA timestamps, not wall-clock time, so during replay
+    # we need a buffer large enough to span any gaps in the data.
+    synchronizer = CandleSynchronizer(timeout_seconds=300)
     htf_aggregator_gc = HTFCandleAggregator()
     htf_aggregator_dxy = HTFCandleAggregator()
     
@@ -211,14 +230,64 @@ async def process_candles(
     
     try:
         while not shutdown_event.is_set():
+            # #region agent log
+            _DEBUG_COUNTERS["read_loops"] += 1
+            loop_start = _time_module.time()
+            # #endregion
+            
             # Read from both streams
             gc_candles = await gc_consumer.read(count=10, block_ms=1000)
+            
+            # #region agent log
+            gc_read_time = _time_module.time() - loop_start
+            dxy_read_start = _time_module.time()
+            # #endregion
+            
             dxy_candles = await dxy_consumer.read(count=10, block_ms=1000)
             
-            # Add to synchronizer
-            for candle in gc_candles:
+            # #region agent log
+            dxy_read_time = _time_module.time() - dxy_read_start
+            _DEBUG_COUNTERS["gc_received"] += len(gc_candles)
+            _DEBUG_COUNTERS["dxy_received"] += len(dxy_candles)
+            if gc_candles or dxy_candles:
+                # Log first/last candle timestamps to detect gaps
+                gc_first_ts = str(gc_candles[0].timestamp) if gc_candles else None
+                gc_last_ts = str(gc_candles[-1].timestamp) if gc_candles else None
+                dxy_first_ts = str(dxy_candles[0].timestamp) if dxy_candles else None
+                dxy_last_ts = str(dxy_candles[-1].timestamp) if dxy_candles else None
+                _debug_log("fe:main.py:read", "candles_received", {
+                    "gc": len(gc_candles), "dxy": len(dxy_candles),
+                    "gc_total": _DEBUG_COUNTERS["gc_received"], "dxy_total": _DEBUG_COUNTERS["dxy_received"],
+                    "gc_read_ms": int(gc_read_time * 1000), "dxy_read_ms": int(dxy_read_time * 1000),
+                    "gc_first": gc_first_ts, "gc_last": gc_last_ts,
+                    "dxy_first": dxy_first_ts, "dxy_last": dxy_last_ts,
+                    "loop": _DEBUG_COUNTERS["read_loops"]
+                }, "A")
+            # #endregion
+            
+            # CRITICAL FIX: Interleave GC and DXY candle processing to prevent
+            # cleanup from dropping unpaired candles during high-speed replay.
+            # Previously, all GC candles were added first, then all DXY candles.
+            # This caused candles spanning >1 minute to be dropped before their
+            # pair arrived.
+            #
+            # New approach: Add candles in timestamp order by merging both lists.
+            all_candles = list(gc_candles) + list(dxy_candles)
+            all_candles.sort(key=lambda c: c.timestamp)
+            
+            # #region agent log
+            process_start = _time_module.time()
+            pairs_this_loop = 0
+            # #endregion
+            
+            for candle in all_candles:
                 pair = synchronizer.add_candle(candle)
                 if pair:
+                    # #region agent log
+                    _DEBUG_COUNTERS["pairs_formed"] += 1
+                    pairs_this_loop += 1
+                    _debug_log("fe:main.py:pair", "candle_pair_formed", {"timestamp": str(pair[0].timestamp), "gc_close": pair[0].close, "dxy_close": pair[1].close, "total_pairs": _DEBUG_COUNTERS["pairs_formed"]}, "A")
+                    # #endregion
                     await process_candle_pair(
                         pair,
                         processor_1m,
@@ -230,19 +299,19 @@ async def process_candles(
                         repository,
                     )
             
-            for candle in dxy_candles:
-                pair = synchronizer.add_candle(candle)
-                if pair:
-                    await process_candle_pair(
-                        pair,
-                        processor_1m,
-                        processor_15m,
-                        processor_1h,
-                        htf_aggregator_gc,
-                        htf_aggregator_dxy,
-                        publisher,
-                        repository,
-                    )
+            # #region agent log
+            process_time = _time_module.time() - process_start
+            total_loop_time = _time_module.time() - loop_start
+            if pairs_this_loop > 0 or total_loop_time > 1.5:  # Log slow loops or loops with pairs
+                _debug_log("fe:main.py:loop", "loop_completed", {
+                    "loop": _DEBUG_COUNTERS["read_loops"],
+                    "pairs": pairs_this_loop,
+                    "process_ms": int(process_time * 1000),
+                    "total_ms": int(total_loop_time * 1000),
+                    "buffer_gc": len(synchronizer.gc_buffer),
+                    "buffer_dxy": len(synchronizer.dxy_buffer)
+                }, "H1")
+            # #endregion
             
             # Log buffer stats periodically
             if synchronizer.gc_buffer or synchronizer.dxy_buffer:
@@ -286,6 +355,11 @@ async def process_candle_pair(
     
     # Publish 1m features
     await publisher.publish(features_1m)
+    
+    # #region agent log
+    _DEBUG_COUNTERS["features_published"] += 1
+    _debug_log("fe:main.py:publish", "features_published", {"timestamp": str(features_1m.timestamp), "close": features_1m.close, "vwap": features_1m.vwap, "rsi": features_1m.rsi, "structure_label": features_1m.structure_label, "bos_direction": features_1m.bos_direction, "bos_recent": features_1m.bos_recent, "choch_detected": features_1m.choch_detected, "total": _DEBUG_COUNTERS["features_published"]}, "A")
+    # #endregion
     
     # Persist 1m features
     await repository.save_features(features_1m)

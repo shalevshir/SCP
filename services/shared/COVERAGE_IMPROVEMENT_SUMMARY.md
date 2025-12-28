@@ -194,3 +194,4 @@ The 73% overall coverage represents **production-ready quality** for the shared 
 **Total effort:** Adapted 700+ tests, created 30+ new test files, fixed 50+ import paths, added 3 missing modules.
 
 
+

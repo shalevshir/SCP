@@ -59,6 +59,30 @@ class StreamingHTFBiasCalculator:
         self.df_1h_buffer: list[dict] = []
         self.df_15m_buffer: list[dict] = []
         self.dxy_1h_buffer: list[dict] = []
+        
+        # HTF candle aggregation state (properly aggregates 1M -> HTF OHLCV)
+        # 15M GC aggregation
+        self._gc_15m_start: datetime | None = None
+        self._gc_15m_open: float | None = None
+        self._gc_15m_high: float | None = None
+        self._gc_15m_low: float | None = None
+        self._gc_15m_close: float | None = None
+        self._gc_15m_volume: float = 0.0
+        
+        # 1H GC aggregation
+        self._gc_1h_start: datetime | None = None
+        self._gc_1h_open: float | None = None
+        self._gc_1h_high: float | None = None
+        self._gc_1h_low: float | None = None
+        self._gc_1h_close: float | None = None
+        self._gc_1h_volume: float = 0.0
+        
+        # 1H DXY aggregation
+        self._dxy_1h_start: datetime | None = None
+        self._dxy_1h_open: float | None = None
+        self._dxy_1h_high: float | None = None
+        self._dxy_1h_low: float | None = None
+        self._dxy_1h_close: float | None = None
 
         logger.info("Streaming HTF bias calculator initialized")
 
@@ -72,24 +96,62 @@ class StreamingHTFBiasCalculator:
         Returns:
             HTFBias object if boundary reached, else None
         """
+        # Update HTF candle aggregation (must happen before boundary check)
+        self._update_15m_aggregation(gc_bar)
+        self._update_1h_aggregation(gc_bar, dxy_bar)
+        
         # Detect 15M boundary
         is_15m_close = self._is_15m_boundary(gc_bar.timestamp)
 
         # Detect 1H boundary
         is_1h_close = self._is_1h_boundary(gc_bar.timestamp)
 
-        # Always update 15M processor
+        # At 15M boundary, emit aggregated candle and update processor
         if is_15m_close:
-            self.features_15m = self.processor_15m.update(gc_bar, dxy_bar)
-            # Store 15M bar for historical buffer
-            self._add_to_15m_buffer(gc_bar)
+            # Create aggregated 15M candle from accumulated values
+            if self._gc_15m_start is not None:
+                gc_15m_candle = Candle(
+                    timestamp=self._gc_15m_start,
+                    symbol="GC",
+                    timeframe="15m",
+                    source="aggregated",
+                    open=self._gc_15m_open or gc_bar.open,
+                    high=self._gc_15m_high or gc_bar.high,
+                    low=self._gc_15m_low or gc_bar.low,
+                    close=self._gc_15m_close or gc_bar.close,
+                    volume=self._gc_15m_volume,
+                )
+                # Pass aggregated 15M candle to processor (not 1M candle)
+                self.features_15m = self.processor_15m.update(gc_15m_candle, dxy_bar)
+            else:
+                # Fallback if no aggregation happened (shouldn't occur)
+                self.features_15m = self.processor_15m.update(gc_bar, dxy_bar)
+            # Store properly aggregated 15M bar in historical buffer
+            self._emit_15m_to_buffer()
             logger.debug(f"15M bar closed at {gc_bar.timestamp}")
 
-        # Update 1H processor at 1H boundary
+        # At 1H boundary, emit aggregated candle and update processor
         if is_1h_close:
-            self.features_1h = self.processor_1h.update(gc_bar, dxy_bar)
-            # Store 1H bar for historical buffer
-            self._add_to_1h_buffer(gc_bar, dxy_bar)
+            # Create aggregated 1H candle from accumulated values
+            if self._gc_1h_start is not None:
+                gc_1h_candle = Candle(
+                    timestamp=self._gc_1h_start,
+                    symbol="GC",
+                    timeframe="1h",
+                    source="aggregated",
+                    open=self._gc_1h_open or gc_bar.open,
+                    high=self._gc_1h_high or gc_bar.high,
+                    low=self._gc_1h_low or gc_bar.low,
+                    close=self._gc_1h_close or gc_bar.close,
+                    volume=self._gc_1h_volume,
+                )
+                # Pass aggregated 1H candle to processor (not 1M candle)
+                self.features_1h = self.processor_1h.update(gc_1h_candle, dxy_bar)
+            else:
+                # Fallback if no aggregation happened (shouldn't occur)
+                self.features_1h = self.processor_1h.update(gc_bar, dxy_bar)
+            # Store properly aggregated 1H bar in historical buffer
+            self._emit_1h_to_buffer()
             logger.info(
                 f"1H bar closed at {gc_bar.timestamp} | "
                 f"1H bars in buffer: {len(self.df_1h_buffer)} | "
@@ -119,6 +181,44 @@ class StreamingHTFBiasCalculator:
                     dxy_1h = pd.DataFrame(self.dxy_1h_buffer)
 
                 # Call existing HTF bias calculator
+                # #region agent log
+                import json as _json
+                # Get last 3 1H bars from buffer to see actual candles
+                _last_1h_bars = []
+                if len(self.df_1h_buffer) > 0:
+                    for _bar in self.df_1h_buffer[-3:]:
+                        _last_1h_bars.append({
+                            "ts": str(_bar.get("timestamp", "N/A")),
+                            "o": _bar.get("open"),
+                            "h": _bar.get("high"),
+                            "l": _bar.get("low"),
+                            "c": _bar.get("close"),
+                        })
+                _htf_debug = {
+                    "timestamp": str(gc_bar.timestamp),
+                    "features_1h": {
+                        "structure_label": str(self.features_1h.get("structure_label", "N/A")),
+                        "close": float(self.features_1h.get("close", 0)) if self.features_1h.get("close") is not None and not pd.isna(self.features_1h.get("close", 0)) else None,
+                        "ema_9": float(self.features_1h.get("ema_9", 0)) if self.features_1h.get("ema_9") is not None and not pd.isna(self.features_1h.get("ema_9", 0)) else None,
+                        "ema_20": float(self.features_1h.get("ema_20", 0)) if self.features_1h.get("ema_20") is not None and not pd.isna(self.features_1h.get("ema_20", 0)) else None,
+                        "ema_50": str(self.features_1h.get("ema_50")),  # Show raw value to debug why missing
+                    },
+                    "features_15m": {
+                        "structure_label": str(self.features_15m.get("structure_label", "N/A")),
+                        "close": float(self.features_15m.get("close", 0)) if self.features_15m.get("close") is not None and not pd.isna(self.features_15m.get("close", 0)) else None,
+                        "ema_9": float(self.features_15m.get("ema_9", 0)) if self.features_15m.get("ema_9") is not None and not pd.isna(self.features_15m.get("ema_9", 0)) else None,
+                        "ema_20": float(self.features_15m.get("ema_20", 0)) if self.features_15m.get("ema_20") is not None and not pd.isna(self.features_15m.get("ema_20", 0)) else None,
+                        "ema_50": float(self.features_15m.get("ema_50", 0)) if self.features_15m.get("ema_50") is not None and not pd.isna(self.features_15m.get("ema_50", 0)) else None,
+                    },
+                    "buffer_sizes": {
+                        "df_1h": len(self.df_1h_buffer),
+                        "df_15m": len(self.df_15m_buffer),
+                    },
+                    "last_1h_bars": _last_1h_bars,
+                }
+                with open("/Users/shalev/Code/SCP/.cursor/debug.log", "a") as _f:
+                    _f.write(_json.dumps({"location": "htf:streaming.py:compute", "message": "htf_features_input", "data": _htf_debug, "timestamp": int(datetime.now().timestamp() * 1000), "sessionId": "debug-session", "hypothesisId": "E"}) + "\n")
+                # #endregion
                 self.current_htf_bias = compute_htf_bias(
                     features_1h=self.features_1h,
                     features_15m=self.features_15m,
@@ -166,64 +266,152 @@ class StreamingHTFBiasCalculator:
         # 1H boundaries occur when minute is 59
         return timestamp.minute == 59
 
-    def _add_to_1h_buffer(self, gc_bar: Candle, dxy_bar: Candle) -> None:
-        """Add completed 1H bar to historical buffer.
-
-        Args:
-            gc_bar: Completed 1H GC bar
-            dxy_bar: Corresponding DXY bar
-        """
+    def _update_15m_aggregation(self, gc_bar: Candle) -> None:
+        """Update 15M GC candle aggregation with new 1M bar."""
+        period_start = self._get_15m_start(gc_bar.timestamp)
+        
+        if self._gc_15m_start is None or self._gc_15m_start != period_start:
+            # New period - reset aggregation
+            self._gc_15m_start = period_start
+            self._gc_15m_open = gc_bar.open
+            self._gc_15m_high = gc_bar.high
+            self._gc_15m_low = gc_bar.low
+            self._gc_15m_close = gc_bar.close
+            self._gc_15m_volume = gc_bar.volume
+        else:
+            # Same period - update aggregation
+            if gc_bar.high > (self._gc_15m_high or 0):
+                self._gc_15m_high = gc_bar.high
+            if gc_bar.low < (self._gc_15m_low or float('inf')):
+                self._gc_15m_low = gc_bar.low
+            self._gc_15m_close = gc_bar.close
+            self._gc_15m_volume += gc_bar.volume
+    
+    def _update_1h_aggregation(self, gc_bar: Candle, dxy_bar: Candle) -> None:
+        """Update 1H GC and DXY candle aggregation with new 1M bars."""
+        period_start = self._get_1h_start(gc_bar.timestamp)
+        
+        # GC aggregation
+        if self._gc_1h_start is None or self._gc_1h_start != period_start:
+            # New period - reset aggregation
+            self._gc_1h_start = period_start
+            self._gc_1h_open = gc_bar.open
+            self._gc_1h_high = gc_bar.high
+            self._gc_1h_low = gc_bar.low
+            self._gc_1h_close = gc_bar.close
+            self._gc_1h_volume = gc_bar.volume
+        else:
+            # Same period - update aggregation
+            if gc_bar.high > (self._gc_1h_high or 0):
+                self._gc_1h_high = gc_bar.high
+            if gc_bar.low < (self._gc_1h_low or float('inf')):
+                self._gc_1h_low = gc_bar.low
+            self._gc_1h_close = gc_bar.close
+            self._gc_1h_volume += gc_bar.volume
+        
+        # DXY aggregation
+        if self._dxy_1h_start is None or self._dxy_1h_start != period_start:
+            # New period - reset aggregation
+            self._dxy_1h_start = period_start
+            self._dxy_1h_open = dxy_bar.open
+            self._dxy_1h_high = dxy_bar.high
+            self._dxy_1h_low = dxy_bar.low
+            self._dxy_1h_close = dxy_bar.close
+        else:
+            # Same period - update aggregation
+            if dxy_bar.high > (self._dxy_1h_high or 0):
+                self._dxy_1h_high = dxy_bar.high
+            if dxy_bar.low < (self._dxy_1h_low or float('inf')):
+                self._dxy_1h_low = dxy_bar.low
+            self._dxy_1h_close = dxy_bar.close
+    
+    def _emit_15m_to_buffer(self) -> None:
+        """Emit completed 15M aggregated candle to buffer and reset."""
+        if self._gc_15m_start is None:
+            return
+        
+        self.df_15m_buffer.append({
+            "timestamp": self._gc_15m_start,
+            "open": self._gc_15m_open,
+            "high": self._gc_15m_high,
+            "low": self._gc_15m_low,
+            "close": self._gc_15m_close,
+            "volume": self._gc_15m_volume,
+        })
+        
+        # Limit buffer size (keep last 200 bars = ~2 days)
+        max_buffer_size = 200
+        if len(self.df_15m_buffer) > max_buffer_size:
+            self.df_15m_buffer = self.df_15m_buffer[-max_buffer_size:]
+        
+        # Reset aggregation for next period
+        self._gc_15m_start = None
+        self._gc_15m_open = None
+        self._gc_15m_high = None
+        self._gc_15m_low = None
+        self._gc_15m_close = None
+        self._gc_15m_volume = 0.0
+    
+    def _emit_1h_to_buffer(self) -> None:
+        """Emit completed 1H aggregated candles to buffers and reset."""
+        if self._gc_1h_start is None:
+            return
+        
         # Add GC bar
-        self.df_1h_buffer.append(
-            {
-                "timestamp": gc_bar.timestamp,
-                "open": gc_bar.open,
-                "high": gc_bar.high,
-                "low": gc_bar.low,
-                "close": gc_bar.close,
-                "volume": gc_bar.volume,
-            }
-        )
-
+        self.df_1h_buffer.append({
+            "timestamp": self._gc_1h_start,
+            "open": self._gc_1h_open,
+            "high": self._gc_1h_high,
+            "low": self._gc_1h_low,
+            "close": self._gc_1h_close,
+            "volume": self._gc_1h_volume,
+        })
+        
         # Add DXY bar
-        self.dxy_1h_buffer.append(
-            {
-                "timestamp": dxy_bar.timestamp,
-                "open": dxy_bar.open,
-                "high": dxy_bar.high,
-                "low": dxy_bar.low,
-                "close": dxy_bar.close,
-            }
-        )
-
+        self.dxy_1h_buffer.append({
+            "timestamp": self._dxy_1h_start,
+            "open": self._dxy_1h_open,
+            "high": self._dxy_1h_high,
+            "low": self._dxy_1h_low,
+            "close": self._dxy_1h_close,
+        })
+        
         # Limit buffer size to prevent memory growth (keep last 200 bars = ~8 days)
         max_buffer_size = 200
         if len(self.df_1h_buffer) > max_buffer_size:
             self.df_1h_buffer = self.df_1h_buffer[-max_buffer_size:]
         if len(self.dxy_1h_buffer) > max_buffer_size:
             self.dxy_1h_buffer = self.dxy_1h_buffer[-max_buffer_size:]
-
-    def _add_to_15m_buffer(self, gc_bar: Candle) -> None:
-        """Add completed 15M bar to historical buffer.
-
-        Args:
-            gc_bar: Completed 15M GC bar
-        """
-        self.df_15m_buffer.append(
-            {
-                "timestamp": gc_bar.timestamp,
-                "open": gc_bar.open,
-                "high": gc_bar.high,
-                "low": gc_bar.low,
-                "close": gc_bar.close,
-                "volume": gc_bar.volume,
-            }
-        )
-
-        # Limit buffer size (keep last 200 bars = ~2 days)
-        max_buffer_size = 200
-        if len(self.df_15m_buffer) > max_buffer_size:
-            self.df_15m_buffer = self.df_15m_buffer[-max_buffer_size:]
+        
+        # Reset aggregation for next period
+        self._gc_1h_start = None
+        self._gc_1h_open = None
+        self._gc_1h_high = None
+        self._gc_1h_low = None
+        self._gc_1h_close = None
+        self._gc_1h_volume = 0.0
+        self._dxy_1h_start = None
+        self._dxy_1h_open = None
+        self._dxy_1h_high = None
+        self._dxy_1h_low = None
+        self._dxy_1h_close = None
+    
+    def _get_15m_start(self, timestamp: datetime) -> datetime:
+        """Get start timestamp of 15M period containing timestamp."""
+        minute = timestamp.minute
+        if minute < 15:
+            start_minute = 0
+        elif minute < 30:
+            start_minute = 15
+        elif minute < 45:
+            start_minute = 30
+        else:
+            start_minute = 45
+        return timestamp.replace(minute=start_minute, second=0, microsecond=0)
+    
+    def _get_1h_start(self, timestamp: datetime) -> datetime:
+        """Get start timestamp of 1H period containing timestamp."""
+        return timestamp.replace(minute=0, second=0, microsecond=0)
 
     def get_current_features_15m(self) -> pd.Series:
         """Get current 15M features.

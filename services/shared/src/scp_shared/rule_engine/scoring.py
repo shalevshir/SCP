@@ -920,6 +920,16 @@ def determine_setup_type(features: pd.Series, htf_bias: HTFBias) -> str:
     else:
         # Log rejection reason for debugging
         logger.debug(f"VWAP_RECLAIM rejected: {context_result.reason}")
+        # #region agent log
+        import json as _json
+        import os as _os
+        _debug_log_path = _os.environ.get("DEBUG_LOG_PATH", "/Users/shalev/Code/SCP/.cursor/debug.log")
+        try:
+            _os.makedirs(_os.path.dirname(_debug_log_path), exist_ok=True)
+            with open(_debug_log_path, "a") as _f:
+                _f.write(_json.dumps({"location": "scoring.py:setup_rejected", "message": "vwap_reclaim_rejected", "data": {"reason": context_result.reason, "direction": htf_bias.direction, "structure_1h": htf_bias.structure_1h, "structure_15m": htf_bias.structure_15m}, "timestamp": int(__import__("time").time() * 1000), "sessionId": "debug-session", "hypothesisId": "I"}) + "\n")
+        except: pass
+        # #endregion
         return "REJECTED"
 
 

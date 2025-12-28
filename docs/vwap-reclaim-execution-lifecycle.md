@@ -382,3 +382,4 @@ Bar 4: VWAP hold satisfied (2 bars)
 
 
 
+
