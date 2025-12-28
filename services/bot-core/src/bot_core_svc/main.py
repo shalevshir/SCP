@@ -30,19 +30,6 @@ logging.basicConfig(
 
 logger = get_logger(__name__)
 
-# #region agent log
-import os
-_DEBUG_LOG_PATH = os.environ.get("DEBUG_LOG_PATH", "/Users/shalev/Code/SCP/.cursor/debug.log")
-_DEBUG_COUNTERS = {"features_received": 0, "bias_received": 0, "session_blocked": 0, "guardrails_blocked": 0, "signals_generated": 0}
-def _debug_log(loc: str, msg: str, data: dict, hyp: str) -> None:
-    try:
-        import time
-        os.makedirs(os.path.dirname(_DEBUG_LOG_PATH), exist_ok=True)
-        with open(_DEBUG_LOG_PATH, "a") as f:
-            f.write(json.dumps({"location": loc, "message": msg, "data": data, "timestamp": int(time.time() * 1000), "sessionId": "debug-session", "hypothesisId": hyp}) + "\n")
-    except: pass
-# #endregion
-
 # Load configuration
 config = BotCoreConfig()
 
@@ -103,19 +90,9 @@ async def process_features(
             features_list = await features_consumer.read(count=10, block_ms=1000)
             bias_list = await bias_consumer.read(count=10, block_ms=1000)
             
-            # #region agent log
-            _DEBUG_COUNTERS["features_received"] += len(features_list)
-            _DEBUG_COUNTERS["bias_received"] += len(bias_list)
-            if features_list or bias_list:
-                _debug_log("bc:main.py:read", "streams_read", {"features": len(features_list), "bias": len(bias_list), "total_features": _DEBUG_COUNTERS["features_received"], "total_bias": _DEBUG_COUNTERS["bias_received"]}, "C")
-            # #endregion
-            
             # Update bias cache
             for bias_msg in bias_list:
                 bias_cache.update(bias_msg)
-                # #region agent log
-                _debug_log("bc:main.py:bias", "bias_cached", {"bias": bias_msg.bias, "score": bias_msg.score, "confidence": bias_msg.confidence, "timestamp": str(bias_msg.timestamp)}, "B")
-                # #endregion
                 logger.debug(
                     f"Updated bias cache: {bias_msg.bias} "
                     f"(score: {bias_msg.score:.1f}, confidence: {bias_msg.confidence})"
@@ -161,10 +138,6 @@ async def process_feature_message(
     # 1. Validate session
     session_result = session_service.evaluate(features.timestamp)
     if not session_result.session_ok:
-        # #region agent log
-        _DEBUG_COUNTERS["session_blocked"] += 1
-        _debug_log("bc:main.py:session", "session_blocked", {"timestamp": str(features.timestamp), "reason": session_result.reason, "total_blocked": _DEBUG_COUNTERS["session_blocked"]}, "C")
-        # #endregion
         logger.debug(
             f"Session blocked at {features.timestamp}: {session_result.reason}"
         )
@@ -173,10 +146,6 @@ async def process_feature_message(
     # 2. Check guardrails
     guardrail_result = guardrails_service.evaluate(session_result.constraints)
     if not guardrail_result.allowed:
-        # #region agent log
-        _DEBUG_COUNTERS["guardrails_blocked"] += 1
-        _debug_log("bc:main.py:guardrails", "guardrails_blocked", {"timestamp": str(features.timestamp), "reasons": guardrail_result.reasons, "total_blocked": _DEBUG_COUNTERS["guardrails_blocked"]}, "C")
-        # #endregion
         logger.debug(
             f"Guardrails blocked at {features.timestamp}: {guardrail_result.reasons}"
         )
@@ -186,10 +155,6 @@ async def process_feature_message(
     # Uses timestamp-aware lookup to ensure features are evaluated with
     # the correct historical bias, not a future bias that arrived earlier
     bias = bias_cache.get_for_timestamp_or_default(features.timestamp)
-    
-    # #region agent log
-    _debug_log("bc:main.py:signal_check", "checking_signal", {"timestamp": str(features.timestamp), "close": features.close, "vwap": features.vwap, "bias": bias.bias, "bias_score": bias.score, "bias_ts": str(bias.timestamp)}, "D")
-    # #endregion
     
     # 4. Build context
     context = {
@@ -202,10 +167,6 @@ async def process_feature_message(
     
     # 6. Publish A+ signals
     if signal_msg is not None:
-        # #region agent log
-        _DEBUG_COUNTERS["signals_generated"] += 1
-        _debug_log("bc:main.py:signal", "signal_generated", {"id": signal_msg.id, "direction": signal_msg.direction, "setup": signal_msg.setup_type, "score": signal_msg.score, "confidence": signal_msg.confidence, "total": _DEBUG_COUNTERS["signals_generated"]}, "D")
-        # #endregion
         await signal_publisher.publish(signal_msg)
 
 

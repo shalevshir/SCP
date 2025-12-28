@@ -76,25 +76,12 @@ class HTFBiasCache:
         
         Args:
             ts: Data timestamp to look up bias for
-            
+        
         Returns:
             Bias valid at that time, or None if no valid bias exists
         """
         with self._lock:
-            # #region agent log
-            import json as _json
-            _debug_data = {
-                "ts": str(ts),
-                "history_len": len(self._history),
-                "history_timestamps": [str(t) for t, _ in self._history[-5:]] if self._history else [],
-            }
-            # #endregion
-            
             if not self._history:
-                # #region agent log
-                with open("/Users/shalev/Code/SCP/.cursor/debug.log", "a") as _f:
-                    _f.write(_json.dumps({"location": "bc:bias_cache.py:get", "message": "cache_empty", "data": _debug_data, "timestamp": int(datetime.now().timestamp() * 1000), "sessionId": "debug-session", "hypothesisId": "F"}) + "\n")
-                # #endregion
                 return None
             
             # Binary search for the latest bias at or before ts
@@ -102,12 +89,6 @@ class HTFBiasCache:
             idx = bisect.bisect_right(timestamps, ts)
             
             if idx == 0:
-                # #region agent log
-                _debug_data["idx"] = idx
-                _debug_data["reason"] = "no_bias_before_ts"
-                with open("/Users/shalev/Code/SCP/.cursor/debug.log", "a") as _f:
-                    _f.write(_json.dumps({"location": "bc:bias_cache.py:get", "message": "no_bias_before", "data": _debug_data, "timestamp": int(datetime.now().timestamp() * 1000), "sessionId": "debug-session", "hypothesisId": "F"}) + "\n")
-                # #endregion
                 # No bias before this timestamp
                 return None
             
@@ -117,15 +98,6 @@ class HTFBiasCache:
             # Check if within TTL (in data-time)
             age_seconds = (ts - bias_ts).total_seconds()
             if age_seconds > self._ttl_seconds:
-                # #region agent log
-                _debug_data["idx"] = idx
-                _debug_data["bias_ts"] = str(bias_ts)
-                _debug_data["age_seconds"] = age_seconds
-                _debug_data["ttl"] = self._ttl_seconds
-                _debug_data["reason"] = "ttl_expired"
-                with open("/Users/shalev/Code/SCP/.cursor/debug.log", "a") as _f:
-                    _f.write(_json.dumps({"location": "bc:bias_cache.py:get", "message": "ttl_expired", "data": _debug_data, "timestamp": int(datetime.now().timestamp() * 1000), "sessionId": "debug-session", "hypothesisId": "F"}) + "\n")
-                # #endregion
                 return None
             
             return bias
@@ -166,7 +138,7 @@ class HTFBiasCache:
         
         Args:
             ts: Data timestamp to look up bias for
-            
+        
         Returns:
             Bias valid at that time, or neutral default
         """

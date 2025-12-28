@@ -251,24 +251,6 @@ class SignalEngine:
         # Generate signal
         signal = score_signal(features_series, htf_bias_obj, context)
         
-        # #region agent log
-        import json as _json
-        from datetime import datetime
-        _signal_debug = {
-            "timestamp": str(features.timestamp),
-            "direction": signal.direction,
-            "setup_type": signal.setup_type,
-            "score": signal.score,
-            "confidence": signal.confidence,
-            "htf_bias": signal.htf_bias,
-            "htf_structure_1h": htf_bias_obj.structure_1h,
-            "htf_structure_15m": htf_bias_obj.structure_15m,
-            "factors": {k: round(v, 2) if isinstance(v, float) else v for k, v in signal.factors.items()},
-        }
-        with open("/Users/shalev/Code/SCP/.cursor/debug.log", "a") as _f:
-            _f.write(_json.dumps({"location": "bc:signal_engine.py:score", "message": "signal_scored", "data": _signal_debug, "timestamp": int(datetime.now().timestamp() * 1000), "sessionId": "debug-session", "hypothesisId": "G"}) + "\n")
-        # #endregion
-        
         # Filter for A+ signals only
         if signal.confidence != "A+":
             logger.debug(

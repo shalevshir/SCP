@@ -59,7 +59,7 @@ class StreamingHTFBiasCalculator:
         self.df_1h_buffer: list[dict] = []
         self.df_15m_buffer: list[dict] = []
         self.dxy_1h_buffer: list[dict] = []
-        
+
         # HTF candle aggregation state (properly aggregates 1M -> HTF OHLCV)
         # 15M GC aggregation
         self._gc_15m_start: datetime | None = None
@@ -125,7 +125,7 @@ class StreamingHTFBiasCalculator:
                 self.features_15m = self.processor_15m.update(gc_15m_candle, dxy_bar)
             else:
                 # Fallback if no aggregation happened (shouldn't occur)
-                self.features_15m = self.processor_15m.update(gc_bar, dxy_bar)
+            self.features_15m = self.processor_15m.update(gc_bar, dxy_bar)
             # Store properly aggregated 15M bar in historical buffer
             self._emit_15m_to_buffer()
             logger.debug(f"15M bar closed at {gc_bar.timestamp}")
@@ -149,7 +149,7 @@ class StreamingHTFBiasCalculator:
                 self.features_1h = self.processor_1h.update(gc_1h_candle, dxy_bar)
             else:
                 # Fallback if no aggregation happened (shouldn't occur)
-                self.features_1h = self.processor_1h.update(gc_bar, dxy_bar)
+            self.features_1h = self.processor_1h.update(gc_bar, dxy_bar)
             # Store properly aggregated 1H bar in historical buffer
             self._emit_1h_to_buffer()
             logger.info(
@@ -181,44 +181,6 @@ class StreamingHTFBiasCalculator:
                     dxy_1h = pd.DataFrame(self.dxy_1h_buffer)
 
                 # Call existing HTF bias calculator
-                # #region agent log
-                import json as _json
-                # Get last 3 1H bars from buffer to see actual candles
-                _last_1h_bars = []
-                if len(self.df_1h_buffer) > 0:
-                    for _bar in self.df_1h_buffer[-3:]:
-                        _last_1h_bars.append({
-                            "ts": str(_bar.get("timestamp", "N/A")),
-                            "o": _bar.get("open"),
-                            "h": _bar.get("high"),
-                            "l": _bar.get("low"),
-                            "c": _bar.get("close"),
-                        })
-                _htf_debug = {
-                    "timestamp": str(gc_bar.timestamp),
-                    "features_1h": {
-                        "structure_label": str(self.features_1h.get("structure_label", "N/A")),
-                        "close": float(self.features_1h.get("close", 0)) if self.features_1h.get("close") is not None and not pd.isna(self.features_1h.get("close", 0)) else None,
-                        "ema_9": float(self.features_1h.get("ema_9", 0)) if self.features_1h.get("ema_9") is not None and not pd.isna(self.features_1h.get("ema_9", 0)) else None,
-                        "ema_20": float(self.features_1h.get("ema_20", 0)) if self.features_1h.get("ema_20") is not None and not pd.isna(self.features_1h.get("ema_20", 0)) else None,
-                        "ema_50": str(self.features_1h.get("ema_50")),  # Show raw value to debug why missing
-                    },
-                    "features_15m": {
-                        "structure_label": str(self.features_15m.get("structure_label", "N/A")),
-                        "close": float(self.features_15m.get("close", 0)) if self.features_15m.get("close") is not None and not pd.isna(self.features_15m.get("close", 0)) else None,
-                        "ema_9": float(self.features_15m.get("ema_9", 0)) if self.features_15m.get("ema_9") is not None and not pd.isna(self.features_15m.get("ema_9", 0)) else None,
-                        "ema_20": float(self.features_15m.get("ema_20", 0)) if self.features_15m.get("ema_20") is not None and not pd.isna(self.features_15m.get("ema_20", 0)) else None,
-                        "ema_50": float(self.features_15m.get("ema_50", 0)) if self.features_15m.get("ema_50") is not None and not pd.isna(self.features_15m.get("ema_50", 0)) else None,
-                    },
-                    "buffer_sizes": {
-                        "df_1h": len(self.df_1h_buffer),
-                        "df_15m": len(self.df_15m_buffer),
-                    },
-                    "last_1h_bars": _last_1h_bars,
-                }
-                with open("/Users/shalev/Code/SCP/.cursor/debug.log", "a") as _f:
-                    _f.write(_json.dumps({"location": "htf:streaming.py:compute", "message": "htf_features_input", "data": _htf_debug, "timestamp": int(datetime.now().timestamp() * 1000), "sessionId": "debug-session", "hypothesisId": "E"}) + "\n")
-                # #endregion
                 self.current_htf_bias = compute_htf_bias(
                     features_1h=self.features_1h,
                     features_15m=self.features_15m,
@@ -366,7 +328,7 @@ class StreamingHTFBiasCalculator:
             "close": self._gc_1h_close,
             "volume": self._gc_1h_volume,
         })
-        
+
         # Add DXY bar
         self.dxy_1h_buffer.append({
             "timestamp": self._dxy_1h_start,
@@ -375,14 +337,14 @@ class StreamingHTFBiasCalculator:
             "low": self._dxy_1h_low,
             "close": self._dxy_1h_close,
         })
-        
+
         # Limit buffer size to prevent memory growth (keep last 200 bars = ~8 days)
         max_buffer_size = 200
         if len(self.df_1h_buffer) > max_buffer_size:
             self.df_1h_buffer = self.df_1h_buffer[-max_buffer_size:]
         if len(self.dxy_1h_buffer) > max_buffer_size:
             self.dxy_1h_buffer = self.dxy_1h_buffer[-max_buffer_size:]
-        
+
         # Reset aggregation for next period
         self._gc_1h_start = None
         self._gc_1h_open = None

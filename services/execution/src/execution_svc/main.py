@@ -32,19 +32,6 @@ logging.basicConfig(
 
 logger = get_logger(__name__)
 
-# #region agent log
-import os
-_DEBUG_LOG_PATH = os.environ.get("DEBUG_LOG_PATH", "/Users/shalev/Code/SCP/.cursor/debug.log")
-_DEBUG_COUNTERS = {"signals_received": 0, "candles_received": 0, "features_received": 0, "pairs_formed": 0, "trades_opened": 0}
-def _debug_log(loc: str, msg: str, data: dict, hyp: str) -> None:
-    try:
-        import time
-        os.makedirs(os.path.dirname(_DEBUG_LOG_PATH), exist_ok=True)
-        with open(_DEBUG_LOG_PATH, "a") as f:
-            f.write(json.dumps({"location": loc, "message": msg, "data": data, "timestamp": int(time.time() * 1000), "sessionId": "debug-session", "hypothesisId": hyp}) + "\n")
-    except: pass
-# #endregion
-
 # Load configuration
 config = ExecutionConfig()
 
@@ -144,19 +131,8 @@ async def process_streams(
                 features_consumer.read(count=100, block_ms=100),  # Larger batch for replay
             )
             
-            # #region agent log
-            _DEBUG_COUNTERS["signals_received"] += len(signals_list)
-            _DEBUG_COUNTERS["candles_received"] += len(candles_list)
-            _DEBUG_COUNTERS["features_received"] += len(features_list)
-            if signals_list or candles_list or features_list:
-                _debug_log("ex:main.py:read", "streams_read", {"signals": len(signals_list), "candles": len(candles_list), "features": len(features_list), "total_signals": _DEBUG_COUNTERS["signals_received"], "total_candles": _DEBUG_COUNTERS["candles_received"], "total_features": _DEBUG_COUNTERS["features_received"]}, "E")
-            # #endregion
-            
             # Process signals (buffer for next bar execution)
             for signal_msg in signals_list:
-                # #region agent log
-                _debug_log("ex:main.py:signal", "signal_received", {"id": signal_msg.id, "direction": signal_msg.direction, "setup": signal_msg.setup_type, "timestamp": str(signal_msg.timestamp)}, "E")
-                # #endregion
                 await trade_manager.on_signal(signal_msg)
             
             # CRITICAL FIX: Interleave candle and feature processing to prevent
@@ -180,10 +156,6 @@ async def process_streams(
                     pair = synchronizer.add_features(msg)  # type: ignore[arg-type]
                 
                 if pair:
-                    # #region agent log
-                    _DEBUG_COUNTERS["pairs_formed"] += 1
-                    _debug_log("ex:main.py:pair", "candle_feature_pair", {"timestamp": str(pair[0].timestamp), "close": pair[0].close, "vwap": pair[1].vwap, "total_pairs": _DEBUG_COUNTERS["pairs_formed"]}, "E")
-                    # #endregion
                     await _process_candle_with_features(pair, trade_manager, sm_manager)
                     cleanup_counter += 1
             
