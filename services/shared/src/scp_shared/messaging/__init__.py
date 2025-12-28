@@ -12,7 +12,10 @@ from scp_shared.messaging.schemas import (
     SignalMessage,
     TradeMessage,
 )
-from scp_shared.messaging.synchronizer import CandleSynchronizer
+from scp_shared.messaging.synchronizer import (
+    CandleSynchronizer,
+    CandleFeatureSynchronizer,
+)
 
 __all__ = [
     "RedisStreamPublisher",
@@ -25,5 +28,6 @@ __all__ = [
     "SignalMessage",
     "TradeMessage",
     "CandleSynchronizer",
+    "CandleFeatureSynchronizer",
 ]
 

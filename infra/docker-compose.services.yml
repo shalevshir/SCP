@@ -95,6 +95,7 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     volumes:
       - ../config:/app/bot-core/config:ro
+      - ../config:/config:ro
     depends_on:
       redis:
         condition: service_healthy

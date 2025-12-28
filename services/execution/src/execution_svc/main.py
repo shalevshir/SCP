@@ -1,8 +1,10 @@
 """Execution Service main entry point."""
 
 import asyncio
+import json
 import logging
 from contextlib import asynccontextmanager
+from datetime import datetime
 from typing import Optional
 
 import redis.asyncio as redis
@@ -11,7 +13,7 @@ from fastapi import FastAPI
 from scp_shared.common import get_logger, mask_connection_url
 from scp_shared.database import DatabasePool
 from scp_shared.health import create_health_router
-from scp_shared.messaging import RedisStreamConsumer
+from scp_shared.messaging import RedisStreamConsumer, CandleFeatureSynchronizer
 from scp_shared.messaging.schemas import CandleMessage, FeaturesMessage, SignalMessage
 
 from execution_svc.broker import PaperBroker
@@ -40,6 +42,7 @@ shutdown_event = asyncio.Event()
 _trade_manager: Optional[TradeManager] = None
 _broker: Optional[PaperBroker] = None
 _sm_manager: Optional[StateMachineManager] = None
+_synchronizer: Optional[CandleFeatureSynchronizer] = None
 
 
 async def process_streams(
@@ -107,8 +110,14 @@ async def process_streams(
     
     logger.info("Execution Service ready - consuming signals and candles")
     
-    # Cache latest features for invalidation checking
-    latest_features: FeaturesMessage | None = None
+    # Synchronizer to pair candles with their matching features by timestamp
+    # Use a larger timeout (5 minutes of data-time) to handle:
+    # 1. High-speed replay where many messages arrive in quick succession
+    global _synchronizer  # noqa: PLW0603 - intentional global for reset endpoint
+    # 2. Gaps in historical data (e.g., trading hours only)
+    # The cleanup uses DATA timestamps, not wall-clock time.
+    synchronizer = CandleFeatureSynchronizer(timeout_seconds=300)
+    _synchronizer = synchronizer  # Store global reference for reset endpoint
     
     # Cleanup counter (run cleanup every N candles to prevent memory leaks)
     cleanup_counter = 0
@@ -116,36 +125,50 @@ async def process_streams(
     
     try:
         while not shutdown_event.is_set():
-            # Read from all streams
-            signals_list = await signals_consumer.read(count=10, block_ms=1000)
-            candles_list = await candles_consumer.read(count=10, block_ms=1000)
-            features_list = await features_consumer.read(count=10, block_ms=1000)
-            
-            # Update features cache
-            if features_list:
-                latest_features = features_list[-1]  # Keep most recent
+            # Read from all streams IN PARALLEL to avoid sequential blocking
+            # Previously, each read blocked for up to 1000ms, causing ~3 second
+            # delays when streams were empty. Now they run concurrently.
+            signals_list, candles_list, features_list = await asyncio.gather(
+                signals_consumer.read(count=10, block_ms=100),  # Short timeout for signals
+                candles_consumer.read(count=100, block_ms=100),  # Larger batch for replay
+                features_consumer.read(count=100, block_ms=100),  # Larger batch for replay
+            )
             
             # Process signals (buffer for next bar execution)
             for signal_msg in signals_list:
                 await trade_manager.on_signal(signal_msg)
             
-            # Process candles (check session reset, execute pending signals, monitor SL/TP)
-            for candle_msg in candles_list:
-                # CRITICAL: Check session reset BEFORE execute_pending_signals
-                # to ensure daily limits (PDLL, max trades) are fresh at day boundaries
-                trade_manager.check_session_reset(candle_msg.timestamp)
+            # CRITICAL FIX: Interleave candle and feature processing to prevent
+            # cleanup from dropping unpaired messages during high-speed replay.
+            # Previously, all candles were added first, then all features.
+            # This caused messages spanning >2 minutes (data-time) to be dropped
+            # before their pair arrived.
+            #
+            # New approach: Merge and sort by timestamp to maximize pairing.
+            all_messages: list[tuple[str, CandleMessage | FeaturesMessage]] = []
+            for c in candles_list:
+                all_messages.append(("candle", c))
+            for f in features_list:
+                all_messages.append(("features", f))
+            all_messages.sort(key=lambda x: x[1].timestamp)
+            
+            for msg_type, msg in all_messages:
+                if msg_type == "candle":
+                    pair = synchronizer.add_candle(msg)  # type: ignore[arg-type]
+                else:
+                    pair = synchronizer.add_features(msg)  # type: ignore[arg-type]
                 
-                # Increment bar counter BEFORE execute_pending_signals so that
-                # check_confirmation() can confirm signals from the previous bar
-                # (confirmation requires bar_idx > detection_bar_idx)
-                trade_manager._sm_manager.increment_bar_counter()
-                
-                # Execute pending signals at this candle's open
-                await trade_manager.execute_pending_signals(candle_msg.open)
-                
-                # Monitor active trades for SL/TP and invalidation
-                await trade_manager.on_candle(candle_msg, latest_features)
-                cleanup_counter += 1
+                if pair:
+                    await _process_candle_with_features(pair, trade_manager, sm_manager)
+                    cleanup_counter += 1
+            
+            # Log synchronizer stats periodically for debugging
+            stats = synchronizer.get_buffer_stats()
+            if stats["total_unpaired"] > 10:
+                logger.warning(
+                    f"Synchronizer buffer growing: {stats} - "
+                    "candles/features may be out of sync"
+                )
             
             # Periodic cleanup to prevent memory leaks
             if cleanup_counter >= cleanup_interval:
@@ -158,6 +181,42 @@ async def process_streams(
     except Exception as e:
         logger.error(f"Error in execution processing loop: {e}", exc_info=True)
         raise
+
+
+async def _process_candle_with_features(
+    pair: tuple[CandleMessage, FeaturesMessage],
+    trade_manager: TradeManager,
+    sm_manager: StateMachineManager,
+) -> None:
+    """Process a synchronized candle-features pair.
+    
+    This ensures that when we process a candle, we have the matching
+    features with the same timestamp for invalidation checks.
+    
+    Args:
+        pair: Tuple of (candle, features) with matching timestamps
+        trade_manager: Trade manager instance
+        sm_manager: State machine manager instance
+    """
+    candle_msg, features_msg = pair
+    
+    logger.info(f"Processing candle: {candle_msg.timestamp} (with matching features)")
+    
+    # CRITICAL: Check session reset BEFORE execute_pending_signals
+    # to ensure daily limits (PDLL, max trades) are fresh at day boundaries
+    trade_manager.check_session_reset(candle_msg.timestamp)
+    
+    # Increment bar counter BEFORE execute_pending_signals so that
+    # check_confirmation() can confirm signals from the previous bar
+    # (confirmation requires bar_idx > detection_bar_idx)
+    sm_manager.increment_bar_counter()
+    
+    # Execute pending signals at this candle's open
+    await trade_manager.execute_pending_signals(candle_msg.open)
+    
+    # Monitor active trades for SL/TP and invalidation
+    # Now we pass the CORRECT features that match this candle's timestamp
+    await trade_manager.on_candle(candle_msg, features_msg)
 
 
 @asynccontextmanager
@@ -222,13 +281,14 @@ async def reset_state() -> dict[str, str]:
     - State machines
     - Daily tracker
     - Broker positions
+    - Synchronizer buffers
     
     This endpoint is intended for integration testing only.
     
     Returns:
         Status message
     """
-    global _trade_manager, _broker, _sm_manager
+    global _trade_manager, _broker, _sm_manager, _synchronizer
     
     if _trade_manager is None or _broker is None or _sm_manager is None:
         return {"status": "error", "message": "Service not fully initialized"}
@@ -245,6 +305,10 @@ async def reset_state() -> dict[str, str]:
     
     # Reset broker
     _broker.reset_state()
+    
+    # Reset synchronizer buffers (critical for test isolation)
+    if _synchronizer is not None:
+        _synchronizer.clear()
     
     logger.info("Execution service state reset via /admin/reset endpoint")
     

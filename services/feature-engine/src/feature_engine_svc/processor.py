@@ -107,6 +107,15 @@ class FeatureProcessor:
             dxy_correlation=dxy_corr,
             structure_label=features_series.get("structure_label"),
             vwap_deviation=self._safe_float(features_series.get("vwap_deviation")),
+            # BOS/CHoCH fields for VWAP_RECLAIM validation
+            bos_direction=features_series.get("bos_direction"),
+            bos_recent=features_series.get("bos_recent"),
+            bos_age=self._safe_int(features_series.get("bos_age")),
+            choch_detected=features_series.get("choch_detected"),
+            choch_direction=features_series.get("choch_direction"),
+            structure_clarity=self._safe_float(features_series.get("structure_clarity")),
+            liquidity_sweep=features_series.get("liquidity_sweep"),
+            sweep_age=self._safe_int(features_series.get("sweep_age")),
         )
     
     def is_warmed_up(self) -> bool:
@@ -157,4 +166,30 @@ class FeatureProcessor:
             return None
         
         return float(value)
+
+    @staticmethod
+    def _safe_int(value) -> int | None:
+        """Convert value to int or None if invalid.
+        
+        Args:
+            value: Value to convert (can be None, NaN, or numeric)
+            
+        Returns:
+            Int value or None
+        """
+        if value is None:
+            return None
+        
+        # Handle pandas NA/NaN
+        try:
+            import pandas as pd
+            if pd.isna(value):
+                return None
+        except (ImportError, TypeError):
+            pass
+        
+        try:
+            return int(value)
+        except (ValueError, TypeError):
+            return None
 

@@ -58,6 +58,15 @@ class FeaturesMessage(BaseModel):
     )
     structure_label: str | None = Field(default=None, description="Structure label")
     vwap_deviation: float | None = Field(default=None, description="VWAP deviation %")
+    # BOS/CHoCH fields for VWAP_RECLAIM validation
+    bos_direction: str | None = Field(default=None, description="Break of structure direction")
+    bos_recent: bool | None = Field(default=None, description="Whether BOS was detected recently")
+    bos_age: int | None = Field(default=None, description="Age of most recent BOS in bars")
+    choch_detected: bool | None = Field(default=None, description="Whether CHoCH was detected")
+    choch_direction: str | None = Field(default=None, description="CHoCH direction")
+    structure_clarity: float | None = Field(default=None, description="Structure clarity score")
+    liquidity_sweep: bool | None = Field(default=None, description="Whether liquidity sweep detected")
+    sweep_age: int | None = Field(default=None, description="Age of most recent sweep in bars")
 
     class Config:
         json_schema_extra = {

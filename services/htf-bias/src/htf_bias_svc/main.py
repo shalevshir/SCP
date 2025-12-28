@@ -1,6 +1,7 @@
 """HTF Bias Service main entry point."""
 
 import asyncio
+import json
 from contextlib import asynccontextmanager
 
 import redis.asyncio as redis
@@ -78,7 +79,9 @@ async def process_candles(
     logger.info("Starting candle processing loop")
     
     # Initialize components
-    synchronizer = CandleSynchronizer(timeout_seconds=60)
+    # Use 300 seconds (5 minutes of data-time) to handle high-speed replay
+    # where many candles arrive in quick succession
+    synchronizer = CandleSynchronizer(timeout_seconds=300)
     processor = HTFBiasProcessor()
     publisher = BiasPublisher(redis_client)
     repository = BiasRepository(db_pool)
@@ -110,18 +113,13 @@ async def process_candles(
             gc_candles = await gc_consumer.read(count=10, block_ms=1000)
             dxy_candles = await dxy_consumer.read(count=10, block_ms=1000)
             
-            # Add to synchronizer
-            for candle in gc_candles:
-                pair = synchronizer.add_candle(candle)
-                if pair:
-                    await process_candle_pair(
-                        pair,
-                        processor,
-                        publisher,
-                        repository,
-                    )
+            # Sort all candles by timestamp to prevent cleanup from dropping
+            # unpaired candles during high-speed replay
+            all_candles = list(gc_candles) + list(dxy_candles)
+            all_candles.sort(key=lambda c: c.timestamp)
             
-            for candle in dxy_candles:
+            # Add to synchronizer
+            for candle in all_candles:
                 pair = synchronizer.add_candle(candle)
                 if pair:
                     await process_candle_pair(

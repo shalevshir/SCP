@@ -1,6 +1,7 @@
 """Bot Core Service main entry point."""
 
 import asyncio
+import json
 import logging
 from contextlib import asynccontextmanager
 
@@ -49,7 +50,8 @@ async def process_features(
     logger.info("Starting feature processing loop")
     
     # Initialize components
-    bias_cache = HTFBiasCache(ttl_seconds=config.bias_cache_ttl_seconds)
+    # max_history=2000 to cover multi-day replays (6 days @ 15-min intervals = ~576 entries)
+    bias_cache = HTFBiasCache(ttl_seconds=config.bias_cache_ttl_seconds, max_history=2000)
     signal_engine = SignalEngine()
     signal_publisher = SignalPublisher(redis_client)
     session_service = SessionValidationService(config_path=config.session_config_path)
@@ -149,8 +151,10 @@ async def process_feature_message(
         )
         return
     
-    # 3. Get bias (or default neutral)
-    bias = bias_cache.get_or_default()
+    # 3. Get bias for this feature's timestamp (critical for replay mode)
+    # Uses timestamp-aware lookup to ensure features are evaluated with
+    # the correct historical bias, not a future bias that arrived earlier
+    bias = bias_cache.get_for_timestamp_or_default(features.timestamp)
     
     # 4. Build context
     context = {

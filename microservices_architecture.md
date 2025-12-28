@@ -1,0 +1,920 @@
+---
+alwaysApply: true
+---
+# Microservices Architecture Plan
+
+**Goal:** Transform the current backtesting monolith into a production-ready, distributed trading system with clear service boundaries, fault isolation, and independent scaling.
+
+---
+
+## 1. Service Overview
+
+| Service | Responsibility | Cadence | State |
+|---------|---------------|---------|-------|
+| **Data Adapter** | Live data ingestion, normalization, gap-fill | Continuous (tick → 1m) | Minimal |
+| **Feature Engine** | Indicator computation (EMA, VWAP, RSI, structure) | Every 1m bar | Complex (buffers) |
+| **HTF Bias Service** | Higher-timeframe structure analysis | 15m/1h boundaries | Moderate |
+| **Bot Core** | Signal generation, scoring, guardrails | Every 1m bar | Counters, streaks |
+| **Execution Service** | Trade lifecycle, SL/TP, broker integration | Continuous | Active positions |
+
+---
+
+## 2. Architecture Principles
+
+### 2.1 Shared Library Rules
+
+The `scp_shared` library contains code shared between microservices. To maintain clean architecture and avoid monolith dependencies:
+
+1. **No monolith dependencies**: `scp_shared` must NOT import from:
+   - `data_layer/` - Contains batch processing logic for backtester only
+   - `backtester/` - Backtester-specific simulation logic
+   - `rule_engine/` (monolith root) - Use `scp_shared.rule_engine` instead
+   - `validation/` (monolith root) - Use `scp_shared.validation` instead
+   - `feature_engine/` (monolith root) - Use `scp_shared.indicators` instead
+
+2. **No backtester-only code**: Functions that only work with:
+   - Batch DataFrames (pre-loaded entire dataset)
+   - `MultiTimeframeData` objects (backtester's synchronized data structure)
+   - Vectorized operations requiring future data
+   
+   These belong in the monolith, not `scp_shared`.
+
+3. **Streaming-first design**: Shared library algorithms must work:
+   - Bar-by-bar (incremental processing)
+   - With zero lookahead (no future data access)
+   - From message streams (Redis/pub-sub)
+   
+   Not from pre-loaded DataFrames.
+
+4. **Minimal surface area**: Only export what microservices actually use.
+   - If a function isn't imported by any service, it doesn't belong in shared
+   - Use `grep` to verify imports before adding new exports
+   - Remove dead code aggressively
+
+5. **Type checking guards**: If backtester-only code must reference shared types:
+   - Use `TYPE_CHECKING` guards for import-time only
+   - Never execute backtester-only code paths in services
+   - Document clearly: "Backtester use only"
+
+### 2.2 Code Organization
+
+**Monolith (Backtester):**
+```
+SCP/
+├── data_layer/              # Batch data loading, CSV processing
+├── feature_engine/          # Vectorized feature computation
+├── rule_engine/             # Batch signal scoring
+├── validation/              # Batch validation
+└── backtester/              # Simulation loop
+```
+
+**Shared Library (Microservices):**
+```
+services/shared/src/scp_shared/
+├── common/                  # Logging, types, utilities
+├── config/                  # Config loading
+├── database/                # PostgreSQL/TimescaleDB clients
+├── health/                  # Health check endpoints
+├── indicators/              # Streaming indicators (EMA, RSI, VWAP, structure)
+├── messaging/               # Redis Streams, schemas
+├── rule_engine/             # Signal scoring logic
+│   ├── scoring.py          # Core scoring algorithm
+│   ├── signal.py           # Signal type
+│   └── htf/
+│       ├── types.py        # HTFBias type
+│       └── validation.py   # HTF validation helpers
+└── validation/              # Guardrails, session validation
+```
+
+**Services (Production):**
+```
+services/
+├── data-adapter/            # Live data ingestion
+├── feature-engine/          # Streaming feature computation
+├── htf-bias/                # HTF bias calculation
+├── bot-core/                # Signal generation
+└── execution/               # Trade execution
+```
+
+---
+
+## 3. System Architecture Diagram
+
+```
+                    ┌─────────────────┐
+                    │   DATABENTO /   │
+                    │   BROKER WS     │
+                    └────────┬────────┘
+                             │ ticks (real-time)
+                             ▼
+┌───────────────────────────────────────────────────────────────┐
+│                      DATA ADAPTER                             │
+│   • Tick aggregation → 1m candles                             │
+│   • Gap detection & historical backfill                       │
+│   • Session awareness (trading hours filter)                  │
+│   • Multi-symbol: GC + DXY                                    │
+└─────────────────────────────┬─────────────────────────────────┘
+                              │ Redis Streams: candles.1m.{gc,dxy}
+                              ▼
+┌───────────────────────────────────────────────────────────────┐
+│                   FEATURE ENGINE SERVICE                      │
+│   • StreamingFeatureProcessor per timeframe                   │
+│   • EMA (9, 20, 50), VWAP, RSI, DXY correlation               │
+│   • Structure labels (HH/HL/LH/LL, BOS, CHoCH)                │
+│   • Persist features to DB for warmup recovery                │
+└───────────────┬───────────────────────────┬───────────────────┘
+                │ features.1m               │ features.15m / features.1h
+                │                           ▼
+                │               ┌───────────────────────────┐
+                │               │    HTF BIAS SERVICE       │
+                │               │  • StreamingHTFBias       │
+                │               │  • 15m/1h structure       │
+                │               │  • Chop/conflict detect   │
+                │               └───────────┬───────────────┘
+                │                           │ htf.bias
+                ▼                           ▼
+┌───────────────────────────────────────────────────────────────┐
+│                       BOT CORE                                │
+│   • Setup detection (VWAP_RECLAIM, VWAP_FADE, DXY_CONT)       │
+│   • Signal scoring (8+/10 threshold)                          │
+│   • BehaviorGuardrails (loss streak, fatigue)                 │
+│   • Session validation                                        │
+│   • Risk ladder enforcement                                   │
+└─────────────────────────────┬─────────────────────────────────┘
+                              │ signals.pending
+                              ▼
+┌───────────────────────────────────────────────────────────────┐
+│                 EXECUTION SERVICE                             │
+│   • VWAPReclaimStateMachine lifecycle                         │
+│   • Entry at next bar open                                    │
+│   • SL/TP monitoring (every tick or 1m)                       │
+│   • InvalidationChecker (PDLL, structure break)               │
+│   • Broker order placement (paper → live)                     │
+│   • Re-entry protection                                       │
+└─────────────────────────────┬─────────────────────────────────┘
+                              │ trades.opened / trades.closed
+                              ▼
+                    ┌─────────────────┐
+                    │   PostgreSQL /  │
+                    │   TimescaleDB   │
+                    └─────────────────┘
+```
+
+---
+
+## 3. Service Specifications
+
+### 3.1 Data Adapter
+
+**Purpose:** Bridge between external data sources and internal message bus.
+
+**Inputs:**
+- WebSocket connection to Databento / broker
+- Tick-level data for GC (Gold Futures) and DXY (Dollar Index)
+
+**Outputs:**
+- Redis Streams: `candles.1m.gc`, `candles.1m.dxy`
+- On 5m/15m/1h boundaries: `candles.{tf}.{symbol}`
+
+**Key Logic:**
+```python
+class DataAdapter:
+    """Real-time data adapter with gap detection."""
+    
+    def __init__(self, broker_ws_url: str, redis_url: str):
+        self.session_validator = SessionValidator()
+        self.candle_aggregator = CandleAggregator()
+        self.gap_detector = GapDetector()
+    
+    async def on_tick(self, tick: Tick) -> None:
+        """Process incoming tick."""
+        # Aggregate into 1m candle
+        candle = self.candle_aggregator.update(tick)
+        
+        if candle is not None:  # Candle closed
+            # Check session (skip non-trading hours)
+            if not self.session_validator.is_trading_hour(candle.timestamp):
+                return
+            
+            # Detect gaps and backfill if needed
+            if self.gap_detector.has_gap(candle.timestamp):
+                await self._backfill_gaps(candle.timestamp)
+            
+            # Publish to Redis
+            await self.publish("candles.1m." + candle.symbol.lower(), candle)
+```
+
+**State:**
+- Minimal: current partial candle, last published timestamp
+
+**Recovery:**
+- On restart: query Databento for any missed candles since last published
+
+---
+
+### 3.2 Feature Engine Service
+
+**Purpose:** Stateful indicator computation with zero lookahead.
+
+**Inputs:**
+- Redis Streams: `candles.1m.gc`, `candles.1m.dxy`
+
+**Outputs:**
+- Redis Streams: `features.1m`, `features.15m`, `features.1h`
+- PostgreSQL: `features` table (for warmup)
+
+**Key Logic:**
+```python
+class FeatureEngineService:
+    """Streaming feature computation service."""
+    
+    def __init__(self):
+        self.processors: dict[str, StreamingFeatureProcessor] = {
+            "1m": StreamingFeatureProcessor("1m"),
+            "15m": StreamingFeatureProcessor("15m"),
+            "1h": StreamingFeatureProcessor("1h"),
+        }
+        self.htf_aggregators: dict[str, CandleAggregator] = {
+            "15m": CandleAggregator("15m"),
+            "1h": CandleAggregator("1h"),
+        }
+    
+    async def on_candle(self, gc: Candle, dxy: Candle) -> None:
+        """Process new 1m candle pair."""
+        # Compute 1m features
+        features_1m = self.processors["1m"].update(gc, dxy)
+        await self.publish("features.1m", features_1m)
+        await self.persist_features(features_1m)
+        
+        # Check for HTF boundaries
+        for tf in ["15m", "1h"]:
+            htf_candle = self.htf_aggregators[tf].update(gc)
+            if htf_candle is not None:  # Boundary crossed
+                features_htf = self.processors[tf].update(htf_candle, ...)
+                await self.publish(f"features.{tf}", features_htf)
+```
+
+**State:**
+- `StreamingFeatureProcessor` buffers (RSI window, DXY correlation, structure)
+- EMA states, VWAP accumulators
+
+**Recovery:**
+- On restart: replay last N candles from DB to rebuild buffers
+- Warmup period: ~60 bars minimum for DXY correlation
+
+---
+
+### 3.3 HTF Bias Service
+
+**Purpose:** Higher-timeframe structure analysis for trade direction.
+
+**Inputs:**
+- Redis Streams: `features.15m`, `features.1h`
+
+**Outputs:**
+- Redis Streams: `htf.bias`
+
+**Key Logic:**
+```python
+class HTFBiasService:
+    """Streaming HTF bias computation."""
+    
+    def __init__(self):
+        self.calculator = StreamingHTFBiasCalculator()
+    
+    async def on_htf_features(self, features: dict, timeframe: str) -> None:
+        """Process HTF features update."""
+        bias = self.calculator.update_from_features(features, timeframe)
+        
+        if bias is not None:
+            await self.publish("htf.bias", {
+                "bias": bias.bias,           # "bullish" | "bearish" | "neutral"
+                "score": bias.score,         # 0-10
+                "confidence": bias.confidence,
+                "structure_15m": bias.structure_15m,
+                "structure_1h": bias.structure_1h,
+                "dxy_aligned": bias.dxy_aligned,
+                "chop_detected": bias.chop_detected,
+                "timestamp": features["timestamp"],
+            })
+```
+
+**State:**
+- Structure context (recent swings, BOS/CHoCH history)
+- DXY trend state
+
+**Recovery:**
+- Replay last 24h of 15m/1h features to rebuild context
+
+---
+
+### 3.4 Bot Core (Signal Engine)
+
+**Purpose:** Signal generation with full SOP compliance.
+
+**Inputs:**
+- Redis Streams: `features.1m`, `htf.bias`
+- HTTP/gRPC: Risk config updates, tier changes
+
+**Outputs:**
+- Redis Streams: `signals.pending`
+
+**Key Logic:**
+```python
+class BotCore:
+    """Signal generation with guardrails."""
+    
+    def __init__(self):
+        self.guardrails = BehaviorGuardrails()
+        self.validation_engine = ValidationEngine()
+        self.session_validator = SessionValidator()
+        
+        # State
+        self.current_htf_bias: HTFBias | None = None
+        self.loss_streak = 0
+        self.daily_loss = 0.0
+        self.trades_today = 0
+    
+    async def on_features(self, features: pd.Series) -> None:
+        """Process 1m features."""
+        timestamp = features["timestamp"]
+        
+        # 1. Session check
+        session = self.session_validator.evaluate(timestamp)
+        if not session.session_ok:
+            return
+        
+        # 2. Guardrails check
+        guardrail_result = self.guardrails.check(
+            loss_streak=self.loss_streak,
+            daily_loss=self.daily_loss,
+            trades_today=self.trades_today,
+        )
+        if not guardrail_result.can_trade:
+            return
+        
+        # 3. Generate signal
+        signal = score_signal(features, self.current_htf_bias, context={
+            "session_ok": session.session_ok,
+            "enforcer_tier": self.config.tier_active,
+        })
+        
+        # 4. Publish A+ signals only
+        if signal and signal.confidence == "A+":
+            await self.publish("signals.pending", signal)
+    
+    async def on_htf_bias(self, bias: dict) -> None:
+        """Update HTF bias from HTF Bias Service."""
+        self.current_htf_bias = HTFBias(**bias)
+```
+
+**State:**
+- Loss streak, daily counters
+- Current HTF bias (cached)
+- Risk configuration (tier, buffer phase)
+
+**Recovery:**
+- Load daily state from DB on restart
+- HTF bias arrives via stream (no warmup needed here)
+
+---
+
+### 3.5 Execution Service
+
+**Purpose:** Trade lifecycle management and broker integration.
+
+**Inputs:**
+- Redis Streams: `signals.pending`, `candles.1m.gc`
+
+**Outputs:**
+- Redis Streams: `trades.opened`, `trades.closed`, `trades.invalidated`
+- Broker API: Order placement
+
+**Key Logic:**
+```python
+class ExecutionService:
+    """Trade lifecycle and broker integration."""
+    
+    def __init__(self, broker: BrokerClient):
+        self.broker = broker
+        self.state_machines: dict[str, VWAPReclaimStateMachine] = {}
+        self.active_trades: dict[str, Trade] = {}
+        self.invalidation_checker = InvalidationChecker()
+    
+    async def on_signal(self, signal: Signal) -> None:
+        """Handle pending signal."""
+        # Create state machine for this reclaim context
+        sm = VWAPReclaimStateMachine()
+        sm.on_reclaim_detected(bar_idx=signal.bar_idx, direction=signal.direction)
+        
+        # Store for confirmation tracking
+        self.state_machines[signal.id] = sm
+    
+    async def on_candle(self, candle: Candle) -> None:
+        """Process candle for active trades and pending signals."""
+        # 1. Update active trades (SL/TP check)
+        for trade_id, trade in list(self.active_trades.items()):
+            result = self._check_exit(trade, candle)
+            if result.exited:
+                await self._close_trade(trade, result)
+        
+        # 2. Check pending state machines for confirmation/expiration
+        for signal_id, sm in list(self.state_machines.items()):
+            if sm.is_expired(candle.bar_idx):
+                sm.on_expiration(candle.bar_idx)
+                del self.state_machines[signal_id]
+            elif self._check_confirmation(sm, candle):
+                sm.on_confirmation(candle.bar_idx, "vwap_hold")
+                if sm.can_execute():
+                    await self._execute_entry(signal_id, sm, candle)
+        
+        # 3. Check invalidations
+        for trade_id, trade in list(self.active_trades.items()):
+            if self.invalidation_checker.check(trade, candle):
+                await self._invalidate_trade(trade, candle)
+    
+    async def _execute_entry(self, signal_id: str, sm: VWAPReclaimStateMachine, candle: Candle) -> None:
+        """Execute entry at next bar open."""
+        # Place order with broker
+        order = await self.broker.place_order(
+            symbol="GC",
+            side=sm.reclaim_direction,
+            quantity=self.config.contracts,
+            order_type="MARKET",
+        )
+        
+        # Create trade record
+        trade = create_trade_from_entry(...)
+        self.active_trades[trade.id] = trade
+        
+        sm.on_execution(candle.bar_idx)
+        
+        await self.publish("trades.opened", trade)
+```
+
+**State:**
+- Active `VWAPReclaimStateMachine` instances
+- Active trades with entry/SL/TP prices
+- Position state from broker
+
+**Recovery:**
+- Critical: must restore active trades from DB on restart
+- Query broker for current positions to reconcile
+
+---
+
+## 4. Communication Patterns
+
+### 4.1 Message Queue: Redis Streams
+
+**Why Redis Streams:**
+- Low latency (<1ms)
+- Built-in persistence
+- Consumer groups for scaling
+- Simple deployment
+
+**Topics:**
+```
+candles.1m.gc        # 1-minute Gold candles
+candles.1m.dxy       # 1-minute DXY candles
+candles.15m.gc       # 15-minute Gold candles (on boundary)
+candles.1h.gc        # 1-hour Gold candles (on boundary)
+
+features.1m          # Enriched 1m features
+features.15m         # 15m features (on boundary)
+features.1h          # 1h features (on boundary)
+
+htf.bias             # HTF bias updates
+
+signals.pending      # A+ signals awaiting execution
+
+trades.opened        # Trade opened events
+trades.closed        # Trade closed events (SL/TP/manual)
+trades.invalidated   # Trade invalidated events
+```
+
+### 4.2 Message Schema (Pydantic)
+
+```python
+from pydantic import BaseModel
+from datetime import datetime
+
+class CandleMessage(BaseModel):
+    timestamp: datetime
+    symbol: str
+    timeframe: str
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: float
+
+class FeaturesMessage(BaseModel):
+    timestamp: datetime
+    symbol: str
+    timeframe: str
+    close: float
+    vwap: float | None
+    rsi: float | None
+    ema_9: float | None
+    ema_20: float | None
+    ema_50: float | None
+    dxy_correlation: float | None
+    structure_label: str | None
+    vwap_deviation: float | None
+
+class HTFBiasMessage(BaseModel):
+    timestamp: datetime
+    bias: str  # "bullish" | "bearish" | "neutral"
+    score: float
+    confidence: str
+    structure_15m: str | None
+    structure_1h: str | None
+    dxy_aligned: bool
+    chop_detected: bool
+
+class SignalMessage(BaseModel):
+    id: str
+    timestamp: datetime
+    direction: str  # "long" | "short"
+    setup_type: str
+    score: float
+    confidence: str
+    entry_price: float
+    sl_price: float
+    tp_price: float
+    factors: dict
+
+class TradeMessage(BaseModel):
+    id: str
+    signal_id: str
+    direction: str
+    entry_price: float
+    sl_price: float
+    tp_price: float
+    quantity: int
+    opened_at: datetime
+    closed_at: datetime | None = None
+    exit_price: float | None = None
+    pnl_points: float | None = None
+    exit_reason: str | None = None
+```
+
+---
+
+## 5. Database Schema
+
+```sql
+-- TimescaleDB for time-series data
+CREATE EXTENSION IF NOT EXISTS timescaledb;
+
+-- Candles (hypertable for efficient time-range queries)
+CREATE TABLE candles (
+    timestamp TIMESTAMPTZ NOT NULL,
+    symbol VARCHAR(10) NOT NULL,
+    timeframe VARCHAR(5) NOT NULL,
+    open NUMERIC(12,4) NOT NULL,
+    high NUMERIC(12,4) NOT NULL,
+    low NUMERIC(12,4) NOT NULL,
+    close NUMERIC(12,4) NOT NULL,
+    volume NUMERIC(18,2) NOT NULL,
+    PRIMARY KEY (timestamp, symbol, timeframe)
+);
+SELECT create_hypertable('candles', 'timestamp');
+
+-- Features (for warmup recovery)
+CREATE TABLE features (
+    timestamp TIMESTAMPTZ NOT NULL,
+    symbol VARCHAR(10) NOT NULL,
+    timeframe VARCHAR(5) NOT NULL,
+    close NUMERIC(12,4),
+    vwap NUMERIC(12,4),
+    rsi NUMERIC(6,2),
+    ema_9 NUMERIC(12,4),
+    ema_20 NUMERIC(12,4),
+    ema_50 NUMERIC(12,4),
+    dxy_correlation NUMERIC(5,3),
+    structure_label VARCHAR(20),
+    vwap_deviation NUMERIC(8,4),
+    PRIMARY KEY (timestamp, symbol, timeframe)
+);
+SELECT create_hypertable('features', 'timestamp');
+
+-- HTF Bias history
+CREATE TABLE htf_bias_history (
+    timestamp TIMESTAMPTZ NOT NULL,
+    bias VARCHAR(10) NOT NULL,
+    score NUMERIC(4,2) NOT NULL,
+    confidence VARCHAR(10) NOT NULL,
+    structure_15m VARCHAR(20),
+    structure_1h VARCHAR(20),
+    dxy_aligned BOOLEAN,
+    chop_detected BOOLEAN,
+    PRIMARY KEY (timestamp)
+);
+SELECT create_hypertable('htf_bias_history', 'timestamp');
+
+-- Trades (full audit trail)
+CREATE TABLE trades (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    signal_id UUID NOT NULL,
+    direction VARCHAR(10) NOT NULL,
+    setup_type VARCHAR(30) NOT NULL,
+    entry_price NUMERIC(12,4) NOT NULL,
+    sl_price NUMERIC(12,4) NOT NULL,
+    tp_price NUMERIC(12,4) NOT NULL,
+    quantity INTEGER NOT NULL,
+    opened_at TIMESTAMPTZ NOT NULL,
+    closed_at TIMESTAMPTZ,
+    exit_price NUMERIC(12,4),
+    exit_reason VARCHAR(30),
+    pnl_points NUMERIC(8,2),
+    pnl_dollars NUMERIC(12,2),
+    r_multiple NUMERIC(4,2),
+    state VARCHAR(20) NOT NULL DEFAULT 'OPEN',  -- OPEN, CLOSED, INVALIDATED
+    confirmations JSONB,
+    transition_history JSONB,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX idx_trades_state ON trades(state);
+CREATE INDEX idx_trades_opened_at ON trades(opened_at);
+
+-- State machines (for recovery)
+CREATE TABLE state_machine_snapshots (
+    signal_id UUID PRIMARY KEY,
+    state VARCHAR(20) NOT NULL,
+    detection_bar_idx INTEGER,
+    reclaim_direction VARCHAR(10),
+    confirmations JSONB,
+    execution_count INTEGER DEFAULT 0,
+    transition_history JSONB,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Daily state (for Bot Core recovery)
+CREATE TABLE daily_state (
+    date DATE PRIMARY KEY,
+    loss_streak INTEGER DEFAULT 0,
+    daily_loss NUMERIC(12,2) DEFAULT 0,
+    trades_count INTEGER DEFAULT 0,
+    wins INTEGER DEFAULT 0,
+    losses INTEGER DEFAULT 0,
+    pdll_hits INTEGER DEFAULT 0,
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+```
+
+---
+
+## 6. Deployment Architecture
+
+### 6.1 Docker Compose (Development/Paper Trading)
+
+```yaml
+version: '3.8'
+
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+
+  postgres:
+    image: timescale/timescaledb:latest-pg15
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: scp
+      POSTGRES_USER: scp
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./migrations:/docker-entrypoint-initdb.d
+
+  data-adapter:
+    build:
+      context: .
+      dockerfile: services/data-adapter/Dockerfile
+    environment:
+      REDIS_URL: redis://redis:6379
+      DATABENTO_API_KEY: ${DATABENTO_API_KEY}
+    depends_on:
+      - redis
+
+  feature-engine:
+    build:
+      context: .
+      dockerfile: services/feature-engine/Dockerfile
+    environment:
+      REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgresql://scp:${POSTGRES_PASSWORD}@postgres:5432/scp
+    depends_on:
+      - redis
+      - postgres
+
+  htf-bias:
+    build:
+      context: .
+      dockerfile: services/htf-bias/Dockerfile
+    environment:
+      REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgresql://scp:${POSTGRES_PASSWORD}@postgres:5432/scp
+    depends_on:
+      - redis
+      - postgres
+
+  bot-core:
+    build:
+      context: .
+      dockerfile: services/bot-core/Dockerfile
+    environment:
+      REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgresql://scp:${POSTGRES_PASSWORD}@postgres:5432/scp
+    depends_on:
+      - redis
+      - postgres
+      - feature-engine
+      - htf-bias
+
+  execution:
+    build:
+      context: .
+      dockerfile: services/execution/Dockerfile
+    environment:
+      REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgresql://scp:${POSTGRES_PASSWORD}@postgres:5432/scp
+      BROKER_API_KEY: ${BROKER_API_KEY}
+      BROKER_MODE: paper  # paper | live
+    depends_on:
+      - redis
+      - postgres
+      - bot-core
+
+volumes:
+  redis_data:
+  postgres_data:
+```
+
+### 6.2 Service Health Checks
+
+Each service exposes:
+- `GET /health` - Liveness probe
+- `GET /ready` - Readiness probe (includes dependency checks)
+- `GET /metrics` - Prometheus metrics
+
+---
+
+## 7. Migration Path
+
+### Phase 1: Extract Data Adapter
+1. Create `services/data-adapter/` with Databento WebSocket client
+2. Publish to Redis Streams instead of in-memory
+3. Test with existing backtester consuming from Redis
+
+### Phase 2: Extract Feature Engine
+1. Create `services/feature-engine/` reusing `StreamingFeatureProcessor`
+2. Subscribe to candle streams, publish feature streams
+3. Add DB persistence for warmup
+
+### Phase 3: Extract HTF Bias
+1. Create `services/htf-bias/` reusing `StreamingHTFBiasCalculator`
+2. Subscribe to HTF feature streams
+3. Publish bias updates
+
+### Phase 4: Extract Bot Core
+1. Create `services/bot-core/` reusing `score_signal`, `BehaviorGuardrails`
+2. Subscribe to features + bias streams
+3. Publish pending signals
+
+### Phase 5: Extract Execution
+1. Create `services/execution/` reusing `VWAPReclaimStateMachine`, `InvalidationChecker`
+2. Implement broker integration (paper mode first)
+3. Full trade lifecycle management
+
+### Phase 6: Integration Testing
+1. Run full system with historical data replay
+2. Compare results to backtester output
+3. Validate state recovery scenarios
+
+---
+
+## 8. Observability
+
+### 8.1 Metrics (Prometheus)
+
+```python
+# Data Adapter
+candles_published_total{symbol, timeframe}
+gaps_detected_total{symbol}
+gaps_backfilled_total{symbol}
+
+# Feature Engine
+features_computed_total{timeframe}
+feature_computation_duration_seconds{timeframe}
+warmup_bars_remaining{timeframe}
+
+# HTF Bias
+bias_updates_total{bias}
+chop_detected_total
+
+# Bot Core
+signals_generated_total{setup_type, confidence}
+signals_rejected_total{reason}
+guardrail_blocks_total{guardrail}
+
+# Execution
+trades_opened_total{direction, setup_type}
+trades_closed_total{exit_reason}
+active_trades_gauge
+state_machine_transitions_total{from_state, to_state}
+```
+
+### 8.2 Logging (Structured JSON)
+
+```python
+import structlog
+
+logger = structlog.get_logger()
+
+logger.info(
+    "trade_opened",
+    trade_id=trade.id,
+    direction=trade.direction,
+    entry_price=trade.entry_price,
+    sl_price=trade.sl_price,
+    tp_price=trade.tp_price,
+    setup_type=trade.setup_type,
+)
+```
+
+### 8.3 Tracing (OpenTelemetry)
+
+Trace spans across services:
+```
+[Data Adapter] candle.received
+    └── [Feature Engine] features.computed
+        └── [HTF Bias] bias.updated
+            └── [Bot Core] signal.generated
+                └── [Execution] trade.opened
+```
+
+---
+
+## 9. Current Module Mapping
+
+| Current Module | Target Location | Key Classes |
+|----------------|-----------------|-------------|
+| `data_layer/clients.py` | Data Adapter Service | `LocalCSVClient` → `DatabentoClient` |
+| `data_layer/loader.py` | Data Adapter Service | `HistoricalDataLoader` |
+| `feature_engine/streaming.py` | `scp_shared.indicators` | `StreamingFeatureProcessor` |
+| `feature_engine/state.py` | `scp_shared.indicators` | `FeatureState` |
+| `rule_engine/htf/streaming.py` | `scp_shared.rule_engine.htf` | `StreamingHTFBiasCalculator` |
+| `rule_engine/htf/*.py` | `scp_shared.rule_engine.htf` | All HTF calculators |
+| `rule_engine/scoring.py` | Bot Core Service | `score_signal` |
+| `validation/*.py` | `scp_shared.validation` | `ValidationEngine`, `BehaviorGuardrails` |
+| `backtester/trade.py` | Execution Service | `Trade`, `create_trade_from_entry` |
+| `backtester/invalidations.py` | Execution Service | `InvalidationChecker` |
+| `feature_engine/vwap_reclaim_state_machine.py` | Execution Service | `VWAPReclaimStateMachine` |
+
+**Note:** `scp_shared.indicators` was previously named `scp_shared.feature_engine` but was renamed to avoid confusion with the Feature Engine **service**. The shared library contains pure calculation algorithms (EMA, RSI, VWAP, structure detection), while the service handles Redis streams, database persistence, and HTTP endpoints.
+
+---
+
+## 10. Risk Considerations
+
+### 10.1 Failure Modes
+
+| Failure | Impact | Mitigation |
+|---------|--------|------------|
+| Data Adapter crash | No new candles | Heartbeat monitoring, auto-restart, gap backfill |
+| Feature Engine crash | Features lag | State recovery from DB, replay last N candles |
+| HTF Bias crash | Stale bias | Cache last known bias in Bot Core |
+| Bot Core crash | No new signals | Stateless restart, reload daily state from DB |
+| Execution crash | Orphaned positions | **Critical**: reconcile with broker on restart |
+| Redis crash | All services blocked | Redis Sentinel for HA, persistent storage |
+| Postgres crash | No persistence | Replicas, point-in-time recovery |
+
+### 10.2 Safety Invariants
+
+1. **Never execute without confirmed HTF bias**
+2. **Never exceed daily loss limit (PDLL)**
+3. **Always reconcile positions on Execution restart**
+4. **Paper mode first for all new deployments**
+5. **Kill switch: manual override to halt all trading**
+
+---
+
+## 11. Next Steps
+
+1. [ ] Set up Docker Compose infrastructure
+2. [ ] Create `services/` directory structure
+3. [ ] Implement Data Adapter with Databento WebSocket
+4. [ ] Add Redis Streams pub/sub utilities
+5. [ ] Migrate Feature Engine with state recovery
+6. [ ] Add integration tests for message flow
+7. [ ] Paper trading validation (1 week minimum)
+8. [ ] Live deployment with conservative limits

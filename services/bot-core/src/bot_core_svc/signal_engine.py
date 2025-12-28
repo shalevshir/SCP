@@ -71,6 +71,15 @@ def features_message_to_series(msg: FeaturesMessage) -> pd.Series:
         "dxy_corr": msg.dxy_correlation,  # Map dxy_correlation to dxy_corr for scoring
         "structure_label": msg.structure_label,
         "vwap_deviation": msg.vwap_deviation,
+        # BOS/CHoCH fields for VWAP_RECLAIM validation
+        "bos_direction": msg.bos_direction,
+        "bos_recent": msg.bos_recent,
+        "bos_age": msg.bos_age,
+        "choch_detected": msg.choch_detected,
+        "choch_direction": msg.choch_direction,
+        "structure_clarity": msg.structure_clarity,
+        "liquidity_sweep": msg.liquidity_sweep,
+        "sweep_age": msg.sweep_age,
     })
 
 

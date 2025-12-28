@@ -172,3 +172,4 @@ class TestTradePublisherZeroPnL:
             assert "pnl=N/A" in log_call
 
 
+

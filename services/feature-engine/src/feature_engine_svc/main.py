@@ -1,6 +1,7 @@
 """Feature Engine Service main entry point."""
 
 import asyncio
+import json
 from contextlib import asynccontextmanager
 from datetime import datetime
 
@@ -169,7 +170,12 @@ async def process_candles(
     logger.info("Starting candle processing loop")
     
     # Initialize components
-    synchronizer = CandleSynchronizer(timeout_seconds=60)
+    # Use a larger timeout (5 minutes of data-time) to handle:
+    # 1. High-speed replay where many candles arrive in quick succession
+    # 2. Gaps in historical data (e.g., trading hours only)
+    # The cleanup uses DATA timestamps, not wall-clock time, so during replay
+    # we need a buffer large enough to span any gaps in the data.
+    synchronizer = CandleSynchronizer(timeout_seconds=300)
     htf_aggregator_gc = HTFCandleAggregator()
     htf_aggregator_dxy = HTFCandleAggregator()
     
@@ -215,22 +221,17 @@ async def process_candles(
             gc_candles = await gc_consumer.read(count=10, block_ms=1000)
             dxy_candles = await dxy_consumer.read(count=10, block_ms=1000)
             
-            # Add to synchronizer
-            for candle in gc_candles:
-                pair = synchronizer.add_candle(candle)
-                if pair:
-                    await process_candle_pair(
-                        pair,
-                        processor_1m,
-                        processor_15m,
-                        processor_1h,
-                        htf_aggregator_gc,
-                        htf_aggregator_dxy,
-                        publisher,
-                        repository,
-                    )
+            # CRITICAL FIX: Interleave GC and DXY candle processing to prevent
+            # cleanup from dropping unpaired candles during high-speed replay.
+            # Previously, all GC candles were added first, then all DXY candles.
+            # This caused candles spanning >1 minute to be dropped before their
+            # pair arrived.
+            #
+            # New approach: Add candles in timestamp order by merging both lists.
+            all_candles = list(gc_candles) + list(dxy_candles)
+            all_candles.sort(key=lambda c: c.timestamp)
             
-            for candle in dxy_candles:
+            for candle in all_candles:
                 pair = synchronizer.add_candle(candle)
                 if pair:
                     await process_candle_pair(
