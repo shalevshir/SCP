@@ -94,19 +94,38 @@ class FeatureProcessor:
         if dxy_corr is not None:
             dxy_corr = max(-1.0, min(1.0, dxy_corr))
         
+        # Prepare DXY fields with clamping
+        dxy_5m_corr = self._safe_float(features_series.get("dxy_5m_corr"))
+        if dxy_5m_corr is not None:
+            dxy_5m_corr = max(-1.0, min(1.0, dxy_5m_corr))
+        
         return FeaturesMessage(
             timestamp=gc_message.timestamp,
             symbol="GC",
             timeframe=self.timeframe,
             close=float(features_series.get("close", gc_message.close)),
+            # OHLC data
+            open=float(gc_message.open),
+            high=float(gc_message.high),
+            low=float(gc_message.low),
+            volume=float(gc_message.volume),
+            # VWAP indicators
             vwap=self._safe_float(features_series.get("vwap")),
+            vwap_slope=self._safe_float(features_series.get("vwap_slope")),
+            vwap_deviation=self._safe_float(features_series.get("vwap_deviation")),
+            # Trend indicators
             rsi=self._safe_float(features_series.get("rsi")),
             ema_9=self._safe_float(features_series.get("ema_9")),
             ema_20=self._safe_float(features_series.get("ema_20")),
             ema_50=self._safe_float(features_series.get("ema_50")),
-            dxy_correlation=dxy_corr,
+            # DXY correlation fields
+            dxy_correlation=dxy_corr,  # Legacy field
+            dxy_corr=dxy_corr,  # Raw correlation
+            dxy_5m_corr=dxy_5m_corr,
+            dxy_structure=features_series.get("dxy_structure_label") or features_series.get("dxy_structure"),
+            # Structure labels
             structure_label=features_series.get("structure_label"),
-            vwap_deviation=self._safe_float(features_series.get("vwap_deviation")),
+            htf_structure_label=features_series.get("htf_structure_label") or features_series.get("structure_15m"),
             # BOS/CHoCH fields for VWAP_RECLAIM validation
             bos_direction=features_series.get("bos_direction"),
             bos_recent=features_series.get("bos_recent"),
@@ -116,6 +135,12 @@ class FeatureProcessor:
             structure_clarity=self._safe_float(features_series.get("structure_clarity")),
             liquidity_sweep=features_series.get("liquidity_sweep"),
             sweep_age=self._safe_int(features_series.get("sweep_age")),
+            # Expansion gate fields
+            expansion_detected=bool(features_series.get("expansion_detected", False)),
+            expansion_reasons=features_series.get("expansion_reasons", []) or [],
+            # Confirmation tracking
+            second_confirmation_long=bool(features_series.get("second_confirmation_long", False)),
+            second_confirmation_short=bool(features_series.get("second_confirmation_short", False)),
         )
     
     def is_warmed_up(self) -> bool:
