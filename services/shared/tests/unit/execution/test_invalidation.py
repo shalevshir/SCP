@@ -943,3 +943,90 @@ class TestVWAPSlopeConfirmation:
         is_invalid, _ = checker.check_vwap_invalidation(trade, candle, features)
         assert is_invalid is False  # Only 1 bar again
 
+
+# ============================================================================
+# Daily State Reset Tests
+# ============================================================================
+
+
+class TestDailyStateReset:
+    """Tests for reset_daily_state() method.
+    
+    Verifies that reset_daily_state() correctly resets daily tracking state
+    while preserving the PDLL limit configuration.
+    """
+    
+    def test_reset_daily_state_clears_consecutive_losses(self):
+        """reset_daily_state should reset consecutive_losses to 0."""
+        checker = InvalidationChecker(pdll_limit=600.0)
+        
+        # Simulate some losses
+        trade = TradeRecord(
+            trade_id="test-1",
+            signal_id="signal-1",
+            symbol="GC",
+            direction="long",
+            setup_type="VWAP_RECLAIM",
+            entry_price=2650.0,
+            sl_price=2640.0,
+            tp_price=2670.0,
+            risk_amount=10.0,
+            reward_amount=20.0,
+            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+            entry_bar_idx=100,
+        )
+        
+        # Record two losses
+        checker.record_trade_outcome(trade, won=False, pnl_points=-50.0)
+        checker.record_trade_outcome(trade, won=False, pnl_points=-30.0)
+        
+        # Verify state is set
+        assert checker._daily_state["consecutive_losses"] == 2
+        assert checker._daily_state["daily_pnl"] == -80.0
+        
+        # Reset daily state
+        checker.reset_daily_state()
+        
+        # Verify reset
+        assert checker._daily_state["consecutive_losses"] == 0
+        assert checker._daily_state["daily_pnl"] == 0.0
+        assert checker._daily_state["last_session_date"] is None
+    
+    def test_reset_daily_state_preserves_pdll_limit(self):
+        """reset_daily_state should preserve PDLL limit configuration."""
+        pdll_limit = 600.0
+        checker = InvalidationChecker(pdll_limit=pdll_limit)
+        
+        # Verify initial state
+        assert checker._daily_state["pdll"] == pdll_limit
+        
+        # Modify daily state
+        checker._daily_state["consecutive_losses"] = 5
+        checker._daily_state["daily_pnl"] = -500.0
+        checker._daily_state["last_session_date"] = datetime(2024, 10, 15).date()
+        
+        # Reset daily state
+        checker.reset_daily_state()
+        
+        # Verify PDLL limit is preserved
+        assert checker._daily_state["pdll"] == pdll_limit
+        assert checker._daily_state["consecutive_losses"] == 0
+        assert checker._daily_state["daily_pnl"] == 0.0
+        assert checker._daily_state["last_session_date"] is None
+    
+    def test_reset_daily_state_with_none_pdll(self):
+        """reset_daily_state should handle None PDLL limit correctly."""
+        checker = InvalidationChecker(pdll_limit=None)
+        
+        # Modify state
+        checker._daily_state["consecutive_losses"] = 3
+        checker._daily_state["daily_pnl"] = -200.0
+        
+        # Reset
+        checker.reset_daily_state()
+        
+        # Verify reset and None PDLL preserved
+        assert checker._daily_state["pdll"] is None
+        assert checker._daily_state["consecutive_losses"] == 0
+        assert checker._daily_state["daily_pnl"] == 0.0
+

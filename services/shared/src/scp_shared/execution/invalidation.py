@@ -742,11 +742,19 @@ class InvalidationChecker:
         else:
             # Fallback to entry_timestamp for backward compatibility
             # (e.g., when called from tests or legacy code)
+            # WARNING: This is incorrect for multi-day trades and can cause:
+            # - Loss/win attributed to wrong day
+            # - Session date flip-flopping if trades from different entry dates
+            #   close on the same day in interleaved order
+            # - Incorrect loss streak and daily PnL tracking
             trade_date = trade.entry_timestamp.date()
             logger.warning(
                 f"Using entry_timestamp.date() for trade {trade.trade_id} session date "
                 f"(close_timestamp not provided, exit_timestamp=None). "
-                f"This may cause incorrect session attribution for multi-day trades."
+                f"This may cause incorrect session attribution for multi-day trades. "
+                f"Entry: {trade.entry_timestamp.date()}, "
+                f"Expected close date: unknown (exit_timestamp=None). "
+                f"Please pass close_timestamp parameter to fix this issue."
             )
         
         # Reset daily state if new session
@@ -892,5 +900,26 @@ class InvalidationChecker:
         self._trade_states.clear()
         self._fade_invalidation_count.clear()
         self._dxy_flip_count.clear()
+    
+    def reset_daily_state(self) -> None:
+        """Reset daily state to initial values while preserving PDLL limit.
+        
+        Used for testing/admin reset to clear daily tracking state:
+        - consecutive_losses: reset to 0
+        - daily_pnl: reset to 0.0
+        - last_session_date: reset to None
+        - pdll: preserved (not reset, as it's a configuration value)
+        
+        This ensures that after a reset, the InvalidationChecker doesn't
+        use stale loss streaks or PnL values from before the reset.
+        """
+        pdll_limit = self._daily_state.get("pdll")  # Preserve PDLL limit
+        self._daily_state = {
+            "consecutive_losses": 0,
+            "daily_pnl": 0.0,
+            "last_session_date": None,
+            "pdll": pdll_limit,  # Preserve configuration
+        }
+        logger.info("InvalidationChecker daily state reset (preserved pdll_limit)")
 
 

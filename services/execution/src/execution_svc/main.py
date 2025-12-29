@@ -305,6 +305,7 @@ async def reset_state() -> dict[str, str]:
     - Pending signals
     - State machines
     - Daily tracker
+    - InvalidationChecker daily state (loss streaks, PnL)
     - Broker positions
     - Synchronizer buffers
     
@@ -323,6 +324,9 @@ async def reset_state() -> dict[str, str]:
     _trade_manager._pending_signals.clear()
     _trade_manager._trade_entry_bars.clear()
     _trade_manager._daily_tracker.reset_state()
+    # CRITICAL: Reset InvalidationChecker daily state to prevent stale loss streaks/PnL
+    # from causing incorrect risk breach checks after reset
+    _trade_manager._invalidation_checker.reset_daily_state()
     
     # Reset state machine manager
     _sm_manager._state_machines.clear()

@@ -1040,7 +1040,13 @@ class BacktestReplayLoop:
 
         # Update invalidation checker daily state
         # (for PDLL checks during trade simulation)
-        self._invalidation_checker.record_trade_outcome(closed_trade, won=won)
+        # CRITICAL: Pass close_timestamp to ensure session date is based on when
+        # the trade closed, not when it opened (fixes multi-day trade attribution bug)
+        self._invalidation_checker.record_trade_outcome(
+            closed_trade, 
+            won=won,
+            close_timestamp=closed_trade.exit_timestamp
+        )
 
         # Sprint 4 Task 2: Notify state machine on VWAP_RECLAIM stop-out
         if (

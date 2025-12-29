@@ -503,7 +503,13 @@ def run_backtest_with_trades(
             won = None  # Breakeven: no win, no loss
 
         # Update InvalidationChecker daily state (for PDLL checks during trade simulation)
-        invalidation_checker.record_trade_outcome(closed_trade, won=won)
+        # CRITICAL: Pass close_timestamp to ensure session date is based on when
+        # the trade closed, not when it opened (fixes multi-day trade attribution bug)
+        invalidation_checker.record_trade_outcome(
+            closed_trade, 
+            won=won,
+            close_timestamp=closed_trade.exit_timestamp
+        )
 
         # Update behavior tracker (for loss streak guardrails before entry)
         if processor and processor.enable_validation:
