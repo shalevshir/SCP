@@ -234,8 +234,13 @@ class TestStateMachineCleanupIntegration:
         """
         manager = StateMachineManager(db_pool)
         
-        # Simulate 100 trades
+        # Simulate 100 trades across different 60-bar windows
+        # (to avoid re-entry protection blocking)
         for i in range(100):
+            # Set bar counter to different 60-bar window for each trade
+            # to avoid re-entry protection (which limits 1 execution per 60-bar window)
+            manager._bar_counter = i * 60
+            
             signal = SignalMessage(
                 id=f"signal-{i}",
                 timestamp="2025-01-15T10:00:00Z",
@@ -249,7 +254,7 @@ class TestStateMachineCleanupIntegration:
                 factors={},
             )
             
-            # Create state machine
+            # Create state machine (at bar i*60)
             signal_id = await manager.create_from_signal(signal)
             
             # Confirm it (auto-confirm on next bar)

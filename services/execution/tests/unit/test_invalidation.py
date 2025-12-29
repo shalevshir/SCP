@@ -67,7 +67,8 @@ class TestInvalidationChecker:
         trade = make_trade(direction="long", entry_price=2650.0, sl_price=2645.0)
         candle = make_candle(low=2644.0)  # Hits SL
         
-        should_exit, reason = checker.check_sl_tp(trade, candle)
+        # Pass bars_elapsed=10 to exceed grace period (VWAP_RECLAIM grace is 8)
+        should_exit, reason = checker.check_sl_tp(trade, candle, bars_elapsed=10)
         
         assert should_exit is True
         assert "SL_HIT" in reason
@@ -78,7 +79,8 @@ class TestInvalidationChecker:
         trade = make_trade(direction="long", entry_price=2650.0, sl_price=2645.0, tp_price=2662.0)
         candle = make_candle(low=2646.0, high=2663.0)  # Hits TP, not SL
         
-        should_exit, reason = checker.check_sl_tp(trade, candle)
+        # Pass bars_elapsed=10 to exceed grace period (VWAP_RECLAIM grace is 8)
+        should_exit, reason = checker.check_sl_tp(trade, candle, bars_elapsed=10)
         
         assert should_exit is True
         assert "TP_HIT" in reason
@@ -89,7 +91,8 @@ class TestInvalidationChecker:
         trade = make_trade(direction="short", entry_price=2650.0, sl_price=2655.0)
         candle = make_candle(high=2656.0)  # Hits SL
         
-        should_exit, reason = checker.check_sl_tp(trade, candle)
+        # Pass bars_elapsed=10 to exceed grace period (VWAP_RECLAIM grace is 8)
+        should_exit, reason = checker.check_sl_tp(trade, candle, bars_elapsed=10)
         
         assert should_exit is True
         assert "SL_HIT" in reason
@@ -100,7 +103,8 @@ class TestInvalidationChecker:
         trade = make_trade(direction="short", entry_price=2650.0, sl_price=2655.0, tp_price=2638.0)
         candle = make_candle(low=2637.0, high=2654.0)  # Hits TP, not SL
         
-        should_exit, reason = checker.check_sl_tp(trade, candle)
+        # Pass bars_elapsed=10 to exceed grace period (VWAP_RECLAIM grace is 8)
+        should_exit, reason = checker.check_sl_tp(trade, candle, bars_elapsed=10)
         
         assert should_exit is True
         assert "TP_HIT" in reason
@@ -160,14 +164,15 @@ class TestInvalidationChecker:
         """Test VWAP_FADE invalidation requires 2 consecutive bars."""
         checker = InvalidationChecker()
         trade = make_trade(direction="long", setup_type="VWAP_FADE")
-        features = {"vwap": 2649.0}
+        # For FADE invalidation, we need positive slope (for long) to confirm VWAP reclaim
+        features = {"vwap": 2649.0, "vwap_slope": 0.5}
         
-        # First bar above VWAP
+        # First bar above VWAP with positive slope
         candle1 = make_candle(close=2651.0)
         is_invalid, _ = checker.check_vwap_invalidation(trade, candle1, features)
         assert is_invalid is False  # Not yet
         
-        # Second bar above VWAP
+        # Second bar above VWAP with positive slope
         candle2 = make_candle(close=2652.0)
         is_invalid, reason = checker.check_vwap_invalidation(trade, candle2, features)
         assert is_invalid is True  # Now invalidated

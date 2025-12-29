@@ -582,7 +582,7 @@ class InvalidationChecker:
             if dxy_corr > -0.3:
                 reason = (
                     f"DXY flip: correlation {dxy_corr:.3f} indicates DXY structure "
-                    f"breaking against long trade (expected < -0.6)"
+                    f"breaking against long trade (expected < -0.3)"
                 )
                 logger.info(f"Trade {trade.trade_id} invalidated: {reason}")
                 return True, reason

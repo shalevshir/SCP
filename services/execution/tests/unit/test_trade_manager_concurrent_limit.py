@@ -44,6 +44,7 @@ def mock_sm_manager(mock_db_pool):
 def mock_repo():
     """Mock trade repository."""
     repo = MagicMock(spec=TradeRepository)
+    repo.insert_trade = AsyncMock(return_value="test-trade-id")  # Return string ID
     repo.create_trade = AsyncMock(return_value=None)
     repo.close_trade = AsyncMock(return_value=None)
     repo.update_reached_1r = AsyncMock(return_value=None)
@@ -173,8 +174,19 @@ async def test_concurrent_limit_with_daily_limit_interaction(trade_manager):
     
     Verify that concurrent limit is checked BEFORE daily limit exhaustion.
     """
+    # Define a helper that confirms AND returns True
+    def mock_check_confirmation(signal_id):
+        # Actually confirm the state machine so it can be executed
+        sm = trade_manager._sm_manager.get_state_machine(signal_id)
+        if sm and sm.can_execute():
+            return True
+        # Force confirmation
+        if sm:
+            sm.on_confirmation(bar_idx=0, confirmation_type="test")
+        return True
+    
     # Bypass confirmation check to test concurrent limit logic
-    trade_manager._sm_manager.check_confirmation = MagicMock(return_value=True)
+    trade_manager._sm_manager.check_confirmation = MagicMock(side_effect=mock_check_confirmation)
     
     # Buffer 3 signals (more than max_active_trades=1)
     signals = [create_signal() for _ in range(3)]
@@ -189,11 +201,15 @@ async def test_concurrent_limit_with_daily_limit_interaction(trade_manager):
     # Should only execute 1 (concurrent limit)
     assert len(trade_manager._active_trades) == 1
     
-    # Close the trade with a loss to avoid daily limit blocking next test
-    candle = create_candle(open_price=1990.0)  # Hit SL
-    await trade_manager.on_candle(candle, features=None)
+    # Close the trade with a loss by simulating enough candles to exceed grace period
+    # VWAP_RECLAIM has 8-bar grace period for SL/TP
+    for _ in range(10):
+        # Increment bar counter (simulates time passing)
+        trade_manager._sm_manager.increment_bar_counter()
+        candle = create_candle(open_price=1985.0)  # Below SL (1990.0)
+        await trade_manager.on_candle(candle, features=None)
     
-    # Should have 0 active trades now
+    # Should have 0 active trades now (SL hit after grace period)
     assert len(trade_manager._active_trades) == 0
 
 
@@ -203,8 +219,19 @@ async def test_sequential_execution_respects_concurrent_limit(trade_manager):
     
     If we execute signals, close the trade, then execute more, it should work.
     """
+    # Define a helper that confirms AND returns True
+    def mock_check_confirmation(signal_id):
+        # Actually confirm the state machine so it can be executed
+        sm = trade_manager._sm_manager.get_state_machine(signal_id)
+        if sm and sm.can_execute():
+            return True
+        # Force confirmation
+        if sm:
+            sm.on_confirmation(bar_idx=0, confirmation_type="test")
+        return True
+    
     # Bypass confirmation check to test concurrent limit logic
-    trade_manager._sm_manager.check_confirmation = MagicMock(return_value=True)
+    trade_manager._sm_manager.check_confirmation = MagicMock(side_effect=mock_check_confirmation)
     
     # First signal
     signal1 = create_signal()
@@ -213,9 +240,13 @@ async def test_sequential_execution_respects_concurrent_limit(trade_manager):
     
     assert len(trade_manager._active_trades) == 1
     
-    # Close the trade (SL hit)
-    candle_sl = create_candle(open_price=1989.0)
-    await trade_manager.on_candle(candle_sl, features=None)
+    # Close the trade (SL hit) - simulate enough candles to exceed grace period
+    # VWAP_RECLAIM has 8-bar grace period for SL/TP
+    for _ in range(10):
+        # Increment bar counter (simulates time passing)
+        trade_manager._sm_manager.increment_bar_counter()
+        candle_sl = create_candle(open_price=1985.0)  # Below SL (1990.0)
+        await trade_manager.on_candle(candle_sl, features=None)
     
     assert len(trade_manager._active_trades) == 0
     
