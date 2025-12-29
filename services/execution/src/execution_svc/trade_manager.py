@@ -1,5 +1,6 @@
 """Trade lifecycle manager with SL/TP monitoring."""
 
+import math
 from datetime import datetime
 from typing import Any, Literal, cast
 
@@ -21,6 +22,22 @@ from execution_svc.trade_publisher import TradePublisher
 from execution_svc.trade_repository import TradeRepository
 
 logger = get_logger(__name__)
+
+
+def is_valid_candle(candle: Candle) -> bool:
+    """Check if candle has valid OHLC data (no NaN/Inf).
+
+    Args:
+        candle: Candle to validate
+
+    Returns:
+        True if candle is valid, False if it has NaN or Inf values
+    """
+    values = [candle.open, candle.high, candle.low, candle.close]
+    for val in values:
+        if math.isnan(val) or math.isinf(val):
+            return False
+    return True
 
 
 class TradeManager:
@@ -151,13 +168,33 @@ class TradeManager:
             source="STREAM",
         )
         
-        # Convert features to dict
+        # Skip invalid candles (match legacy backtester behavior)
+        if not is_valid_candle(candle_obj):
+            logger.debug(
+                f"Skipping invalid candle at {candle.timestamp} (NaN/Inf detected) "
+                f"- bar counter not incremented"
+            )
+            return
+        
+        # Convert features to dict (expanded to include all fields needed by invalidation checks)
         features_dict: dict[str, Any] | None = None
         if features is not None:
             features_dict = {
+                # Core features (original)
                 "vwap": features.vwap,
                 "rsi": features.rsi,
                 "structure_label": features.structure_label,
+                # VWAP slope for FADE invalidation (requires slope confirmation)
+                "vwap_slope": features.vwap_slope,
+                # DXY correlation for flip detection
+                "dxy_corr": features.dxy_correlation,
+                # DXY micro correlations for DXY_CONTINUATION (use dxy_5m_corr as proxy)
+                "dxy_corr_1m": getattr(features, "dxy_5m_corr", None),
+                "dxy_corr_5m": getattr(features, "dxy_5m_corr", None),
+                # DXY structure for DXY_CONTINUATION invalidation
+                "dxy_structure": features.dxy_structure,
+                # HTF structure for VWAP_RECLAIM micro break confirmation
+                "htf_structure_label": features.htf_structure_label,
             }
         
         # Check active trades for SL/TP and invalidation
@@ -429,6 +466,10 @@ class TradeManager:
             
             # Record trade closed for daily limits tracking
             self._daily_tracker.record_trade_closed(pnl_points)
+            
+            # Update InvalidationChecker's daily state for loss streak tracking
+            won = pnl_points > 0 if pnl_points != 0 else None
+            self._invalidation_checker.record_trade_outcome(trade, won)
             
             # Remove from active trades (critical - must happen even if broker failed)
             if trade.trade_id in self._active_trades:
