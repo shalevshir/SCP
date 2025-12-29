@@ -5,6 +5,7 @@ Focuses on essential invalidation rules for production trading.
 """
 
 import math
+from datetime import datetime
 from typing import Any
 
 from scp_shared.common.logger import get_logger
@@ -704,7 +705,11 @@ class InvalidationChecker:
         return False, None
 
     def record_trade_outcome(
-        self, trade: TradeRecord, won: bool | None, pnl_points: float | None = None
+        self, 
+        trade: TradeRecord, 
+        won: bool | None, 
+        pnl_points: float | None = None,
+        close_timestamp: datetime | None = None
     ) -> None:
         """Record trade outcome to update daily state for loss streak and PnL tracking.
         
@@ -713,15 +718,38 @@ class InvalidationChecker:
             won: True if profitable (pnl > 0), False if loss (pnl < 0), None if breakeven
             pnl_points: Actual trade PnL in points (optional). If provided, updates daily_pnl.
                 If None, only updates loss streak based on won flag.
+            close_timestamp: Timestamp when trade closed (optional). If provided, uses this
+                for session date determination. Otherwise falls back to trade.exit_timestamp
+                if available, or trade.entry_timestamp for backward compatibility.
         
         Note:
             Breakeven trades (won=None) do not affect the loss streak.
             Only actual losses (won=False) increment the streak.
             Wins (won=True) reset the streak to 0.
             If pnl_points is provided, daily_pnl is updated with the actual PnL value.
+            
+            Session date is determined by the close timestamp (when the trade closed),
+            not the entry timestamp. This ensures trades that span multiple days are
+            attributed to the correct session (the day they closed).
         """
+        # Determine session date from close timestamp (when trade closed)
+        # This is critical for trades that span multiple days - they should be
+        # attributed to the day they closed, not the day they opened.
+        if close_timestamp is not None:
+            trade_date = close_timestamp.date()
+        elif trade.exit_timestamp is not None:
+            trade_date = trade.exit_timestamp.date()
+        else:
+            # Fallback to entry_timestamp for backward compatibility
+            # (e.g., when called from tests or legacy code)
+            trade_date = trade.entry_timestamp.date()
+            logger.warning(
+                f"Using entry_timestamp.date() for trade {trade.trade_id} session date "
+                f"(close_timestamp not provided, exit_timestamp=None). "
+                f"This may cause incorrect session attribution for multi-day trades."
+            )
+        
         # Reset daily state if new session
-        trade_date = trade.entry_timestamp.date()
         if trade_date != self._daily_state.get("last_session_date"):
             self._daily_state["consecutive_losses"] = 0
             self._daily_state["daily_pnl"] = 0.0

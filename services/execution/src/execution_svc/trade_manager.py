@@ -470,8 +470,12 @@ class TradeManager:
             
             # Update InvalidationChecker's daily state for loss streak and PnL tracking
             # Pass actual PnL so PDLL breach detection works correctly
+            # CRITICAL: Pass close_timestamp to ensure session date is based on when
+            # the trade closed, not when it opened (fixes multi-day trade attribution bug)
             won = pnl_points > 0 if pnl_points != 0 else None
-            self._invalidation_checker.record_trade_outcome(trade, won, pnl_points=pnl_points)
+            self._invalidation_checker.record_trade_outcome(
+                trade, won, pnl_points=pnl_points, close_timestamp=closed_at
+            )
             
             # Remove from active trades (critical - must happen even if broker failed)
             if trade.trade_id in self._active_trades:
