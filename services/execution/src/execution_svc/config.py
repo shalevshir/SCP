@@ -39,4 +39,38 @@ class ExecutionConfig(BaseServiceConfig):
         default=2,
         description="Maximum trades per day",
     )
+    
+    # Slippage configuration (disabled by default for production)
+    enable_slippage: bool = Field(
+        default=False,
+        description="Enable slippage simulation for backtest mode",
+    )
+    slippage_points: float = Field(
+        default=0.5,
+        description="Slippage in points when enabled",
+    )
+    
+    # Commission configuration (disabled by default for production)
+    enable_commission: bool = Field(
+        default=False,
+        description="Enable commission deduction for backtest mode",
+    )
+    commission_per_trade: float = Field(
+        default=5.0,
+        description="Commission per trade in dollars when enabled",
+    )
+    
+    # Position sizing configuration
+    sizing_mode: str = Field(
+        default="fixed",
+        description="Position sizing mode: 'fixed' or 'risk_ladder'",
+    )
+    fixed_quantity: int = Field(
+        default=1,
+        description="Fixed quantity when sizing_mode='fixed'",
+    )
+    risk_per_trade_percent: float = Field(
+        default=1.0,
+        description="Risk per trade as percent of account when sizing_mode='risk_ladder'",
+    )
 
