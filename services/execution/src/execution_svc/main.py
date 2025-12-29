@@ -11,6 +11,7 @@ import redis.asyncio as redis
 from fastapi import FastAPI
 
 from scp_shared.common import get_logger, mask_connection_url
+from scp_shared.common.types import Candle
 from scp_shared.database import DatabasePool
 from scp_shared.health import create_health_router
 from scp_shared.messaging import RedisStreamConsumer, CandleFeatureSynchronizer
@@ -198,9 +199,32 @@ async def _process_candle_with_features(
         trade_manager: Trade manager instance
         sm_manager: State machine manager instance
     """
+    import math
     candle_msg, features_msg = pair
     
     logger.info(f"Processing candle: {candle_msg.timestamp} (with matching features)")
+    
+    # Check for invalid values BEFORE constructing Candle (match legacy backtester behavior)
+    values = [candle_msg.open, candle_msg.high, candle_msg.low, candle_msg.close]
+    if any(math.isnan(v) or math.isinf(v) for v in values):
+        logger.debug(
+            f"Skipping invalid candle at {candle_msg.timestamp} (NaN/Inf detected) "
+            f"- bar counter not incremented"
+        )
+        return
+    
+    # Convert to internal Candle type
+    candle_obj = Candle(
+        timestamp=candle_msg.timestamp,
+        open=candle_msg.open,
+        high=candle_msg.high,
+        low=candle_msg.low,
+        close=candle_msg.close,
+        volume=candle_msg.volume,
+        symbol=candle_msg.symbol,
+        timeframe=candle_msg.timeframe,
+        source="STREAM",
+    )
     
     # CRITICAL: Check session reset BEFORE execute_pending_signals
     # to ensure daily limits (PDLL, max trades) are fresh at day boundaries
