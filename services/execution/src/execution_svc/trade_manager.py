@@ -96,8 +96,8 @@ class TradeManager:
             max_trades_per_day=max_trades_per_day,
         )
         
-        # Invalidation checker
-        self._invalidation_checker = InvalidationChecker()
+        # Invalidation checker (pass pdll_limit for PDLL breach detection)
+        self._invalidation_checker = InvalidationChecker(pdll_limit=pdll_limit)
         
         # Bar tracking for time-based invalidation
         self._trade_entry_bars: dict[str, int] = {}
@@ -168,11 +168,12 @@ class TradeManager:
             source="STREAM",
         )
         
-        # Skip invalid candles (match legacy backtester behavior)
+        # Safety check: Invalid candles should already be filtered in main.py
+        # before bar counter increment, but we keep this as a defensive check
         if not is_valid_candle(candle_obj):
-            logger.debug(
-                f"Skipping invalid candle at {candle.timestamp} (NaN/Inf detected) "
-                f"- bar counter not incremented"
+            logger.warning(
+                f"Invalid candle reached trade_manager.on_candle() at {candle.timestamp} "
+                f"(NaN/Inf detected) - this should have been caught earlier"
             )
             return
         
@@ -467,9 +468,10 @@ class TradeManager:
             # Record trade closed for daily limits tracking
             self._daily_tracker.record_trade_closed(pnl_points)
             
-            # Update InvalidationChecker's daily state for loss streak tracking
+            # Update InvalidationChecker's daily state for loss streak and PnL tracking
+            # Pass actual PnL so PDLL breach detection works correctly
             won = pnl_points > 0 if pnl_points != 0 else None
-            self._invalidation_checker.record_trade_outcome(trade, won)
+            self._invalidation_checker.record_trade_outcome(trade, won, pnl_points=pnl_points)
             
             # Remove from active trades (critical - must happen even if broker failed)
             if trade.trade_id in self._active_trades:

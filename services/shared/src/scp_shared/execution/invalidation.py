@@ -61,8 +61,13 @@ class InvalidationChecker:
         ...         break
     """
 
-    def __init__(self) -> None:
-        """Initialize invalidation checker with empty state."""
+    def __init__(self, pdll_limit: float | None = None) -> None:
+        """Initialize invalidation checker with empty state.
+        
+        Args:
+            pdll_limit: Permitted Daily Loss Limit in points (optional).
+                If provided, enables PDLL breach detection in check_daily_risk_breach.
+        """
         self._trade_states: dict[str, dict[str, Any]] = {}
         # Track consecutive invalidation bars for FADE setups (2-bar confirmation)
         self._fade_invalidation_count: dict[str, int] = {}
@@ -73,6 +78,7 @@ class InvalidationChecker:
             "consecutive_losses": 0,
             "daily_pnl": 0.0,
             "last_session_date": None,
+            "pdll": pdll_limit,  # Store PDLL limit for breach detection
         }
 
     def _get_trade_state(self, trade_id: str) -> dict[str, Any]:
@@ -697,17 +703,22 @@ class InvalidationChecker:
 
         return False, None
 
-    def record_trade_outcome(self, trade: TradeRecord, won: bool | None) -> None:
-        """Record trade outcome to update daily state for loss streak tracking.
+    def record_trade_outcome(
+        self, trade: TradeRecord, won: bool | None, pnl_points: float | None = None
+    ) -> None:
+        """Record trade outcome to update daily state for loss streak and PnL tracking.
         
         Args:
             trade: Closed trade
             won: True if profitable (pnl > 0), False if loss (pnl < 0), None if breakeven
+            pnl_points: Actual trade PnL in points (optional). If provided, updates daily_pnl.
+                If None, only updates loss streak based on won flag.
         
         Note:
             Breakeven trades (won=None) do not affect the loss streak.
             Only actual losses (won=False) increment the streak.
             Wins (won=True) reset the streak to 0.
+            If pnl_points is provided, daily_pnl is updated with the actual PnL value.
         """
         # Reset daily state if new session
         trade_date = trade.entry_timestamp.date()
@@ -717,6 +728,14 @@ class InvalidationChecker:
             self._daily_state["last_session_date"] = trade_date
             logger.debug(
                 f"Session reset on {trade_date}: consecutive_losses=0, daily_pnl=0.0"
+            )
+
+        # Update daily PnL if provided
+        if pnl_points is not None:
+            self._daily_state["daily_pnl"] += pnl_points
+            logger.debug(
+                f"Trade PnL recorded: {pnl_points:.2f} points, "
+                f"daily_pnl now {self._daily_state['daily_pnl']:.2f}"
             )
 
         # Update consecutive losses

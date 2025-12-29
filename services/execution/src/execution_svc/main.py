@@ -11,6 +11,7 @@ import redis.asyncio as redis
 from fastapi import FastAPI
 
 from scp_shared.common import get_logger, mask_connection_url
+from scp_shared.common.types import Candle
 from scp_shared.database import DatabasePool
 from scp_shared.health import create_health_router
 from scp_shared.messaging import RedisStreamConsumer, CandleFeatureSynchronizer
@@ -19,7 +20,7 @@ from scp_shared.messaging.schemas import CandleMessage, FeaturesMessage, SignalM
 from execution_svc.broker import PaperBroker
 from execution_svc.config import ExecutionConfig
 from execution_svc.state_machine_manager import StateMachineManager
-from execution_svc.trade_manager import TradeManager
+from execution_svc.trade_manager import TradeManager, is_valid_candle
 from execution_svc.trade_publisher import TradePublisher
 from execution_svc.trade_repository import TradeRepository
 
@@ -202,6 +203,28 @@ async def _process_candle_with_features(
     
     logger.info(f"Processing candle: {candle_msg.timestamp} (with matching features)")
     
+    # Convert to internal Candle type for validation
+    candle_obj = Candle(
+        timestamp=candle_msg.timestamp,
+        open=candle_msg.open,
+        high=candle_msg.high,
+        low=candle_msg.low,
+        close=candle_msg.close,
+        volume=candle_msg.volume,
+        symbol=candle_msg.symbol,
+        timeframe=candle_msg.timeframe,
+        source="STREAM",
+    )
+    
+    # Skip invalid candles (NaN/Inf) BEFORE incrementing bar counter
+    # This matches legacy backtester behavior where invalid candles don't count as bars
+    if not is_valid_candle(candle_obj):
+        logger.debug(
+            f"Skipping invalid candle at {candle_msg.timestamp} (NaN/Inf detected) "
+            f"- bar counter not incremented"
+        )
+        return
+    
     # CRITICAL: Check session reset BEFORE execute_pending_signals
     # to ensure daily limits (PDLL, max trades) are fresh at day boundaries
     trade_manager.check_session_reset(candle_msg.timestamp)
@@ -209,6 +232,7 @@ async def _process_candle_with_features(
     # Increment bar counter BEFORE execute_pending_signals so that
     # check_confirmation() can confirm signals from the previous bar
     # (confirmation requires bar_idx > detection_bar_idx)
+    # Only increment for valid candles (invalid candles already returned above)
     sm_manager.increment_bar_counter()
     
     # Execute pending signals at this candle's open
@@ -216,7 +240,7 @@ async def _process_candle_with_features(
     
     # Monitor active trades for SL/TP and invalidation
     # Now we pass the CORRECT features that match this candle's timestamp
-    # Note: Invalid candle validation (NaN/Inf) is handled inside trade_manager.on_candle()
+    # Note: Invalid candle validation already handled above, so this is safe
     await trade_manager.on_candle(candle_msg, features_msg)
 
 
@@ -303,6 +327,7 @@ async def reset_state() -> dict[str, str]:
     # Reset state machine manager
     _sm_manager._state_machines.clear()
     _sm_manager._bar_counter = 0
+    _sm_manager._reclaim_context_executions.clear()  # CRITICAL: Reset reclaim context executions
     
     # Reset broker
     _broker.reset_state()

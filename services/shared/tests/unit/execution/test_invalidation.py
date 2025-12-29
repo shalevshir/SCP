@@ -504,6 +504,43 @@ class TestDailyRiskBreach:
         assert is_invalid is False
         assert reason is None
 
+    def test_daily_risk_breach_pdll_with_internal_state(self, base_trade, base_candle):
+        """PDLL breach detection should work with internal state when pdll_limit is set."""
+        # Create checker with PDLL limit
+        checker = InvalidationChecker(pdll_limit=600.0)
+        
+        # Update internal state with accumulated losses
+        checker._daily_state["daily_pnl"] = -650.0  # Below -600 PDLL
+        checker._daily_state["consecutive_losses"] = 0
+        checker._daily_state["last_session_date"] = base_candle.timestamp.date()
+        
+        # check_all uses internal state (doesn't pass daily_pnl_state)
+        is_invalid, reason = checker.check_all(
+            base_trade, base_candle, bars_elapsed=10, features={}
+        )
+        
+        assert is_invalid is True
+        assert "Daily risk stop" in reason
+        assert "PDLL breached" in reason
+        assert "-650.00" in reason or "-650.0" in reason
+        assert "600.00" in reason or "600.0" in reason
+
+    def test_daily_risk_breach_pdll_not_breached(self, base_trade, base_candle):
+        """PDLL should not trigger when daily_pnl is above limit."""
+        checker = InvalidationChecker(pdll_limit=600.0)
+        
+        # Update internal state with losses but not enough to breach
+        checker._daily_state["daily_pnl"] = -500.0  # Above -600 PDLL
+        checker._daily_state["consecutive_losses"] = 0
+        checker._daily_state["last_session_date"] = base_candle.timestamp.date()
+        
+        is_invalid, reason = checker.check_daily_risk_breach(
+            base_trade, base_candle, daily_pnl_state=None
+        )
+        
+        assert is_invalid is False
+        assert reason is None
+
 
 # ============================================================================
 # Integration Test: check_all() should call all methods in priority order

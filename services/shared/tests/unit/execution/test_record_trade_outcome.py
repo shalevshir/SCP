@@ -146,3 +146,28 @@ class TestRecordTradeOutcome:
         
         assert checker._daily_state["last_session_date"] == base_trade.entry_timestamp.date()
 
+    def test_record_trade_outcome_updates_daily_pnl(self, base_trade: TradeRecord) -> None:
+        """Test that record_trade_outcome updates daily_pnl when pnl_points is provided."""
+        checker = InvalidationChecker()
+        
+        # Record a loss with PnL
+        checker.record_trade_outcome(base_trade, won=False, pnl_points=-50.0)
+        assert checker._daily_state["daily_pnl"] == -50.0
+        
+        # Record another loss
+        checker.record_trade_outcome(base_trade, won=False, pnl_points=-30.0)
+        assert checker._daily_state["daily_pnl"] == -80.0  # Accumulated
+        
+        # Record a win
+        checker.record_trade_outcome(base_trade, won=True, pnl_points=100.0)
+        assert checker._daily_state["daily_pnl"] == 20.0  # -80 + 100
+
+    def test_record_trade_outcome_without_pnl_points(self, base_trade: TradeRecord) -> None:
+        """Test that record_trade_outcome works without pnl_points (backward compatibility)."""
+        checker = InvalidationChecker()
+        
+        # Record without pnl_points - should only update loss streak
+        checker.record_trade_outcome(base_trade, won=False)
+        assert checker._daily_state["daily_pnl"] == 0.0  # Unchanged
+        assert checker._daily_state["consecutive_losses"] == 1  # Updated
+

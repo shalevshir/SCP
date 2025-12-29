@@ -22,7 +22,7 @@ class HTFBiasProcessor:
         """Initialize HTF bias processor."""
         self.calculator = StreamingHTFBiasCalculator()
     
-    def _convert_confidence(self, htf_confidence: str, score: float) -> str:
+    def _convert_confidence(self, htf_confidence: str, score: float, chop_detected: bool = False) -> str:
         """Convert HTFBias confidence to signal confidence format.
         
         HTFBias uses: "low", "medium", "high"
@@ -31,10 +31,20 @@ class HTFBiasProcessor:
         Args:
             htf_confidence: HTFBias confidence ("low", "medium", "high")
             score: HTFBias score (0-10)
+            chop_detected: Whether chop was detected (forces lower confidence)
             
         Returns:
             Signal confidence ("A+", "A", "B", "C")
         """
+        # If chop detected, score is capped at 5.0, so confidence should be low
+        # But check explicitly to ensure we don't return A+ for choppy markets
+        if chop_detected:
+            # Chop should never result in A+ confidence
+            if score >= 6.0:
+                return "B"  # Even with high score, chop limits to B
+            else:
+                return "C"
+        
         # Map based on both confidence and score
         if htf_confidence == "high" and score >= 8:
             return "A+"
@@ -95,7 +105,11 @@ class HTFBiasProcessor:
             timestamp=gc_message.timestamp,
             bias=htf_bias.bias,  # "bullish" | "bearish" | "neutral"
             score=htf_bias.score,
-            confidence=self._convert_confidence(htf_bias.confidence, htf_bias.score),
+            confidence=self._convert_confidence(
+                htf_bias.confidence, 
+                htf_bias.score, 
+                chop_detected=htf_bias.chop_detected
+            ),
             structure_15m=htf_bias.structure_15m,
             structure_1h=htf_bias.structure_1h,
             dxy_aligned=htf_bias.dxy_alignment,  # Use dxy_alignment from HTFBias
