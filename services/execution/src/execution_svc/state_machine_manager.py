@@ -13,6 +13,9 @@ from scp_shared.messaging.schemas import SignalMessage
 
 logger = get_logger(__name__)
 
+# Maximum executions per reclaim context (prevents excessive re-entries)
+MAX_EXECUTIONS_PER_CONTEXT = 1
+
 
 class StateMachineManager:
     """Manages multiple VWAPReclaimStateMachine instances with DB persistence.
@@ -37,6 +40,8 @@ class StateMachineManager:
         self._db_pool = db_pool
         self._state_machines: dict[str, VWAPReclaimStateMachine] = {}
         self._bar_counter = 0  # Global bar counter for expiration tracking
+        # Track executions by reclaim context (not per-signal) to prevent excess re-entries
+        self._reclaim_context_executions: dict[str, int] = {}
     
     async def create_from_signal(self, signal: SignalMessage) -> str:
         """Create state machine from signal.
@@ -68,6 +73,25 @@ class StateMachineManager:
         
         return signal.id
     
+    def _get_reclaim_context_key(self, sm: VWAPReclaimStateMachine) -> str:
+        """Generate context key for reclaim execution tracking.
+        
+        Groups signals by direction and time window (60-bar windows) to prevent
+        excessive re-entries for the same reclaim setup.
+        
+        Args:
+            sm: State machine instance
+            
+        Returns:
+            Context key (e.g., "long_100" for long reclaim at bar 100-159)
+        """
+        if sm.detection_bar_idx is None:
+            return f"{sm.reclaim_direction}_unknown"
+        
+        # Group by 60-bar windows
+        window = sm.detection_bar_idx // 60
+        return f"{sm.reclaim_direction}_{window}"
+    
     def check_confirmation(self, signal_id: str, bar_idx: int | None = None) -> bool:
         """Check if signal is confirmed and ready for execution.
         
@@ -85,6 +109,15 @@ class StateMachineManager:
         if sm is None:
             return False
         
+        # Check reclaim context execution count (prevent excessive re-entries)
+        context_key = self._get_reclaim_context_key(sm)
+        if self._reclaim_context_executions.get(context_key, 0) >= MAX_EXECUTIONS_PER_CONTEXT:
+            logger.debug(
+                f"Signal {signal_id} blocked: reclaim context {context_key} "
+                f"already executed {self._reclaim_context_executions[context_key]} times "
+                f"(max: {MAX_EXECUTIONS_PER_CONTEXT})"
+            )
+            return False
         
         # Auto-confirm on next bar (simplified for Phase 6)
         if sm.current_state == VWAPReclaimState.PENDING_ACCEPTANCE:
@@ -123,6 +156,29 @@ class StateMachineManager:
         
         return False
     
+    def on_execution(self, signal_id: str, bar_idx: int) -> None:
+        """Record execution for context tracking.
+        
+        Args:
+            signal_id: Signal identifier
+            bar_idx: Bar index where execution occurred
+        """
+        sm = self._state_machines.get(signal_id)
+        if sm is None:
+            logger.warning(f"Cannot record execution: state machine not found for {signal_id}")
+            return
+        
+        # Increment reclaim context execution count
+        context_key = self._get_reclaim_context_key(sm)
+        self._reclaim_context_executions[context_key] = (
+            self._reclaim_context_executions.get(context_key, 0) + 1
+        )
+        
+        logger.info(
+            f"Recorded execution for signal {signal_id} "
+            f"(context={context_key}, count={self._reclaim_context_executions[context_key]})"
+        )
+    
     async def execute(self, signal_id: str, bar_idx: int) -> None:
         """Mark signal as executed.
         
@@ -136,6 +192,7 @@ class StateMachineManager:
             return
         
         sm.on_execution(bar_idx)
+        self.on_execution(signal_id, bar_idx)  # Track context execution
         await self._save_state_machine(signal_id, sm)
         
         logger.info(f"Executed signal {signal_id} at bar {bar_idx}")
