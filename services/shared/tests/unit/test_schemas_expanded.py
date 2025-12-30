@@ -201,3 +201,4 @@ class TestFeaturesMessageExpansion:
         assert msg2.expansion_detected is True
         assert msg2.expansion_reasons == ["test"]
 
+

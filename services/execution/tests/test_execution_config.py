@@ -94,3 +94,4 @@ class TestExecutionConfig:
         assert config.sizing_mode == "risk_ladder"
         assert config.risk_per_trade_percent == 1.0
 
+

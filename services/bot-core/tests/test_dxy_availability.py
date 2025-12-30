@@ -120,3 +120,4 @@ class TestDXYAvailabilityCheck:
         # signal_engine.generate SHOULD be called
         signal_engine.generate.assert_called_once()
 
+
