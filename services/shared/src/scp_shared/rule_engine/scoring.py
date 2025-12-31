@@ -368,17 +368,35 @@ def calculate_late_reclaim_penalty(
 def calculate_noise_penalty(features: pd.Series, setup_type: str) -> float:
     """Calculate score penalty for structural chop with ATR as modifier.
     
-    NOTE: NOISE PENALTY DISABLED FOR PARITY TESTING
-    
     Args:
         features: Feature series containing is_structural_chop and atr_compression_ratio
         setup_type: Setup type name ("VWAP_FADE", "VWAP_RECLAIM", "DXY_CONTINUATION")
     
     Returns:
-        Always 0.0 - noise penalty disabled
+        Score penalty (negative value) for noise/chop conditions
+        
+    Penalties:
+        - VWAP_RECLAIM: -1.5 for structural chop, -0.5 for ATR compression
+        - VWAP_FADE: -1.0 for structural chop, -0.5 for ATR compression  
+        - DXY_CONTINUATION: No penalty (relies on trend continuation)
     """
-    # DISABLED: All noise/chop penalties neutralized for parity testing
-    return 0.0
+    total_penalty = 0.0
+    
+    # Structural chop penalty (setup-aware)
+    if features.get("is_structural_chop", False):
+        if setup_type == "VWAP_RECLAIM":
+            total_penalty -= 1.5  # Stricter for momentum setups
+        elif setup_type == "VWAP_FADE":
+            total_penalty -= 1.0  # More tolerant of sideways consolidation
+        # DXY_CONTINUATION: No penalty (trend continuation tolerates some chop)
+    
+    # ATR compression penalty (all setups except DXY_CONTINUATION)
+    atr_compression = features.get("atr_compression_ratio")
+    if atr_compression is not None and setup_type != "DXY_CONTINUATION":
+        if atr_compression < 0.5:  # Severe compression
+            total_penalty -= 0.5
+    
+    return total_penalty
 
 
 def calculate_structure_quality_penalty(

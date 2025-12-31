@@ -242,9 +242,10 @@ class TestStructureQualityPenalty:
         penalty = calculate_structure_quality_penalty(
             features, htf_bias, "VWAP_RECLAIM", None
         )
-        # Expected: no_sweep (-1.5) + low_clarity (-1.0) + no_bos (-2.0) + bos_stale (-0.5 for age 16-20)
-        # Total: -5.0
-        assert penalty == -5.0
+        # Expected: no_sweep (-1.5) + low_clarity (-1.0) + bos_stale (-0.5 for age 16-20, invalid due to clarity < 0.4)
+        # Note: no_bos is False because bos_age=20 exists, so BOS exists (just invalid/stale)
+        # Total: -3.0
+        assert penalty == -3.0
 
     def test_perfect_quality_no_penalty(self):
         """Perfect quality (all flags False) should result in 0 penalty."""

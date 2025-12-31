@@ -13,14 +13,12 @@ from rule_engine.htf.types import ChopSeverity
 class TestHTFCalculatorBiasConsistency:
     """Test that HTFBias fields consistently use original_bias vs neutralized bias."""
 
-    def test_vwap_and_dxy_alignment_use_original_bias_when_neutralized(self) -> None:
-        """Test that vwap_trend_confirmed and dxy_alignment use original_bias.
+    def test_dxy_chop_detected_but_bias_not_neutralized(self) -> None:
+        """Test that DXY chop is detected but does NOT neutralize bias.
 
-        When bias is neutralized due to DXY chop or conflicts, vwap_trend_confirmed
-        and dxy_alignment should still reflect the underlying market structure by
-        using original_bias, not the neutralized bias value.
-
-        This ensures consistency with fvg_alignment_score which already uses original_bias.
+        DXY chop is detected and stored in HTFBias, but bias remains based on
+        structure (bullish in this case). Setup-specific validation (e.g., VWAP_RECLAIM)
+        will reject based on dxy_chop_detected flag.
         """
         # Setup: Strong bullish market structure with DXY alignment
         features_1h = pd.Series(
@@ -90,27 +88,26 @@ class TestHTFCalculatorBiasConsistency:
             dxy_5m=dxy_5m_trending,
         )
 
-        # Verify bias is neutralized
-        assert htf_bias.bias == "neutral", "Bias should be neutralized due to DXY chop"
-        assert htf_bias.dxy_chop_detected is True
-
-        # BUG FIX VERIFICATION: These should use original_bias (bullish), not neutralized
-        # The underlying market structure is bullish with VWAP and DXY alignment
+        # Verify DXY chop is detected but bias is NOT neutralized
+        assert htf_bias.dxy_chop_detected is True, "DXY chop should be detected"
+        assert htf_bias.bias == "bullish", "Bias should remain bullish (not neutralized)"
+        assert htf_bias.direction == "long", "Direction should remain long"
+        
+        # VWAP and DXY alignment should reflect the actual market structure
         assert htf_bias.vwap_trend_confirmed is True, (
-            "vwap_trend_confirmed should be True based on original bullish bias "
-            "(close > vwap), not neutralized state"
+            "vwap_trend_confirmed should be True based on bullish bias (close > vwap)"
         )
         assert htf_bias.dxy_alignment is True, (
-            "dxy_alignment should be True based on original bullish bias with "
-            "behavior-based DXY alignment (structure + no 5M chop + micro corr), "
-            "not neutralized state"
+            "dxy_alignment should be True based on bullish bias with "
+            "behavior-based DXY alignment (structure + no 5M chop + micro corr)"
         )
 
-    def test_vwap_and_dxy_alignment_use_original_bias_on_conflict(self) -> None:
-        """Test that vwap_trend_confirmed and dxy_alignment use original_bias on conflict.
+    def test_htf_conflict_detected_but_bias_not_neutralized(self) -> None:
+        """Test that HTF conflict is detected but does NOT neutralize bias.
 
-        When bias is neutralized due to structure conflict, vwap_trend_confirmed
-        and dxy_alignment should still reflect the underlying market structure.
+        HTF conflict is detected and stored in HTFBias, but bias remains based on
+        1H structure (bearish in this case). Setup-specific validation will reject
+        based on conflict_detected flag.
         """
         # Micro correlation features for behavior-based DXY alignment
         features_1m = pd.Series(
@@ -169,23 +166,19 @@ class TestHTFCalculatorBiasConsistency:
             dxy_5m=dxy_5m_trending,
         )
 
-        # Verify bias is neutralized due to conflict
-        assert (
-            htf_bias.bias == "neutral"
-        ), "Bias should be neutralized due to structure conflict"
-        assert htf_bias.conflict_detected is True
+        # Verify conflict is detected but bias is NOT neutralized
+        assert htf_bias.conflict_detected is True, "Conflict should be detected"
+        assert htf_bias.bias == "bearish", "Bias should remain bearish (not neutralized)"
+        assert htf_bias.direction == "short", "Direction should remain short"
 
-        # BUG FIX VERIFICATION: These should use original_bias (bearish from 1H multi-timeframe logic)
-        # Note: The original_bias reflects the multi-timeframe computation result
-        # Since 1H is bearish (LL, EMAs declining, close < VWAP), original_bias should be bearish
+        # VWAP and DXY alignment should reflect the actual market structure
+        # Since 1H is bearish (LL, EMAs declining, close < VWAP), bias is bearish
         assert htf_bias.vwap_trend_confirmed is True, (
-            "vwap_trend_confirmed should be True based on original bearish bias "
-            "(close < vwap), not neutralized state"
+            "vwap_trend_confirmed should be True based on bearish bias (close < vwap)"
         )
         assert htf_bias.dxy_alignment is True, (
-            "dxy_alignment should be True based on original bearish bias with "
-            "behavior-based DXY alignment (structure + no 5M chop + micro corr), "
-            "not neutralized state"
+            "dxy_alignment should be True based on bearish bias with "
+            "behavior-based DXY alignment (structure + no 5M chop + micro corr)"
         )
 
 

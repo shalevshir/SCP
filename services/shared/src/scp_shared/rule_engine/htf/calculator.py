@@ -397,7 +397,8 @@ def compute_htf_bias(
     original_score = score
 
     # Detect DXY chop if data provided
-    # NOTE: DXY chop neutralization DISABLED - keeping for data collection only
+    # NOTE: DXY chop is detected and stored but does NOT neutralize bias
+    # Instead, it's used in setup-specific validation (e.g., reject VWAP_RECLAIM)
     dxy_chop_detected = False
     if dxy_1h is not None and len(dxy_1h) > 0:
         try:
@@ -405,11 +406,9 @@ def compute_htf_bias(
             # Get the latest chop detection value
             if len(chop_series) > 0:
                 dxy_chop_detected = bool(chop_series.iloc[-1])
-                # DXY chop detected but NOT forcing neutral - disabled for parity testing
                 if dxy_chop_detected:
                     logger.debug(
-                        "DXY chop detected but NOT forcing neutral (disabled) "
-                        f"(bias: {bias}, score: {score:.1f})"
+                        f"DXY chop detected (stored in HTFBias, setup validation will handle)"
                     )
         except Exception as e:
             logger.error(f"Error detecting DXY chop: {e}")
@@ -490,16 +489,12 @@ def compute_htf_bias(
             # Continue without sweep conflict detection
 
     # Apply neutralization if conflict detected
-    # NOTE: Conflict detection neutralization DISABLED for parity testing
-    # The backtester has structure_label=NaN so conflicts are never detected there
+    # NOTE: Conflict detection is stored but does NOT neutralize bias
+    # Instead, it's used in setup-specific validation (e.g., reject VWAP_RECLAIM)
     if conflict_detected:
         logger.debug(
-            f"Conflict detected but NOT forcing neutral (disabled for parity): {conflict_reason} "
-            f"(original: {original_bias}, score: {original_score:.1f})"
+            f"Conflict detected (stored in HTFBias, setup validation will handle): {conflict_reason}"
         )
-        # DISABLED: bias = "neutral"
-        # DISABLED: direction = "neutral"
-        # DISABLED: score = min(score, 5.0)
 
     # Apply seasonality adjustment if timestamp provided
     seasonality_period = None
@@ -527,6 +522,7 @@ def compute_htf_bias(
             seasonality_adjustment,
             score,
         )
+    
         
 
     # Re-cap score after seasonality if neutralization conditions exist

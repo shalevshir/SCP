@@ -397,6 +397,9 @@ def compute_htf_bias(
 
     # Detect DXY chop if data provided
     # NOTE: DXY chop neutralization DISABLED - keeping for data collection only
+    # Detect DXY chop if data provided
+    # NOTE: DXY chop is detected and stored but does NOT neutralize bias
+    # Instead, it's used in setup-specific validation (e.g., reject VWAP_RECLAIM)
     dxy_chop_detected = False
     if dxy_1h is not None and len(dxy_1h) > 0:
         try:
@@ -404,11 +407,9 @@ def compute_htf_bias(
             # Get the latest chop detection value
             if len(chop_series) > 0:
                 dxy_chop_detected = bool(chop_series.iloc[-1])
-                # DXY chop detected but NOT forcing neutral - disabled for parity testing
                 if dxy_chop_detected:
                     logger.debug(
-                        "DXY chop detected but NOT forcing neutral (disabled) "
-                        f"(bias: {bias}, score: {score:.1f})"
+                        f"DXY chop detected (stored in HTFBias, setup validation will handle)"
                     )
         except Exception as e:
             logger.error(f"Error detecting DXY chop: {e}")
@@ -489,14 +490,12 @@ def compute_htf_bias(
             # Continue without sweep conflict detection
 
     # Apply neutralization if conflict detected
+    # NOTE: Conflict detection is stored but does NOT neutralize bias
+    # Instead, it's used in setup-specific validation (e.g., reject VWAP_RECLAIM)
     if conflict_detected:
-        logger.warning(
-            f"Conflict detected - forcing HTF bias to neutral: {conflict_reason} "
-            f"(original: {original_bias}, score: {original_score:.1f})"
+        logger.debug(
+            f"Conflict detected (stored in HTFBias, setup validation will handle): {conflict_reason}"
         )
-        bias = "neutral"
-        direction = "neutral"
-        score = min(score, 5.0)
 
     # Apply seasonality adjustment if timestamp provided
     seasonality_period = None
@@ -524,12 +523,9 @@ def compute_htf_bias(
             seasonality_adjustment,
             score,
         )
-
-    # Re-cap score after seasonality if neutralization conditions exist
-    # NOTE: dxy_chop_detected removed - only conflict_detected triggers re-cap
-    if conflict_detected:
-        # Re-cap score after any post-processing to enforce neutral bias
-        score = min(score, 5.0)
+    
+    # NOTE: DXY chop and conflict detection do NOT cap score or neutralize bias
+    # They are stored in HTFBias and used by setup-specific validation
 
     # Determine confidence based on adjusted score
     if score >= 8.0:
