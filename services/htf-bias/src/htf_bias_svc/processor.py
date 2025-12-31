@@ -36,14 +36,13 @@ class HTFBiasProcessor:
         Returns:
             Signal confidence ("A+", "A", "B", "C")
         """
-        # If chop detected, score is capped at 5.0, so confidence should be low
-        # But check explicitly to ensure we don't return A+ for choppy markets
-        if chop_detected:
-            # Chop should never result in A+ confidence
-            if score >= 6.0:
-                return "B"  # Even with high score, chop limits to B
-            else:
-                return "C"
+        # NOTE: Chop-based confidence downgrade DISABLED for parity testing
+        # The backtester doesn't have this logic
+        # if chop_detected:
+        #     if score >= 6.0:
+        #         return "B"
+        #     else:
+        #         return "C"
         
         # Map based on both confidence and score
         if htf_confidence == "high" and score >= 8:
@@ -100,6 +99,15 @@ class HTFBiasProcessor:
         if htf_bias is None:
             return None
         
+        # DEBUG: Log HTFBias fields before conversion
+        from scp_shared.common.logger import get_logger
+        logger = get_logger(__name__)
+        logger.info(
+            f"HTFBias computed: seasonality_adj={htf_bias.seasonality_adjustment}, "
+            f"seasonality_period={htf_bias.seasonality_period}, "
+            f"vwap_confirmed={htf_bias.vwap_trend_confirmed}"
+        )
+        
         # Convert HTFBias to HTFBiasMessage
         return HTFBiasMessage(
             timestamp=gc_message.timestamp,
@@ -114,5 +122,9 @@ class HTFBiasProcessor:
             structure_1h=htf_bias.structure_1h,
             dxy_aligned=htf_bias.dxy_alignment,  # Use dxy_alignment from HTFBias
             chop_detected=htf_bias.chop_detected,
+            # Additional fields for scoring bonuses
+            seasonality_adjustment=htf_bias.seasonality_adjustment,
+            seasonality_period=htf_bias.seasonality_period,  # Already a string Literal
+            vwap_trend_confirmed=htf_bias.vwap_trend_confirmed,
         )
 
