@@ -27,8 +27,9 @@ class BiasRepository:
         query = """
             INSERT INTO htf_bias_history (
                 timestamp, bias, score, confidence,
-                structure_15m, structure_1h, dxy_aligned, chop_detected
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                structure_15m, structure_1h, dxy_aligned, chop_detected,
+                seasonality_adjustment, seasonality_period, vwap_trend_confirmed
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
             ON CONFLICT (timestamp) DO UPDATE SET
                 bias = EXCLUDED.bias,
                 score = EXCLUDED.score,
@@ -36,7 +37,10 @@ class BiasRepository:
                 structure_15m = EXCLUDED.structure_15m,
                 structure_1h = EXCLUDED.structure_1h,
                 dxy_aligned = EXCLUDED.dxy_aligned,
-                chop_detected = EXCLUDED.chop_detected
+                chop_detected = EXCLUDED.chop_detected,
+                seasonality_adjustment = EXCLUDED.seasonality_adjustment,
+                seasonality_period = EXCLUDED.seasonality_period,
+                vwap_trend_confirmed = EXCLUDED.vwap_trend_confirmed
         """
         
         await self.db.execute(
@@ -49,6 +53,9 @@ class BiasRepository:
             bias.structure_1h,
             bias.dxy_aligned,
             bias.chop_detected,
+            bias.seasonality_adjustment,
+            bias.seasonality_period,
+            bias.vwap_trend_confirmed,
         )
     
     async def load_recent_candles(

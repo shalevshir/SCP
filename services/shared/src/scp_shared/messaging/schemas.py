@@ -136,6 +136,17 @@ class HTFBiasMessage(BaseModel):
     structure_1h: str | None = Field(default=None, description="1h structure")
     dxy_aligned: bool = Field(description="DXY alignment status")
     chop_detected: bool = Field(description="Chop/conflict detected")
+    
+    # Additional fields for scoring bonuses (added for parity with backtester)
+    seasonality_adjustment: float = Field(
+        default=0.0, description="Seasonality score adjustment"
+    )
+    seasonality_period: str | None = Field(
+        default=None, description="Current seasonality period"
+    )
+    vwap_trend_confirmed: bool = Field(
+        default=False, description="VWAP trend confirmation"
+    )
 
     class Config:
         json_schema_extra = {
@@ -148,6 +159,9 @@ class HTFBiasMessage(BaseModel):
                 "structure_1h": "bullish",
                 "dxy_aligned": True,
                 "chop_detected": False,
+                "seasonality_adjustment": 0.8,
+                "seasonality_period": "november_december",
+                "vwap_trend_confirmed": True,
             }
         }
 
