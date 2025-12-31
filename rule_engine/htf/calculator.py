@@ -396,6 +396,7 @@ def compute_htf_bias(
     original_score = score
 
     # Detect DXY chop if data provided
+    # NOTE: DXY chop neutralization DISABLED - keeping for data collection only
     dxy_chop_detected = False
     if dxy_1h is not None and len(dxy_1h) > 0:
         try:
@@ -403,17 +404,12 @@ def compute_htf_bias(
             # Get the latest chop detection value
             if len(chop_series) > 0:
                 dxy_chop_detected = bool(chop_series.iloc[-1])
-
+                # DXY chop detected but NOT forcing neutral - disabled for parity testing
                 if dxy_chop_detected:
-                    # Force HTF bias to neutral when DXY is in chop
-                    logger.warning(
-                        "DXY chop detected - forcing HTF bias to neutral "
-                        f"(original: {bias}, score: {score:.1f})"
+                    logger.debug(
+                        "DXY chop detected but NOT forcing neutral (disabled) "
+                        f"(bias: {bias}, score: {score:.1f})"
                     )
-                    bias = "neutral"
-                    direction = "neutral"
-                    # Optionally reduce score to reflect uncertainty
-                    score = min(score, 5.0)
         except Exception as e:
             logger.error(f"Error detecting DXY chop: {e}")
             # Continue without chop detection rather than failing
@@ -530,7 +526,8 @@ def compute_htf_bias(
         )
 
     # Re-cap score after seasonality if neutralization conditions exist
-    if dxy_chop_detected or conflict_detected:
+    # NOTE: dxy_chop_detected removed - only conflict_detected triggers re-cap
+    if conflict_detected:
         # Re-cap score after any post-processing to enforce neutral bias
         score = min(score, 5.0)
 
