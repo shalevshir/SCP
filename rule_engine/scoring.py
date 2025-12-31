@@ -373,75 +373,17 @@ def calculate_late_reclaim_penalty(
 def calculate_noise_penalty(features: pd.Series, setup_type: str) -> float:
     """Calculate score penalty for structural chop with ATR as modifier.
     
-    This function implements setup-aware chop handling via score modification
-    rather than hard rejection, per the SOP principle: "Chop is information, not prohibition."
-    
-    Per Shir Capital SOP: Noise means structural disorder, not low volatility.
-    - Primary gate: is_structural_chop (overlapping swings, failed follow-through, wick dominance)
-    - Supporting modifier: atr_compression_ratio (amplifies penalty when combined with structural chop)
+    NOTE: NOISE PENALTY DISABLED FOR PARITY TESTING
     
     Args:
         features: Feature series containing is_structural_chop and atr_compression_ratio
         setup_type: Setup type name ("VWAP_FADE", "VWAP_RECLAIM", "DXY_CONTINUATION")
     
     Returns:
-        Score penalty (negative value) to apply to base score
-    
-    Logic:
-        Structural chop alone:
-            VWAP_FADE: -0.5 penalty (tolerates chop, often works in ranging conditions)
-            VWAP_RECLAIM: -1.5 penalty (needs clearer structure for BOS validation)
-            DXY_CONTINUATION: -1.5 penalty (needs clear displacement and structure)
-        
-        ATR compression amplifier:
-            If ATR compressed (<0.4 of baseline) AND structural chop detected:
-            - Additional -0.5 penalty (total: -1.0 for FADE, -2.0 for RECLAIM/CONT)
-            
-            If ATR compressed but NO structural chop:
-            - Minor -0.2 penalty only (ATR alone cannot block trades)
-    
-    Example:
-        >>> penalty = calculate_noise_penalty(features, "VWAP_RECLAIM")
-        >>> adjusted_score = base_score + penalty
+        Always 0.0 - noise penalty disabled
     """
-    is_structural_chop = features.get("is_structural_chop", False)
-    atr_compression_ratio = features.get("atr_compression_ratio", 1.0)
-    
-    # Base penalty for structural chop
-    base_penalty = 0.0
-    if is_structural_chop:
-        if setup_type == "VWAP_FADE":
-            base_penalty = -0.5
-            logger.debug("VWAP_FADE structural chop penalty: -0.5 (range trading viable)")
-        elif setup_type in ["VWAP_RECLAIM", "DXY_CONTINUATION"]:
-            base_penalty = -1.5
-            logger.debug(
-                f"{setup_type} structural chop penalty: -1.5 "
-                "(structure/displacement unreliable)"
-            )
-    
-    # ATR compression modifier (supporting filter, not primary gate)
-    atr_modifier = 0.0
-    ATR_SEVERE_COMPRESSION = 0.4
-    
-    if atr_compression_ratio < ATR_SEVERE_COMPRESSION:
-        if is_structural_chop:
-            # ATR compression amplifies structural chop penalty
-            atr_modifier = -0.5
-            logger.debug(
-                f"ATR compression amplifier: -0.5 "
-                f"(ratio={atr_compression_ratio:.2f}, combined with structural chop)"
-            )
-        else:
-            # ATR compression alone = small modifier, not rejection
-            atr_modifier = -0.2
-            logger.debug(
-                f"ATR compression modifier: -0.2 "
-                f"(ratio={atr_compression_ratio:.2f}, no structural chop)"
-            )
-    
-    total_penalty = base_penalty + atr_modifier
-    return total_penalty
+    # DISABLED: All noise/chop penalties neutralized for parity testing
+    return 0.0
 
 
 def calculate_structure_quality_penalty(
@@ -488,19 +430,28 @@ def calculate_structure_quality_penalty(
 
     # If no quality_flags provided, extract from features/htf_bias
     if quality_flags is None:
+        # Check BOS age first - if bos_age exists, BOS was detected (even if stale)
+        bos_age = features.get("bos_age")
+        if bos_age is None or pd.isna(bos_age):
+            bos_age = htf_bias.bars_since_bos
+        
+        # BOS exists if: bos_recent=True, htf_bias.bos_detected=True, OR bos_age is valid
+        bos_exists = (
+            features.get("bos_recent", False) 
+            or htf_bias.bos_detected 
+            or (bos_age is not None and not pd.isna(bos_age))
+        )
+        
         quality_flags = {
             "no_sweep": not (
                 features.get("liquidity_sweep", False)
                 or htf_bias.liquidity_sweep_detected
             ),
             "low_clarity": htf_bias.structure_clarity < 0.4,
-            "no_bos": not (features.get("bos_recent", False) or htf_bias.bos_detected),
+            "no_bos": not bos_exists,  # Fixed: also check if bos_age exists
             "bos_stale": False,
         }
-        # Check BOS age for staleness
-        bos_age = features.get("bos_age")
-        if bos_age is None or pd.isna(bos_age):
-            bos_age = htf_bias.bars_since_bos
+        # Check BOS staleness (only if BOS exists)
         if bos_age is not None and bos_age > 15:
             quality_flags["bos_stale"] = True
 
@@ -768,10 +719,14 @@ def score_signal(features: pd.Series, htf_bias: HTFBias, context: dict) -> Signa
     if htf_penalties < -1.0:
         factor_scores["htf_weak_bias"] = -1.0
         adjusted_score = adjusted_score - htf_penalties - 1.0  # Adjust score
+        htf_penalties = -1.0  # Update variable for use in total penalty calculation
         logger.debug(f"HTF penalties capped: {htf_penalties:.2f} -> -1.0")
     
     # Apply total penalty cap
-    all_penalties = structure_penalties + timing_penalties + min(htf_penalties, -1.0)
+    # Use max() to cap negative penalties at -1.0 (no more negative than -1.0)
+    # When htf_penalties = 0, max(0, -1.0) = 0 (correct: no penalty)
+    # When htf_penalties < 0, max(htf_penalties, -1.0) caps at -1.0
+    all_penalties = structure_penalties + timing_penalties + max(htf_penalties, -1.0)
     if all_penalties < -4.0:
         # Scale all penalties proportionally to reach -4.0 total
         scale_factor = -4.0 / all_penalties
@@ -833,7 +788,6 @@ def score_signal(features: pd.Series, htf_bias: HTFBias, context: dict) -> Signa
     diagnostics["rejection_analysis"] = rejection_analysis
 
     # Create validation flags
-    features.get("dxy_corr")
     validation_flags = {
         "session_ok": context.get("session_ok", True),
         "tier_ok": True,
@@ -1226,9 +1180,21 @@ def calculate_ema_stack(
     Awards points if EMAs are properly aligned with HTF direction.
     When HTF is neutral, scores based on EMA stack quality alone.
     """
-    ema_9 = features.get("ema_9", 0)
-    ema_20 = features.get("ema_20", 0)
-    ema_50 = features.get("ema_50", 0)
+    ema_9 = features.get("ema_9")
+    ema_20 = features.get("ema_20")
+    ema_50 = features.get("ema_50")
+    
+    # Handle None values (EMAs may not be available yet)
+    if ema_9 is None:
+        ema_9 = 0
+    if ema_20 is None:
+        ema_20 = 0
+    if ema_50 is None:
+        ema_50 = 0
+    
+    # If EMAs aren't available (all zero or invalid), return 0
+    if ema_9 <= 0 or ema_20 <= 0 or ema_50 <= 0:
+        return 0.0
 
     # Determine effective direction
     effective_direction = htf_bias.direction
@@ -1503,7 +1469,7 @@ def calculate_rejection_candle(
     # Need: upper wick + close near VWAP + bearish close
     elif htf_bias.direction == "short":
         has_strong_wick = upper_wick > body * 2
-        has_moderate_wick = upper_wick > max(open_price, min_wick_threshold)
+        has_moderate_wick = upper_wick > max(body, min_wick_threshold)
         correct_body = bearish_close
 
         if has_strong_wick:
@@ -1584,23 +1550,31 @@ def determine_direction(features: pd.Series, htf_bias: HTFBias) -> str:
     Returns:
         Direction: "long", "short", or "neutral"
     """
-    close = features.get("close", 0)
-    vwap = features.get("vwap", 0)
-    ema_9 = features.get("ema_9", 0)
-    ema_20 = features.get("ema_20", 0)
+    close = features.get("close") or 0
+    vwap = features.get("vwap") or 0
+    ema_9 = features.get("ema_9")
+    ema_20 = features.get("ema_20")
+    
+    # Handle None values for EMAs (may not be available yet)
+    if ema_9 is None:
+        ema_9 = 0
+    if ema_20 is None:
+        ema_20 = 0
 
     # Bullish indicators
     bullish_signals = 0
     if close > vwap:
         bullish_signals += 1
-    if ema_9 > ema_20:
+    # Only use EMA signal if both EMAs are valid (non-zero)
+    if ema_9 > 0 and ema_20 > 0 and ema_9 > ema_20:
         bullish_signals += 1
 
     # Bearish indicators
     bearish_signals = 0
     if close < vwap:
         bearish_signals += 1
-    if ema_9 < ema_20:
+    # Only use EMA signal if both EMAs are valid (non-zero)
+    if ema_9 > 0 and ema_20 > 0 and ema_9 < ema_20:
         bearish_signals += 1
 
     result = "neutral"
