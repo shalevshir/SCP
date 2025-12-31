@@ -332,7 +332,8 @@ class TradeManager:
                 return None
             
             # Create trade record
-            opened_at = datetime.utcnow()
+            # Use signal timestamp for replay compatibility
+            opened_at = signal.timestamp
             entry_bar_idx = self._sm_manager._bar_counter
             trade_id = await self._repo.insert_trade(
                 signal_id=signal.id,
