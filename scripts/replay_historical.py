@@ -35,18 +35,6 @@ from data_layer.loader import HistoricalDataLoader
 
 logger = get_logger(__name__)
 
-# #region agent log
-import os
-import time as _time_module
-import json as _json_module
-_DEBUG_LOG_PATH = os.environ.get("DEBUG_LOG_PATH", "/Users/shalev/Code/SCP/.cursor/debug.log")
-def _debug_log(loc: str, msg: str, data: dict, hyp: str) -> None:
-    try:
-        os.makedirs(os.path.dirname(_DEBUG_LOG_PATH), exist_ok=True)
-        with open(_DEBUG_LOG_PATH, "a") as f:
-            f.write(_json_module.dumps({"location": loc, "message": msg, "data": data, "timestamp": int(_time_module.time() * 1000), "sessionId": "debug-session", "hypothesisId": hyp}) + "\n")
-    except: pass
-# #endregion
 
 # Backpressure configuration
 MAX_PENDING_MESSAGES = 500  # Max unacknowledged messages before pausing
@@ -319,18 +307,6 @@ async def replay_historical_data(
                     f"{rate:.1f} candles/sec"
                 )
                 
-                # #region agent log
-                try:
-                    gc_len = await redis_client.xlen("candles.1m.gc")
-                    dxy_len = await redis_client.xlen("candles.1m.dxy")
-                    _debug_log("replay:publish", "stream_lengths", {
-                        "published": published_count,
-                        "gc_stream_len": gc_len,
-                        "dxy_stream_len": dxy_len,
-                        "timestamp": str(timestamp)
-                    }, "H2")
-                except: pass
-                # #endregion
             
             # Backpressure check in turbo mode
             if speed_multiplier == 0 and published_count % BACKPRESSURE_CHECK_INTERVAL == 0:
@@ -476,19 +452,6 @@ async def replay_historical_data(
         await asyncio.sleep(processing_delay)
         logger.info("Processing delay complete")
     
-    # #region agent log
-    try:
-        gc_len = await redis_client.xlen("candles.1m.gc")
-        dxy_len = await redis_client.xlen("candles.1m.dxy")
-        features_len = await redis_client.xlen("features.1m")
-        _debug_log("replay:end", "final_stream_lengths", {
-            "gc_stream_len": gc_len,
-            "dxy_stream_len": dxy_len,
-            "features_stream_len": features_len,
-            "published_total": published_count
-        }, "H2")
-    except: pass
-    # #endregion
     
     await redis_client.aclose()
     
