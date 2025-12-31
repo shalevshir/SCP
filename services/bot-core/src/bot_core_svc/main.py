@@ -161,6 +161,7 @@ async def process_feature_message(
     # the correct historical bias, not a future bias that arrived earlier
     bias = bias_cache.get_for_timestamp_or_default(features.timestamp)
     
+    
     # 4. Build context
     context = {
         "session_ok": True,

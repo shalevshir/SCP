@@ -115,6 +115,14 @@ def adjust_score_with_htf(
         logger.debug("HTF bias is None, no score adjustments applied")
         return adjusted_score, adjustments
 
+    # DEBUG: Log HTF bias fields for troubleshooting
+    logger.info(
+        f"HTF bias fields for scoring: seasonality_adj={htf_bias.seasonality_adjustment}, "
+        f"vwap_confirmed={htf_bias.vwap_trend_confirmed}, "
+        f"dxy_aligned={htf_bias.dxy_alignment}, "
+        f"confidence={htf_bias.confidence}"
+    )
+
     # 1. Apply seasonality adjustment (already calculated in HTFBias)
     if htf_bias.seasonality_adjustment != 0.0:
         adjusted_score += htf_bias.seasonality_adjustment
@@ -222,6 +230,7 @@ def adjust_score_with_htf(
 
     # Cap final score at 10.0
     adjusted_score = min(adjusted_score, 10.0)
+
 
     # Log final adjustment
     total_adjustment = adjusted_score - base_score
