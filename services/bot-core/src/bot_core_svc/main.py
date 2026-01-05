@@ -151,10 +151,16 @@ async def process_feature_message(
         )
         return
     
+    # 2.5. Check DXY availability (required for accurate scoring)
+    if features.dxy_correlation is None and features.dxy_corr is None:
+        logger.debug(f"DXY data unavailable at {features.timestamp} - skipping signal generation")
+        return
+    
     # 3. Get bias for this feature's timestamp (critical for replay mode)
     # Uses timestamp-aware lookup to ensure features are evaluated with
     # the correct historical bias, not a future bias that arrived earlier
     bias = bias_cache.get_for_timestamp_or_default(features.timestamp)
+    
     
     # 4. Build context
     context = {

@@ -13,6 +13,9 @@ from scp_shared.messaging.schemas import SignalMessage
 
 logger = get_logger(__name__)
 
+# Maximum executions per reclaim context (prevents excessive re-entries)
+MAX_EXECUTIONS_PER_CONTEXT = 1
+
 
 class StateMachineManager:
     """Manages multiple VWAPReclaimStateMachine instances with DB persistence.
@@ -37,6 +40,10 @@ class StateMachineManager:
         self._db_pool = db_pool
         self._state_machines: dict[str, VWAPReclaimStateMachine] = {}
         self._bar_counter = 0  # Global bar counter for expiration tracking
+        # Track executions by reclaim context (not per-signal) to prevent excess re-entries
+        self._reclaim_context_executions: dict[str, int] = {}
+        # Store signal timestamps for context key generation (uses trading day, not bar counter)
+        self._signal_timestamps: dict[str, datetime] = {}
     
     async def create_from_signal(self, signal: SignalMessage) -> str:
         """Create state machine from signal.
@@ -54,9 +61,9 @@ class StateMachineManager:
         direction = "above" if signal.direction == "long" else "below"
         sm.on_reclaim_detected(bar_idx=self._bar_counter, direction=direction)
         
-        
-        # Store state machine
+        # Store state machine and timestamp (timestamp used for context key generation)
         self._state_machines[signal.id] = sm
+        self._signal_timestamps[signal.id] = signal.timestamp
         
         # Persist to DB
         await self._save_state_machine(signal.id, sm)
@@ -67,6 +74,37 @@ class StateMachineManager:
         )
         
         return signal.id
+    
+    def _get_reclaim_context_key(self, signal_id: str, sm: VWAPReclaimStateMachine) -> str:
+        """Generate context key for reclaim execution tracking.
+        
+        Groups signals by direction and TRADING DAY to prevent excessive re-entries
+        for the same reclaim setup within the same day, while allowing trades on
+        different days.
+        
+        FIX: Previously used bar counter which doesn't work correctly in high-speed
+        replay where all signals arrive before candles are processed.
+        
+        Args:
+            signal_id: Signal identifier (used to look up timestamp)
+            sm: State machine instance
+            
+        Returns:
+            Context key (e.g., "above_2025-11-06" for long reclaim on Nov 6)
+        """
+        # Use the signal's trading day for context grouping
+        signal_ts = self._signal_timestamps.get(signal_id)
+        if signal_ts is not None:
+            # Format as date string for human-readable keys
+            date_str = signal_ts.strftime("%Y-%m-%d")
+            return f"{sm.reclaim_direction}_{date_str}"
+        
+        # Fallback to old behavior if timestamp not found (shouldn't happen)
+        if sm.detection_bar_idx is None:
+            return f"{sm.reclaim_direction}_unknown"
+        
+        window = sm.detection_bar_idx // 60
+        return f"{sm.reclaim_direction}_{window}"
     
     def check_confirmation(self, signal_id: str, bar_idx: int | None = None) -> bool:
         """Check if signal is confirmed and ready for execution.
@@ -85,6 +123,16 @@ class StateMachineManager:
         if sm is None:
             return False
         
+        # Check reclaim context execution count (prevent excessive re-entries)
+        context_key = self._get_reclaim_context_key(signal_id, sm)
+        context_exec_count = self._reclaim_context_executions.get(context_key, 0)
+        if context_exec_count >= MAX_EXECUTIONS_PER_CONTEXT:
+            logger.debug(
+                f"Signal {signal_id} blocked: reclaim context {context_key} "
+                f"already executed {self._reclaim_context_executions[context_key]} times "
+                f"(max: {MAX_EXECUTIONS_PER_CONTEXT})"
+            )
+            return False
         
         # Auto-confirm on next bar (simplified for Phase 6)
         if sm.current_state == VWAPReclaimState.PENDING_ACCEPTANCE:
@@ -123,6 +171,53 @@ class StateMachineManager:
         
         return False
     
+    def on_execution(self, signal_id: str, bar_idx: int) -> None:
+        """Record execution for context tracking.
+        
+        Args:
+            signal_id: Signal identifier
+            bar_idx: Bar index where execution occurred
+        """
+        sm = self._state_machines.get(signal_id)
+        if sm is None:
+            logger.warning(f"Cannot record execution: state machine not found for {signal_id}")
+            return
+        
+        # Increment reclaim context execution count
+        context_key = self._get_reclaim_context_key(signal_id, sm)
+        old_count = self._reclaim_context_executions.get(context_key, 0)
+        self._reclaim_context_executions[context_key] = old_count + 1
+        
+        logger.info(
+            f"Recorded execution for signal {signal_id} "
+            f"(context={context_key}, count={self._reclaim_context_executions[context_key]})"
+        )
+    
+
+    def reset_context_for_signal(self, signal_id: str) -> None:
+        """Reset context execution count for a signal when its trade closes.
+        
+        This allows new trades for the same day after a previous trade exits,
+        matching backtester behavior where multiple trades per day are allowed.
+        
+        Args:
+            signal_id: Signal identifier whose context should be reset
+        """
+        sm = self._state_machines.get(signal_id)
+        if sm is None:
+            # Signal already cleaned up or doesn't exist
+            return
+        
+        context_key = self._get_reclaim_context_key(signal_id, sm)
+        old_count = self._reclaim_context_executions.get(context_key, 0)
+        
+        if old_count > 0:
+            self._reclaim_context_executions[context_key] = old_count - 1
+            logger.info(
+                f"Reset context execution for signal {signal_id} "
+                f"(context={context_key}, count={self._reclaim_context_executions[context_key]})"
+            )
+    
     async def execute(self, signal_id: str, bar_idx: int) -> None:
         """Mark signal as executed.
         
@@ -136,6 +231,7 @@ class StateMachineManager:
             return
         
         sm.on_execution(bar_idx)
+        self.on_execution(signal_id, bar_idx)  # Track context execution
         await self._save_state_machine(signal_id, sm)
         
         logger.info(f"Executed signal {signal_id} at bar {bar_idx}")

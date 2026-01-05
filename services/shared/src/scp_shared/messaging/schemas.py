@@ -48,16 +48,40 @@ class FeaturesMessage(BaseModel):
     symbol: str = Field(description="Asset symbol")
     timeframe: str = Field(description="Timeframe")
     close: float = Field(description="Close price")
+    
+    # OHLC data (needed for invalidation candle checks)
+    open: float | None = Field(default=None, description="Open price", gt=0)
+    high: float | None = Field(default=None, description="High price", gt=0)
+    low: float | None = Field(default=None, description="Low price", gt=0)
+    volume: float | None = Field(default=None, description="Volume", ge=0)
+    
+    # VWAP indicators
     vwap: float | None = Field(default=None, description="VWAP value")
+    vwap_slope: float | None = Field(default=None, description="VWAP slope (for FADE invalidation)")
+    vwap_deviation: float | None = Field(default=None, description="VWAP deviation %")
+    
+    # Trend indicators
     rsi: float | None = Field(default=None, description="RSI value", ge=0, le=100)
     ema_9: float | None = Field(default=None, description="9-period EMA")
     ema_20: float | None = Field(default=None, description="20-period EMA")
     ema_50: float | None = Field(default=None, description="50-period EMA")
+    
+    # DXY correlation fields
     dxy_correlation: float | None = Field(
-        default=None, description="DXY correlation", ge=-1, le=1
+        default=None, description="DXY correlation (legacy field)", ge=-1, le=1
     )
+    dxy_corr: float | None = Field(
+        default=None, description="DXY correlation (raw)", ge=-1, le=1
+    )
+    dxy_5m_corr: float | None = Field(
+        default=None, description="DXY 5m correlation", ge=-1, le=1
+    )
+    dxy_structure: str | None = Field(default=None, description="DXY structure label")
+    
+    # Structure labels
     structure_label: str | None = Field(default=None, description="Structure label")
-    vwap_deviation: float | None = Field(default=None, description="VWAP deviation %")
+    htf_structure_label: str | None = Field(default=None, description="HTF structure label (15m/1h)")
+    
     # BOS/CHoCH fields for VWAP_RECLAIM validation
     bos_direction: str | None = Field(default=None, description="Break of structure direction")
     bos_recent: bool | None = Field(default=None, description="Whether BOS was detected recently")
@@ -67,6 +91,14 @@ class FeaturesMessage(BaseModel):
     structure_clarity: float | None = Field(default=None, description="Structure clarity score")
     liquidity_sweep: bool | None = Field(default=None, description="Whether liquidity sweep detected")
     sweep_age: int | None = Field(default=None, description="Age of most recent sweep in bars")
+    
+    # Expansion gate fields
+    expansion_detected: bool = Field(default=False, description="VWAP_RECLAIM expansion detected")
+    expansion_reasons: list[str] = Field(default_factory=list, description="Expansion detection reasons")
+    
+    # Confirmation tracking fields
+    second_confirmation_long: bool = Field(default=False, description="Second confirmation for long satisfied")
+    second_confirmation_short: bool = Field(default=False, description="Second confirmation for short satisfied")
 
     class Config:
         json_schema_extra = {
@@ -104,6 +136,17 @@ class HTFBiasMessage(BaseModel):
     structure_1h: str | None = Field(default=None, description="1h structure")
     dxy_aligned: bool = Field(description="DXY alignment status")
     chop_detected: bool = Field(description="Chop/conflict detected")
+    
+    # Additional fields for scoring bonuses (added for parity with backtester)
+    seasonality_adjustment: float = Field(
+        default=0.0, description="Seasonality score adjustment"
+    )
+    seasonality_period: str | None = Field(
+        default=None, description="Current seasonality period"
+    )
+    vwap_trend_confirmed: bool = Field(
+        default=False, description="VWAP trend confirmation"
+    )
 
     class Config:
         json_schema_extra = {
@@ -116,6 +159,9 @@ class HTFBiasMessage(BaseModel):
                 "structure_1h": "bullish",
                 "dxy_aligned": True,
                 "chop_detected": False,
+                "seasonality_adjustment": 0.8,
+                "seasonality_period": "november_december",
+                "vwap_trend_confirmed": True,
             }
         }
 

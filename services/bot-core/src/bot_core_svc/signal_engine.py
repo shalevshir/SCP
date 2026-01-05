@@ -36,6 +36,14 @@ def htf_bias_message_to_htf_bias(msg: HTFBiasMessage) -> HTFBias:
         "neutral": "neutral",
     }
     
+    # DEBUG: Log received HTFBiasMessage fields
+    logger.info(
+        f"HTFBiasMessage received: seasonality_adj={msg.seasonality_adjustment}, "
+        f"seasonality_period={msg.seasonality_period}, "
+        f"vwap_confirmed={msg.vwap_trend_confirmed}"
+    )
+    
+    
     return HTFBias(
         bias=msg.bias,  # type: ignore
         direction=direction_map[msg.bias],  # type: ignore
@@ -45,7 +53,10 @@ def htf_bias_message_to_htf_bias(msg: HTFBiasMessage) -> HTFBias:
         structure_1h=msg.structure_1h,
         dxy_alignment=msg.dxy_aligned,
         chop_detected=msg.chop_detected,
-        # Other fields use defaults from HTFBias dataclass
+        # Additional fields for scoring bonuses
+        seasonality_adjustment=msg.seasonality_adjustment,
+        seasonality_period=msg.seasonality_period,  # type: ignore (string Literal)
+        vwap_trend_confirmed=msg.vwap_trend_confirmed,
     )
 
 
@@ -250,6 +261,7 @@ class SignalEngine:
         
         # Generate signal
         signal = score_signal(features_series, htf_bias_obj, context)
+        
         
         # Filter for A+ signals only
         if signal.confidence != "A+":

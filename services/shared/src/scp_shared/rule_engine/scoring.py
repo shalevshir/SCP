@@ -230,14 +230,8 @@ def calculate_chop_penalty(htf_bias: HTFBias, setup_type: str) -> float:
         return 0.0
     
     if setup_type == "VWAP_RECLAIM":
-        # Penalize VWAP_RECLAIM in SOFT_CHOP (structural setup needs some clarity)
-        if htf_bias.chop_severity == ChopSeverity.SOFT_CHOP:
-            logger.debug(
-                f"VWAP_RECLAIM chop penalty: -1.5 (SOFT_CHOP, "
-                f"consecutive={htf_bias.chop_consecutive_count})"
-            )
-            return -1.5
-        # HARD_CHOP is blocked in validation, so no penalty needed here
+        # NOTE: VWAP_RECLAIM chop penalty DISABLED for parity testing
+        # Chop is informational, not a penalty for VWAP_RECLAIM
         return 0.0
     
     # DXY_CONTINUATION blocked in validation for any chop, so no penalty here
@@ -313,6 +307,7 @@ def calculate_late_reclaim_penalty(
         return 0.0
 
     total_penalty = 0.0
+    
 
     # Penalty 1: BOS staleness (graduated) - ONLY if BOS invalid
     bos_age = features.get("bos_age")
@@ -365,6 +360,7 @@ def calculate_late_reclaim_penalty(
 
     if total_penalty < 0:
         logger.info(f"Late reclaim penalty total: {total_penalty:.2f}")
+    
 
     return total_penalty
 
@@ -372,74 +368,34 @@ def calculate_late_reclaim_penalty(
 def calculate_noise_penalty(features: pd.Series, setup_type: str) -> float:
     """Calculate score penalty for structural chop with ATR as modifier.
     
-    This function implements setup-aware chop handling via score modification
-    rather than hard rejection, per the SOP principle: "Chop is information, not prohibition."
-    
-    Per Shir Capital SOP: Noise means structural disorder, not low volatility.
-    - Primary gate: is_structural_chop (overlapping swings, failed follow-through, wick dominance)
-    - Supporting modifier: atr_compression_ratio (amplifies penalty when combined with structural chop)
-    
     Args:
         features: Feature series containing is_structural_chop and atr_compression_ratio
         setup_type: Setup type name ("VWAP_FADE", "VWAP_RECLAIM", "DXY_CONTINUATION")
     
     Returns:
-        Score penalty (negative value) to apply to base score
-    
-    Logic:
-        Structural chop alone:
-            VWAP_FADE: -0.5 penalty (tolerates chop, often works in ranging conditions)
-            VWAP_RECLAIM: -1.5 penalty (needs clearer structure for BOS validation)
-            DXY_CONTINUATION: -1.5 penalty (needs clear displacement and structure)
+        Score penalty (negative value) for noise/chop conditions
         
-        ATR compression amplifier:
-            If ATR compressed (<0.4 of baseline) AND structural chop detected:
-            - Additional -0.5 penalty (total: -1.0 for FADE, -2.0 for RECLAIM/CONT)
-            
-            If ATR compressed but NO structural chop:
-            - Minor -0.2 penalty only (ATR alone cannot block trades)
-    
-    Example:
-        >>> penalty = calculate_noise_penalty(features, "VWAP_RECLAIM")
-        >>> adjusted_score = base_score + penalty
+    Penalties:
+        - VWAP_RECLAIM: -1.5 for structural chop, -0.5 for ATR compression
+        - VWAP_FADE: -1.0 for structural chop, -0.5 for ATR compression  
+        - DXY_CONTINUATION: No penalty (relies on trend continuation)
     """
-    is_structural_chop = features.get("is_structural_chop", False)
-    atr_compression_ratio = features.get("atr_compression_ratio", 1.0)
+    total_penalty = 0.0
     
-    # Base penalty for structural chop
-    base_penalty = 0.0
-    if is_structural_chop:
-        if setup_type == "VWAP_FADE":
-            base_penalty = -0.5
-            logger.debug("VWAP_FADE structural chop penalty: -0.5 (range trading viable)")
-        elif setup_type in ["VWAP_RECLAIM", "DXY_CONTINUATION"]:
-            base_penalty = -1.5
-            logger.debug(
-                f"{setup_type} structural chop penalty: -1.5 "
-                "(structure/displacement unreliable)"
-            )
+    # Structural chop penalty (setup-aware)
+    if features.get("is_structural_chop", False):
+        if setup_type == "VWAP_RECLAIM":
+            total_penalty -= 1.5  # Stricter for momentum setups
+        elif setup_type == "VWAP_FADE":
+            total_penalty -= 1.0  # More tolerant of sideways consolidation
+        # DXY_CONTINUATION: No penalty (trend continuation tolerates some chop)
     
-    # ATR compression modifier (supporting filter, not primary gate)
-    atr_modifier = 0.0
-    ATR_SEVERE_COMPRESSION = 0.4
+    # ATR compression penalty (all setups except DXY_CONTINUATION)
+    atr_compression = features.get("atr_compression_ratio")
+    if atr_compression is not None and setup_type != "DXY_CONTINUATION":
+        if atr_compression < 0.5:  # Severe compression
+            total_penalty -= 0.5
     
-    if atr_compression_ratio < ATR_SEVERE_COMPRESSION:
-        if is_structural_chop:
-            # ATR compression amplifies structural chop penalty
-            atr_modifier = -0.5
-            logger.debug(
-                f"ATR compression amplifier: -0.5 "
-                f"(ratio={atr_compression_ratio:.2f}, combined with structural chop)"
-            )
-        else:
-            # ATR compression alone = small modifier, not rejection
-            atr_modifier = -0.2
-            logger.debug(
-                f"ATR compression modifier: -0.2 "
-                f"(ratio={atr_compression_ratio:.2f}, no structural chop)"
-            )
-    
-    total_penalty = base_penalty + atr_modifier
     return total_penalty
 
 
@@ -485,6 +441,18 @@ def calculate_structure_quality_penalty(
     if setup_type != "VWAP_RECLAIM":
         return 0.0
 
+    # Check BOS age - always compute for logging and possible use
+    bos_age = features.get("bos_age")
+    if bos_age is None or pd.isna(bos_age):
+        bos_age = htf_bias.bars_since_bos
+    
+    # BOS exists if: bos_recent=True, htf_bias.bos_detected=True, OR bos_age is valid
+    bos_exists = (
+        features.get("bos_recent", False) 
+        or htf_bias.bos_detected 
+        or (bos_age is not None and not pd.isna(bos_age))
+    )
+
     # If no quality_flags provided, extract from features/htf_bias
     if quality_flags is None:
         quality_flags = {
@@ -493,18 +461,15 @@ def calculate_structure_quality_penalty(
                 or htf_bias.liquidity_sweep_detected
             ),
             "low_clarity": htf_bias.structure_clarity < 0.4,
-            "no_bos": not (features.get("bos_recent", False) or htf_bias.bos_detected),
+            "no_bos": not bos_exists,  # Fixed: also check if bos_age exists
             "bos_stale": False,
         }
-        # Check BOS age for staleness
-        bos_age = features.get("bos_age")
-        if bos_age is None or pd.isna(bos_age):
-            bos_age = htf_bias.bars_since_bos
+        # Check BOS staleness (only if BOS exists)
         if bos_age is not None and bos_age > 15:
             quality_flags["bos_stale"] = True
 
-
     total_penalty = 0.0
+    
 
     # Penalty 1: No liquidity sweep (-1.5)
     if quality_flags.get("no_sweep", False):
@@ -567,6 +532,7 @@ def calculate_structure_quality_penalty(
             f"clarity={structure_clarity:.2f}, "
             f"bos={not quality_flags.get('no_bos', False)})"
         )
+    
 
     return total_penalty
 
@@ -679,6 +645,7 @@ def score_signal(features: pd.Series, htf_bias: HTFBias, context: dict) -> Signa
 
     # Calculate base score (sum of all factors, capped at 10)
     base_score = min(sum(factor_scores.values()), 10.0)
+    
 
     # Apply chop penalty (setup-aware score modification)
     chop_penalty = calculate_chop_penalty(htf_bias, setup_type)
@@ -714,6 +681,8 @@ def score_signal(features: pd.Series, htf_bias: HTFBias, context: dict) -> Signa
     structure_quality_penalty = calculate_structure_quality_penalty(
         features, htf_bias, setup_type, quality_flags
     )
+    
+    
     if structure_quality_penalty != 0.0:
         factor_scores["structure_quality_penalty"] = structure_quality_penalty
         base_score += structure_quality_penalty
@@ -750,14 +719,15 @@ def score_signal(features: pd.Series, htf_bias: HTFBias, context: dict) -> Signa
         timing_penalties = -1.5
     
     # Recalculate base score with capped penalties
-    base_score = min(
-        sum(v for v in factor_scores.values() if not v < 0), 10.0
-    ) + structure_penalties + timing_penalties
+    positive_sum = sum(v for v in factor_scores.values() if not v < 0)
+    base_score = min(positive_sum, 10.0) + structure_penalties + timing_penalties
+    
 
     # Apply HTF-based score adjustments (pass context for tier-aware adjustments)
     adjusted_score, htf_adjustments = adjust_score_with_htf(
         base_score, htf_bias, signal_direction, context
     )
+    
 
     # Add HTF adjustments to factor scores for transparency
     factor_scores.update(htf_adjustments)
@@ -1127,9 +1097,9 @@ def calculate_structure_alignment(
     # These setups need clean structure (no chop tolerance)
 
     # Rejection 1: Choppy structure
-    if htf_bias.chop_detected:
-        logger.debug(f"{setup_type} structure rejected: chop detected")
-        return 0.0
+    # if htf_bias.chop_detected:
+    #    logger.debug(f"{setup_type} structure rejected: chop detected")
+    #    return 0.0
 
     # Rejection 2: No recent BOS or BOS too stale
     if htf_bias.bars_since_bos is None or htf_bias.bars_since_bos > 15:

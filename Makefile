@@ -285,10 +285,7 @@ replay:
 		--start $(START) --end $(END) --no-view \
 		--output-file output/backtest_validation_$(START)_$(END).json
 	@echo ""
-	@echo "Step 2/3: Starting microservices..."
-	docker compose -f infra/docker-compose.yml -f infra/docker-compose.services.yml -f infra/docker-compose.replay.yml up -d
-	@sleep 5
-	@echo ""
+
 	@echo "Step 3/3: Replaying historical data..."
 	@if [ -z "$(SPEED)" ]; then \
 		poetry run python scripts/replay_historical.py \

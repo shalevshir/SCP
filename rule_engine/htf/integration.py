@@ -297,6 +297,8 @@ def create_htf_bias_func_with_sync_layer(
         candle_buffer_15m: list = []
         # Buffer for 1h candles (for BOS/CHoCH/FVG detection)
         candle_buffer_1h: list = []
+        # Buffer for DXY 1h candles (for chop detection - needs history!)
+        dxy_buffer_1h: list = []
         max_buffer_size = swing_window * 3  # Keep 3x swing window for context
 
         def htf_bias_func(features_1m: pd.Series, context: dict) -> HTFBias:
@@ -411,7 +413,19 @@ def create_htf_bias_func_with_sync_layer(
                     # Fallback to single candle if buffer not full yet
                     df_1h = build_htf_dataframe_from_candles([current_1h_candle], "1h")
 
-                dxy_1h = build_htf_dataframe_from_candles([sync_bar.htf_1h[1]], "1h")
+                # Accumulate DXY 1H candles into buffer (for chop detection)
+                current_dxy_1h_candle = sync_bar.htf_1h[1]
+                if (
+                    not dxy_buffer_1h
+                    or dxy_buffer_1h[-1].timestamp != current_dxy_1h_candle.timestamp
+                ):
+                    dxy_buffer_1h.append(current_dxy_1h_candle)
+                    # Keep buffer size manageable (same as GC buffer)
+                    if len(dxy_buffer_1h) > max_buffer_size:
+                        dxy_buffer_1h.pop(0)
+
+                # Build DXY DataFrame from buffered candles (not just 1!)
+                dxy_1h = build_htf_dataframe_from_candles(dxy_buffer_1h, "1h")
 
             if sync_bar.htf_5m:
                 dxy_5m = build_htf_dataframe_from_candles([sync_bar.htf_5m[1]], "5m")

@@ -217,11 +217,15 @@ def validate_reclaim_context(
             and int(sweep_age) <= SWEEP_RECENCY_THRESHOLD
         )
         sweep_detected = sweep_on_this_bar or sweep_recent
-        bos_detected = features.get("bos_recent", False) or htf_bias.bos_detected
+        # BOS exists if: bos_recent=True, htf_bias.bos_detected=True, OR bos_age is valid
+        bos_age_val = features.get("bos_age")
+        bos_age_valid = bos_age_val is not None and not pd.isna(bos_age_val)
+        bos_detected = features.get("bos_recent", False) or htf_bias.bos_detected or bos_age_valid
     else:
         sweep_detected = htf_bias.liquidity_sweep_detected
         bos_detected = htf_bias.bos_detected
         sweep_age = None
+        bos_age_valid = False
 
     logger.info(
         f"VWAP_RECLAIM context check: "
@@ -671,12 +675,15 @@ def validate_reclaim_prerequisites(
 
     # Similarly, get BOS/sweep info from features if available (more responsive)
     if features is not None:
-        bos_detected = features.get("bos_recent", False) or htf_bias.bos_detected
         bos_age = features.get("bos_age")
         if bos_age is not None and not pd.isna(bos_age):
             bars_since_bos = int(bos_age)
+            bos_age_valid = True
         else:
             bars_since_bos = htf_bias.bars_since_bos
+            bos_age_valid = False
+        # BOS exists if: bos_recent=True, htf_bias.bos_detected=True, OR bos_age is valid
+        bos_detected = features.get("bos_recent", False) or htf_bias.bos_detected or bos_age_valid
         sweep_detected = features.get("liquidity_sweep", False) or htf_bias.liquidity_sweep_detected
     else:
         bos_detected = htf_bias.bos_detected

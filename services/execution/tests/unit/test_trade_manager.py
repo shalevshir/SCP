@@ -1,6 +1,6 @@
 """Unit tests for TradeManager."""
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -161,7 +161,8 @@ class TestTradeManagerExecutePendingSignals:
         """Pending signals are executed at next bar open."""
         trade_manager._pending_signals.append(sample_signal)
         
-        await trade_manager.execute_pending_signals(next_bar_open=2651.0)
+        candle_timestamp = sample_signal.timestamp + timedelta(minutes=1)
+        await trade_manager.execute_pending_signals(next_bar_open=2651.0, candle_timestamp=candle_timestamp)
         
         mock_broker.place_order.assert_called_once()
         mock_trade_repo.insert_trade.assert_called_once()
@@ -178,7 +179,8 @@ class TestTradeManagerExecutePendingSignals:
         """Pending signals buffer is cleared after execution."""
         trade_manager._pending_signals.append(sample_signal)
         
-        await trade_manager.execute_pending_signals(next_bar_open=2651.0)
+        candle_timestamp = sample_signal.timestamp + timedelta(minutes=1)
+        await trade_manager.execute_pending_signals(next_bar_open=2651.0, candle_timestamp=candle_timestamp)
         
         assert len(trade_manager._pending_signals) == 0
     
@@ -193,7 +195,8 @@ class TestTradeManagerExecutePendingSignals:
         trade_manager._active_trades["trade-1"] = MagicMock()
         trade_manager._pending_signals.append(sample_signal)
         
-        await trade_manager.execute_pending_signals(next_bar_open=2651.0)
+        candle_timestamp = sample_signal.timestamp + timedelta(minutes=1)
+        await trade_manager.execute_pending_signals(next_bar_open=2651.0, candle_timestamp=candle_timestamp)
         
         # Signal should not be executed
         assert len(trade_manager._active_trades) == 1  # Still just the original
@@ -209,7 +212,8 @@ class TestTradeManagerExecutePendingSignals:
         trade_manager._daily_tracker._state.pdll_hit = True
         trade_manager._pending_signals.append(sample_signal)
         
-        await trade_manager.execute_pending_signals(next_bar_open=2651.0)
+        candle_timestamp = sample_signal.timestamp + timedelta(minutes=1)
+        await trade_manager.execute_pending_signals(next_bar_open=2651.0, candle_timestamp=candle_timestamp)
         
         # Signal should not be executed
         assert len(trade_manager._active_trades) == 0

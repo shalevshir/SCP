@@ -179,7 +179,6 @@ class CandleFeatureSynchronizer:
             candle = self.candle_buffer.pop(features.timestamp)
             features_out = self.feature_buffer.pop(features.timestamp)
             return (candle, features_out)
-        
         # Clean up stale messages
         self._cleanup_stale(features.timestamp)
         return None

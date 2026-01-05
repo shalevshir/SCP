@@ -13,14 +13,12 @@ from scp_shared.rule_engine.htf.types import ChopSeverity
 class TestHTFCalculatorBiasConsistency:
     """Test that HTFBias fields consistently use original_bias vs neutralized bias."""
 
-    def test_vwap_and_dxy_alignment_use_original_bias_when_neutralized(self) -> None:
-        """Test that vwap_trend_confirmed and dxy_alignment use original_bias.
+    def test_dxy_chop_detected_but_bias_not_neutralized(self) -> None:
+        """Test that DXY chop is detected but does NOT neutralize bias.
 
-        When bias is neutralized due to DXY chop or conflicts, vwap_trend_confirmed
-        and dxy_alignment should still reflect the underlying market structure by
-        using original_bias, not the neutralized bias value.
-
-        This ensures consistency with fvg_alignment_score which already uses original_bias.
+        DXY chop is detected and stored in HTFBias, but bias remains based on
+        structure (bullish in this case). Setup-specific validation (e.g., VWAP_RECLAIM)
+        will reject based on dxy_chop_detected flag.
         """
         # Setup: Strong bullish market structure with DXY alignment
         features_1h = pd.Series(
@@ -90,27 +88,26 @@ class TestHTFCalculatorBiasConsistency:
             dxy_5m=dxy_5m_trending,
         )
 
-        # Verify bias is neutralized
-        assert htf_bias.bias == "neutral", "Bias should be neutralized due to DXY chop"
-        assert htf_bias.dxy_chop_detected is True
-
-        # BUG FIX VERIFICATION: These should use original_bias (bullish), not neutralized
-        # The underlying market structure is bullish with VWAP and DXY alignment
+        # Verify DXY chop is detected but bias is NOT neutralized
+        assert htf_bias.dxy_chop_detected is True, "DXY chop should be detected"
+        assert htf_bias.bias == "bullish", "Bias should remain bullish (not neutralized)"
+        assert htf_bias.direction == "long", "Direction should remain long"
+        
+        # VWAP and DXY alignment should reflect the actual market structure
         assert htf_bias.vwap_trend_confirmed is True, (
-            "vwap_trend_confirmed should be True based on original bullish bias "
-            "(close > vwap), not neutralized state"
+            "vwap_trend_confirmed should be True based on bullish bias (close > vwap)"
         )
         assert htf_bias.dxy_alignment is True, (
-            "dxy_alignment should be True based on original bullish bias with "
-            "behavior-based DXY alignment (structure + no 5M chop + micro corr), "
-            "not neutralized state"
+            "dxy_alignment should be True based on bullish bias with "
+            "behavior-based DXY alignment (structure + no 5M chop + micro corr)"
         )
 
-    def test_vwap_and_dxy_alignment_use_original_bias_on_conflict(self) -> None:
-        """Test that vwap_trend_confirmed and dxy_alignment use original_bias on conflict.
+    def test_htf_conflict_detected_but_bias_not_neutralized(self) -> None:
+        """Test that HTF conflict is detected but does NOT neutralize bias.
 
-        When bias is neutralized due to structure conflict, vwap_trend_confirmed
-        and dxy_alignment should still reflect the underlying market structure.
+        HTF conflict is detected and stored in HTFBias, but bias remains based on
+        1H structure (bearish in this case). Setup-specific validation will reject
+        based on conflict_detected flag.
         """
         # Micro correlation features for behavior-based DXY alignment
         features_1m = pd.Series(
@@ -169,23 +166,19 @@ class TestHTFCalculatorBiasConsistency:
             dxy_5m=dxy_5m_trending,
         )
 
-        # Verify bias is neutralized due to conflict
-        assert (
-            htf_bias.bias == "neutral"
-        ), "Bias should be neutralized due to structure conflict"
-        assert htf_bias.conflict_detected is True
+        # Verify conflict is detected but bias is NOT neutralized
+        assert htf_bias.conflict_detected is True, "Conflict should be detected"
+        assert htf_bias.bias == "bearish", "Bias should remain bearish (not neutralized)"
+        assert htf_bias.direction == "short", "Direction should remain short"
 
-        # BUG FIX VERIFICATION: These should use original_bias (bearish from 1H multi-timeframe logic)
-        # Note: The original_bias reflects the multi-timeframe computation result
-        # Since 1H is bearish (LL, EMAs declining, close < VWAP), original_bias should be bearish
+        # VWAP and DXY alignment should reflect the actual market structure
+        # Since 1H is bearish (LL, EMAs declining, close < VWAP), bias is bearish
         assert htf_bias.vwap_trend_confirmed is True, (
-            "vwap_trend_confirmed should be True based on original bearish bias "
-            "(close < vwap), not neutralized state"
+            "vwap_trend_confirmed should be True based on bearish bias (close < vwap)"
         )
         assert htf_bias.dxy_alignment is True, (
-            "dxy_alignment should be True based on original bearish bias with "
-            "behavior-based DXY alignment (structure + no 5M chop + micro corr), "
-            "not neutralized state"
+            "dxy_alignment should be True based on bearish bias with "
+            "behavior-based DXY alignment (structure + no 5M chop + micro corr)"
         )
 
 
@@ -256,23 +249,23 @@ class TestHTFCalculatorDXYChop:
         assert result.dxy_chop_detected is False
         assert result.score > 0
 
-    def test_htf_bias_with_dxy_chop_forces_neutral(
+    def test_dxy_chop_detection_stores_flag_without_neutralization(
         self,
         features_1h_bullish: pd.Series,
         features_15m_bullish: pd.Series,
         dxy_chop_data: pd.DataFrame,
     ) -> None:
-        """Test that DXY chop forces HTF bias to neutral."""
+        """Test that DXY chop is detected and stored without neutralizing bias."""
         result = compute_htf_bias(
             features_1h_bullish, features_15m_bullish, dxy_1h=dxy_chop_data
         )
 
-        # Chop should force neutral bias
-        assert result.bias == "neutral"
-        assert result.direction == "neutral"
+        # Chop should be detected but NOT neutralize bias
         assert result.dxy_chop_detected is True
-        # Score should be capped at 5.0
-        assert result.score <= 5.0
+        assert result.bias == "bullish"  # Remains bullish
+        assert result.direction == "long"  # Remains long
+        # Score is NOT capped (no neutralization)
+        assert result.score > 5.0
 
     def test_htf_bias_with_dxy_trending_no_chop(
         self,
@@ -336,13 +329,13 @@ class TestHTFCalculatorDXYChop:
         assert result.bias == "bullish"
         assert result.dxy_chop_detected is False
 
-    def test_htf_bias_chop_overrides_strong_signals(
+    def test_dxy_chop_detected_with_strong_bullish_bias_preserved(
         self,
         features_1h_bullish: pd.Series,
         features_15m_bullish: pd.Series,
         dxy_chop_data: pd.DataFrame,
     ) -> None:
-        """Test that chop overrides even strong bullish/bearish signals."""
+        """Test that DXY chop is detected but strong bullish bias is preserved."""
         # Strong bullish setup
         strong_1h = pd.Series(
             {
@@ -365,18 +358,18 @@ class TestHTFCalculatorDXYChop:
 
         result = compute_htf_bias(strong_1h, strong_15m, dxy_1h=dxy_chop_data)
 
-        # Even strong signals should be overridden by chop
-        assert result.bias == "neutral"
-        assert result.direction == "neutral"
+        # Chop is detected but signals remain strong
         assert result.dxy_chop_detected is True
+        assert result.bias == "bullish"  # Remains bullish
+        assert result.direction == "long"  # Remains long
 
-    def test_dxy_chop_score_stays_capped_after_seasonality(
+    def test_dxy_chop_does_not_cap_score_after_seasonality(
         self,
         features_1h_bullish: pd.Series,
         features_15m_bullish: pd.Series,
         dxy_chop_data: pd.DataFrame,
     ) -> None:
-        """Seasonality adjustments must not lift score above 5 when chop detected."""
+        """Test that DXY chop detection does NOT cap score - seasonality applies normally."""
         timestamp = pd.Timestamp("2024-11-15 14:00:00+00:00")
 
         result = compute_htf_bias(
@@ -388,7 +381,8 @@ class TestHTFCalculatorDXYChop:
 
         assert result.dxy_chop_detected is True
         assert result.seasonality_adjustment > 0  # Defensive check
-        assert result.score <= 5.0
+        # Score is NOT capped - chop doesn't neutralize
+        assert result.score > 5.0
 
 
 class TestHTFCalculatorConflictRules:
@@ -452,24 +446,25 @@ class TestHTFCalculatorConflictRules:
         """Create sweep events with recent sweep_low."""
         return pd.Series([None, None, None, "sweep_low"], index=pd.RangeIndex(4))
 
-    def test_structure_conflict_neutralizes_strong_bias(
+    def test_structure_conflict_detected_without_neutralization(
         self,
         features_1h_bullish: pd.Series,
         features_15m_bearish: pd.Series,
     ) -> None:
-        """Test that 1H/15M structure conflict forces neutral bias."""
+        """Test that 1H/15M structure conflict is detected but does NOT neutralize bias."""
         result = compute_htf_bias(features_1h_bullish, features_15m_bearish)
 
-        # Conflict should force neutral
-        assert result.bias == "neutral"
-        assert result.direction == "neutral"
+        # Conflict should be detected but NOT neutralize
         assert result.conflict_detected is True
         assert result.conflict_reason is not None
         assert "conflict" in result.conflict_reason.lower()
-        # Score should be capped at 5.0
-        assert result.score <= 5.0
+        # Bias remains based on 1H (bullish)
+        assert result.bias == "bullish"
+        assert result.direction == "long"
+        # Score is NOT capped
+        assert result.score > 5.0
 
-    def test_15m_chop_neutralizes_bias(
+    def test_15m_chop_classified_without_forcing_neutral_bias(
         self,
         features_1h_bullish: pd.Series,
         features_15m_bullish: pd.Series,
@@ -477,9 +472,8 @@ class TestHTFCalculatorConflictRules:
     ) -> None:
         """Test that 15M price chop is classified but does NOT force neutral bias.
         
-        UPDATED: Chop refactor changed behavior - chop no longer forces neutralization.
-        Instead, chop severity is classified and handled per-setup in validation layer.
-        This test now verifies the new behavior.
+        Chop severity is classified and stored in HTFBias. Setup-specific validation
+        handles chop appropriately (e.g., VWAP_RECLAIM may reject on hard chop).
         """
         result = compute_htf_bias(
             features_1h_bullish,
@@ -500,42 +494,44 @@ class TestHTFCalculatorConflictRules:
         # Conflict is NOT detected (chop alone doesn't create conflict)
         assert result.conflict_detected is False
 
-    def test_sweep_against_trend_neutralizes_bias(
+    def test_sweep_against_trend_detected_without_neutralization(
         self,
         features_1h_bullish: pd.Series,
         features_15m_bullish: pd.Series,
         sweep_low_events: pd.Series,
     ) -> None:
-        """Test that liquidity sweep against trend forces neutral."""
+        """Test that liquidity sweep against trend is detected but does NOT neutralize."""
         result = compute_htf_bias(
             features_1h_bullish,
             features_15m_bullish,
             sweep_events_15m=sweep_low_events,
         )
 
-        # Sweep against trend should force neutral
-        assert result.bias == "neutral"
-        assert result.direction == "neutral"
+        # Sweep conflict should be detected but NOT neutralize
         assert result.conflict_detected is True
         assert "sweep" in result.conflict_reason.lower()
-        assert result.score <= 5.0
+        # Bias remains bullish
+        assert result.bias == "bullish"
+        assert result.direction == "long"
+        # Score is NOT capped
+        assert result.score > 5.0
 
-    def test_multiple_conflicts_first_one_recorded(
+    def test_multiple_conflicts_detected_first_recorded_no_neutralization(
         self,
         features_1h_bullish: pd.Series,
         features_15m_bearish: pd.Series,
         price_chop_data: pd.DataFrame,
     ) -> None:
-        """Test that when multiple conflicts exist, first is recorded."""
+        """Test that when multiple conflicts exist, first is recorded but bias not neutralized."""
         result = compute_htf_bias(
             features_1h_bullish,
             features_15m_bearish,
             df_15m=price_chop_data,  # Also has chop
         )
 
-        # Should detect conflict
-        assert result.bias == "neutral"
+        # Should detect conflict but NOT neutralize
         assert result.conflict_detected is True
+        assert result.bias == "bullish"  # Remains bullish
         # Should report structure conflict (Rule 1 checked first)
         assert "conflict" in result.conflict_reason.lower()
 
@@ -615,17 +611,12 @@ class TestHTFCalculatorConflictRules:
         # Should mention sweep (df_15m not provided, so can't be 15M chop)
         assert "sweep" in result.conflict_reason.lower()
 
-    def test_conflict_score_remains_capped_after_seasonality_adjustment(
+    def test_conflict_does_not_cap_score_after_seasonality(
         self,
         features_1h_bullish: pd.Series,
         features_15m_bearish: pd.Series,
     ) -> None:
-        """Test that conflict-detected score stays <= 5.0 even after seasonality adjustment.
-
-        Bug: Conflict detection caps score at 5.0, but seasonality adjustments
-        applied afterward can increase it above 5.0. Only DXY chop has a re-cap
-        after seasonality, but conflict detection does not.
-        """
+        """Test that conflict detection does NOT cap score - seasonality applies normally."""
         # Use a timestamp in London session (positive seasonality adjustment)
         timestamp = pd.Timestamp(
             "2024-01-15 08:00:00", tz="UTC"
@@ -637,16 +628,12 @@ class TestHTFCalculatorConflictRules:
             timestamp=timestamp,
         )
 
-        # Conflict should be detected
+        # Conflict should be detected but NOT neutralize
         assert result.conflict_detected is True
-        assert result.bias == "neutral"
+        assert result.bias == "bullish"  # Remains bullish
 
         # Seasonality adjustment should be positive
         assert result.seasonality_adjustment > 0
 
-        # CRITICAL: Score must remain <= 5.0 despite positive seasonality
-        # This is the bug - currently fails without re-cap
-        assert result.score <= 5.0, (
-            f"Conflict detected but score {result.score:.2f} exceeds 5.0 cap after "
-            f"seasonality adjustment of +{result.seasonality_adjustment:.2f}"
-        )
+        # Score is NOT capped - conflict doesn't neutralize
+        assert result.score > 5.0

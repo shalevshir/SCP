@@ -326,6 +326,7 @@ def compute_htf_bias_multi_timeframe(
     # Cap score at 10
     total_score = min(total_score, 10.0)
 
+
     # Log at INFO level for debugging the neutral bias issue
     logger.info(
         f"HTF Bias calc: {htf_bias}/{htf_direction} "
@@ -396,6 +397,8 @@ def compute_htf_bias(
     original_score = score
 
     # Detect DXY chop if data provided
+    # NOTE: DXY chop is detected and stored but does NOT neutralize bias
+    # Instead, it's used in setup-specific validation (e.g., reject VWAP_RECLAIM)
     dxy_chop_detected = False
     if dxy_1h is not None and len(dxy_1h) > 0:
         try:
@@ -403,17 +406,10 @@ def compute_htf_bias(
             # Get the latest chop detection value
             if len(chop_series) > 0:
                 dxy_chop_detected = bool(chop_series.iloc[-1])
-
                 if dxy_chop_detected:
-                    # Force HTF bias to neutral when DXY is in chop
-                    logger.warning(
-                        "DXY chop detected - forcing HTF bias to neutral "
-                        f"(original: {bias}, score: {score:.1f})"
+                    logger.debug(
+                        f"DXY chop detected (stored in HTFBias, setup validation will handle)"
                     )
-                    bias = "neutral"
-                    direction = "neutral"
-                    # Optionally reduce score to reflect uncertainty
-                    score = min(score, 5.0)
         except Exception as e:
             logger.error(f"Error detecting DXY chop: {e}")
             # Continue without chop detection rather than failing
@@ -493,14 +489,12 @@ def compute_htf_bias(
             # Continue without sweep conflict detection
 
     # Apply neutralization if conflict detected
+    # NOTE: Conflict detection is stored but does NOT neutralize bias
+    # Instead, it's used in setup-specific validation (e.g., reject VWAP_RECLAIM)
     if conflict_detected:
-        logger.warning(
-            f"Conflict detected - forcing HTF bias to neutral: {conflict_reason} "
-            f"(original: {original_bias}, score: {original_score:.1f})"
+        logger.debug(
+            f"Conflict detected (stored in HTFBias, setup validation will handle): {conflict_reason}"
         )
-        bias = "neutral"
-        direction = "neutral"
-        score = min(score, 5.0)
 
     # Apply seasonality adjustment if timestamp provided
     seasonality_period = None
@@ -528,11 +522,16 @@ def compute_htf_bias(
             seasonality_adjustment,
             score,
         )
+    
+        
 
     # Re-cap score after seasonality if neutralization conditions exist
-    if dxy_chop_detected or conflict_detected:
-        # Re-cap score after any post-processing to enforce neutral bias
-        score = min(score, 5.0)
+    # NOTE: All conflict/chop neutralization DISABLED for parity testing
+    # if conflict_detected:
+    #     # Re-cap score after any post-processing to enforce neutral bias
+    #     score = min(score, 5.0)
+    pass  # Score re-cap disabled for parity testing
+
 
     # Determine confidence based on adjusted score
     if score >= 8.0:
@@ -655,6 +654,7 @@ def compute_htf_bias(
             and vwap_distance_1h < 0
         ):
             vwap_trend_confirmed = True
+        
 
     # 4. FVG alignment score
     fvg_alignment_score = 0.0
@@ -720,6 +720,7 @@ def compute_htf_bias(
             dxy_corr_1h=dxy_corr_1h,
         )
         logger.info(f"DXY alignment: {dxy_alignment} | {dxy_alignment_rationale}")
+        
 
     # 6. Calculate structure quality metrics
     # Primary source: streaming features (always available), fallback: df-based calculation
@@ -819,17 +820,36 @@ def compute_htf_bias(
             except Exception as e:
                 logger.debug(f"Failed to extract sweep candle: {e}")
 
+    # Get structure labels, handling None/NaN/empty-string cases
+    # Use the same logic as detect_structure_conflict (lines 433-438)
+    raw_structure_1h = (
+        features_1h.get("structure_label") or features_1h.get("structure_type")
+    )
+    raw_structure_15m = (
+        features_15m.get("structure_label") or features_15m.get("structure_type")
+    )
+    
+    # Normalize: empty strings and NaN become None for clean HTFBias output
+    def normalize_structure(val: str | None | float) -> str | None:
+        if val is None:
+            return None
+        if isinstance(val, float) and pd.isna(val):
+            return None
+        if isinstance(val, str) and val.strip() == "":
+            return None
+        return str(val)
+    
+    final_structure_1h = normalize_structure(raw_structure_1h)
+    final_structure_15m = normalize_structure(raw_structure_15m)
+    
+    
     return HTFBias(
         bias=bias,
         direction=direction,
         score=score,
         confidence=confidence,
-        structure_1h=(
-            features_1h.get("structure_label") or features_1h.get("structure_type")
-        ),
-        structure_15m=(
-            features_15m.get("structure_label") or features_15m.get("structure_type")
-        ),
+        structure_1h=final_structure_1h,
+        structure_15m=final_structure_15m,
         bos_detected=bos_detected,
         choch_detected=choch_detected,
         liquidity_sweep_detected=liquidity_sweep_detected,

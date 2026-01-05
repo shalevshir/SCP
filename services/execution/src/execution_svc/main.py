@@ -11,6 +11,7 @@ import redis.asyncio as redis
 from fastapi import FastAPI
 
 from scp_shared.common import get_logger, mask_connection_url
+from scp_shared.common.types import Candle
 from scp_shared.database import DatabasePool
 from scp_shared.health import create_health_router
 from scp_shared.messaging import RedisStreamConsumer, CandleFeatureSynchronizer
@@ -19,7 +20,7 @@ from scp_shared.messaging.schemas import CandleMessage, FeaturesMessage, SignalM
 from execution_svc.broker import PaperBroker
 from execution_svc.config import ExecutionConfig
 from execution_svc.state_machine_manager import StateMachineManager
-from execution_svc.trade_manager import TradeManager
+from execution_svc.trade_manager import TradeManager, is_valid_candle
 from execution_svc.trade_publisher import TradePublisher
 from execution_svc.trade_repository import TradeRepository
 
@@ -111,12 +112,15 @@ async def process_streams(
     logger.info("Execution Service ready - consuming signals and candles")
     
     # Synchronizer to pair candles with their matching features by timestamp
-    # Use a larger timeout (5 minutes of data-time) to handle:
-    # 1. High-speed replay where many messages arrive in quick succession
+    # CRITICAL: Use a VERY large timeout (7 days of data-time) to handle:
+    # 1. High-speed replay where candles arrive in batches spanning hours
+    # 2. Features arriving in separate batches after their candles
+    # 3. The cleanup uses DATA timestamps, not wall-clock time, so during
+    #    replay, hours of data arrive in seconds - need large buffer
+    # 4. For 7-day backtest (Nov 5-11), need timeout >= 7 days to prevent
+    #    early candles from being cleaned before their features arrive
     global _synchronizer  # noqa: PLW0603 - intentional global for reset endpoint
-    # 2. Gaps in historical data (e.g., trading hours only)
-    # The cleanup uses DATA timestamps, not wall-clock time.
-    synchronizer = CandleFeatureSynchronizer(timeout_seconds=300)
+    synchronizer = CandleFeatureSynchronizer(timeout_seconds=604800)  # 7 days
     _synchronizer = synchronizer  # Store global reference for reset endpoint
     
     # Cleanup counter (run cleanup every N candles to prevent memory leaks)
@@ -202,6 +206,28 @@ async def _process_candle_with_features(
     
     logger.info(f"Processing candle: {candle_msg.timestamp} (with matching features)")
     
+    # Convert to internal Candle type for validation
+    candle_obj = Candle(
+        timestamp=candle_msg.timestamp,
+        open=candle_msg.open,
+        high=candle_msg.high,
+        low=candle_msg.low,
+        close=candle_msg.close,
+        volume=candle_msg.volume,
+        symbol=candle_msg.symbol,
+        timeframe=candle_msg.timeframe,
+        source="STREAM",
+    )
+    
+    # Skip invalid candles (NaN/Inf) BEFORE incrementing bar counter
+    # This matches legacy backtester behavior where invalid candles don't count as bars
+    if not is_valid_candle(candle_obj):
+        logger.debug(
+            f"Skipping invalid candle at {candle_msg.timestamp} (NaN/Inf detected) "
+            f"- bar counter not incremented"
+        )
+        return
+    
     # CRITICAL: Check session reset BEFORE execute_pending_signals
     # to ensure daily limits (PDLL, max trades) are fresh at day boundaries
     trade_manager.check_session_reset(candle_msg.timestamp)
@@ -209,13 +235,16 @@ async def _process_candle_with_features(
     # Increment bar counter BEFORE execute_pending_signals so that
     # check_confirmation() can confirm signals from the previous bar
     # (confirmation requires bar_idx > detection_bar_idx)
+    # Only increment for valid candles (invalid candles already returned above)
     sm_manager.increment_bar_counter()
     
     # Execute pending signals at this candle's open
-    await trade_manager.execute_pending_signals(candle_msg.open)
+    # Pass candle timestamp so signals only execute at the correct time
+    await trade_manager.execute_pending_signals(candle_msg.open, candle_msg.timestamp)
     
     # Monitor active trades for SL/TP and invalidation
     # Now we pass the CORRECT features that match this candle's timestamp
+    # Note: Invalid candle validation already handled above, so this is safe
     await trade_manager.on_candle(candle_msg, features_msg)
 
 
@@ -280,6 +309,7 @@ async def reset_state() -> dict[str, str]:
     - Pending signals
     - State machines
     - Daily tracker
+    - InvalidationChecker daily state (loss streaks, PnL)
     - Broker positions
     - Synchronizer buffers
     
@@ -298,10 +328,15 @@ async def reset_state() -> dict[str, str]:
     _trade_manager._pending_signals.clear()
     _trade_manager._trade_entry_bars.clear()
     _trade_manager._daily_tracker.reset_state()
+    # CRITICAL: Reset InvalidationChecker daily state to prevent stale loss streaks/PnL
+    # from causing incorrect risk breach checks after reset
+    _trade_manager._invalidation_checker.reset_daily_state()
     
     # Reset state machine manager
     _sm_manager._state_machines.clear()
     _sm_manager._bar_counter = 0
+    _sm_manager._reclaim_context_executions.clear()  # CRITICAL: Reset reclaim context executions
+    _sm_manager._signal_timestamps.clear()  # Reset signal timestamps for context key generation
     
     # Reset broker
     _broker.reset_state()

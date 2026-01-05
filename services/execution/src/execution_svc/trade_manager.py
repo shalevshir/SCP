@@ -1,6 +1,7 @@
 """Trade lifecycle manager with SL/TP monitoring."""
 
-from datetime import datetime
+import math
+from datetime import datetime, timedelta
 from typing import Any, Literal, cast
 
 from scp_shared.common.logger import get_logger
@@ -21,6 +22,22 @@ from execution_svc.trade_publisher import TradePublisher
 from execution_svc.trade_repository import TradeRepository
 
 logger = get_logger(__name__)
+
+
+def is_valid_candle(candle: Candle) -> bool:
+    """Check if candle has valid OHLC data (no NaN/Inf).
+
+    Args:
+        candle: Candle to validate
+
+    Returns:
+        True if candle is valid, False if it has NaN or Inf values
+    """
+    values = [candle.open, candle.high, candle.low, candle.close]
+    for val in values:
+        if math.isnan(val) or math.isinf(val):
+            return False
+    return True
 
 
 class TradeManager:
@@ -79,8 +96,8 @@ class TradeManager:
             max_trades_per_day=max_trades_per_day,
         )
         
-        # Invalidation checker
-        self._invalidation_checker = InvalidationChecker()
+        # Invalidation checker (pass pdll_limit for PDLL breach detection)
+        self._invalidation_checker = InvalidationChecker(pdll_limit=pdll_limit)
         
         # Bar tracking for time-based invalidation
         self._trade_entry_bars: dict[str, int] = {}
@@ -151,13 +168,34 @@ class TradeManager:
             source="STREAM",
         )
         
-        # Convert features to dict
+        # Safety check: Invalid candles should already be filtered in main.py
+        # before bar counter increment, but we keep this as a defensive check
+        if not is_valid_candle(candle_obj):
+            logger.warning(
+                f"Invalid candle reached trade_manager.on_candle() at {candle.timestamp} "
+                f"(NaN/Inf detected) - this should have been caught earlier"
+            )
+            return
+        
+        # Convert features to dict (expanded to include all fields needed by invalidation checks)
         features_dict: dict[str, Any] | None = None
         if features is not None:
             features_dict = {
+                # Core features (original)
                 "vwap": features.vwap,
                 "rsi": features.rsi,
                 "structure_label": features.structure_label,
+                # VWAP slope for FADE invalidation (requires slope confirmation)
+                "vwap_slope": features.vwap_slope,
+                # DXY correlation for flip detection
+                "dxy_corr": features.dxy_correlation,
+                # DXY micro correlations for DXY_CONTINUATION (use dxy_5m_corr as proxy)
+                "dxy_corr_1m": getattr(features, "dxy_5m_corr", None),
+                "dxy_corr_5m": getattr(features, "dxy_5m_corr", None),
+                # DXY structure for DXY_CONTINUATION invalidation
+                "dxy_structure": features.dxy_structure,
+                # HTF structure for VWAP_RECLAIM micro break confirmation
+                "htf_structure_label": features.htf_structure_label,
             }
         
         # Check active trades for SL/TP and invalidation
@@ -165,21 +203,44 @@ class TradeManager:
         for _trade_id, trade in list(self._active_trades.items()):
             await self._check_trade_exit(trade, candle_obj, features_dict)
     
-    async def execute_pending_signals(self, next_bar_open: float) -> None:
+    async def execute_pending_signals(
+        self, next_bar_open: float, candle_timestamp: datetime
+    ) -> None:
         """Execute buffered signals at next bar open price.
         
         Args:
             next_bar_open: Open price of the next bar
+            candle_timestamp: Timestamp of the candle being processed
         """
         if not self._pending_signals:
             return
         
         logger.info(
             f"Executing {len(self._pending_signals)} pending signals "
-            f"at open={next_bar_open:.2f}"
+            f"at open={next_bar_open:.2f}, candle_ts={candle_timestamp}"
         )
         
+        # Signals ready for execution (candle timestamp >= signal timestamp)
+        # A signal should execute when the candle is the "next bar" after signal
+        signals_to_keep: list[SignalMessage] = []
+        
         for signal in self._pending_signals:
+            # CRITICAL FIX: Only execute signal at the CORRECT next bar
+            # Signal at T should execute at T+1 (next bar), not any future bar
+            # Expected execution time is signal.timestamp + 1 minute (for 1m bars)
+            expected_exec_time = signal.timestamp + timedelta(minutes=1)
+            
+            if candle_timestamp < expected_exec_time:
+                # Candle is before expected execution time - keep signal for later
+                signals_to_keep.append(signal)
+                continue
+            
+            # NOTE: We no longer discard "stale" signals because:
+            # 1. Bot Core already calculated the correct entry_price at signal generation time
+            # 2. In replay mode, streams are desynchronized (signals arrive after candles)
+            # 3. The signal.entry_price contains the correct price, not next_bar_open
+            # For live trading, signals arrive in real-time so this is not an issue
+            
             # Check concurrent trade limit FIRST
             # (prevents attempting execution when already at capacity)
             if len(self._active_trades) >= self._max_active_trades:
@@ -195,10 +256,12 @@ class TradeManager:
                 logger.info(f"Signal {signal.id} blocked by daily limits: {reason}")
                 continue
             
-            await self.execute_entry(signal, next_bar_open)
+            # Use signal.entry_price (calculated by Bot Core at signal generation time)
+            # This is correct even in replay mode where streams are desynchronized
+            await self.execute_entry(signal, float(signal.entry_price))
         
-        # Clear pending signals after execution
-        self._pending_signals.clear()
+        # Keep signals that weren't ready yet
+        self._pending_signals = signals_to_keep
     
     async def _check_trade_exit(
         self,
@@ -222,7 +285,6 @@ class TradeManager:
         should_exit, reason = self._invalidation_checker.check_all(
             trade, candle, bars_elapsed, features
         )
-        
         
         # Check if trade just reached +1R (and persist to database)
         # MUST happen AFTER check_all() to ensure we persist the current candle's state
@@ -294,7 +356,8 @@ class TradeManager:
                 return None
             
             # Create trade record
-            opened_at = datetime.utcnow()
+            # Use signal timestamp for replay compatibility
+            opened_at = signal.timestamp
             entry_bar_idx = self._sm_manager._bar_counter
             trade_id = await self._repo.insert_trade(
                 signal_id=signal.id,
@@ -430,6 +493,15 @@ class TradeManager:
             # Record trade closed for daily limits tracking
             self._daily_tracker.record_trade_closed(pnl_points)
             
+            # Update InvalidationChecker's daily state for loss streak and PnL tracking
+            # Pass actual PnL so PDLL breach detection works correctly
+            # CRITICAL: Pass close_timestamp to ensure session date is based on when
+            # the trade closed, not when it opened (fixes multi-day trade attribution bug)
+            won = pnl_points > 0 if pnl_points != 0 else None
+            self._invalidation_checker.record_trade_outcome(
+                trade, won, pnl_points=pnl_points, close_timestamp=closed_at
+            )
+            
             # Remove from active trades (critical - must happen even if broker failed)
             if trade.trade_id in self._active_trades:
                 del self._active_trades[trade.trade_id]
@@ -438,6 +510,10 @@ class TradeManager:
             
             # Reset invalidation checker state
             self._invalidation_checker.reset_trade(trade.trade_id)
+            
+            # Reset context execution count to allow new trades for the same day
+            # This matches backtester behavior where multiple trades per day are allowed
+            self._sm_manager.reset_context_for_signal(trade.signal_id)
             
             # Publish trade closed event
             trade_msg = TradeMessage(
@@ -456,8 +532,8 @@ class TradeManager:
             )
             await self._publisher.publish_closed(trade_msg)
             
-            
             status_note = " (orphaned trade)" if not broker_position_closed else ""
+            
             logger.info(
                 f"Trade closed: {trade.direction} exit @ {exit_price:.2f} "
                 f"(pnl={pnl_points:.2f} points, reason={exit_reason}, "

@@ -118,7 +118,8 @@ async def clean_streams(redis_client: redis.Redis) -> None:
         ("features.1m", "execution"),
         ("candles.1m.gc", "feature-engine"),
         ("candles.1m.dxy", "feature-engine"),
-        ("features.1m", "htf-bias"),
+        ("candles.1m.gc", "htf-bias"),
+        ("candles.1m.dxy", "htf-bias"),
         # Test consumer groups (various tests use different group names)
         ("trades.opened", "integration-test-trades"),
         ("trades.opened", "integration-test-sl"),
