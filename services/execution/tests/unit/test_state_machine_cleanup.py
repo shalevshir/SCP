@@ -1,5 +1,6 @@
 """Unit tests for state machine cleanup (memory leak prevention)."""
 
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -241,9 +242,11 @@ class TestStateMachineCleanupIntegration:
             # to avoid re-entry protection (which limits 1 execution per 60-bar window)
             manager._bar_counter = i * 60
             
+            # Use different dates to avoid re-entry protection (date-based context keys)
+            signal_date = datetime(2025, 1, 15, 10, 0, tzinfo=timezone.utc) + timedelta(days=i)
             signal = SignalMessage(
                 id=f"signal-{i}",
-                timestamp="2025-01-15T10:00:00Z",
+                timestamp=signal_date.isoformat(),
                 direction="long",
                 setup_type="VWAP_RECLAIM",
                 score=9.0,
@@ -259,7 +262,13 @@ class TestStateMachineCleanupIntegration:
             
             # Confirm it (auto-confirm on next bar)
             manager.increment_bar_counter()
-            manager.check_confirmation(signal_id)
+            is_confirmed = manager.check_confirmation(signal_id, bar_idx=manager._bar_counter)
+            assert is_confirmed, f"State machine should be confirmed at bar {manager._bar_counter}"
+            
+            # Verify state is CONFIRMED before execution
+            sm = manager.get_state_machine(signal_id)
+            assert sm is not None
+            assert sm.current_state.value == "confirmed", f"State should be confirmed, got {sm.current_state.value}"
             
             # Execute trade
             await manager.execute(signal_id, bar_idx=manager._bar_counter)

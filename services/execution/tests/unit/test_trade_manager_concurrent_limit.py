@@ -5,7 +5,7 @@ even when multiple signals are buffered before execution.
 """
 
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -119,9 +119,32 @@ async def test_concurrent_trade_limit_with_buffered_signals(trade_manager):
     this bug. This test verifies the INTENDED behavior: explicit concurrent
     limit checking in execute_pending_signals, not relying on broker.
     """
-    # Create two signals
-    signal1 = create_signal(direction="long")
-    signal2 = create_signal(direction="long")
+    # Create two signals with the same timestamp to ensure they both execute at the same time
+    base_timestamp = datetime.now(timezone.utc)
+    signal1 = SignalMessage(
+        id=str(uuid.uuid4()),
+        timestamp=base_timestamp,
+        direction="long",
+        setup_type="VWAP_RECLAIM",
+        score=9.0,
+        confidence="A+",
+        entry_price=2000.0,
+        sl_price=1990.0,
+        tp_price=2020.0,
+        factors={},
+    )
+    signal2 = SignalMessage(
+        id=str(uuid.uuid4()),
+        timestamp=base_timestamp,  # Same timestamp as signal1
+        direction="long",
+        setup_type="VWAP_RECLAIM",
+        score=9.0,
+        confidence="A+",
+        entry_price=2000.0,
+        sl_price=1990.0,
+        tp_price=2020.0,
+        factors={},
+    )
     
     # Both signals should be buffered (no active trades yet)
     await trade_manager.on_signal(signal1)
@@ -131,9 +154,14 @@ async def test_concurrent_trade_limit_with_buffered_signals(trade_manager):
     assert len(trade_manager._pending_signals) == 2
     assert len(trade_manager._active_trades) == 0
     
-    # Mock check_confirmation to allow execution (bypass re-entry check)
-    # In production, state machines would be confirmed before execute_pending_signals runs
-    trade_manager._sm_manager.check_confirmation = MagicMock(return_value=True)
+    # Confirm state machines (in production, this happens before execute_pending_signals)
+    # Increment bar counter and confirm both signals
+    trade_manager._sm_manager.increment_bar_counter()
+    for signal in [signal1, signal2]:
+        sm = trade_manager._sm_manager.get_state_machine(signal.id)
+        if sm:
+            # Manually confirm the state machine
+            sm.on_confirmation(bar_idx=trade_manager._sm_manager._bar_counter, confirmation_type="test")
     
     # Track execute_entry calls to verify the bug
     original_execute = trade_manager.execute_entry
@@ -145,8 +173,9 @@ async def test_concurrent_trade_limit_with_buffered_signals(trade_manager):
     
     trade_manager.execute_entry = track_execute
     
-    # Execute pending signals at next bar open
-    await trade_manager.execute_pending_signals(next_bar_open=2000.0)
+    # Execute pending signals at next bar open (after both signals' expected execution time)
+    candle_timestamp = base_timestamp + timedelta(minutes=1)
+    await trade_manager.execute_pending_signals(next_bar_open=2000.0, candle_timestamp=candle_timestamp)
     
     # BUG DEMONSTRATION: Without the fix, execute_entry is called TWICE
     # (once for each buffered signal), even though max_active_trades=1
@@ -164,7 +193,9 @@ async def test_concurrent_trade_limit_with_buffered_signals(trade_manager):
     # Should only have 1 active trade
     assert len(trade_manager._active_trades) == 1
     
-    # Pending signals should be cleared
+    # Second signal should remain in pending (blocked by concurrent limit)
+    # but will be removed when it's processed and found to be blocked
+    # Actually, blocked signals are removed from pending (continue skips adding to signals_to_keep)
     assert len(trade_manager._pending_signals) == 0
 
 
@@ -196,7 +227,8 @@ async def test_concurrent_limit_with_daily_limit_interaction(trade_manager):
     assert len(trade_manager._pending_signals) == 3
     
     # Execute pending signals
-    await trade_manager.execute_pending_signals(next_bar_open=2000.0)
+    candle_timestamp = signals[0].timestamp + timedelta(minutes=1)
+    await trade_manager.execute_pending_signals(next_bar_open=2000.0, candle_timestamp=candle_timestamp)
     
     # Should only execute 1 (concurrent limit)
     assert len(trade_manager._active_trades) == 1
@@ -236,7 +268,8 @@ async def test_sequential_execution_respects_concurrent_limit(trade_manager):
     # First signal
     signal1 = create_signal()
     await trade_manager.on_signal(signal1)
-    await trade_manager.execute_pending_signals(next_bar_open=2000.0)
+    candle_timestamp = signal1.timestamp + timedelta(minutes=1)
+    await trade_manager.execute_pending_signals(next_bar_open=2000.0, candle_timestamp=candle_timestamp)
     
     assert len(trade_manager._active_trades) == 1
     
@@ -253,7 +286,8 @@ async def test_sequential_execution_respects_concurrent_limit(trade_manager):
     # Now a second signal should be able to execute
     signal2 = create_signal()
     await trade_manager.on_signal(signal2)
-    await trade_manager.execute_pending_signals(next_bar_open=2000.0)
+    candle_timestamp = signal2.timestamp + timedelta(minutes=1)
+    await trade_manager.execute_pending_signals(next_bar_open=2000.0, candle_timestamp=candle_timestamp)
     
     assert len(trade_manager._active_trades) == 1
 

@@ -132,9 +132,10 @@ async def test_session_reset_at_day_boundary_prevents_signal_blocking(
         volume=100.0,
     )
     
+    # Signal arrives at 9:30, should execute at 9:31 (next bar)
     signal2 = SignalMessage(
         id="signal_day2",
-        timestamp=day2_candle.timestamp,
+        timestamp=day2_candle.timestamp - timedelta(minutes=1),  # Signal at 9:29, candle at 9:30
         direction="long",
         setup_type="VWAP_RECLAIM",
         score=9.0,
@@ -158,7 +159,8 @@ async def test_session_reset_at_day_boundary_prevents_signal_blocking(
     )
     
     # Now execute pending signals with fresh session state
-    await trade_manager.execute_pending_signals(day2_candle.open)
+    # Candle at 9:30 is >= signal.timestamp + 1min (9:29 + 1min = 9:30), so it should execute
+    await trade_manager.execute_pending_signals(day2_candle.open, candle_timestamp=day2_candle.timestamp)
     
     # Then process candle
     await trade_manager.on_candle(day2_candle, None)
