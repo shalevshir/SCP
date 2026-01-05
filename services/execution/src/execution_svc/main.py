@@ -112,12 +112,15 @@ async def process_streams(
     logger.info("Execution Service ready - consuming signals and candles")
     
     # Synchronizer to pair candles with their matching features by timestamp
-    # Use a larger timeout (5 minutes of data-time) to handle:
-    # 1. High-speed replay where many messages arrive in quick succession
+    # CRITICAL: Use a VERY large timeout (7 days of data-time) to handle:
+    # 1. High-speed replay where candles arrive in batches spanning hours
+    # 2. Features arriving in separate batches after their candles
+    # 3. The cleanup uses DATA timestamps, not wall-clock time, so during
+    #    replay, hours of data arrive in seconds - need large buffer
+    # 4. For 7-day backtest (Nov 5-11), need timeout >= 7 days to prevent
+    #    early candles from being cleaned before their features arrive
     global _synchronizer  # noqa: PLW0603 - intentional global for reset endpoint
-    # 2. Gaps in historical data (e.g., trading hours only)
-    # The cleanup uses DATA timestamps, not wall-clock time.
-    synchronizer = CandleFeatureSynchronizer(timeout_seconds=300)
+    synchronizer = CandleFeatureSynchronizer(timeout_seconds=604800)  # 7 days
     _synchronizer = synchronizer  # Store global reference for reset endpoint
     
     # Cleanup counter (run cleanup every N candles to prevent memory leaks)
@@ -236,7 +239,8 @@ async def _process_candle_with_features(
     sm_manager.increment_bar_counter()
     
     # Execute pending signals at this candle's open
-    await trade_manager.execute_pending_signals(candle_msg.open)
+    # Pass candle timestamp so signals only execute at the correct time
+    await trade_manager.execute_pending_signals(candle_msg.open, candle_msg.timestamp)
     
     # Monitor active trades for SL/TP and invalidation
     # Now we pass the CORRECT features that match this candle's timestamp
@@ -332,6 +336,7 @@ async def reset_state() -> dict[str, str]:
     _sm_manager._state_machines.clear()
     _sm_manager._bar_counter = 0
     _sm_manager._reclaim_context_executions.clear()  # CRITICAL: Reset reclaim context executions
+    _sm_manager._signal_timestamps.clear()  # Reset signal timestamps for context key generation
     
     # Reset broker
     _broker.reset_state()

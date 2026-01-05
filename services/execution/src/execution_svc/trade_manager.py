@@ -1,7 +1,7 @@
 """Trade lifecycle manager with SL/TP monitoring."""
 
 import math
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Literal, cast
 
 from scp_shared.common.logger import get_logger
@@ -203,21 +203,44 @@ class TradeManager:
         for _trade_id, trade in list(self._active_trades.items()):
             await self._check_trade_exit(trade, candle_obj, features_dict)
     
-    async def execute_pending_signals(self, next_bar_open: float) -> None:
+    async def execute_pending_signals(
+        self, next_bar_open: float, candle_timestamp: datetime
+    ) -> None:
         """Execute buffered signals at next bar open price.
         
         Args:
             next_bar_open: Open price of the next bar
+            candle_timestamp: Timestamp of the candle being processed
         """
         if not self._pending_signals:
             return
         
         logger.info(
             f"Executing {len(self._pending_signals)} pending signals "
-            f"at open={next_bar_open:.2f}"
+            f"at open={next_bar_open:.2f}, candle_ts={candle_timestamp}"
         )
         
+        # Signals ready for execution (candle timestamp >= signal timestamp)
+        # A signal should execute when the candle is the "next bar" after signal
+        signals_to_keep: list[SignalMessage] = []
+        
         for signal in self._pending_signals:
+            # CRITICAL FIX: Only execute signal at the CORRECT next bar
+            # Signal at T should execute at T+1 (next bar), not any future bar
+            # Expected execution time is signal.timestamp + 1 minute (for 1m bars)
+            expected_exec_time = signal.timestamp + timedelta(minutes=1)
+            
+            if candle_timestamp < expected_exec_time:
+                # Candle is before expected execution time - keep signal for later
+                signals_to_keep.append(signal)
+                continue
+            
+            # NOTE: We no longer discard "stale" signals because:
+            # 1. Bot Core already calculated the correct entry_price at signal generation time
+            # 2. In replay mode, streams are desynchronized (signals arrive after candles)
+            # 3. The signal.entry_price contains the correct price, not next_bar_open
+            # For live trading, signals arrive in real-time so this is not an issue
+            
             # Check concurrent trade limit FIRST
             # (prevents attempting execution when already at capacity)
             if len(self._active_trades) >= self._max_active_trades:
@@ -233,10 +256,12 @@ class TradeManager:
                 logger.info(f"Signal {signal.id} blocked by daily limits: {reason}")
                 continue
             
-            await self.execute_entry(signal, next_bar_open)
+            # Use signal.entry_price (calculated by Bot Core at signal generation time)
+            # This is correct even in replay mode where streams are desynchronized
+            await self.execute_entry(signal, float(signal.entry_price))
         
-        # Clear pending signals after execution
-        self._pending_signals.clear()
+        # Keep signals that weren't ready yet
+        self._pending_signals = signals_to_keep
     
     async def _check_trade_exit(
         self,
@@ -260,7 +285,6 @@ class TradeManager:
         should_exit, reason = self._invalidation_checker.check_all(
             trade, candle, bars_elapsed, features
         )
-        
         
         # Check if trade just reached +1R (and persist to database)
         # MUST happen AFTER check_all() to ensure we persist the current candle's state
@@ -487,6 +511,10 @@ class TradeManager:
             # Reset invalidation checker state
             self._invalidation_checker.reset_trade(trade.trade_id)
             
+            # Reset context execution count to allow new trades for the same day
+            # This matches backtester behavior where multiple trades per day are allowed
+            self._sm_manager.reset_context_for_signal(trade.signal_id)
+            
             # Publish trade closed event
             trade_msg = TradeMessage(
                 id=trade.trade_id,
@@ -504,8 +532,8 @@ class TradeManager:
             )
             await self._publisher.publish_closed(trade_msg)
             
-            
             status_note = " (orphaned trade)" if not broker_position_closed else ""
+            
             logger.info(
                 f"Trade closed: {trade.direction} exit @ {exit_price:.2f} "
                 f"(pnl={pnl_points:.2f} points, reason={exit_reason}, "
