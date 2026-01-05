@@ -4,12 +4,21 @@ Tests that features published at 15m/1h boundaries trigger HTF bias updates.
 """
 
 import asyncio
+import os
 from datetime import datetime, timedelta, timezone
 
 import pytest
 import redis.asyncio as redis
 from scp_shared.messaging import RedisStreamConsumer, RedisStreamPublisher
 from scp_shared.messaging.schemas import CandleMessage, HTFBiasMessage
+
+# Wait time for HTF Bias service to process candles
+# In CI, services may be slower, so wait longer
+# Check for CI environment variable (set by GitHub Actions and most CI systems)
+# or GITHUB_ACTIONS (specific to GitHub Actions)
+# Both are set to "true" in GitHub Actions
+IS_CI = os.getenv("CI") == "true" or os.getenv("GITHUB_ACTIONS") == "true"
+HTF_BIAS_PROCESSING_WAIT = 10.0 if IS_CI else 3.0
 
 
 @pytest.mark.integration
@@ -36,6 +45,10 @@ async def test_htf_boundary_triggers_bias_update(
     
     # CRITICAL: Create consumer group BEFORE any messages are published
     await bias_consumer.ensure_group()
+    
+    # Give HTF Bias service time to initialize consumers after health check
+    # In CI, this may take longer
+    await asyncio.sleep(2.0 if IS_CI else 0.5)
     
     # Publish candles building up to 15m boundary
     # Start at 10:00, go to 10:15 (15m boundary)
@@ -77,7 +90,7 @@ async def test_htf_boundary_triggers_bias_update(
         await asyncio.sleep(0.01)
     
     # Wait for HTF Bias service to process
-    await asyncio.sleep(3.0)
+    await asyncio.sleep(HTF_BIAS_PROCESSING_WAIT)
     
     # Try to read bias updates
     bias_list = await bias_consumer.read(count=5, block_ms=5000)
@@ -156,7 +169,8 @@ async def test_bias_includes_structure_info(
         await redis_publisher.publish("candles.1m.dxy", dxy_candle)
         await asyncio.sleep(0.01)
     
-    await asyncio.sleep(3.0)
+    # Wait for HTF Bias service to process
+    await asyncio.sleep(HTF_BIAS_PROCESSING_WAIT)
     
     bias_list = await bias_consumer.read(count=10, block_ms=5000)
     
@@ -230,7 +244,8 @@ async def test_bias_detects_chop(
         await redis_publisher.publish("candles.1m.dxy", dxy_candle)
         await asyncio.sleep(0.01)
     
-    await asyncio.sleep(3.0)
+    # Wait for HTF Bias service to process
+    await asyncio.sleep(HTF_BIAS_PROCESSING_WAIT)
     
     bias_list = await bias_consumer.read(count=10, block_ms=5000)
     
@@ -307,7 +322,8 @@ async def test_bias_timestamp_correlation(
         await redis_publisher.publish("candles.1m.dxy", dxy_candle)
         await asyncio.sleep(0.01)
     
-    await asyncio.sleep(3.0)
+    # Wait for HTF Bias service to process
+    await asyncio.sleep(HTF_BIAS_PROCESSING_WAIT)
     
     bias_list = await bias_consumer.read(count=10, block_ms=5000)
     
