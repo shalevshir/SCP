@@ -50,12 +50,20 @@ async def test_htf_boundary_triggers_bias_update(
     # In CI, this may take longer
     await asyncio.sleep(2.0 if IS_CI else 0.5)
     
-    # Publish candles building up to 15m boundary
-    # Start at 10:00, go to 10:15 (15m boundary)
-    base_timestamp = datetime(2025, 1, 15, 10, 0, 0, tzinfo=timezone.utc)
+    # Publish candles to warm up HTF calculator and cross 15m boundary
+    # 
+    # HTF bias calculation requires BOTH features_1h AND features_15m to be populated:
+    # - features_1h is populated when a 1H boundary is crossed (e.g., 10:00)
+    # - features_15m is populated when a 15M boundary is crossed
+    # 
+    # Start at 9:00, publish 80 candles (9:00 to 10:19):
+    # - 1H bar completes at 10:00 → features_1h populated
+    # - 15M bars complete at 9:15, 9:30, 9:45, 10:00, 10:15 → features_15m populated
+    # - At 10:15, BOTH features exist → bias is computed
+    base_timestamp = datetime(2025, 1, 15, 9, 0, 0, tzinfo=timezone.utc)
     
-    # Publish 20 candles (10:00 to 10:19) to cross 15m boundary at 10:15
-    for i in range(20):
+    # Publish 80 candles (9:00 to 10:19) to cross 1H boundary and then 15m boundary
+    for i in range(80):
         timestamp = base_timestamp + timedelta(minutes=i)
         
         # Create bullish trend (price going up)
@@ -98,8 +106,8 @@ async def test_htf_boundary_triggers_bias_update(
     # CRITICAL: HTF bias must update at 15m boundaries - test should not pass silently
     assert len(bias_list) > 0, (
         "HTF Bias service should have produced at least one bias update at the 15m boundary. "
-        "Published candles from 10:00 to 10:19, crossing 10:15 boundary. "
-        "If no bias received, the HTF boundary detection is broken."
+        "Published 80 candles from 9:00 to 10:19, crossing 1H boundary at 10:00 and 15m boundary at 10:15. "
+        "If no bias received, the HTF boundary detection is broken or service not consuming candles."
     )
     
     latest_bias = bias_list[-1]
@@ -133,11 +141,15 @@ async def test_bias_includes_structure_info(
     # CRITICAL: Create consumer group BEFORE any messages are published
     await bias_consumer.ensure_group()
     
-    # Publish enough candles to establish structure
-    base_timestamp = datetime(2025, 1, 15, 10, 0, 0, tzinfo=timezone.utc)
+    # Give HTF Bias service time to initialize consumers after health check
+    await asyncio.sleep(2.0 if IS_CI else 0.5)
+    
+    # Publish enough candles to warm up HTF calculator (need 1H bar + 15M bar)
+    # Start at 9:00, publish 80 candles to cross 1H boundary at 10:00
+    base_timestamp = datetime(2025, 1, 15, 9, 0, 0, tzinfo=timezone.utc)
     
     # Create clear bullish structure: higher highs and higher lows
-    for i in range(30):
+    for i in range(80):
         timestamp = base_timestamp + timedelta(minutes=i)
         
         # Staircase pattern - clear higher highs
@@ -174,11 +186,11 @@ async def test_bias_includes_structure_info(
     
     bias_list = await bias_consumer.read(count=10, block_ms=5000)
     
-    # Should receive bias updates after publishing 30 candles across 15m boundaries
+    # Should receive bias updates after publishing 80 candles across 1H and 15M boundaries
     assert len(bias_list) > 0, (
         "HTF Bias service should have produced bias updates. "
-        "Published 30 candles with clear bullish structure. "
-        "If no bias received, the service is not processing features."
+        "Published 80 candles from 9:00 to 10:19 with clear bullish structure, crossing 1H boundary at 10:00. "
+        "If no bias received, the service is not processing candles or features are not populated."
     )
     
     latest_bias = bias_list[-1]
@@ -209,13 +221,17 @@ async def test_bias_detects_chop(
     # CRITICAL: Create consumer group BEFORE any messages are published
     await bias_consumer.ensure_group()
     
-    # Publish candles with no clear direction (chop)
-    base_timestamp = datetime(2025, 1, 15, 10, 0, 0, tzinfo=timezone.utc)
+    # Give HTF Bias service time to initialize consumers after health check
+    await asyncio.sleep(2.0 if IS_CI else 0.5)
     
-    for i in range(30):
+    # Publish enough candles to warm up HTF calculator (need 1H bar + 15M bar)
+    # Start at 9:00, publish 80 candles to cross 1H boundary at 10:00
+    base_timestamp = datetime(2025, 1, 15, 9, 0, 0, tzinfo=timezone.utc)
+    
+    for i in range(80):
         timestamp = base_timestamp + timedelta(minutes=i)
         
-        # Oscillate around 2650 - no trend
+        # Oscillate around 2650 - no trend (chop pattern)
         price = 2650.0 + (i % 4 - 2) * 2.0  # Bounce between 2646-2654
         
         gc_candle = CandleMessage(
@@ -249,11 +265,11 @@ async def test_bias_detects_chop(
     
     bias_list = await bias_consumer.read(count=10, block_ms=5000)
     
-    # Should receive bias updates after publishing 30 candles of choppy price action
+    # Should receive bias updates after publishing 80 candles of choppy price action
     assert len(bias_list) > 0, (
         "HTF Bias service should have produced bias updates. "
-        "Published 30 candles with ranging/choppy price action. "
-        "If no bias received, the service is not processing features."
+        "Published 80 candles from 9:00 to 10:19 with ranging/choppy price action. "
+        "If no bias received, the service is not processing candles or features are not populated."
     )
     
     latest_bias = bias_list[-1]
@@ -289,11 +305,14 @@ async def test_bias_timestamp_correlation(
     # CRITICAL: Create consumer group BEFORE any messages are published
     await bias_consumer.ensure_group()
     
-    # Publish candles crossing specific 15m boundary
-    # 10:00 to 10:20 crosses 10:15 boundary
-    base_timestamp = datetime(2025, 1, 15, 10, 0, 0, tzinfo=timezone.utc)
+    # Give HTF Bias service time to initialize consumers after health check
+    await asyncio.sleep(2.0 if IS_CI else 0.5)
     
-    for i in range(25):
+    # Publish enough candles to warm up HTF calculator (need 1H bar + 15M bar)
+    # Start at 9:00, publish 80 candles to cross 1H boundary at 10:00 and 15M boundary at 10:15
+    base_timestamp = datetime(2025, 1, 15, 9, 0, 0, tzinfo=timezone.utc)
+    
+    for i in range(80):
         timestamp = base_timestamp + timedelta(minutes=i)
         
         gc_candle = CandleMessage(
@@ -327,11 +346,11 @@ async def test_bias_timestamp_correlation(
     
     bias_list = await bias_consumer.read(count=10, block_ms=5000)
     
-    # Should receive bias updates at 15m boundary (10:15)
+    # Should receive bias updates at 15m boundary (10:15) after 1H warmup at 10:00
     assert len(bias_list) > 0, (
         "HTF Bias service should have produced bias updates at 15m boundaries. "
-        "Published candles from 10:00 to 10:24, crossing 10:15 boundary. "
-        "If no bias received, boundary detection is broken."
+        "Published 80 candles from 9:00 to 10:19, crossing 1H boundary at 10:00 and 15M boundary at 10:15. "
+        "If no bias received, boundary detection is broken or service not consuming candles."
     )
     
     # Verify bias timestamps are at or near 15m boundaries
