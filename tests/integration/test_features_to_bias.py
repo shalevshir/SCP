@@ -18,7 +18,55 @@ from scp_shared.messaging.schemas import CandleMessage, HTFBiasMessage
 # or GITHUB_ACTIONS (specific to GitHub Actions)
 # Both are set to "true" in GitHub Actions
 IS_CI = os.getenv("CI") == "true" or os.getenv("GITHUB_ACTIONS") == "true"
-HTF_BIAS_PROCESSING_WAIT = 10.0 if IS_CI else 3.0
+HTF_BIAS_PROCESSING_WAIT = 15.0 if IS_CI else 3.0
+SERVICE_INIT_WAIT = 5.0 if IS_CI else 0.5
+
+
+async def read_bias_with_retry(
+    consumer: RedisStreamConsumer,
+    max_attempts: int = 10 if IS_CI else 5,
+    wait_between: float = 5.0 if IS_CI else 2.0,
+) -> list:
+    """Read bias messages with retry logic for CI reliability.
+    
+    In CI, services may take longer to process. This function retries
+    reading from the stream multiple times with waits between attempts.
+    
+    Args:
+        consumer: Redis stream consumer for htf.bias
+        max_attempts: Maximum number of read attempts (more in CI)
+        wait_between: Seconds to wait between attempts (longer in CI)
+        
+    Returns:
+        List of bias messages (may be empty if all retries fail)
+    """
+    for attempt in range(max_attempts):
+        bias_list = await consumer.read(count=10, block_ms=5000)
+        if bias_list:
+            return bias_list
+        if attempt < max_attempts - 1:
+            await asyncio.sleep(wait_between)
+    return []
+
+
+async def verify_stream_has_messages(
+    redis_client: redis.Redis,
+    stream: str,
+) -> int:
+    """Verify a stream has messages and return the count.
+    
+    Args:
+        redis_client: Redis client
+        stream: Stream name to check
+        
+    Returns:
+        Number of messages in stream
+    """
+    try:
+        info = await redis_client.xinfo_stream(stream)
+        return info.get("length", 0)
+    except Exception:
+        return 0
 
 
 @pytest.mark.integration
@@ -47,8 +95,8 @@ async def test_htf_boundary_triggers_bias_update(
     await bias_consumer.ensure_group()
     
     # Give HTF Bias service time to initialize consumers after health check
-    # In CI, this may take longer
-    await asyncio.sleep(2.0 if IS_CI else 0.5)
+    # In CI, services may take longer to start processing loops
+    await asyncio.sleep(SERVICE_INIT_WAIT)
     
     # Publish candles to warm up HTF calculator and cross 15m boundary
     # 
@@ -100,14 +148,20 @@ async def test_htf_boundary_triggers_bias_update(
     # Wait for HTF Bias service to process
     await asyncio.sleep(HTF_BIAS_PROCESSING_WAIT)
     
-    # Try to read bias updates
-    bias_list = await bias_consumer.read(count=5, block_ms=5000)
+    # Try to read bias updates with retry for CI reliability
+    bias_list = await read_bias_with_retry(bias_consumer)
     
     # CRITICAL: HTF bias must update at 15m boundaries - test should not pass silently
+    # Add diagnostic info for CI debugging
+    gc_stream_len = await verify_stream_has_messages(redis_client, "candles.1m.gc")
+    dxy_stream_len = await verify_stream_has_messages(redis_client, "candles.1m.dxy")
+    bias_stream_len = await verify_stream_has_messages(redis_client, "htf.bias")
+    
     assert len(bias_list) > 0, (
-        "HTF Bias service should have produced at least one bias update at the 15m boundary. "
-        "Published 80 candles from 9:00 to 10:19, crossing 1H boundary at 10:00 and 15m boundary at 10:15. "
-        "If no bias received, the HTF boundary detection is broken or service not consuming candles."
+        f"HTF Bias service should have produced at least one bias update at the 15m boundary. "
+        f"Published 80 candles from 9:00 to 10:19, crossing 1H boundary at 10:00 and 15m boundary at 10:15. "
+        f"Stream stats: candles.1m.gc={gc_stream_len}, candles.1m.dxy={dxy_stream_len}, htf.bias={bias_stream_len}. "
+        f"If candle streams have data but htf.bias is empty, service is not producing bias."
     )
     
     latest_bias = bias_list[-1]
@@ -184,13 +238,19 @@ async def test_bias_includes_structure_info(
     # Wait for HTF Bias service to process
     await asyncio.sleep(HTF_BIAS_PROCESSING_WAIT)
     
-    bias_list = await bias_consumer.read(count=10, block_ms=5000)
+    # Try to read bias updates with retry for CI reliability
+    bias_list = await read_bias_with_retry(bias_consumer)
+    
+    # Add diagnostic info for CI debugging
+    gc_stream_len = await verify_stream_has_messages(redis_client, "candles.1m.gc")
+    bias_stream_len = await verify_stream_has_messages(redis_client, "htf.bias")
     
     # Should receive bias updates after publishing 80 candles across 1H and 15M boundaries
     assert len(bias_list) > 0, (
-        "HTF Bias service should have produced bias updates. "
-        "Published 80 candles from 9:00 to 10:19 with clear bullish structure, crossing 1H boundary at 10:00. "
-        "If no bias received, the service is not processing candles or features are not populated."
+        f"HTF Bias service should have produced bias updates. "
+        f"Published 80 candles from 9:00 to 10:19 with clear bullish structure, crossing 1H boundary at 10:00. "
+        f"Stream stats: candles.1m.gc={gc_stream_len}, htf.bias={bias_stream_len}. "
+        f"If candle streams have data but htf.bias is empty, service is not producing bias."
     )
     
     latest_bias = bias_list[-1]
@@ -263,13 +323,19 @@ async def test_bias_detects_chop(
     # Wait for HTF Bias service to process
     await asyncio.sleep(HTF_BIAS_PROCESSING_WAIT)
     
-    bias_list = await bias_consumer.read(count=10, block_ms=5000)
+    # Try to read bias updates with retry for CI reliability
+    bias_list = await read_bias_with_retry(bias_consumer)
+    
+    # Add diagnostic info for CI debugging
+    gc_stream_len = await verify_stream_has_messages(redis_client, "candles.1m.gc")
+    bias_stream_len = await verify_stream_has_messages(redis_client, "htf.bias")
     
     # Should receive bias updates after publishing 80 candles of choppy price action
     assert len(bias_list) > 0, (
-        "HTF Bias service should have produced bias updates. "
-        "Published 80 candles from 9:00 to 10:19 with ranging/choppy price action. "
-        "If no bias received, the service is not processing candles or features are not populated."
+        f"HTF Bias service should have produced bias updates. "
+        f"Published 80 candles from 9:00 to 10:19 with ranging/choppy price action. "
+        f"Stream stats: candles.1m.gc={gc_stream_len}, htf.bias={bias_stream_len}. "
+        f"If candle streams have data but htf.bias is empty, service is not producing bias."
     )
     
     latest_bias = bias_list[-1]
@@ -344,13 +410,19 @@ async def test_bias_timestamp_correlation(
     # Wait for HTF Bias service to process
     await asyncio.sleep(HTF_BIAS_PROCESSING_WAIT)
     
-    bias_list = await bias_consumer.read(count=10, block_ms=5000)
+    # Try to read bias updates with retry for CI reliability
+    bias_list = await read_bias_with_retry(bias_consumer)
+    
+    # Add diagnostic info for CI debugging
+    gc_stream_len = await verify_stream_has_messages(redis_client, "candles.1m.gc")
+    bias_stream_len = await verify_stream_has_messages(redis_client, "htf.bias")
     
     # Should receive bias updates at 15m boundary (10:15) after 1H warmup at 10:00
     assert len(bias_list) > 0, (
-        "HTF Bias service should have produced bias updates at 15m boundaries. "
-        "Published 80 candles from 9:00 to 10:19, crossing 1H boundary at 10:00 and 15M boundary at 10:15. "
-        "If no bias received, boundary detection is broken or service not consuming candles."
+        f"HTF Bias service should have produced bias updates at 15m boundaries. "
+        f"Published 80 candles from 9:00 to 10:19, crossing 1H boundary at 10:00 and 15M boundary at 10:15. "
+        f"Stream stats: candles.1m.gc={gc_stream_len}, htf.bias={bias_stream_len}. "
+        f"If candle streams have data but htf.bias is empty, boundary detection is broken or service not consuming candles."
     )
     
     # Verify bias timestamps are at or near 15m boundaries
