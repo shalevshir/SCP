@@ -518,3 +518,4 @@ The microservices architecture now has **parity with the legacy backtester** for
 **Key Achievement:** Services will now exit trades at the same decision points as the legacy backtester, preventing trades from being held longer than SOP allows and ensuring consistent risk management.
 
 
+
