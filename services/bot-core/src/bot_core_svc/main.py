@@ -65,6 +65,10 @@ async def process_features(
     # Load daily state
     await guardrails_service.load_state()
     
+    # Warmup period tracking
+    warmup_bar_count = 0
+    logger.info(f"Warmup period: {config.warmup_bars} bars (signal generation disabled during warmup)")
+    
     # Create consumers
     features_consumer = RedisStreamConsumer(
         redis_client,
@@ -100,13 +104,15 @@ async def process_features(
             
             # Process features
             for features_msg in features_list:
-                await process_feature_message(
+                warmup_bar_count = await process_feature_message(
                     features_msg,
                     bias_cache,
                     signal_engine,
                     signal_publisher,
                     guardrails_service,
                     session_service,
+                    warmup_bar_count,
+                    config.warmup_bars,
                 )
     
     except asyncio.CancelledError:
@@ -124,7 +130,9 @@ async def process_feature_message(
     signal_publisher: SignalPublisher,
     guardrails_service: GuardrailsService,
     session_service: SessionValidationService,
-) -> None:
+    warmup_bar_count: int,
+    warmup_bars: int,
+) -> int:
     """Process a single feature message.
     
     Args:
@@ -134,14 +142,29 @@ async def process_feature_message(
         signal_publisher: Signal publisher
         guardrails_service: Guardrails service
         session_service: Session validation service
+        warmup_bar_count: Current bar count (for warmup tracking)
+        warmup_bars: Number of bars to skip during warmup
+        
+    Returns:
+        Updated warmup_bar_count
     """
+    # Increment bar counter
+    warmup_bar_count += 1
+    
+    # Check warmup period
+    if warmup_bar_count <= warmup_bars:
+        logger.debug(
+            f"Warmup: bar {warmup_bar_count}/{warmup_bars} - skipping signal generation"
+        )
+        return warmup_bar_count
+    
     # 1. Validate session
     session_result = session_service.evaluate(features.timestamp)
     if not session_result.session_ok:
         logger.debug(
             f"Session blocked at {features.timestamp}: {session_result.reason}"
         )
-        return
+        return warmup_bar_count
     
     # 2. Check guardrails
     guardrail_result = guardrails_service.evaluate(session_result.constraints)
@@ -149,12 +172,12 @@ async def process_feature_message(
         logger.debug(
             f"Guardrails blocked at {features.timestamp}: {guardrail_result.reasons}"
         )
-        return
+        return warmup_bar_count
     
     # 2.5. Check DXY availability (required for accurate scoring)
     if features.dxy_correlation is None and features.dxy_corr is None:
         logger.debug(f"DXY data unavailable at {features.timestamp} - skipping signal generation")
-        return
+        return warmup_bar_count
     
     # 3. Get bias for this feature's timestamp (critical for replay mode)
     # Uses timestamp-aware lookup to ensure features are evaluated with
@@ -174,6 +197,8 @@ async def process_feature_message(
     # 6. Publish A+ signals
     if signal_msg is not None:
         await signal_publisher.publish(signal_msg)
+    
+    return warmup_bar_count
 
 
 @asynccontextmanager

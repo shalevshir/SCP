@@ -83,6 +83,21 @@ class SessionValidationService:
         # Validate
         result = self._validator.evaluate(timestamp)
         
+        # Log session validation result for visibility (especially during replay)
+        if result.session_ok:
+            logger.debug(
+                f"Session check PASS: {timestamp.isoformat()} | "
+                f"window={result.constraints.window_start.strftime('%H:%M')}-"
+                f"{result.constraints.window_end.strftime('%H:%M')} ILT"
+            )
+        else:
+            logger.debug(
+                f"Session check BLOCK: {timestamp.isoformat()} | "
+                f"reason={result.reason} | "
+                f"window={result.constraints.window_start.strftime('%H:%M')}-"
+                f"{result.constraints.window_end.strftime('%H:%M')} ILT"
+            )
+        
         # Update cache
         with self._lock:
             self._cached_result = result

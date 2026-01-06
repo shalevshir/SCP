@@ -74,7 +74,7 @@ class TestDXYAvailabilityCheck:
             **{**base_features.__dict__, "dxy_correlation": None, "dxy_corr": None}
         )
         
-        # Process feature message
+        # Process feature message (skip warmup by setting counter > warmup_bars)
         await process_feature_message(
             features,
             bias_cache,
@@ -82,6 +82,8 @@ class TestDXYAvailabilityCheck:
             signal_publisher,
             guardrails_service,
             session_service,
+            warmup_bar_count=100,  # Already past warmup
+            warmup_bars=60,
         )
         
         # signal_engine.generate should NOT be called
@@ -107,7 +109,7 @@ class TestDXYAvailabilityCheck:
             return_value=Mock(session_ok=True, constraints={})
         )
         
-        # Process feature message with DXY available
+        # Process feature message with DXY available (skip warmup by setting counter > warmup_bars)
         await process_feature_message(
             base_features,
             bias_cache,
@@ -115,6 +117,8 @@ class TestDXYAvailabilityCheck:
             signal_publisher,
             guardrails_service,
             session_service,
+            warmup_bar_count=100,  # Already past warmup
+            warmup_bars=60,
         )
         
         # signal_engine.generate SHOULD be called
