@@ -55,4 +55,3 @@ class SignalPublisher:
         )
         
         return message_id
-

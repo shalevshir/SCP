@@ -14,7 +14,8 @@ from scp_shared.messaging.schemas import SignalMessage
 logger = get_logger(__name__)
 
 # Maximum executions per reclaim context (prevents excessive re-entries)
-MAX_EXECUTIONS_PER_CONTEXT = 1
+# Increased to 10 to allow multiple trades per day (matches backtest behavior)
+MAX_EXECUTIONS_PER_CONTEXT = 10
 
 
 class StateMachineManager:
@@ -45,11 +46,15 @@ class StateMachineManager:
         # Store signal timestamps for context key generation (uses trading day, not bar counter)
         self._signal_timestamps: dict[str, datetime] = {}
     
-    async def create_from_signal(self, signal: SignalMessage) -> str:
+    async def create_from_signal(
+        self, signal: SignalMessage, auto_confirm: bool = False
+    ) -> str:
         """Create state machine from signal.
         
         Args:
             signal: Signal message from Bot Core
+            auto_confirm: If True, immediately confirm the state machine.
+                         Used for late signals where execution candle is already known.
             
         Returns:
             Signal ID
@@ -60,6 +65,11 @@ class StateMachineManager:
         # Detect reclaim (signal already represents detected reclaim)
         direction = "above" if signal.direction == "long" else "below"
         sm.on_reclaim_detected(bar_idx=self._bar_counter, direction=direction)
+        
+        # For late signals, immediately confirm since we've verified the execution candle exists
+        if auto_confirm:
+            sm.on_confirmation(bar_idx=self._bar_counter, confirmation_type="late_signal_auto")
+            logger.info(f"Auto-confirmed late signal {signal.id} at bar {self._bar_counter}")
         
         # Store state machine and timestamp (timestamp used for context key generation)
         self._state_machines[signal.id] = sm
@@ -145,6 +155,7 @@ class StateMachineManager:
                 logger.info(f"Auto-confirmed signal {signal_id} at bar {bar_idx}")
         
         can_exec = sm.can_execute()
+        
         return can_exec
     
     def check_expiration(self, signal_id: str, bar_idx: int | None = None) -> bool:

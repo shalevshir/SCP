@@ -65,12 +65,17 @@ async def process_streams(
     sm_manager = StateMachineManager(db_pool)
     trade_repo = TradeRepository(db_pool)
     trade_publisher = TradePublisher(redis_client)
+    # HARDCODED: Force max_active_trades=1 for debugging (matching backtest)
+    _max_active = 1  # config.max_active_trades
+    logger.info(f"TradeManager config: max_active_trades={_max_active}")
+    
     trade_manager = TradeManager(
         broker=broker,
         state_machine_manager=sm_manager,
         trade_repository=trade_repo,
         trade_publisher=trade_publisher,
-        max_active_trades=config.max_active_trades,
+        db_pool=db_pool,
+        max_active_trades=_max_active,
         pdll_limit=config.pdll_limit,
         max_trades_per_day=config.max_trades_per_day,
     )

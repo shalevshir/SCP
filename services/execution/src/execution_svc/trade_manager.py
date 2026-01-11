@@ -6,6 +6,8 @@ from typing import Any, Literal, cast
 
 from scp_shared.common.logger import get_logger
 from scp_shared.common.types import Candle
+from scp_shared.database import DatabasePool
+from scp_shared.database.repositories import CandleRepository
 from scp_shared.execution import InvalidationChecker
 from scp_shared.execution.types import TradeRecord
 from scp_shared.messaging.schemas import (
@@ -63,6 +65,7 @@ class TradeManager:
         state_machine_manager: StateMachineManager,
         trade_repository: TradeRepository,
         trade_publisher: TradePublisher,
+        db_pool: DatabasePool,
         max_active_trades: int = 1,
         pdll_limit: float = 600.0,
         max_trades_per_day: int = 2,
@@ -74,6 +77,7 @@ class TradeManager:
             state_machine_manager: State machine manager
             trade_repository: Trade repository for DB persistence
             trade_publisher: Trade publisher for Redis events
+            db_pool: Database pool for candle queries
             max_active_trades: Maximum concurrent trades (default: 1)
             pdll_limit: Per day loss limit in points (default: 600.0)
             max_trades_per_day: Maximum trades per day (default: 2)
@@ -82,6 +86,7 @@ class TradeManager:
         self._sm_manager = state_machine_manager
         self._repo = trade_repository
         self._publisher = trade_publisher
+        self._candle_repo = CandleRepository(db_pool)
         self._max_active_trades = max_active_trades
         
         # Active trades (in-memory cache)
@@ -105,7 +110,9 @@ class TradeManager:
     async def on_signal(self, signal: SignalMessage) -> None:
         """Handle incoming signal from Bot Core.
         
-        Buffers signal for execution at next bar open.
+        If signal's execution time has already passed (late arrival in replay mode),
+        fetches the execution candle from database and executes immediately.
+        Otherwise, buffers signal for next bar execution.
         
         Args:
             signal: Signal message
@@ -118,7 +125,35 @@ class TradeManager:
             )
             return
         
-        # Buffer signal for next bar execution
+        # CRITICAL FIX: Check if signal's execution time has already passed
+        # Signal at T should execute at T+1 (next bar). If we're past T+1,
+        # the execution candle was already processed, so fetch it from DB.
+        expected_exec_time = signal.timestamp + timedelta(minutes=1)
+        current_bar_timestamp = self._sm_manager._bar_counter  # This is a counter, not timestamp
+        
+        # For replay mode: if signal arrives late, check if execution candle exists in DB
+        # We'll fetch the candle and execute immediately if it exists
+        candle_record = await self._candle_repo.get_candle_by_timestamp(
+            expected_exec_time, "GC", "1m"
+        )
+        
+        if candle_record is not None:
+            # Execution candle exists in DB - signal arrived late, execute immediately
+            logger.info(
+                f"Signal {signal.id} arrived late - executing immediately using "
+                f"candle from DB at {expected_exec_time}"
+            )
+            
+            # Create state machine with auto_confirm=True for late signals
+            # since we've verified the execution candle exists in DB
+            await self._sm_manager.create_from_signal(signal, auto_confirm=True)
+            
+            # Execute immediately using the candle's open price
+            # Note: We use signal.entry_price which was calculated at signal generation time
+            await self.execute_entry(signal, float(signal.entry_price))
+            return
+        
+        # Normal case: buffer signal for next bar execution
         self._pending_signals.append(signal)
         
         # Create state machine for this signal

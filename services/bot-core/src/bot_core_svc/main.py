@@ -1,7 +1,6 @@
 """Bot Core Service main entry point."""
 
 import asyncio
-import json
 import logging
 from contextlib import asynccontextmanager
 
@@ -183,7 +182,6 @@ async def process_feature_message(
     # Uses timestamp-aware lookup to ensure features are evaluated with
     # the correct historical bias, not a future bias that arrived earlier
     bias = bias_cache.get_for_timestamp_or_default(features.timestamp)
-    
     
     # 4. Build context
     context = {
