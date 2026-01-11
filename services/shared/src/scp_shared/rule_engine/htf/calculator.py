@@ -391,7 +391,6 @@ def compute_htf_bias(
     # Use legacy logic to compute base bias and score
     bias, direction, score = compute_htf_bias_multi_timeframe(features_1h, features_15m)
 
-
     # Store original bias before any neutralization for conflict detection
     original_bias = bias
     original_score = score
@@ -413,7 +412,6 @@ def compute_htf_bias(
         except Exception as e:
             logger.error(f"Error detecting DXY chop: {e}")
             # Continue without chop detection rather than failing
-
     # Check for conflicts between timeframes
     # Use ORIGINAL bias (before DXY chop neutralization) for conflict detection
     from scp_shared.rule_engine.htf.conflicts import (
@@ -509,6 +507,14 @@ def compute_htf_bias(
 
         seasonality_period = get_seasonality_period(dt)
         dxy_corr = features_1h.get("dxy_corr")
+        
+        # Fallback: if 1H dxy_corr is not available, use 15M or 1M correlation
+        # This handles warmup period where 1H doesn't have enough bars for DXY correlation
+        if dxy_corr is None or pd.isna(dxy_corr):
+            dxy_corr = features_15m.get("dxy_corr") if features_15m is not None else None
+        if dxy_corr is None or pd.isna(dxy_corr):
+            # Last resort: use micro correlation from any available features
+            dxy_corr = features_1h.get("dxy_corr_micro") if features_1h is not None else None
 
         score, seasonality_adjustment = apply_seasonality_adjustment(
             base_score=score,
