@@ -74,8 +74,10 @@
         "PYTHONPATH": "${workspaceFolder}/services/htf-bias/src:${workspaceFolder}/services/shared/src",
         "REDIS_URL": "redis://localhost:6379",
         "DATABASE_URL": "postgresql://scp:scp_dev_password@localhost:5432/scp",
-        "ENABLE_WARMUP": "false",
-        "LOG_LEVEL": "DEBUG"
+        "ENABLE_WARMUP": "true",
+        "REPLAY_START_TIMESTAMP": "2025-11-06T00:00:00+00:00",
+        "LOG_LEVEL": "DEBUG",
+        "DEBUG_LOG_PATH": "${workspaceFolder}/.cursor/debug.log"
       },
       "console": "integratedTerminal",
       "justMyCode": false,
