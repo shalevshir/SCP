@@ -148,6 +148,31 @@ class HTFBiasMessage(BaseModel):
         default=False, description="VWAP trend confirmation"
     )
 
+    # Structure quality fields required for calculate_structure_alignment scoring
+    bos_detected: bool = Field(
+        default=False, description="Break of Structure detected"
+    )
+    bars_since_bos: int | None = Field(
+        default=None, description="Bars since last BOS event"
+    )
+    structure_clarity: float = Field(
+        default=0.0, description="Structure clarity score (0-1)"
+    )
+    liquidity_sweep_detected: bool = Field(
+        default=False, description="Liquidity sweep detected"
+    )
+    
+    # Conflict/chop fields required for htf_valid validation (reject signals during conflicts)
+    conflict_detected: bool = Field(
+        default=False, description="HTF conflict detected (mixed signals)"
+    )
+    conflict_reason: str | None = Field(
+        default=None, description="Reason for conflict detection"
+    )
+    dxy_chop_detected: bool = Field(
+        default=False, description="DXY chop detected on 1H"
+    )
+
     class Config:
         json_schema_extra = {
             "example": {
