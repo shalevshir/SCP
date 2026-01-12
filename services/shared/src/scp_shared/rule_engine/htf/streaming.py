@@ -45,6 +45,8 @@ class StreamingHTFBiasCalculator:
         # 15M with swing_window=3 needs 7*15min = 1.75 hours instead of 2.75 hours
         self.processor_1h = StreamingFeatureProcessor(timeframe="1h", swing_window=3)
         self.processor_15m = StreamingFeatureProcessor(timeframe="15m", swing_window=3)
+        # Add 1M processor for micro correlation (needed for DXY alignment)
+        self.processor_1m = StreamingFeatureProcessor(timeframe="1m", swing_window=2)
 
         # Track current HTF bars being built
         self.current_1h_timestamp: datetime | None = None
@@ -54,6 +56,7 @@ class StreamingHTFBiasCalculator:
         self.current_htf_bias: HTFBias | None = None
         self.features_1h: pd.Series = pd.Series(dtype=object)
         self.features_15m: pd.Series = pd.Series(dtype=object)
+        self.features_1m: pd.Series = pd.Series(dtype=object)
 
         # Historical buffers for HTF calculation (needed for structure/FVG detection)
         self.df_1h_buffer: list[dict] = []
@@ -96,6 +99,9 @@ class StreamingHTFBiasCalculator:
         Returns:
             HTFBias object if boundary reached, else None
         """
+        # Update 1M features (for micro correlation in DXY alignment)
+        self.features_1m = self.processor_1m.update(gc_bar, dxy_bar)
+        
         # Update HTF candle aggregation (must happen before boundary check)
         self._update_15m_aggregation(gc_bar)
         self._update_1h_aggregation(gc_bar, dxy_bar)
@@ -184,6 +190,7 @@ class StreamingHTFBiasCalculator:
                 self.current_htf_bias = compute_htf_bias(
                     features_1h=self.features_1h,
                     features_15m=self.features_15m,
+                    features_1m=self.features_1m,  # Pass 1M features for DXY alignment
                     dxy_1h=dxy_1h,
                     df_15m=df_15m,
                     df_1h=df_1h,
