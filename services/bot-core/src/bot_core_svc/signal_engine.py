@@ -81,6 +81,10 @@ def features_message_to_series(msg: FeaturesMessage) -> pd.Series:
         "timestamp": msg.timestamp,
         "symbol": msg.symbol,
         "timeframe": msg.timeframe,
+        # OHLC data (needed for VWAP_FADE rejection candle checks)
+        "open": msg.open,
+        "high": msg.high,
+        "low": msg.low,
         "close": msg.close,
         "vwap": msg.vwap,
         "rsi": msg.rsi,
@@ -89,6 +93,7 @@ def features_message_to_series(msg: FeaturesMessage) -> pd.Series:
         "ema_50": msg.ema_50,
         "dxy_corr": msg.dxy_correlation,  # Map dxy_correlation to dxy_corr for scoring
         "structure_label": msg.structure_label,
+        "last_structure_label": msg.structure_label,  # Alias for VWAP_FADE detector
         "vwap_deviation": msg.vwap_deviation,
         # BOS/CHoCH fields for VWAP_RECLAIM validation
         "bos_direction": msg.bos_direction,
@@ -97,6 +102,7 @@ def features_message_to_series(msg: FeaturesMessage) -> pd.Series:
         "choch_detected": msg.choch_detected,
         "choch_direction": msg.choch_direction,
         "structure_clarity": msg.structure_clarity,
+        "trend_confidence": msg.trend_confidence,
         "liquidity_sweep": msg.liquidity_sweep,
         "sweep_age": msg.sweep_age,
         # Expansion fields for late_reclaim_penalty calculation
