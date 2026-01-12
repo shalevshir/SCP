@@ -327,6 +327,27 @@ validate-replay:
 	@echo ""
 	@echo "✓ Validation complete!"
 
+side-by-side:
+	@if [ -z "$(DATE)" ] && ([ -z "$(START)" ] || [ -z "$(END)" ]); then \
+		echo "Error: Either DATE or both START and END required."; \
+		echo "Usage:"; \
+		echo "  make side-by-side DATE=2024-11-06"; \
+		echo "  make side-by-side START=2024-11-01 END=2024-11-30"; \
+		exit 1; \
+	fi
+	@echo "Running side-by-side parity comparison..."
+	@if [ -n "$(DATE)" ]; then \
+		poetry run python scripts/side_by_side_replay.py \
+			--date $(DATE) \
+			$(if $(STOP_ON_FIRST),--stop-on-first,) \
+			$(if $(OUTPUT),--output $(OUTPUT),); \
+	else \
+		poetry run python scripts/side_by_side_replay.py \
+			--start $(START) --end $(END) \
+			$(if $(STOP_ON_FIRST),--stop-on-first,) \
+			$(if $(OUTPUT),--output $(OUTPUT),); \
+	fi
+
 replay-clean:
 	@echo "Cleaning replay artifacts..."
 	@echo "Warning: This will clear Redis streams and database trades!"

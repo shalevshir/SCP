@@ -78,6 +78,29 @@ class CandleRepository:
         """
         return await self.db.fetch(query, symbol, timeframe, limit)
 
+    async def get_candle_by_timestamp(
+        self,
+        timestamp: datetime,
+        symbol: str,
+        timeframe: str,
+    ) -> asyncpg.Record | None:
+        """Get a candle by exact timestamp.
+        
+        Args:
+            timestamp: Candle timestamp
+            symbol: Asset symbol
+            timeframe: Timeframe string
+            
+        Returns:
+            Candle record if found, None otherwise
+        """
+        query = """
+            SELECT timestamp, symbol, timeframe, open, high, low, close, volume
+            FROM candles
+            WHERE timestamp = $1 AND symbol = $2 AND timeframe = $3
+        """
+        return await self.db.fetchrow(query, timestamp, symbol, timeframe)
+
 
 class TradeRepository:
     """Repository for trade data queries."""

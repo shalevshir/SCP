@@ -83,7 +83,10 @@ class TestWarmupProcessor:
             
             await warmup_processor(mock_processor, mock_repository)
             
-            mock_repository.load_recent_candles.assert_called_once_with(count=60)
+            mock_repository.load_recent_candles.assert_called_once_with(
+                count=60,
+                before_timestamp=None,
+            )
             mock_processor.process.assert_called_once_with(gc_candle, dxy_candle)
     
     @pytest.mark.asyncio

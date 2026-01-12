@@ -107,6 +107,7 @@ def calculate_dxy_correlation(
 
     if not pd.api.types.is_datetime64_any_dtype(gc_df[timestamp_column]):
         try:
+            # Use utc=True to handle tz-aware datetime objects from streaming buffers
             gc_df[timestamp_column] = pd.to_datetime(gc_df[timestamp_column], utc=True)
         except Exception as e:
             raise ValueError(
@@ -115,6 +116,7 @@ def calculate_dxy_correlation(
 
     if not pd.api.types.is_datetime64_any_dtype(dxy_df[timestamp_column]):
         try:
+            # Use utc=True to handle tz-aware datetime objects from streaming buffers
             dxy_df[timestamp_column] = pd.to_datetime(dxy_df[timestamp_column], utc=True)
         except Exception as e:
             raise ValueError(

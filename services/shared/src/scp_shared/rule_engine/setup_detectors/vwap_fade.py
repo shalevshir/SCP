@@ -67,10 +67,7 @@ def detect_vwap_fade(
     close = features.get("close") or 0
     choch_detected = features.get("choch_detected", False)
     
-    trend_confidence = features.get("trend_confidence")
-    if trend_confidence is None:
-        trend_confidence = 1.0
-    
+    trend_confidence = features.get("trend_confidence", 1.0)
     last_structure_label = features.get("last_structure_label")
 
     # Check sweep from both HTFBias AND features (1M features have sweep)

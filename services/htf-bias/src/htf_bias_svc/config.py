@@ -23,7 +23,7 @@ class HTFBiasConfig(BaseServiceConfig):
         description="Enable warmup by loading recent candles from database"
     )
     warmup_candles: int = Field(
-        default=480,
-        description="Number of 1m candles to load for warmup (480 = 8 hours)"
+        default=1440,
+        description="Number of 1m candles to load for warmup (1440 = 24 hours, needed for 1H structure detection)"
     )
 

@@ -172,11 +172,16 @@ class TestSignalTradeCorrelation:
         mock_repo.close_trade = AsyncMock()
         
         # Create manager
+        db_pool = MagicMock(spec=DatabasePool)
+        db_pool.fetch = AsyncMock(return_value=[])
+        db_pool.execute = AsyncMock()
+        
         manager = TradeManager(
             broker=mock_broker,
             state_machine_manager=mock_sm_manager,
             trade_repository=mock_repo,
             trade_publisher=mock_publisher,
+            db_pool=db_pool,
             max_active_trades=1,
         )
         

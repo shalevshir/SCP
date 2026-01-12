@@ -72,6 +72,7 @@ def trade_manager(
     sm_manager: StateMachineManager,
     mock_repo: TradeRepository,
     mock_publisher: TradePublisher,
+    mock_db_pool: Mock,
 ) -> TradeManager:
     """Trade manager with daily limits."""
     return TradeManager(
@@ -79,6 +80,7 @@ def trade_manager(
         state_machine_manager=sm_manager,
         trade_repository=mock_repo,
         trade_publisher=mock_publisher,
+        db_pool=mock_db_pool,
         max_active_trades=1,
         pdll_limit=600.0,
         max_trades_per_day=2,
