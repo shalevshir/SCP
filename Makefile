@@ -52,7 +52,7 @@ help:
 	@echo "  make check             Run all checks (lint + test)"
 	@echo ""
 	@echo "Replay Mode & Validation:"
-	@echo "  make replay START=... END=... [SPEED=0]    Run replay (SPEED=0 is turbo mode)"
+	@echo "  make replay START=... END=... [SPEED=120]  Run replay (default SPEED=120; SPEED=0 is turbo)"
 	@echo "  make compare-results BACKTEST=...          Compare backtest vs microservices"
 	@echo "  make validate-replay START=... END=...     Full validation (replay + compare)"
 	@echo "  make replay-clean                          Clean replay artifacts"
@@ -269,12 +269,14 @@ services-ps:
 replay:
 	@if [ -z "$(START)" ] || [ -z "$(END)" ]; then \
 		echo "Error: START and END required."; \
-		echo "Usage: make replay START=2024-11-01 END=2024-11-30 [SPEED=0]"; \
+		echo "Usage: make replay START=2024-11-01 END=2024-11-30 [SPEED=120] (SPEED=0 is turbo)"; \
 		exit 1; \
 	fi
 	@echo "Running replay validation..."
 	@echo "  Date range: $(START) to $(END)"
-	@if [ -z "$(SPEED)" ] || [ "$(SPEED)" = "0" ]; then \
+	@if [ -z "$(SPEED)" ]; then \
+		echo "  Speed: DEFAULT (120x)"; \
+	elif [ "$(SPEED)" = "0" ]; then \
 		echo "  Speed: TURBO (no delays, maximum speed)"; \
 	else \
 		echo "  Speed: $(SPEED)x"; \
