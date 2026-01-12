@@ -12,6 +12,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from scp_shared.database import DatabasePool
+
 from execution_svc.broker import PaperBroker
 from execution_svc.state_machine_manager import StateMachineManager
 from execution_svc.trade_manager import TradeManager
@@ -19,6 +21,15 @@ from execution_svc.trade_publisher import TradePublisher
 from execution_svc.trade_repository import TradeRepository
 from scp_shared.common.types import Candle
 from scp_shared.execution.types import TradeRecord
+
+
+@pytest.fixture
+def mock_db_pool() -> DatabasePool:
+    """Create mock database pool."""
+    pool = MagicMock(spec=DatabasePool)
+    pool.fetch = AsyncMock(return_value=[])
+    pool.execute = AsyncMock()
+    return pool
 
 
 @pytest.fixture
@@ -68,6 +79,7 @@ class TestBarsElapsedPersistence:
         mock_sm_manager: StateMachineManager,
         mock_repo: TradeRepository,
         mock_publisher: TradePublisher,
+        mock_db_pool: DatabasePool,
     ) -> None:
         """Test that entry_bar is correctly restored from database after fix.
         
@@ -101,6 +113,7 @@ class TestBarsElapsedPersistence:
             state_machine_manager=mock_sm_manager,
             trade_repository=mock_repo,
             trade_publisher=mock_publisher,
+            db_pool=mock_db_pool,
             max_active_trades=1,
         )
         
@@ -121,6 +134,7 @@ class TestReached1RPersistence:
         mock_sm_manager: StateMachineManager,
         mock_repo: TradeRepository,
         mock_publisher: TradePublisher,
+        mock_db_pool: DatabasePool,
     ) -> None:
         """Test that reached_1r state is correctly restored from database after fix.
         
@@ -155,6 +169,7 @@ class TestReached1RPersistence:
             state_machine_manager=mock_sm_manager,
             trade_repository=mock_repo,
             trade_publisher=mock_publisher,
+            db_pool=mock_db_pool,
             max_active_trades=1,
         )
         
@@ -176,6 +191,7 @@ class TestFullRecoveryScenario:
         mock_sm_manager: StateMachineManager,
         mock_repo: TradeRepository,
         mock_publisher: TradePublisher,
+        mock_db_pool: DatabasePool,
     ) -> None:
         """Test that trades are restored with correct state after restart.
         
@@ -215,6 +231,7 @@ class TestFullRecoveryScenario:
             state_machine_manager=mock_sm_manager,
             trade_repository=mock_repo,
             trade_publisher=mock_publisher,
+            db_pool=mock_db_pool,
             max_active_trades=1,
         )
         

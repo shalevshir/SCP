@@ -1,5 +1,7 @@
 """HTF Bias Repository - persists and loads bias data from PostgreSQL."""
 
+from datetime import datetime
+
 from scp_shared.database import DatabasePool
 from scp_shared.messaging.schemas import HTFBiasMessage, CandleMessage
 
@@ -61,34 +63,61 @@ class BiasRepository:
     async def load_recent_candles(
         self,
         count: int,
+        before_timestamp: datetime | None = None,
     ) -> list[tuple[CandleMessage, CandleMessage]]:
         """Load recent candles for warmup.
         
         Args:
             count: Number of recent candles to load
+            before_timestamp: Only load candles before this timestamp (for replay alignment)
             
         Returns:
             List of (gc_candle, dxy_candle) tuples sorted by timestamp
         """
-        # Load GC candles
-        gc_query = """
-            SELECT timestamp, open, high, low, close, volume
-            FROM candles
-            WHERE symbol = $1 AND timeframe = $2
-            ORDER BY timestamp DESC
-            LIMIT $3
-        """
-        gc_rows = await self.db.fetch(gc_query, "GC", "1m", count)
+        from scp_shared.common.logger import get_logger
+        logger = get_logger(__name__)
         
-        # Load DXY candles
-        dxy_query = """
-            SELECT timestamp, open, high, low, close, volume
-            FROM candles
-            WHERE symbol = $1 AND timeframe = $2
-            ORDER BY timestamp DESC
-            LIMIT $3
-        """
-        dxy_rows = await self.db.fetch(dxy_query, "DXY", "1m", count)
+        # Load GC candles (before specified timestamp if provided)
+        if before_timestamp:
+            gc_query = """
+                SELECT timestamp, open, high, low, close, volume
+                FROM candles
+                WHERE symbol = $1 AND timeframe = $2 AND timestamp < $4
+                ORDER BY timestamp DESC
+                LIMIT $3
+            """
+            gc_rows = await self.db.fetch(gc_query, "GC", "1m", count, before_timestamp)
+            logger.info(f"Warmup: Loading GC candles before {before_timestamp}, found {len(gc_rows)}")
+        else:
+            gc_query = """
+                SELECT timestamp, open, high, low, close, volume
+                FROM candles
+                WHERE symbol = $1 AND timeframe = $2
+                ORDER BY timestamp DESC
+                LIMIT $3
+            """
+            gc_rows = await self.db.fetch(gc_query, "GC", "1m", count)
+        
+        # Load DXY candles (before specified timestamp if provided)
+        if before_timestamp:
+            dxy_query = """
+                SELECT timestamp, open, high, low, close, volume
+                FROM candles
+                WHERE symbol = $1 AND timeframe = $2 AND timestamp < $4
+                ORDER BY timestamp DESC
+                LIMIT $3
+            """
+            dxy_rows = await self.db.fetch(dxy_query, "DXY", "1m", count, before_timestamp)
+            logger.info(f"Warmup: Loading DXY candles before {before_timestamp}, found {len(dxy_rows)}")
+        else:
+            dxy_query = """
+                SELECT timestamp, open, high, low, close, volume
+                FROM candles
+                WHERE symbol = $1 AND timeframe = $2
+                ORDER BY timestamp DESC
+                LIMIT $3
+            """
+            dxy_rows = await self.db.fetch(dxy_query, "DXY", "1m", count)
         
         # Pair by timestamp
         gc_dict = {row["timestamp"]: row for row in gc_rows}

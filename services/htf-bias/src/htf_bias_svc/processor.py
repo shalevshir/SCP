@@ -126,5 +126,13 @@ class HTFBiasProcessor:
             seasonality_adjustment=htf_bias.seasonality_adjustment,
             seasonality_period=htf_bias.seasonality_period,  # Already a string Literal
             vwap_trend_confirmed=htf_bias.vwap_trend_confirmed,
+            # Structure quality fields for calculate_structure_alignment scoring
+            bos_detected=htf_bias.bos_detected,
+            bars_since_bos=htf_bias.bars_since_bos,
+            structure_clarity=htf_bias.structure_clarity,
+            liquidity_sweep_detected=htf_bias.liquidity_sweep_detected,
+            # Conflict/chop fields for htf_valid validation
+            conflict_detected=htf_bias.conflict_detected,
+            conflict_reason=htf_bias.conflict_reason,
+            dxy_chop_detected=htf_bias.dxy_chop_detected,
         )
-

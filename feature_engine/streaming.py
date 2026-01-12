@@ -14,7 +14,7 @@ from common.logger import get_logger
 from common.types import Candle
 
 from feature_engine.dxy_correlation import calculate_dxy_correlation
-from feature_engine.rsi import calculate_rsi
+from feature_engine.state import RSIState
 from feature_engine.structure import (
     StructureContextTracker,
     get_swing_window_for_timeframe,
@@ -123,11 +123,8 @@ class StreamingFeatureProcessor:
             period: 2.0 / (period + 1) for period in self.ema_periods
         }
 
-        # RSI buffer and Wilder's smoothing state
-        self.rsi_buffer: deque[float] = deque(maxlen=rsi_period + 1)
-        self.rsi_avg_gain: float | None = None
-        self.rsi_avg_loss: float | None = None
-        self.prev_close: float | None = None
+        # RSI state using incremental Wilder's smoothing (matches batch calculation)
+        self.rsi_state = RSIState(period=rsi_period)
 
         # DXY correlation buffers (long window for HTF)
         self.dxy_corr_gc_buffer: deque[tuple[datetime, float]] = deque(
@@ -254,18 +251,8 @@ class StreamingFeatureProcessor:
         else:
             features["vwap_deviation"] = None
 
-        # === 4. RSI (window-based, calls existing function) ===
-        # Update RSI buffer
-        self.rsi_buffer.append(gc_bar.close)
-
-        if len(self.rsi_buffer) >= self.rsi_period + 1:
-            # Convert buffer to DataFrame and call existing function
-            df_rsi = pd.DataFrame({"close": list(self.rsi_buffer)})
-            rsi_series = calculate_rsi(df_rsi, period=self.rsi_period)
-            # Extract last value (most recent RSI)
-            features["rsi"] = rsi_series.iloc[-1] if not rsi_series.empty else None
-        else:
-            features["rsi"] = None
+        # === 4. RSI (incremental Wilder's smoothing for parity with backtester) ===
+        features["rsi"] = self.rsi_state.update(gc_bar.close)
 
         # === 5. DXY Correlation (window-based, calls existing function) ===
         # Update DXY correlation buffers

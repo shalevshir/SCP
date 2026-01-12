@@ -508,7 +508,6 @@ def run_backtest_with_trades(
         invalidation_checker.record_trade_outcome(
             closed_trade, 
             won=won,
-            close_timestamp=closed_trade.exit_timestamp
         )
 
         # Update behavior tracker (for loss streak guardrails before entry)

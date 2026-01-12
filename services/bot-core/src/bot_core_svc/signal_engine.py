@@ -43,7 +43,6 @@ def htf_bias_message_to_htf_bias(msg: HTFBiasMessage) -> HTFBias:
         f"vwap_confirmed={msg.vwap_trend_confirmed}"
     )
     
-    
     return HTFBias(
         bias=msg.bias,  # type: ignore
         direction=direction_map[msg.bias],  # type: ignore
@@ -57,6 +56,15 @@ def htf_bias_message_to_htf_bias(msg: HTFBiasMessage) -> HTFBias:
         seasonality_adjustment=msg.seasonality_adjustment,
         seasonality_period=msg.seasonality_period,  # type: ignore (string Literal)
         vwap_trend_confirmed=msg.vwap_trend_confirmed,
+        # Structure quality fields for calculate_structure_alignment scoring
+        bos_detected=msg.bos_detected,
+        bars_since_bos=msg.bars_since_bos,
+        structure_clarity=msg.structure_clarity,
+        liquidity_sweep_detected=msg.liquidity_sweep_detected,
+        # Conflict/chop fields for htf_valid validation
+        conflict_detected=msg.conflict_detected,
+        conflict_reason=msg.conflict_reason,
+        dxy_chop_detected=msg.dxy_chop_detected,
     )
 
 
@@ -73,6 +81,10 @@ def features_message_to_series(msg: FeaturesMessage) -> pd.Series:
         "timestamp": msg.timestamp,
         "symbol": msg.symbol,
         "timeframe": msg.timeframe,
+        # OHLC data (needed for VWAP_FADE rejection candle checks)
+        "open": msg.open,
+        "high": msg.high,
+        "low": msg.low,
         "close": msg.close,
         "vwap": msg.vwap,
         "rsi": msg.rsi,
@@ -81,6 +93,7 @@ def features_message_to_series(msg: FeaturesMessage) -> pd.Series:
         "ema_50": msg.ema_50,
         "dxy_corr": msg.dxy_correlation,  # Map dxy_correlation to dxy_corr for scoring
         "structure_label": msg.structure_label,
+        "last_structure_label": msg.structure_label,  # Alias for VWAP_FADE detector
         "vwap_deviation": msg.vwap_deviation,
         # BOS/CHoCH fields for VWAP_RECLAIM validation
         "bos_direction": msg.bos_direction,
@@ -89,8 +102,12 @@ def features_message_to_series(msg: FeaturesMessage) -> pd.Series:
         "choch_detected": msg.choch_detected,
         "choch_direction": msg.choch_direction,
         "structure_clarity": msg.structure_clarity,
+        "trend_confidence": msg.trend_confidence,
         "liquidity_sweep": msg.liquidity_sweep,
         "sweep_age": msg.sweep_age,
+        # Expansion fields for late_reclaim_penalty calculation
+        "expansion_detected": msg.expansion_detected,
+        "expansion_reasons": msg.expansion_reasons,
     })
 
 
@@ -262,6 +279,20 @@ class SignalEngine:
         # Generate signal
         signal = score_signal(features_series, htf_bias_obj, context)
         
+        # HTF validity check (must reject if conflict or DXY chop detected)
+        # This matches the backtester's validate_signal_with_sop behavior
+        htf_valid = not htf_bias_obj.conflict_detected and not htf_bias_obj.dxy_chop_detected
+        if not htf_valid:
+            rejection_reasons = []
+            if htf_bias_obj.conflict_detected:
+                rejection_reasons.append(f"HTF conflict: {htf_bias_obj.conflict_reason}")
+            if htf_bias_obj.dxy_chop_detected:
+                rejection_reasons.append("DXY in chop mode")
+            logger.debug(
+                f"Signal rejected (htf_valid=False): {signal.direction} {signal.setup_type} "
+                f"score={signal.score:.1f} - {', '.join(rejection_reasons)}"
+            )
+            return None
         
         # Filter for A+ signals only
         if signal.confidence != "A+":

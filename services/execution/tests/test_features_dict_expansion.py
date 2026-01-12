@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, Mock
 import pytest
 
+from scp_shared.database import DatabasePool
 from scp_shared.messaging.schemas import CandleMessage, FeaturesMessage
 from execution_svc.trade_manager import TradeManager
 from execution_svc.broker import BaseBroker
@@ -11,6 +12,15 @@ from execution_svc.state_machine_manager import StateMachineManager
 from execution_svc.trade_repository import TradeRepository
 from execution_svc.trade_publisher import TradePublisher
 from scp_shared.execution.types import TradeRecord
+
+
+@pytest.fixture
+def mock_db_pool() -> DatabasePool:
+    """Create mock database pool."""
+    pool = MagicMock(spec=DatabasePool)
+    pool.fetch = AsyncMock(return_value=[])
+    pool.execute = AsyncMock()
+    return pool
 
 
 @pytest.fixture
@@ -59,6 +69,7 @@ def trade_manager(
     mock_sm_manager: StateMachineManager,
     mock_repo: TradeRepository,
     mock_publisher: TradePublisher,
+    mock_db_pool: DatabasePool,
 ) -> TradeManager:
     """Create TradeManager instance with mocked dependencies."""
     return TradeManager(
@@ -66,6 +77,7 @@ def trade_manager(
         state_machine_manager=mock_sm_manager,
         trade_repository=mock_repo,
         trade_publisher=mock_publisher,
+        db_pool=mock_db_pool,
         max_active_trades=1,
         pdll_limit=600.0,
         max_trades_per_day=2,

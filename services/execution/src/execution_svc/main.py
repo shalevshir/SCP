@@ -65,12 +65,17 @@ async def process_streams(
     sm_manager = StateMachineManager(db_pool)
     trade_repo = TradeRepository(db_pool)
     trade_publisher = TradePublisher(redis_client)
+    # HARDCODED: Force max_active_trades=1 for debugging (matching backtest)
+    _max_active = 1  # config.max_active_trades
+    logger.info(f"TradeManager config: max_active_trades={_max_active}")
+    
     trade_manager = TradeManager(
         broker=broker,
         state_machine_manager=sm_manager,
         trade_repository=trade_repo,
         trade_publisher=trade_publisher,
-        max_active_trades=config.max_active_trades,
+        db_pool=db_pool,
+        max_active_trades=_max_active,
         pdll_limit=config.pdll_limit,
         max_trades_per_day=config.max_trades_per_day,
     )
@@ -327,6 +332,8 @@ async def reset_state() -> dict[str, str]:
     _trade_manager._active_trades.clear()
     _trade_manager._pending_signals.clear()
     _trade_manager._trade_entry_bars.clear()
+    _trade_manager._last_processed_candle_ts = None  # Reset for clean replay
+    _trade_manager._closed_trade_ranges.clear()  # Reset for clean replay
     _trade_manager._daily_tracker.reset_state()
     # CRITICAL: Reset InvalidationChecker daily state to prevent stale loss streaks/PnL
     # from causing incorrect risk breach checks after reset

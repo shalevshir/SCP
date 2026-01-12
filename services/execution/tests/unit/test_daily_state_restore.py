@@ -9,10 +9,22 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from unittest.mock import MagicMock
+
 from execution_svc.daily_state import DailyStateTracker
 from execution_svc.trade_manager import TradeManager
 from execution_svc.trade_repository import TradeRepository
+from scp_shared.database import DatabasePool
 from scp_shared.execution.types import TradeRecord
+
+
+@pytest.fixture
+def mock_db_pool():
+    """Mock database pool."""
+    pool = MagicMock(spec=DatabasePool)
+    pool.fetch = AsyncMock(return_value=[])
+    pool.execute = AsyncMock()
+    return pool
 
 
 @pytest.fixture
@@ -54,6 +66,7 @@ async def test_daily_state_restored_on_startup(
     mock_state_machine_manager,
     mock_trade_repository,
     mock_trade_publisher,
+    mock_db_pool,
 ):
     """Test that daily state (P&L and trade count) is restored from database on startup.
     
@@ -116,6 +129,7 @@ async def test_daily_state_restored_on_startup(
         state_machine_manager=mock_state_machine_manager,
         trade_repository=mock_trade_repository,
         trade_publisher=mock_trade_publisher,
+        db_pool=mock_db_pool,
         max_active_trades=1,
         pdll_limit=600.0,
         max_trades_per_day=2,
@@ -157,6 +171,7 @@ async def test_daily_state_allows_trading_below_pdll(
     mock_state_machine_manager,
     mock_trade_repository,
     mock_trade_publisher,
+    mock_db_pool,
 ):
     """Test that trading is allowed when below PDLL limit after restoration."""
     today = date.today()
@@ -193,6 +208,7 @@ async def test_daily_state_allows_trading_below_pdll(
         state_machine_manager=mock_state_machine_manager,
         trade_repository=mock_trade_repository,
         trade_publisher=mock_trade_publisher,
+        db_pool=mock_db_pool,
         max_active_trades=1,
         pdll_limit=600.0,
         max_trades_per_day=2,
@@ -217,6 +233,7 @@ async def test_daily_state_blocks_trading_at_pdll(
     mock_state_machine_manager,
     mock_trade_repository,
     mock_trade_publisher,
+    mock_db_pool,
 ):
     """Test that trading is blocked when PDLL is hit after restoration."""
     today = date.today()
@@ -253,6 +270,7 @@ async def test_daily_state_blocks_trading_at_pdll(
         state_machine_manager=mock_state_machine_manager,
         trade_repository=mock_trade_repository,
         trade_publisher=mock_trade_publisher,
+        db_pool=mock_db_pool,
         max_active_trades=1,
         pdll_limit=600.0,
         max_trades_per_day=2,

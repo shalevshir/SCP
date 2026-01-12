@@ -83,6 +83,19 @@ class StreamingHTFBiasCalculator:
         self._dxy_1h_high: float | None = None
         self._dxy_1h_low: float | None = None
         self._dxy_1h_close: float | None = None
+        
+        # Track current 1H period for DXY buffer updates
+        # This mimics the backtest's behavior where the buffer entry is updated in-place
+        # as the bar develops, rather than keeping stale data
+        self._current_dxy_1h_in_buffer: bool = False
+        
+        # Cache for DXY chop detection result
+        # The backtest caches chop value and only updates at specific boundaries:
+        # - At 1H close: recalculate with nearly-complete partial bar
+        # - At new hour (non-first): recalculate with new partial bar to check if chop clears
+        # - At other times: use cached value
+        self._cached_dxy_chop: bool = False
+        self._first_hour_of_session: int = 7  # First trading hour (adjust as needed)
 
         logger.info("Streaming HTF bias calculator initialized")
 
@@ -105,6 +118,12 @@ class StreamingHTFBiasCalculator:
 
         # Detect 1H boundary
         is_1h_close = self._is_1h_boundary(gc_bar.timestamp)
+        
+        # Also trigger HTF recalculation at start of new 1H period (matches backtest behavior)
+        # Backtest recalculates HTF bias every bar; we optimize by recalculating at 15M + hourly
+        current_hour = gc_bar.timestamp.hour
+        is_new_hour = (self.current_1h_timestamp is None or 
+                       self.current_1h_timestamp.hour != current_hour)
 
         # At 15M boundary, emit aggregated candle and update processor
         if is_15m_close:
@@ -159,26 +178,71 @@ class StreamingHTFBiasCalculator:
             )
 
         # Compute HTF bias when we have both 1H and 15M features
-        # Trigger on either 1H or 15M close (but need both to exist)
+        # Trigger on 15M close, 1H close, OR start of new hour (matches backtest every-bar behavior)
         if (
-            (is_1h_close or is_15m_close)
+            (is_1h_close or is_15m_close or is_new_hour)
             and not self.features_1h.empty
             and not self.features_15m.empty
         ):
             try:
                 # Convert buffers to DataFrames for structure detection
+                # IMPORTANT: Include current partial bars (matches backtest behavior)
+                # The backtest uses sync_bar.htf_* which includes incomplete bars
                 df_1h = None
                 df_15m = None
                 dxy_1h = None
 
-                if len(self.df_1h_buffer) > 0:
-                    df_1h = pd.DataFrame(self.df_1h_buffer)
+                # Build GC 1H buffer INCLUDING current partial bar
+                gc_1h_with_partial = list(self.df_1h_buffer)
+                if self._gc_1h_start is not None:
+                    gc_1h_with_partial.append({
+                        "timestamp": self._gc_1h_start,
+                        "open": self._gc_1h_open,
+                        "high": self._gc_1h_high,
+                        "low": self._gc_1h_low,
+                        "close": self._gc_1h_close,
+                        "volume": self._gc_1h_volume,
+                    })
+                if len(gc_1h_with_partial) > 0:
+                    df_1h = pd.DataFrame(gc_1h_with_partial)
 
-                if len(self.df_15m_buffer) > 0:
-                    df_15m = pd.DataFrame(self.df_15m_buffer)
+                # Build GC 15M buffer INCLUDING current partial bar
+                gc_15m_with_partial = list(self.df_15m_buffer)
+                if self._gc_15m_start is not None:
+                    gc_15m_with_partial.append({
+                        "timestamp": self._gc_15m_start,
+                        "open": self._gc_15m_open,
+                        "high": self._gc_15m_high,
+                        "low": self._gc_15m_low,
+                        "close": self._gc_15m_close,
+                        "volume": self._gc_15m_volume,
+                    })
+                if len(gc_15m_with_partial) > 0:
+                    df_15m = pd.DataFrame(gc_15m_with_partial)
 
+                # DXY 1H buffer handling for chop detection
+                # The backtest caches chop value and only recalculates at specific boundaries:
+                # - At 1H close: include partial bar (nearly complete)
+                # - At new hour (non-first session): include partial bar to check if chop clears
+                # - At other times: use completed bars only (cache chop value)
+                current_hour = gc_bar.timestamp.hour
+                should_include_dxy_partial = (
+                    is_1h_close or 
+                    (is_new_hour and current_hour != self._first_hour_of_session)
+                )
+                
                 if len(self.dxy_1h_buffer) > 0:
-                    dxy_1h = pd.DataFrame(self.dxy_1h_buffer)
+                    if should_include_dxy_partial:
+                        # Include the current partial bar (last entry in buffer)
+                        dxy_1h = pd.DataFrame(self.dxy_1h_buffer)
+                    else:
+                        # Use completed bars only - exclude the current partial bar
+                        # (which is the last entry being updated in-place)
+                        if self._current_dxy_1h_in_buffer and len(self.dxy_1h_buffer) > 1:
+                            # Exclude last entry (current partial bar)
+                            dxy_1h = pd.DataFrame(self.dxy_1h_buffer[:-1])
+                        else:
+                            dxy_1h = pd.DataFrame(self.dxy_1h_buffer)
 
                 # Call existing HTF bias calculator
                 self.current_htf_bias = compute_htf_bias(
@@ -190,17 +254,62 @@ class StreamingHTFBiasCalculator:
                     sweep_events_15m=None,  # TODO: Add liquidity sweep detection
                     timestamp=pd.Timestamp(gc_bar.timestamp),
                 )
+                
+                # Cache DXY chop value at boundaries, use cached value otherwise
+                if should_include_dxy_partial:
+                    # Update cache with newly calculated chop value
+                    self._cached_dxy_chop = self.current_htf_bias.dxy_chop_detected
+                else:
+                    # Use cached chop value (override computed value)
+                    # This is important because at mid-hour, the computed value
+                    # might incorrectly clear chop due to using completed bars only
+                    # We want to preserve the chop state from the last boundary
+                    if self.current_htf_bias.dxy_chop_detected != self._cached_dxy_chop:
+                        # Create updated HTFBias with cached chop value
+                        self.current_htf_bias = HTFBias(
+                            bias=self.current_htf_bias.bias,
+                            direction=self.current_htf_bias.direction,
+                            score=self.current_htf_bias.score,
+                            confidence=self.current_htf_bias.confidence,
+                            structure_15m=self.current_htf_bias.structure_15m,
+                            structure_1h=self.current_htf_bias.structure_1h,
+                            dxy_alignment=self.current_htf_bias.dxy_alignment,
+                            chop_detected=self.current_htf_bias.chop_detected,
+                            dxy_chop_detected=self._cached_dxy_chop,  # Use cached
+                            vwap_trend_confirmed=self.current_htf_bias.vwap_trend_confirmed,
+                            seasonality_adjustment=self.current_htf_bias.seasonality_adjustment,
+                            seasonality_period=self.current_htf_bias.seasonality_period,
+                            bos_detected=self.current_htf_bias.bos_detected,
+                            bars_since_bos=self.current_htf_bias.bars_since_bos,
+                            choch_detected=self.current_htf_bias.choch_detected,
+                            fvg_alignment_score=self.current_htf_bias.fvg_alignment_score,
+                            confirmation_candle=self.current_htf_bias.confirmation_candle,
+                            bos_candle=self.current_htf_bias.bos_candle,
+                            conflict_detected=self.current_htf_bias.conflict_detected,
+                            conflict_reason=self.current_htf_bias.conflict_reason,
+                            structure_clarity=self.current_htf_bias.structure_clarity,
+                            liquidity_sweep_detected=self.current_htf_bias.liquidity_sweep_detected,
+                        )
 
                 logger.debug(
                     f"HTF bias updated: {self.current_htf_bias.bias} "
                     f"(score: {self.current_htf_bias.score:.1f}, "
-                    f"confidence: {self.current_htf_bias.confidence})"
+                    f"confidence: {self.current_htf_bias.confidence}, "
+                    f"dxy_chop={self.current_htf_bias.dxy_chop_detected})"
                 )
+                
+                # Update current_1h_timestamp to track hour changes properly
+                self.current_1h_timestamp = gc_bar.timestamp
 
                 return self.current_htf_bias
 
             except Exception as e:
                 logger.error(f"HTF bias calculation failed: {e}", exc_info=True)
+        
+        # Update current_1h_timestamp even when HTF bias isn't recalculated
+        # This ensures is_new_hour is only True when the hour actually changes
+        if self.current_1h_timestamp is None or self.current_1h_timestamp.hour != current_hour:
+            self.current_1h_timestamp = gc_bar.timestamp
 
         return None
 
@@ -271,7 +380,8 @@ class StreamingHTFBiasCalculator:
             self._gc_1h_close = gc_bar.close
             self._gc_1h_volume += gc_bar.volume
         
-        # DXY aggregation
+        # DXY aggregation - mimics backtest buffer behavior where the last entry
+        # is updated in-place as the bar develops (shared object reference)
         if self._dxy_1h_start is None or self._dxy_1h_start != period_start:
             # New period - reset aggregation
             self._dxy_1h_start = period_start
@@ -279,6 +389,21 @@ class StreamingHTFBiasCalculator:
             self._dxy_1h_high = dxy_bar.high
             self._dxy_1h_low = dxy_bar.low
             self._dxy_1h_close = dxy_bar.close
+            
+            # Add new entry to DXY buffer (will be updated in-place)
+            self.dxy_1h_buffer.append({
+                "timestamp": period_start,
+                "open": dxy_bar.open,
+                "high": dxy_bar.high,
+                "low": dxy_bar.low,
+                "close": dxy_bar.close,
+            })
+            self._current_dxy_1h_in_buffer = True
+            
+            # Limit buffer size
+            max_buffer_size = 200
+            if len(self.dxy_1h_buffer) > max_buffer_size:
+                self.dxy_1h_buffer = self.dxy_1h_buffer[-max_buffer_size:]
         else:
             # Same period - update aggregation
             if dxy_bar.high > (self._dxy_1h_high or 0):
@@ -286,6 +411,16 @@ class StreamingHTFBiasCalculator:
             if dxy_bar.low < (self._dxy_1h_low or float('inf')):
                 self._dxy_1h_low = dxy_bar.low
             self._dxy_1h_close = dxy_bar.close
+            
+            # Update the last buffer entry in-place (like backtest's shared reference)
+            if self._current_dxy_1h_in_buffer and len(self.dxy_1h_buffer) > 0:
+                self.dxy_1h_buffer[-1] = {
+                    "timestamp": self._dxy_1h_start,
+                    "open": self._dxy_1h_open,
+                    "high": self._dxy_1h_high,
+                    "low": self._dxy_1h_low,
+                    "close": self._dxy_1h_close,
+                }
     
     def _emit_15m_to_buffer(self) -> None:
         """Emit completed 15M aggregated candle to buffer and reset."""
@@ -351,14 +486,16 @@ class StreamingHTFBiasCalculator:
             "volume": self._gc_1h_volume,
         })
 
-        # Add DXY bar
-        self.dxy_1h_buffer.append({
-            "timestamp": self._dxy_1h_start,
-            "open": self._dxy_1h_open,
-            "high": self._dxy_1h_high,
-            "low": self._dxy_1h_low,
-            "close": self._dxy_1h_close,
-        })
+        # DXY bar is already in buffer (updated in-place during aggregation)
+        # Just do a final update to ensure it has the complete data
+        if self._current_dxy_1h_in_buffer and len(self.dxy_1h_buffer) > 0:
+            self.dxy_1h_buffer[-1] = {
+                "timestamp": self._dxy_1h_start,
+                "open": self._dxy_1h_open,
+                "high": self._dxy_1h_high,
+                "low": self._dxy_1h_low,
+                "close": self._dxy_1h_close,
+            }
 
         # Limit buffer size to prevent memory growth (keep last 200 bars = ~8 days)
         max_buffer_size = 200
@@ -379,6 +516,7 @@ class StreamingHTFBiasCalculator:
         self._dxy_1h_high = None
         self._dxy_1h_low = None
         self._dxy_1h_close = None
+        self._current_dxy_1h_in_buffer = False
 
     def _add_to_1h_buffer(self, gc_bar: Candle, dxy_bar: Candle) -> None:
         """Add 1H GC and DXY bars directly to the buffers.

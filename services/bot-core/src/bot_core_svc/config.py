@@ -43,3 +43,9 @@ class BotCoreConfig(BaseServiceConfig):
         default="Conservative",
         description="Active enforcer tier (Conservative, Early Mild, Mild, Offensive)"
     )
+    
+    # Warmup period
+    warmup_bars: int = Field(
+        default=60,
+        description="Number of bars to skip before generating signals (warmup period)"
+    )

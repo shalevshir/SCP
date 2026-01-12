@@ -1,8 +1,9 @@
 """HTF Bias Service main entry point."""
 
 import asyncio
-import json
+import os
 from contextlib import asynccontextmanager
+from datetime import datetime
 
 import redis.asyncio as redis
 from scp_shared.common import get_logger, mask_connection_url
@@ -29,37 +30,57 @@ shutdown_event = asyncio.Event()
 async def warmup_processor(
     processor: HTFBiasProcessor,
     repository: BiasRepository,
+    before_timestamp: datetime | None = None,
 ) -> None:
     """Warmup processor by replaying recent candles from database.
     
     Args:
         processor: HTF bias processor to warmup
         repository: Repository to load candles from
+        before_timestamp: Only load candles before this timestamp (for replay alignment)
     """
     if not config.enable_warmup:
         logger.info("Warmup disabled for HTF bias processor")
         return
     
-    logger.info("Starting warmup for HTF bias processor...")
+    logger.info(f"Starting warmup for HTF bias processor (before_timestamp={before_timestamp})...")
     
     try:
         # Load recent candles
         candle_pairs = await repository.load_recent_candles(
             count=config.warmup_candles,
+            before_timestamp=before_timestamp,
         )
         
         if not candle_pairs:
             logger.warning("No candles found for warmup")
             return
         
-        logger.info(f"Loaded {len(candle_pairs)} candle pairs for warmup")
+        # Log warmup data range
+        first_ts = candle_pairs[0][0].timestamp
+        last_ts = candle_pairs[-1][0].timestamp
+        logger.info(f"Loaded {len(candle_pairs)} candle pairs for warmup: {first_ts} to {last_ts}")
         
         # Replay through processor
         for gc_candle, dxy_candle in candle_pairs:
             # Process returns None until sufficient data accumulated
             processor.process(gc_candle, dxy_candle)
         
-        logger.info("Warmup complete for HTF bias processor")
+        # Log buffer sizes after warmup
+        calc = processor.calculator
+        logger.info(
+            f"Warmup complete: 1H buffer={len(calc.df_1h_buffer)} bars, "
+            f"15M buffer={len(calc.df_15m_buffer)} bars, "
+            f"DXY 1H buffer={len(calc.dxy_1h_buffer)} bars"
+        )
+        
+        # Log structure detection status
+        features_1h = calc.get_current_features_1h()
+        features_15m = calc.get_current_features_15m()
+        logger.info(
+            f"After warmup: structure_1h={features_1h.get('structure_label')}, "
+            f"structure_15m={features_15m.get('structure_label')}"
+        )
     
     except Exception as e:
         logger.error(f"Warmup failed: {e}", exc_info=True)
@@ -86,8 +107,19 @@ async def process_candles(
     publisher = BiasPublisher(redis_client)
     repository = BiasRepository(db_pool)
     
+    # Check for replay start timestamp from environment
+    # This is set by the replay script so warmup loads data BEFORE the replay starts
+    before_timestamp: datetime | None = None
+    replay_start_str = os.environ.get("REPLAY_START_TIMESTAMP")
+    if replay_start_str:
+        try:
+            before_timestamp = datetime.fromisoformat(replay_start_str.replace("Z", "+00:00"))
+            logger.info(f"Replay mode detected: warmup will load candles before {before_timestamp}")
+        except ValueError:
+            logger.warning(f"Invalid REPLAY_START_TIMESTAMP format: {replay_start_str}")
+    
     # Warmup processor
-    await warmup_processor(processor, repository)
+    await warmup_processor(processor, repository, before_timestamp)
     
     # Create consumers for GC and DXY candles
     gc_consumer = RedisStreamConsumer(

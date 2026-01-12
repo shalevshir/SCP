@@ -307,7 +307,6 @@ def calculate_late_reclaim_penalty(
         return 0.0
 
     total_penalty = 0.0
-    
 
     # Penalty 1: BOS staleness (graduated) - ONLY if BOS invalid
     bos_age = features.get("bos_age")
