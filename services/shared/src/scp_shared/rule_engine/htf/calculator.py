@@ -9,14 +9,16 @@ Supports both vectorized (backtesting) and incremental (live) processing modes.
 from __future__ import annotations
 
 import pandas as pd
-from scp_shared.common.logger import get_logger
 
+from scp_shared.common.logger import get_logger
 from scp_shared.rule_engine.htf.types import ChopSeverity, HTFBias
 
 logger = get_logger(__name__)
 
 
-def is_structural_chop(structure_labels: list[str | None], min_alternations: int = 2) -> bool:
+def is_structural_chop(
+    structure_labels: list[str | None], min_alternations: int = 2
+) -> bool:
     """Detect structural chop based on consecutive alternation density.
 
     Only marks chop when there are min_alternations or more consecutive
@@ -183,19 +185,17 @@ def compute_htf_bias_multi_timeframe(
     # === 1H STRUCTURE (Primary Signal, 3 points) ===
     # Get structure label, handling None values properly
     structure_1h = features_1h.get("structure_label")
-    is_none_or_nan_1h = (
-        structure_1h is None
-        or (isinstance(structure_1h, float) and pd.isna(structure_1h))
+    is_none_or_nan_1h = structure_1h is None or (
+        isinstance(structure_1h, float) and pd.isna(structure_1h)
     )
     if is_none_or_nan_1h:
         structure_1h = features_1h.get("structure_type")
-    is_none_or_nan_1h = (
-        structure_1h is None
-        or (isinstance(structure_1h, float) and pd.isna(structure_1h))
+    is_none_or_nan_1h = structure_1h is None or (
+        isinstance(structure_1h, float) and pd.isna(structure_1h)
     )
     if is_none_or_nan_1h:
         structure_1h = ""
-    
+
     # Debug logging for structure detection
     # Log at INFO level when structure is valid for visibility
     is_valid_structure = structure_1h in ("HH", "HL", "LH", "LL")
@@ -243,15 +243,13 @@ def compute_htf_bias_multi_timeframe(
     # === 15M STRUCTURE (Confirmation, 2 points) ===
     # Get structure label, handling None values properly
     structure_15m = features_15m.get("structure_label")
-    is_none_or_nan = (
-        structure_15m is None
-        or (isinstance(structure_15m, float) and pd.isna(structure_15m))
+    is_none_or_nan = structure_15m is None or (
+        isinstance(structure_15m, float) and pd.isna(structure_15m)
     )
     if is_none_or_nan:
         structure_15m = features_15m.get("structure_type")
-    is_none_or_nan = (
-        structure_15m is None
-        or (isinstance(structure_15m, float) and pd.isna(structure_15m))
+    is_none_or_nan = structure_15m is None or (
+        isinstance(structure_15m, float) and pd.isna(structure_15m)
     )
     if is_none_or_nan:
         structure_15m = ""
@@ -326,7 +324,6 @@ def compute_htf_bias_multi_timeframe(
     # Cap score at 10
     total_score = min(total_score, 10.0)
 
-
     # Log at INFO level for debugging the neutral bias issue
     logger.info(
         f"HTF Bias calc: {htf_bias}/{htf_direction} "
@@ -393,7 +390,6 @@ def compute_htf_bias(
 
     # Store original bias before any neutralization for conflict detection
     original_bias = bias
-    original_score = score
 
     # Detect DXY chop if data provided
     # NOTE: DXY chop is detected and stored but does NOT neutralize bias
@@ -407,7 +403,7 @@ def compute_htf_bias(
                 dxy_chop_detected = bool(chop_series.iloc[-1])
                 if dxy_chop_detected:
                     logger.debug(
-                        f"DXY chop detected (stored in HTFBias, setup validation will handle)"
+                        "DXY chop detected (stored in HTFBias, setup validation will handle)"
                     )
         except Exception as e:
             logger.error(f"Error detecting DXY chop: {e}")
@@ -415,7 +411,6 @@ def compute_htf_bias(
     # Check for conflicts between timeframes
     # Use ORIGINAL bias (before DXY chop neutralization) for conflict detection
     from scp_shared.rule_engine.htf.conflicts import (
-        detect_price_chop_15m,
         detect_structure_conflict,
         detect_sweep_against_trend,
     )
@@ -439,7 +434,7 @@ def compute_htf_bias(
     # Instead, we classify severity and let setup-specific validation handle it
     chop_severity = ChopSeverity.NONE
     chop_consecutive_count = 0
-    
+
     if df_15m is not None and len(df_15m) > 0:
         try:
             # Compute ATR from df_15m for noise filtering
@@ -454,16 +449,16 @@ def compute_htf_bias(
 
             # Classify chop severity instead of binary detection
             from scp_shared.rule_engine.htf.conflicts import classify_chop_severity
-            
+
             chop_severity, chop_consecutive_count = classify_chop_severity(
                 df_15m, atr=atr_15m
             )
-            
+
             logger.debug(
                 f"15M chop classification: severity={chop_severity.value}, "
                 f"consecutive={chop_consecutive_count}"
             )
-            
+
             # Note: We no longer force conflict_detected = True here
             # Setup-specific validation will handle chop appropriately
         except Exception as e:
@@ -516,6 +511,31 @@ def compute_htf_bias(
             # Last resort: use micro correlation from any available features
             dxy_corr = features_1h.get("dxy_corr_micro") if features_1h is not None else None
 
+        # Fallback: if 1H dxy_corr is not available, use 15M or 1M correlation
+        # This handles warmup period where 1H doesn't have enough bars for DXY correlation
+        if dxy_corr is None or pd.isna(dxy_corr):
+            dxy_corr = (
+                features_15m.get("dxy_corr") if features_15m is not None else None
+            )
+            if dxy_corr is not None:
+                logger.debug(
+                    f"Using 15M dxy_corr={dxy_corr:.2f} for seasonality (1H not available)"
+                )
+        if dxy_corr is None or pd.isna(dxy_corr):
+            # Try micro correlation from 1M features (available after 5 bars)
+            dxy_corr = (
+                features_1m.get("dxy_corr_micro") if features_1m is not None else None
+            )
+            if dxy_corr is not None:
+                logger.debug(
+                    f"Using 1M dxy_corr_micro={dxy_corr:.2f} for seasonality (HTF not available)"
+                )
+
+        if dxy_corr is not None:
+            logger.info(
+                f"Seasonality calculation: dxy_corr={dxy_corr:.2f}, period={seasonality_period}"
+            )
+
         score, seasonality_adjustment = apply_seasonality_adjustment(
             base_score=score,
             period=seasonality_period,
@@ -528,8 +548,6 @@ def compute_htf_bias(
             seasonality_adjustment,
             score,
         )
-    
-        
 
     # Re-cap score after seasonality if neutralization conditions exist
     # NOTE: All conflict/chop neutralization DISABLED for parity testing
@@ -537,7 +555,6 @@ def compute_htf_bias(
     #     # Re-cap score after any post-processing to enforce neutral bias
     #     score = min(score, 5.0)
     pass  # Score re-cap disabled for parity testing
-
 
     # Determine confidence based on adjusted score
     if score >= 8.0:
@@ -564,20 +581,30 @@ def compute_htf_bias(
         bos_detected = True
         if bos_age is not None and not pd.isna(bos_age):
             bars_since_bos_from_features = int(bos_age)
-        logger.debug(f"BOS detected from streaming features: bos_recent={bos_recent}, bos_age={bos_age}")
+        logger.debug(
+            f"BOS detected from streaming features: bos_recent={bos_recent}, bos_age={bos_age}"
+        )
 
     choch_from_features = features_1h.get("choch_detected")
     choch_age = features_1h.get("choch_age")
-    if choch_from_features is not None and not pd.isna(choch_from_features) and choch_from_features:
+    if (
+        choch_from_features is not None
+        and not pd.isna(choch_from_features)
+        and choch_from_features
+    ):
         choch_detected = True
         if choch_age is not None and not pd.isna(choch_age):
             bars_since_choch_from_features = int(choch_age)
-        logger.debug(f"CHoCH detected from streaming features: choch_detected={choch_from_features}, choch_age={choch_age}")
+        logger.debug(
+            f"CHoCH detected from streaming features: choch_detected={choch_from_features}, choch_age={choch_age}"
+        )
 
     # Fallback: try df_1h detection if streaming features didn't find BOS/CHoCH
     # This is useful when we have sufficient historical candles
     if not bos_detected or not choch_detected:
-        if df_1h is not None and len(df_1h) > 10:  # Need enough bars for swing detection
+        if (
+            df_1h is not None and len(df_1h) > 10
+        ):  # Need enough bars for swing detection
             try:
                 swing_highs_1h, swing_lows_1h = detect_swings(df_1h, lookback=5)
 
@@ -605,16 +632,52 @@ def compute_htf_bias(
     liquidity_sweep_detected = False
     liquidity_sweep_type = None
 
-    # First, try streaming features
+    # First, try streaming features (1H, then 15M, then 1M)
     sweep_from_features = features_1h.get("liquidity_sweep")
     sweep_dir_from_features = features_1h.get("sweep_direction")
-    if sweep_from_features is not None and not pd.isna(sweep_from_features) and sweep_from_features:
+    if (
+        sweep_from_features is not None
+        and not pd.isna(sweep_from_features)
+        and sweep_from_features
+    ):
         liquidity_sweep_detected = True
         liquidity_sweep_type = sweep_dir_from_features
-        logger.debug(f"Liquidity sweep from streaming features: {sweep_from_features}, dir={sweep_dir_from_features}")
+        logger.debug(
+            f"Liquidity sweep from 1H streaming features: {sweep_from_features}, dir={sweep_dir_from_features}"
+        )
+
+    # Fallback: try 15M features
+    if not liquidity_sweep_detected and features_15m is not None:
+        sweep_from_15m = features_15m.get("liquidity_sweep")
+        sweep_dir_from_15m = features_15m.get("sweep_direction")
+        if (
+            sweep_from_15m is not None
+            and not pd.isna(sweep_from_15m)
+            and sweep_from_15m
+        ):
+            liquidity_sweep_detected = True
+            liquidity_sweep_type = sweep_dir_from_15m
+            logger.debug(
+                f"Liquidity sweep from 15M streaming features: {sweep_from_15m}, dir={sweep_dir_from_15m}"
+            )
+
+    # Fallback: try 1M features (most recent sweep)
+    if not liquidity_sweep_detected and features_1m is not None:
+        sweep_from_1m = features_1m.get("liquidity_sweep")
+        sweep_dir_from_1m = features_1m.get("sweep_direction")
+        if sweep_from_1m is not None and not pd.isna(sweep_from_1m) and sweep_from_1m:
+            liquidity_sweep_detected = True
+            liquidity_sweep_type = sweep_dir_from_1m
+            logger.debug(
+                f"Liquidity sweep from 1M streaming features: {sweep_from_1m}, dir={sweep_dir_from_1m}"
+            )
 
     # Fallback: sweep_events_15m (from df-based detection)
-    if not liquidity_sweep_detected and sweep_events_15m is not None and len(sweep_events_15m) > 0:
+    if (
+        not liquidity_sweep_detected
+        and sweep_events_15m is not None
+        and len(sweep_events_15m) > 0
+    ):
         try:
             # Get the most recent sweep event
             latest_sweep = sweep_events_15m.iloc[-1]
@@ -660,7 +723,6 @@ def compute_htf_bias(
             and vwap_distance_1h < 0
         ):
             vwap_trend_confirmed = True
-        
 
     # 4. FVG alignment score
     fvg_alignment_score = 0.0
@@ -688,9 +750,7 @@ def compute_htf_bias(
 
     # Extract DXY structure label (from 5M features)
     dxy_structure = (
-        features_5m.get("dxy_structure_label")
-        if features_5m is not None
-        else None
+        features_5m.get("dxy_structure_label") if features_5m is not None else None
     )
 
     # Detect 5M chop
@@ -709,7 +769,7 @@ def compute_htf_bias(
     dxy_alignment = False
     dxy_alignment_score = 0.0
     dxy_alignment_rationale = "N/A"
-    
+
     if original_bias != "neutral":
         original_direction = "long" if original_bias == "bullish" else "short"
         (
@@ -726,12 +786,11 @@ def compute_htf_bias(
             dxy_corr_1h=dxy_corr_1h,
         )
         logger.info(f"DXY alignment: {dxy_alignment} | {dxy_alignment_rationale}")
-        
 
     # 6. Calculate structure quality metrics
     # Primary source: streaming features (always available), fallback: df-based calculation
     structure_clarity = 0.0
-    chop_detected_flag = (chop_severity != ChopSeverity.NONE)  # Backward compatibility
+    chop_detected_flag = chop_severity != ChopSeverity.NONE  # Backward compatibility
     bars_since_bos_val = None
     bars_since_choch_val = None
 
@@ -739,7 +798,9 @@ def compute_htf_bias(
     streaming_clarity = features_1h.get("structure_clarity")
     if streaming_clarity is not None and not pd.isna(streaming_clarity):
         structure_clarity = float(streaming_clarity)
-        logger.debug(f"Structure clarity from streaming features: {structure_clarity:.2f}")
+        logger.debug(
+            f"Structure clarity from streaming features: {structure_clarity:.2f}"
+        )
     else:
         # Fallback: calculate from df_1h if available
         structure_labels_list: list[str | None] = []
@@ -759,7 +820,7 @@ def compute_htf_bias(
             )
             # Also check structural chop (alternations) separately from price chop
             structural_chop = detect_structure_chop(structure_labels_list, lookback=10)
-            
+
             # Combine structural chop with price chop for backward compatibility
             if structural_chop:
                 chop_detected_flag = True
@@ -771,7 +832,11 @@ def compute_htf_bias(
 
     # Also check is_chop from streaming features
     is_chop_streaming = features_1h.get("is_chop")
-    if is_chop_streaming is not None and not pd.isna(is_chop_streaming) and is_chop_streaming:
+    if (
+        is_chop_streaming is not None
+        and not pd.isna(is_chop_streaming)
+        and is_chop_streaming
+    ):
         chop_detected_flag = True
 
     logger.debug(
@@ -789,7 +854,11 @@ def compute_htf_bias(
     if bars_since_bos_val is None and bos_series is not None and timestamp is not None:
         bars_since_bos_val = calculate_bars_since_event(bos_series, timestamp)
 
-    if bars_since_choch_val is None and choch_series is not None and timestamp is not None:
+    if (
+        bars_since_choch_val is None
+        and choch_series is not None
+        and timestamp is not None
+    ):
         bars_since_choch_val = calculate_bars_since_event(choch_series, timestamp)
 
     # 7. Extract structure event candles
@@ -828,13 +897,13 @@ def compute_htf_bias(
 
     # Get structure labels, handling None/NaN/empty-string cases
     # Use the same logic as detect_structure_conflict (lines 433-438)
-    raw_structure_1h = (
-        features_1h.get("structure_label") or features_1h.get("structure_type")
+    raw_structure_1h = features_1h.get("structure_label") or features_1h.get(
+        "structure_type"
     )
-    raw_structure_15m = (
-        features_15m.get("structure_label") or features_15m.get("structure_type")
+    raw_structure_15m = features_15m.get("structure_label") or features_15m.get(
+        "structure_type"
     )
-    
+
     # Normalize: empty strings and NaN become None for clean HTFBias output
     def normalize_structure(val: str | None | float) -> str | None:
         if val is None:
@@ -844,11 +913,10 @@ def compute_htf_bias(
         if isinstance(val, str) and val.strip() == "":
             return None
         return str(val)
-    
+
     final_structure_1h = normalize_structure(raw_structure_1h)
     final_structure_15m = normalize_structure(raw_structure_15m)
-    
-    
+
     return HTFBias(
         bias=bias,
         direction=direction,
@@ -1037,6 +1105,10 @@ def calculate_bars_since_event(
         # For integer indexes, calculate position difference directly
         # Use the last position in the series as current position
         current_idx = len(events) - 1
-        event_idx = events.index.get_loc(last_event_idx) if hasattr(events.index, 'get_loc') else list(events.index).index(last_event_idx)
+        event_idx = (
+            events.index.get_loc(last_event_idx)
+            if hasattr(events.index, "get_loc")
+            else list(events.index).index(last_event_idx)
+        )
         bars_since = current_idx - event_idx
         return int(bars_since)
