@@ -14,8 +14,9 @@ from scp_shared.messaging.schemas import SignalMessage
 logger = get_logger(__name__)
 
 # Maximum executions per reclaim context (prevents excessive re-entries)
-# Increased to 10 to allow multiple trades per day (matches backtest behavior)
-MAX_EXECUTIONS_PER_CONTEXT = 10
+# Set to 1 to prevent simultaneous re-entries for the same context
+# Multiple trades per day are still allowed via reset_context_for_signal() when trades close
+MAX_EXECUTIONS_PER_CONTEXT = 1
 
 
 class StateMachineManager:

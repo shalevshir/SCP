@@ -62,13 +62,14 @@ def mock_publisher():
 
 
 @pytest.fixture
-def trade_manager(mock_broker, mock_sm_manager, mock_repo, mock_publisher):
+def trade_manager(mock_broker, mock_sm_manager, mock_repo, mock_publisher, mock_db_pool):
     """Create trade manager with max_active_trades=1."""
     return TradeManager(
         broker=mock_broker,
         state_machine_manager=mock_sm_manager,
         trade_repository=mock_repo,
         trade_publisher=mock_publisher,
+        db_pool=mock_db_pool,
         max_active_trades=1,  # Key: only 1 concurrent trade allowed
         pdll_limit=600.0,
         max_trades_per_day=5,  # High enough to not be the limiting factor

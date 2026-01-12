@@ -41,6 +41,8 @@ class TestWarmupPeriod:
         signal_publisher.publish = AsyncMock()
         guardrails_service = Mock(spec=GuardrailsService)
         session_service = Mock(spec=SessionValidationService)
+        active_trade_checker = Mock()
+        active_trade_checker.can_take_new_trade = AsyncMock(return_value=(True, 0))
         
         # Mock successful validation (so only warmup blocks signals)
         from scp_shared.validation import SessionResult, SessionConstraints
@@ -115,6 +117,7 @@ class TestWarmupPeriod:
                 signal_publisher,
                 guardrails_service,
                 session_service,
+                active_trade_checker,
                 warmup_bar_count,
                 warmup_bars,
             )
@@ -146,6 +149,8 @@ class TestWarmupPeriod:
         signal_publisher.publish = AsyncMock()
         guardrails_service = Mock(spec=GuardrailsService)
         session_service = Mock(spec=SessionValidationService)
+        active_trade_checker = Mock()
+        active_trade_checker.can_take_new_trade = AsyncMock(return_value=(True, 0))
         
         from scp_shared.validation import SessionResult, SessionConstraints, GuardrailResult
         session_service.evaluate.return_value = SessionResult(
@@ -216,6 +221,7 @@ class TestWarmupPeriod:
                 signal_publisher,
                 guardrails_service,
                 session_service,
+                active_trade_checker,
                 warmup_bar_count,
                 warmup_bars,
             )

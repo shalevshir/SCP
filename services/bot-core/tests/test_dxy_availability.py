@@ -68,6 +68,8 @@ class TestDXYAvailabilityCheck:
         session_service.evaluate = Mock(
             return_value=Mock(session_ok=True, constraints={})
         )
+        active_trade_checker = Mock()
+        active_trade_checker.can_take_new_trade = AsyncMock(return_value=(True, 0))
         
         # Create features with DXY unavailable
         features = FeaturesMessage(
@@ -82,6 +84,7 @@ class TestDXYAvailabilityCheck:
             signal_publisher,
             guardrails_service,
             session_service,
+            active_trade_checker,
             warmup_bar_count=100,  # Already past warmup
             warmup_bars=60,
         )
@@ -108,6 +111,8 @@ class TestDXYAvailabilityCheck:
         session_service.evaluate = Mock(
             return_value=Mock(session_ok=True, constraints={})
         )
+        active_trade_checker = Mock()
+        active_trade_checker.can_take_new_trade = AsyncMock(return_value=(True, 0))
         
         # Process feature message with DXY available (skip warmup by setting counter > warmup_bars)
         await process_feature_message(
@@ -117,6 +122,7 @@ class TestDXYAvailabilityCheck:
             signal_publisher,
             guardrails_service,
             session_service,
+            active_trade_checker,
             warmup_bar_count=100,  # Already past warmup
             warmup_bars=60,
         )

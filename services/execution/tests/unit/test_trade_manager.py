@@ -12,11 +12,21 @@ from scp_shared.messaging.schemas import (
     SignalMessage,
 )
 
+from scp_shared.database import DatabasePool
+
 from execution_svc.broker import BaseBroker
 from execution_svc.state_machine_manager import StateMachineManager
 from execution_svc.trade_manager import TradeManager
 from execution_svc.trade_publisher import TradePublisher
 from execution_svc.trade_repository import TradeRepository
+
+
+@pytest.fixture
+def mock_db_pool() -> MagicMock:
+    """Create mock database pool."""
+    db_pool = MagicMock(spec=DatabasePool)
+    db_pool.fetch = AsyncMock(return_value=[])
+    return db_pool
 
 
 @pytest.fixture
@@ -68,6 +78,7 @@ def trade_manager(
     mock_sm_manager: MagicMock,
     mock_trade_repo: MagicMock,
     mock_publisher: MagicMock,
+    mock_db_pool: MagicMock,
 ) -> TradeManager:
     """Create trade manager with mocks."""
     return TradeManager(
@@ -75,6 +86,7 @@ def trade_manager(
         state_machine_manager=mock_sm_manager,
         trade_repository=mock_trade_repo,
         trade_publisher=mock_publisher,
+        db_pool=mock_db_pool,
         max_active_trades=1,
         pdll_limit=600.0,
         max_trades_per_day=2,

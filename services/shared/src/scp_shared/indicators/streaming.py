@@ -420,10 +420,8 @@ class StreamingFeatureProcessor:
     def reset(self) -> None:
         """Reset all state to initial conditions."""
         self.ema_states = {period: None for period in self.ema_periods}
-        self.rsi_buffer.clear()
-        self.rsi_avg_gain = None
-        self.rsi_avg_loss = None
-        self.prev_close = None
+        # Reset RSI state by creating a new instance
+        self.rsi_state = RSIState(period=self.rsi_period)
         self.dxy_corr_gc_buffer.clear()
         self.dxy_corr_dxy_buffer.clear()
         self.micro_corr_gc_buffer.clear()

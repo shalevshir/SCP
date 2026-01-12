@@ -5,6 +5,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from scp_shared.database import DatabasePool
+
 from execution_svc.broker import PaperBroker
 from execution_svc.state_machine_manager import StateMachineManager
 from execution_svc.trade_manager import TradeManager
@@ -12,6 +14,15 @@ from execution_svc.trade_publisher import TradePublisher
 from execution_svc.trade_repository import TradeRepository
 from scp_shared.common.types import Candle
 from scp_shared.execution.types import TradeRecord
+
+
+@pytest.fixture
+def mock_db_pool() -> DatabasePool:
+    """Create mock database pool."""
+    pool = MagicMock(spec=DatabasePool)
+    pool.fetch = AsyncMock(return_value=[])
+    pool.execute = AsyncMock()
+    return pool
 
 
 @pytest.fixture
@@ -89,6 +100,7 @@ class TestTradeManagerHandlesTradeNotFound:
         mock_sm_manager: StateMachineManager,
         mock_repo: TradeRepository,
         mock_publisher: TradePublisher,
+        mock_db_pool: DatabasePool,
         sample_trade: TradeRecord,
         sample_candle: Candle,
     ) -> None:
@@ -109,6 +121,7 @@ class TestTradeManagerHandlesTradeNotFound:
             state_machine_manager=mock_sm_manager,
             trade_repository=mock_repo,
             trade_publisher=mock_publisher,
+            db_pool=mock_db_pool,
             max_active_trades=1,
         )
         
@@ -141,6 +154,7 @@ class TestTradeManagerHandlesTradeNotFound:
         mock_sm_manager: StateMachineManager,
         mock_repo: TradeRepository,
         mock_publisher: TradePublisher,
+        mock_db_pool: DatabasePool,
         sample_trade: TradeRecord,
     ) -> None:
         """Test that TradeManager publishes event when close succeeds.
@@ -156,6 +170,7 @@ class TestTradeManagerHandlesTradeNotFound:
             state_machine_manager=mock_sm_manager,
             trade_repository=mock_repo,
             trade_publisher=mock_publisher,
+            db_pool=mock_db_pool,
             max_active_trades=1,
         )
         
