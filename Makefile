@@ -290,7 +290,7 @@ replay:
 	@if [ -z "$(SPEED)" ]; then \
 		poetry run python scripts/replay_historical.py \
 			--start $(START) --end $(END) \
-			--speed 0 \
+			--speed 120 \
 			--processing-delay 10; \
 	else \
 		poetry run python scripts/replay_historical.py \

@@ -1,21 +1,23 @@
 ---
 alwaysApply: true
 ---
-# Microservices Architecture Plan
+# Microservices Architecture
 
 **Goal:** Transform the current backtesting monolith into a production-ready, distributed trading system with clear service boundaries, fault isolation, and independent scaling.
+
+**Status:** ✅ All 5 core services implemented and integrated.
 
 ---
 
 ## 1. Service Overview
 
-| Service | Responsibility | Cadence | State |
-|---------|---------------|---------|-------|
-| **Data Adapter** | Live data ingestion, normalization, gap-fill | Continuous (tick → 1m) | Minimal |
-| **Feature Engine** | Indicator computation (EMA, VWAP, RSI, structure) | Every 1m bar | Complex (buffers) |
-| **HTF Bias Service** | Higher-timeframe structure analysis | 15m/1h boundaries | Moderate |
-| **Bot Core** | Signal generation, scoring, guardrails | Every 1m bar | Counters, streaks |
-| **Execution Service** | Trade lifecycle, SL/TP, broker integration | Continuous | Active positions |
+| Service | Port | Responsibility | Cadence | State |
+|---------|------|---------------|---------|-------|
+| **Data Adapter** | 8001 | Live data ingestion, normalization, gap-fill | Continuous (tick → 1m) | Minimal |
+| **Feature Engine** | 8002 | Indicator computation (EMA, VWAP, RSI, structure), HTF aggregation | Every 1m bar | Complex (buffers) |
+| **HTF Bias Service** | 8003 | Higher-timeframe structure analysis | Every 1m bar (emits at boundaries) | Moderate |
+| **Bot Core** | 8004 | Signal generation, scoring, guardrails | Every 1m bar | Counters, streaks, bias cache |
+| **Execution Service** | 8005 | Trade lifecycle, SL/TP, broker integration | Continuous | Active positions, state machines |
 
 ---
 
@@ -71,29 +73,97 @@ SCP/
 **Shared Library (Microservices):**
 ```
 services/shared/src/scp_shared/
-├── common/                  # Logging, types, utilities
-├── config/                  # Config loading
+├── common/                  # Logging, types, utilities, security
+│   ├── logger.py           # Structured logging with get_logger()
+│   ├── types.py            # Candle, BarData types
+│   └── security.py         # Connection URL masking
+├── config/                  # Config loading (base.py)
 ├── database/                # PostgreSQL/TimescaleDB clients
-├── health/                  # Health check endpoints
-├── indicators/              # Streaming indicators (EMA, RSI, VWAP, structure)
-├── messaging/               # Redis Streams, schemas
+│   ├── connection.py       # DatabasePool with asyncpg
+│   └── repositories.py     # Base repository patterns
+├── execution/               # Trade execution logic
+│   ├── invalidation.py     # InvalidationChecker (SOP rules)
+│   └── types.py            # Trade types
+├── health/                  # Health check endpoints (FastAPI router)
+├── indicators/              # Streaming indicators
+│   ├── streaming.py        # StreamingFeatureProcessor
+│   ├── state.py            # FeatureState
+│   ├── ema.py, rsi.py, vwap.py
+│   ├── dxy_correlation.py  # DXY correlation calculator
+│   ├── structure.py        # Structure labels (HH/HL/LH/LL)
+│   ├── aggregator.py       # Candle aggregation
+│   └── vwap_reclaim_state_machine.py
+├── messaging/               # Redis Streams infrastructure
+│   ├── redis_streams.py    # RedisStreamConsumer/Publisher
+│   ├── schemas.py          # Pydantic message schemas
+│   ├── synchronizer.py     # CandleSynchronizer, CandleFeatureSynchronizer
+│   ├── consumer_group.py   # Consumer group management
+│   └── retry.py            # Retry logic
 ├── rule_engine/             # Signal scoring logic
 │   ├── scoring.py          # Core scoring algorithm
 │   ├── signal.py           # Signal type
-│   └── htf/
+│   ├── config_loader.py    # Scoring config loading
+│   ├── setup_detectors/    # VWAP_FADE, DXY_CONTINUATION detectors
+│   └── htf/                 # HTF bias computation
+│       ├── streaming.py    # StreamingHTFBiasCalculator
+│       ├── calculator.py   # HTF bias scoring
 │       ├── types.py        # HTFBias type
-│       └── validation.py   # HTF validation helpers
+│       ├── validation.py   # HTF validation helpers
+│       ├── conflicts.py    # Conflict detection
+│       ├── structure/      # BOS, CHoCH, swings, FVG, liquidity
+│       ├── vwap/           # VWAP trend, reclaim, sentinel
+│       ├── dxy/            # DXY alignment, chop detection
+│       └── seasonality/    # Time-based scoring adjustments
 └── validation/              # Guardrails, session validation
+    ├── guardrails.py       # BehaviorGuardrails
+    ├── session_validator.py # Trading session validation
+    └── config_loader.py    # Validation config
 ```
 
 **Services (Production):**
 ```
 services/
-├── data-adapter/            # Live data ingestion
-├── feature-engine/          # Streaming feature computation
-├── htf-bias/                # HTF bias calculation
-├── bot-core/                # Signal generation
-└── execution/               # Trade execution
+├── data-adapter/            # Live data ingestion (port 8001)
+│   └── src/data_adapter/
+│       ├── main.py         # FastAPI app with lifespan
+│       ├── candle_aggregator.py
+│       ├── databento_client.py (mock for now)
+│       ├── gap_detector.py
+│       ├── publisher.py
+│       └── session_filter.py
+├── feature-engine/          # Streaming feature computation (port 8002)
+│   └── src/feature_engine_svc/
+│       ├── main.py         # FastAPI app with warmup
+│       ├── processor.py    # FeatureProcessor wrapper
+│       ├── htf_aggregator.py # 15m/1h candle aggregation
+│       ├── publisher.py
+│       └── repository.py
+├── htf-bias/                # HTF bias calculation (port 8003)
+│   └── src/htf_bias_svc/
+│       ├── main.py         # FastAPI app with warmup
+│       ├── processor.py    # HTFBiasProcessor wrapper
+│       ├── publisher.py
+│       └── repository.py
+├── bot-core/                # Signal generation (port 8004)
+│   └── src/bot_core_svc/
+│       ├── main.py         # FastAPI app
+│       ├── signal_engine.py # SignalEngine wrapper
+│       ├── bias_cache.py   # HTFBiasCache with timestamp lookup
+│       ├── guardrails.py   # GuardrailsService
+│       ├── session.py      # SessionValidationService
+│       ├── publisher.py
+│       └── state_repository.py
+└── execution/               # Trade execution (port 8005)
+    └── src/execution_svc/
+        ├── main.py         # FastAPI app with /admin/reset
+        ├── trade_manager.py # TradeManager (SL/TP, invalidation)
+        ├── state_machine_manager.py # StateMachineManager
+        ├── trade_repository.py
+        ├── trade_publisher.py
+        ├── daily_state.py
+        └── broker/
+            ├── base.py     # BrokerBase interface
+            └── paper.py    # PaperBroker implementation
 ```
 
 ---
