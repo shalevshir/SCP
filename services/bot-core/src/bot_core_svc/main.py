@@ -12,6 +12,7 @@ from scp_shared.health import create_health_router
 from scp_shared.messaging import RedisStreamConsumer
 from scp_shared.messaging.schemas import FeaturesMessage, HTFBiasMessage
 
+from bot_core_svc.active_trade_checker import ActiveTradeChecker
 from bot_core_svc.bias_cache import HTFBiasCache
 from bot_core_svc.config import BotCoreConfig
 from bot_core_svc.guardrails import GuardrailsService
@@ -60,6 +61,8 @@ async def process_features(
         trading_timezone=session_service.config.timezone,
     )
     guardrails_service = GuardrailsService(state_repo)
+    # Active trade checker - matches backtest behavior of blocking signals when trade is active
+    active_trade_checker = ActiveTradeChecker(db_pool, max_active_trades=1)
     
     # Load daily state
     await guardrails_service.load_state()
@@ -110,6 +113,7 @@ async def process_features(
                     signal_publisher,
                     guardrails_service,
                     session_service,
+                    active_trade_checker,
                     warmup_bar_count,
                     config.warmup_bars,
                 )
@@ -129,6 +133,7 @@ async def process_feature_message(
     signal_publisher: SignalPublisher,
     guardrails_service: GuardrailsService,
     session_service: SessionValidationService,
+    active_trade_checker: ActiveTradeChecker,
     warmup_bar_count: int,
     warmup_bars: int,
 ) -> int:
@@ -141,6 +146,7 @@ async def process_feature_message(
         signal_publisher: Signal publisher
         guardrails_service: Guardrails service
         session_service: Session validation service
+        active_trade_checker: Active trade checker (matches backtest behavior)
         warmup_bar_count: Current bar count (for warmup tracking)
         warmup_bars: Number of bars to skip during warmup
         
@@ -176,6 +182,15 @@ async def process_feature_message(
     # 2.5. Check DXY availability (required for accurate scoring)
     if features.dxy_correlation is None and features.dxy_corr is None:
         logger.debug(f"DXY data unavailable at {features.timestamp} - skipping signal generation")
+        return warmup_bar_count
+    
+    # 2.6. CRITICAL: Check if active trade exists (matches backtest behavior)
+    # Backtest blocks signal generation when len(self._active_trades) >= max_concurrent
+    can_trade, active_count = await active_trade_checker.can_take_new_trade()
+    if not can_trade:
+        logger.debug(
+            f"Signal blocked at {features.timestamp}: active trade exists ({active_count} active)"
+        )
         return warmup_bar_count
     
     # 3. Get bias for this feature's timestamp (critical for replay mode)
