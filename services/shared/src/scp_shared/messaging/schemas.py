@@ -89,6 +89,7 @@ class FeaturesMessage(BaseModel):
     choch_detected: bool | None = Field(default=None, description="Whether CHoCH was detected")
     choch_direction: str | None = Field(default=None, description="CHoCH direction")
     structure_clarity: float | None = Field(default=None, description="Structure clarity score")
+    trend_confidence: float | None = Field(default=None, description="Trend confidence score (0-1)")
     liquidity_sweep: bool | None = Field(default=None, description="Whether liquidity sweep detected")
     sweep_age: int | None = Field(default=None, description="Age of most recent sweep in bars")
     

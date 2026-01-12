@@ -133,6 +133,7 @@ class FeatureProcessor:
             choch_detected=features_series.get("choch_detected"),
             choch_direction=features_series.get("choch_direction"),
             structure_clarity=self._safe_float(features_series.get("structure_clarity")),
+            trend_confidence=self._safe_float(features_series.get("trend_confidence")),
             liquidity_sweep=features_series.get("liquidity_sweep"),
             sweep_age=self._safe_int(features_series.get("sweep_age")),
             # Expansion gate fields
