@@ -332,6 +332,8 @@ async def reset_state() -> dict[str, str]:
     _trade_manager._active_trades.clear()
     _trade_manager._pending_signals.clear()
     _trade_manager._trade_entry_bars.clear()
+    _trade_manager._last_processed_candle_ts = None  # Reset for clean replay
+    _trade_manager._closed_trade_ranges.clear()  # Reset for clean replay
     _trade_manager._daily_tracker.reset_state()
     # CRITICAL: Reset InvalidationChecker daily state to prevent stale loss streaks/PnL
     # from causing incorrect risk breach checks after reset

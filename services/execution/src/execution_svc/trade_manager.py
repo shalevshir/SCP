@@ -106,6 +106,17 @@ class TradeManager:
         
         # Bar tracking for time-based invalidation
         self._trade_entry_bars: dict[str, int] = {}
+        
+        # Track last processed candle timestamp for late signal detection
+        # In replay mode, signals arrive after candles, so we need to know
+        # if a signal's execution bar has already been processed
+        self._last_processed_candle_ts: datetime | None = None
+        
+        # Track closed trade time ranges for data-time overlap detection
+        # In replay mode, signals arrive after candles, so we may receive
+        # a late signal that would have been generated during a trade's active period
+        # Format: list of (opened_at, closed_at) tuples
+        self._closed_trade_ranges: list[tuple[datetime, datetime]] = []
     
     async def on_signal(self, signal: SignalMessage) -> None:
         """Handle incoming signal from Bot Core.
@@ -127,21 +138,32 @@ class TradeManager:
         
         # CRITICAL FIX: Check if signal's execution time has already passed
         # Signal at T should execute at T+1 (next bar). If we're past T+1,
-        # the execution candle was already processed, so fetch it from DB.
+        # the execution candle was already processed.
         expected_exec_time = signal.timestamp + timedelta(minutes=1)
-        current_bar_timestamp = self._sm_manager._bar_counter  # This is a counter, not timestamp
         
-        # For replay mode: if signal arrives late, check if execution candle exists in DB
-        # We'll fetch the candle and execute immediately if it exists
-        candle_record = await self._candle_repo.get_candle_by_timestamp(
-            expected_exec_time, "GC", "1m"
-        )
-        
-        if candle_record is not None:
-            # Execution candle exists in DB - signal arrived late, execute immediately
+        # For replay mode: if signal arrives late (after its execution bar was processed),
+        # execute immediately using the signal's pre-calculated entry_price.
+        # We track _last_processed_candle_ts to know which candles have been processed.
+        if (
+            self._last_processed_candle_ts is not None
+            and expected_exec_time <= self._last_processed_candle_ts
+        ):
+            # CRITICAL: Check for data-time overlap with closed trades
+            # In replay mode, signals arrive after candles, so we may receive
+            # a late signal that would have been generated during another trade's active period.
+            # We must block these to match backtester behavior.
+            for opened_at, closed_at in self._closed_trade_ranges:
+                if opened_at <= signal.timestamp < closed_at:
+                    logger.info(
+                        f"Late signal {signal.id} blocked: data-time overlap with trade "
+                        f"({opened_at} - {closed_at}), signal at {signal.timestamp}"
+                    )
+                    return
+            
+            # Signal arrived late (after execution bar processed) - execute immediately
             logger.info(
-                f"Signal {signal.id} arrived late - executing immediately using "
-                f"candle from DB at {expected_exec_time}"
+                f"Signal {signal.id} arrived late - executing immediately "
+                f"(expected={expected_exec_time}, last_processed={self._last_processed_candle_ts})"
             )
             
             # Create state machine with auto_confirm=True for late signals
@@ -247,6 +269,11 @@ class TradeManager:
             next_bar_open: Open price of the next bar
             candle_timestamp: Timestamp of the candle being processed
         """
+        # CRITICAL: Track last processed candle timestamp for late signal detection
+        # This must be updated BEFORE any early returns so on_signal() knows
+        # which candles have been processed
+        self._last_processed_candle_ts = candle_timestamp
+        
         if not self._pending_signals:
             return
         
@@ -391,9 +418,12 @@ class TradeManager:
                 return None
             
             # Create trade record
-            # Use signal timestamp for replay compatibility
-            opened_at = signal.timestamp
+            # Entry timestamp should be NEXT BAR after signal (signal.timestamp + 1 minute)
+            # This matches backtester behavior: signal at T, entry at T+1
+            expected_exec_time = signal.timestamp + timedelta(minutes=1)
+            opened_at = expected_exec_time
             entry_bar_idx = self._sm_manager._bar_counter
+            
             trade_id = await self._repo.insert_trade(
                 signal_id=signal.id,
                 direction=signal.direction,
@@ -542,6 +572,11 @@ class TradeManager:
                 del self._active_trades[trade.trade_id]
             if trade.trade_id in self._trade_entry_bars:
                 del self._trade_entry_bars[trade.trade_id]
+            
+            # Track closed trade time range for data-time overlap detection
+            # This prevents late signals from executing during periods when
+            # a trade was active (in data time, not wall-clock time)
+            self._closed_trade_ranges.append((trade.entry_timestamp, closed_at))
             
             # Reset invalidation checker state
             self._invalidation_checker.reset_trade(trade.trade_id)
