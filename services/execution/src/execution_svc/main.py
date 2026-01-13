@@ -11,6 +11,7 @@ import redis.asyncio as redis
 from fastapi import FastAPI
 
 from scp_shared.admin import KillSwitchRepository
+from scp_shared.alerts import AlertLevel, AlertType, send_alert
 from scp_shared.common import get_logger, mask_connection_url
 from scp_shared.common.types import Candle
 from scp_shared.database import DatabasePool
@@ -205,6 +206,17 @@ async def process_streams(
         raise
     except Exception as e:
         logger.error(f"Error in execution processing loop: {e}", exc_info=True)
+        send_alert(
+            AlertLevel.CRITICAL,
+            AlertType.SERVICE_CRASHED,
+            f"Execution Service crashed: {e}",
+            context={
+                "service": "execution",
+                "error_type": type(e).__name__,
+                "error_message": str(e),
+                "timestamp": datetime.now().isoformat(),
+            },
+        )
         raise
 
 
@@ -321,6 +333,22 @@ async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
     else:
         logger.info("✅ Kill switch inactive - Trading enabled")
     
+    # Send service started alert
+    send_alert(
+        AlertLevel.INFO,
+        AlertType.SERVICE_STARTED,
+        f"Execution Service v{config.service_version} started",
+        context={
+            "service": config.service_name,
+            "version": config.service_version,
+            "broker_mode": config.broker_mode,
+            "kill_switch_active": _is_killed,
+            "pdll_limit": config.pdll_limit,
+            "max_trades_per_day": config.max_trades_per_day,
+            "timestamp": datetime.now().isoformat(),
+        },
+    )
+    
     # Start processing task
     processing_task = asyncio.create_task(
         process_streams(redis_client, db_pool)
@@ -396,6 +424,7 @@ async def kill_switch(reason: str = "Manual kill via API") -> dict[str, str]:
     # If kill switch is active for extended period, signals in _pending_signals
     # will have outdated entry_price values. Clearing them prevents execution
     # with incorrect prices when kill switch is deactivated.
+    pending_count = 0
     if _trade_manager is not None:
         pending_count = len(_trade_manager._pending_signals)  # type: ignore[attr-defined]
         if pending_count > 0:
@@ -405,6 +434,18 @@ async def kill_switch(reason: str = "Manual kill via API") -> dict[str, str]:
             _trade_manager._pending_signals.clear()  # type: ignore[attr-defined]
     
     logger.warning(f"🚨 KILL SWITCH ACTIVATED: {reason}")
+    send_alert(
+        AlertLevel.CRITICAL,
+        AlertType.KILL_SWITCH_ACTIVATED,
+        f"Execution Service kill switch activated: {reason}",
+        context={
+            "service": "execution",
+            "killed_by": "admin",
+            "reason": reason,
+            "pending_signals_cleared": pending_count,
+            "timestamp": datetime.now().isoformat(),
+        },
+    )
     
     return {
         "status": "killed",
@@ -445,6 +486,16 @@ async def resume_trading() -> dict[str, str]:
             _trade_manager._pending_signals.clear()  # type: ignore[attr-defined]
     
     logger.info("✅ Kill switch deactivated - Trading resumed")
+    send_alert(
+        AlertLevel.INFO,
+        AlertType.KILL_SWITCH_RESUMED,
+        "Execution Service kill switch deactivated - trading resumed",
+        context={
+            "service": "execution",
+            "resumed_by": "admin",
+            "timestamp": datetime.now().isoformat(),
+        },
+    )
     
     return {
         "status": "active",
