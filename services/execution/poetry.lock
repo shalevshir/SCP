@@ -437,6 +437,17 @@ files = [
 ]
 
 [[package]]
+name = "ibapi"
+version = "9.81.1.post1"
+description = "Official Interactive Brokers API"
+optional = false
+python-versions = ">=3.1"
+groups = ["main"]
+files = [
+    {file = "ibapi-9.81.1.post1.tar.gz", hash = "sha256:49f6678bf4cced996920f32ad4b48e6897749ac30ba14a661082285f4ec09cd6"},
+]
+
+[[package]]
 name = "idna"
 version = "3.11"
 description = "Internationalized Domain Names in Applications (IDNA)"
@@ -1444,4 +1455,4 @@ files = [
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11,<3.13"
-content-hash = "89ce6196e6b8207f47313a1e7f7638d54a937c4c103a73eedd374cad80c4417f"
+content-hash = "7bcc90e868f695e8e6aaacf58cceb0703060b495fc58bdbd9ebf7887bc96c510"
