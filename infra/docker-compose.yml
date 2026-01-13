@@ -31,6 +31,7 @@ services:
       - ./migrations/002_indexes.sql:/docker-entrypoint-initdb.d/101_indexes.sql:ro
       - ./migrations/003_add_trade_state_fields.sql:/docker-entrypoint-initdb.d/102_add_trade_state_fields.sql:ro
       - ./migrations/004_add_htf_bias_fields.sql:/docker-entrypoint-initdb.d/103_add_htf_bias_fields.sql:ro
+      - ./migrations/005_add_kill_switch.sql:/docker-entrypoint-initdb.d/104_add_kill_switch.sql:ro
     restart: unless-stopped
     healthcheck:
       # Verify database is ready AND migrations have run (check for 'candles' table)

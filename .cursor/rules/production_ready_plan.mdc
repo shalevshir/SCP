@@ -1006,6 +1006,22 @@ Week 9+:    Go-Live (with conservative limits)
 
 ---
 
+## 🚀 First Deployment: Critical Steps Only
+
+**For immediate first deployment, see:** [`FIRST_DEPLOYMENT_CRITICAL_STEPS.md`](../FIRST_DEPLOYMENT_CRITICAL_STEPS.md)
+
+**Summary:** Only 4 critical steps needed before first paper trading deployment:
+1. **Kill Switch** - Emergency halt capability
+2. **Broker Mode Enforcement** - Prevent accidental live trading
+3. **Basic Critical Alerts** - PDLL, crashes, kill switch activation
+4. **Paper Trading Validation** - 7+ days of live data validation
+
+**Estimated Time:** 1-2 weeks (vs 8+ weeks for full production readiness)
+
+**What's Deferred:** Full observability, real broker integration, advanced features can wait until after paper trading validation.
+
+---
+
 ## Risk Register
 
 | Risk | Impact | Probability | Mitigation |
