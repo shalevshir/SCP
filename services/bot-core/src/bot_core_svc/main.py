@@ -3,9 +3,12 @@
 import asyncio
 import logging
 from contextlib import asynccontextmanager
+from datetime import datetime
+from typing import Optional
 
 import redis.asyncio as redis
 from fastapi import FastAPI
+from scp_shared.admin import KillSwitchRepository
 from scp_shared.common import get_logger, mask_connection_url
 from scp_shared.database import DatabasePool
 from scp_shared.health import create_health_router
@@ -35,6 +38,10 @@ config = BotCoreConfig()
 
 # Global shutdown event
 shutdown_event = asyncio.Event()
+
+# Global kill switch state (populated in lifespan)
+_kill_switch_repo: Optional[KillSwitchRepository] = None
+_is_killed: bool = False
 
 
 async def process_features(
@@ -153,8 +160,15 @@ async def process_feature_message(
     Returns:
         Updated warmup_bar_count
     """
+    global _is_killed
+    
     # Increment bar counter
     warmup_bar_count += 1
+    
+    # KILL SWITCH: Skip signal generation if killed
+    if _is_killed:
+        logger.debug(f"🚨 Kill switch active - skipping signal generation at {features.timestamp}")
+        return warmup_bar_count
     
     # Check warmup period
     if warmup_bar_count <= warmup_bars:
@@ -217,6 +231,8 @@ async def process_feature_message(
 @asynccontextmanager
 async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
     """Manage application lifecycle."""
+    global _kill_switch_repo, _is_killed
+    
     logger.info(f"Starting Bot Core Service v{config.service_version}")
     
     # Startup
@@ -226,6 +242,18 @@ async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
     db_pool = DatabasePool(config.database_url)
     await db_pool.connect()
     logger.info(f"Connected to database at {mask_connection_url(config.database_url)}")
+    
+    # Initialize kill switch repository and load state
+    _kill_switch_repo = KillSwitchRepository(db_pool)
+    kill_state = await _kill_switch_repo.get_state("bot-core")
+    _is_killed = kill_state.is_killed
+    if _is_killed:
+        logger.warning(
+            f"🚨 KILL SWITCH IS ACTIVE - Signal generation halted "
+            f"(killed at {kill_state.killed_at} by {kill_state.killed_by}: {kill_state.reason})"
+        )
+    else:
+        logger.info("✅ Kill switch inactive - Signal generation enabled")
     
     # Start processing task
     processing_task = asyncio.create_task(
@@ -264,6 +292,86 @@ health_router = create_health_router(
     version=config.service_version,
 )
 app.include_router(health_router)
+
+
+@app.post("/admin/kill")
+async def kill_switch(reason: str = "Manual kill via API") -> dict[str, str]:
+    """Activate kill switch to halt all signal generation.
+    
+    When activated:
+    - Signal generation is halted
+    - Feature consumption continues (to stay in sync)
+    - State persists across restarts
+    
+    Args:
+        reason: Reason for activation
+        
+    Returns:
+        Status message with kill state
+    """
+    global _kill_switch_repo, _is_killed
+    
+    if _kill_switch_repo is None:
+        return {"status": "error", "message": "Service not fully initialized"}
+    
+    await _kill_switch_repo.set_killed("bot-core", "admin", reason)
+    _is_killed = True
+    
+    logger.warning(f"🚨 KILL SWITCH ACTIVATED: {reason}")
+    
+    return {
+        "status": "killed",
+        "message": f"Signal generation halted: {reason}",
+        "timestamp": datetime.now().isoformat(),
+    }
+
+
+@app.post("/admin/resume")
+async def resume_trading() -> dict[str, str]:
+    """Deactivate kill switch to resume signal generation.
+    
+    Returns:
+        Status message
+    """
+    global _kill_switch_repo, _is_killed
+    
+    if _kill_switch_repo is None:
+        return {"status": "error", "message": "Service not fully initialized"}
+    
+    await _kill_switch_repo.set_resumed("bot-core")
+    _is_killed = False
+    
+    logger.info("✅ Kill switch deactivated - Signal generation resumed")
+    
+    return {
+        "status": "active",
+        "message": "Signal generation resumed",
+        "timestamp": datetime.now().isoformat(),
+    }
+
+
+@app.get("/admin/status")
+async def get_status() -> dict:
+    """Get current kill switch status.
+    
+    Returns:
+        Current kill switch state
+    """
+    global _kill_switch_repo, _is_killed
+    
+    if _kill_switch_repo is None:
+        return {"status": "error", "message": "Service not fully initialized"}
+    
+    kill_state = await _kill_switch_repo.get_state("bot-core")
+    
+    return {
+        "service": "bot-core",
+        "is_killed": kill_state.is_killed,
+        "killed_at": kill_state.killed_at.isoformat() if kill_state.killed_at else None,
+        "killed_by": kill_state.killed_by,
+        "reason": kill_state.reason,
+        "updated_at": kill_state.updated_at.isoformat(),
+    }
 
 
 if __name__ == "__main__":
