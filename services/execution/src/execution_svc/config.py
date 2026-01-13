@@ -73,4 +73,22 @@ class ExecutionConfig(BaseServiceConfig):
         default=1.0,
         description="Risk per trade as percent of account when sizing_mode='risk_ladder'",
     )
+    
+    # Interactive Brokers connection settings
+    ib_host: str = Field(
+        default="127.0.0.1",
+        description="IB Gateway/TWS host",
+    )
+    ib_port: int = Field(
+        default=4002,
+        description="IB port (7497=TWS paper, 4002=Gateway paper, 7496=TWS live, 4001=Gateway live)",
+    )
+    ib_client_id: int = Field(
+        default=1,
+        description="IB client ID (unique per connection)",
+    )
+    ib_account: str = Field(
+        default="",
+        description="IB account ID (leave empty for default account)",
+    )
 

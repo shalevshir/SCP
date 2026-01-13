@@ -18,7 +18,7 @@ from scp_shared.health import create_health_router
 from scp_shared.messaging import RedisStreamConsumer, CandleFeatureSynchronizer
 from scp_shared.messaging.schemas import CandleMessage, FeaturesMessage, SignalMessage
 
-from execution_svc.broker import PaperBroker
+from execution_svc.broker import BaseBroker, create_broker
 from execution_svc.config import ExecutionConfig
 from execution_svc.state_machine_manager import StateMachineManager
 from execution_svc.trade_manager import TradeManager, is_valid_candle
@@ -42,7 +42,7 @@ shutdown_event = asyncio.Event()
 
 # Global references for reset endpoint (populated in process_streams)
 _trade_manager: Optional[TradeManager] = None
-_broker: Optional[PaperBroker] = None
+_broker: Optional[BaseBroker] = None  # BaseBroker instance (PaperBroker or IBPaperBroker)
 _sm_manager: Optional[StateMachineManager] = None
 _synchronizer: Optional[CandleFeatureSynchronizer] = None
 
@@ -66,7 +66,11 @@ async def process_streams(
     logger.info("Starting execution processing loop")
     
     # Initialize components
-    broker = PaperBroker()
+    # Note: Broker will be passed in from lifespan (already created and connected)
+    # This function will be refactored to receive broker as parameter
+    broker = _broker
+    if broker is None:
+        raise RuntimeError("Broker not initialized. This should not happen.")
     sm_manager = StateMachineManager(db_pool)
     trade_repo = TradeRepository(db_pool)
     trade_publisher = TradePublisher(redis_client)
@@ -290,6 +294,21 @@ async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
     await db_pool.connect()
     logger.info(f"Connected to database at {mask_connection_url(config.database_url)}")
     
+    # Initialize broker
+    broker = create_broker(config.broker_mode, config)
+    _broker = broker  # Store global reference for process_streams
+    
+    # Connect to broker if it has a connect method (e.g., IBPaperBroker)
+    if hasattr(broker, 'connect'):
+        try:
+            await broker.connect()
+            logger.info(f"✅ Broker connected (mode: {config.broker_mode})")
+        except Exception as e:
+            logger.error(f"❌ Failed to connect broker: {e}")
+            raise
+    else:
+        logger.info(f"✅ Broker initialized (mode: {config.broker_mode})")
+    
     # Initialize kill switch repository and load state
     _kill_switch_repo = KillSwitchRepository(db_pool)
     kill_state = await _kill_switch_repo.get_state("execution")
@@ -321,6 +340,14 @@ async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
     except Exception as e:
         logger.error(f"Processing task failed: {e}", exc_info=True)
     finally:
+        # Disconnect broker if it has a disconnect method
+        if hasattr(_broker, 'disconnect'):
+            try:
+                await _broker.disconnect()
+                logger.info("Broker disconnected")
+            except Exception as e:
+                logger.error(f"Error disconnecting broker: {e}")
+        
         await redis_client.aclose()
         await db_pool.close()
         logger.info("Execution Service stopped")
