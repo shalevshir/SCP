@@ -78,10 +78,12 @@ class SessionEventPublisher:
         # Detect state transitions
         if is_open and not self._last_state:
             # Transition: closed -> open
+            # Convert timestamp to session timezone to get correct session date
+            local_dt = candle.timestamp.astimezone(session_filter.timezone)
             event = SessionEvent(
                 event_type="session.opened",
                 timestamp=candle.timestamp,
-                session_date=candle.timestamp.date(),
+                session_date=local_dt.date(),
                 timezone=str(session_filter.timezone),
             )
             await self._publish(event)
@@ -89,10 +91,12 @@ class SessionEventPublisher:
         
         elif not is_open and self._last_state:
             # Transition: open -> closed
+            # Convert timestamp to session timezone to get correct session date
+            local_dt = candle.timestamp.astimezone(session_filter.timezone)
             event = SessionEvent(
                 event_type="session.closed",
                 timestamp=candle.timestamp,
-                session_date=candle.timestamp.date(),
+                session_date=local_dt.date(),
                 timezone=str(session_filter.timezone),
             )
             await self._publish(event)
