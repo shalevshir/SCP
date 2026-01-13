@@ -420,6 +420,14 @@ class TradeManager:
                 )
                 return None
             
+            # Use actual fill price from broker if available (for live/IB trading)
+            # Fall back to expected entry_price for paper trading or if fill price missing
+            actual_entry_price = order_result.filled_price or entry_price
+            
+            logger.info(
+                f"Order filled: expected={entry_price:.2f}, actual={actual_entry_price:.2f}"
+            )
+            
             # Create trade record
             # Entry timestamp should be NEXT BAR after signal (signal.timestamp + 1 minute)
             # This matches backtester behavior: signal at T, entry at T+1
@@ -431,7 +439,7 @@ class TradeManager:
                 signal_id=signal.id,
                 direction=signal.direction,
                 setup_type=signal.setup_type,
-                entry_price=entry_price,
+                entry_price=actual_entry_price,
                 sl_price=signal.sl_price,
                 tp_price=signal.tp_price,
                 quantity=1,
@@ -439,16 +447,16 @@ class TradeManager:
                 entry_bar_idx=entry_bar_idx,
             )
             
-            # Calculate risk/reward
+            # Calculate risk/reward using actual entry price
             # Convert Decimal prices to float for arithmetic compatibility
             sl_price = float(signal.sl_price)
             tp_price = float(signal.tp_price)
             if signal.direction == "long":
-                risk_amount = entry_price - sl_price
-                reward_amount = tp_price - entry_price
+                risk_amount = actual_entry_price - sl_price
+                reward_amount = tp_price - actual_entry_price
             else:  # short
-                risk_amount = sl_price - entry_price
-                reward_amount = entry_price - tp_price
+                risk_amount = sl_price - actual_entry_price
+                reward_amount = actual_entry_price - tp_price
             
             # Create TradeRecord
             trade = TradeRecord(
@@ -457,7 +465,7 @@ class TradeManager:
                 symbol="GC",
                 direction=signal.direction,
                 setup_type=signal.setup_type,
-                entry_price=entry_price,
+                entry_price=actual_entry_price,
                 sl_price=signal.sl_price,
                 tp_price=signal.tp_price,
                 risk_amount=risk_amount,
@@ -482,7 +490,7 @@ class TradeManager:
                 id=trade_id,
                 signal_id=signal.id,
                 direction=signal.direction,
-                entry_price=entry_price,
+                entry_price=actual_entry_price,
                 sl_price=signal.sl_price,
                 tp_price=signal.tp_price,
                 quantity=1,
@@ -492,7 +500,7 @@ class TradeManager:
             
             logger.info(
                 f"Trade executed: {signal.direction} {signal.setup_type} "
-                f"@ {entry_price:.2f} (SL={signal.sl_price:.2f}, "
+                f"@ {actual_entry_price:.2f} (SL={signal.sl_price:.2f}, "
                 f"TP={signal.tp_price:.2f}, trade_id={trade_id})"
             )
             

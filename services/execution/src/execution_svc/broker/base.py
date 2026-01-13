@@ -18,6 +18,7 @@ class OrderResult:
         filled_price: Execution price
         filled_at: Execution timestamp
         status: Order status ("filled", "rejected", "pending")
+        limit_price: Limit price for limit orders (used for tracking)
     """
     
     order_id: str
@@ -27,6 +28,7 @@ class OrderResult:
     filled_price: float | None = None
     filled_at: datetime | None = None
     status: Literal["filled", "rejected", "pending"] = "pending"
+    limit_price: float | None = None
 
 
 @dataclass
@@ -64,7 +66,7 @@ class BaseBroker(ABC):
     async def place_order(
         self,
         symbol: str,
-        side: str,
+        side: Literal["long", "short"],
         quantity: int,
         price: float | None = None,
     ) -> OrderResult:

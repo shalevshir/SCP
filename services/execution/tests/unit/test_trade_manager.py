@@ -15,6 +15,7 @@ from scp_shared.messaging.schemas import (
 from scp_shared.database import DatabasePool
 
 from execution_svc.broker import BaseBroker
+from execution_svc.broker.base import OrderResult
 from execution_svc.state_machine_manager import StateMachineManager
 from execution_svc.trade_manager import TradeManager
 from execution_svc.trade_publisher import TradePublisher
@@ -33,7 +34,16 @@ def mock_db_pool() -> MagicMock:
 def mock_broker() -> MagicMock:
     """Create mock broker."""
     broker = MagicMock(spec=BaseBroker)
-    broker.place_order = AsyncMock(return_value=MagicMock(status="filled"))
+    broker.place_order = AsyncMock(
+        return_value=OrderResult(
+            order_id="order-123",
+            symbol="GC",
+            side="long",
+            quantity=1,
+            status="filled",
+            filled_price=None,  # None for paper trading, will fall back to entry_price
+        )
+    )
     broker.close_position = AsyncMock()
     broker.reconcile_positions = AsyncMock()
     return broker
@@ -329,7 +339,13 @@ class TestTradeManagerExecuteEntry:
         sample_signal: SignalMessage,
     ) -> None:
         """Execute entry handles order failure gracefully."""
-        mock_broker.place_order.return_value = MagicMock(status="rejected")
+        mock_broker.place_order.return_value = OrderResult(
+            order_id="order-123",
+            symbol="GC",
+            side="long",
+            quantity=1,
+            status="rejected",
+        )
         
         result = await trade_manager.execute_entry(sample_signal, entry_price=2651.0)
         

@@ -13,6 +13,7 @@ scp-shared = {path = "../shared", develop = true}
 fastapi = "^0.115.0"
 uvicorn = {extras = ["standard"], version = "^0.24.0"}
 redis = {extras = ["hiredis"], version = "^5.0.0"}
+ibapi = "*"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.3.0"
