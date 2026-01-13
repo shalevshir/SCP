@@ -52,9 +52,12 @@ help:
 	@echo "  make check             Run all checks (lint + test)"
 	@echo ""
 	@echo "Replay Mode & Validation:"
-	@echo "  make replay START=... END=... [SPEED=120]  Run replay (default SPEED=120; SPEED=0 is turbo)"
+	@echo "  make replay START=... END=... [SPEED=120]  Run replay from CSV (default SPEED=120; SPEED=0 is turbo)"
+	@echo "  make replay-databento START=... END=...    Run replay from Databento (requires API key)"
+	@echo "  make validate-databento START=... END=...  Full validation with Databento data"
+	@echo "  make test-databento-replay                 Test Databento replay (1 day sample)"
 	@echo "  make compare-results BACKTEST=...          Compare backtest vs microservices"
-	@echo "  make validate-replay START=... END=...     Full validation (replay + compare)"
+	@echo "  make validate-replay START=... END=...     Full validation (CSV replay + compare)"
 	@echo "  make replay-clean                          Clean replay artifacts"
 	@echo ""
 	@echo "Cleanup:"
@@ -349,6 +352,62 @@ side-by-side:
 			$(if $(STOP_ON_FIRST),--stop-on-first,) \
 			$(if $(OUTPUT),--output $(OUTPUT),); \
 	fi
+
+replay-databento:
+	@if [ -z "$(START)" ] || [ -z "$(END)" ]; then \
+		echo "Error: START and END required."; \
+		echo "Usage: make replay-databento START=2024-11-05 END=2024-11-12 [SPEED=10]"; \
+		exit 1; \
+	fi
+	@if [ -z "$$DATABENTO_API_KEY" ]; then \
+		echo "Error: DATABENTO_API_KEY not set. Please export your API key."; \
+		echo "  export DATABENTO_API_KEY='db-your-key'"; \
+		exit 1; \
+	fi
+	@echo "Running Databento historical replay..."
+	@echo "  Date range: $(START) to $(END)"
+	@if [ -z "$(SPEED)" ]; then \
+		echo "  Speed: 10x (default)"; \
+		poetry run python scripts/replay_databento_historical.py \
+			--start $(START) --end $(END) \
+			--api-key "$$DATABENTO_API_KEY" \
+			--speed 10.0 \
+			--processing-delay 10.0; \
+	else \
+		echo "  Speed: $(SPEED)x"; \
+		poetry run python scripts/replay_databento_historical.py \
+			--start $(START) --end $(END) \
+			--api-key "$$DATABENTO_API_KEY" \
+			--speed $(SPEED) \
+			--processing-delay 10.0; \
+	fi
+	@echo "✓ Databento replay complete"
+
+test-databento-replay:
+	@if [ -z "$$DATABENTO_API_KEY" ]; then \
+		echo "Error: DATABENTO_API_KEY not set. Please export your API key."; \
+		echo "  export DATABENTO_API_KEY='db-your-key'"; \
+		exit 1; \
+	fi
+	@echo "Running Databento replay test..."
+	./scripts/test_databento_replay.sh
+
+validate-databento:
+	@if [ -z "$(START)" ] || [ -z "$(END)" ]; then \
+		echo "Error: START and END required."; \
+		echo "Usage: make validate-databento START=2024-11-05 END=2024-11-12"; \
+		exit 1; \
+	fi
+	@if [ -z "$$DATABENTO_API_KEY" ]; then \
+		echo "Error: DATABENTO_API_KEY not set. Please export your API key."; \
+		echo "  export DATABENTO_API_KEY='db-your-key'"; \
+		exit 1; \
+	fi
+	@echo "Running full Databento validation..."
+	poetry run python scripts/validate_databento_replay.py \
+		--start $(START) --end $(END) \
+		--api-key "$$DATABENTO_API_KEY" \
+		--speed 0
 
 replay-clean:
 	@echo "Cleaning replay artifacts..."
