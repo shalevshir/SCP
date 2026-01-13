@@ -400,7 +400,7 @@ def main() -> None:
     close_parser.add_argument(
         "--price", "-p",
         type=float,
-        default=None,
+        default=2650.0,
         help="Reference price for close candle (default: 2650.0)",
     )
     
