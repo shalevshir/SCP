@@ -1,8 +1,9 @@
 """Daily state tracker for PDLL and trade limit enforcement."""
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 
+from scp_shared.alerts import AlertLevel, AlertType, send_alert
 from scp_shared.common.logger import get_logger
 
 logger = get_logger(__name__)
@@ -85,6 +86,18 @@ class DailyStateTracker:
             self._state.pdll_hit = True
             logger.warning(
                 f"PDLL limit reached: daily_pnl={self._state.daily_pnl:.2f} <= -{self._pdll_limit}"
+            )
+            send_alert(
+                AlertLevel.CRITICAL,
+                AlertType.PDLL_HIT,
+                f"Daily loss limit reached: {self._state.daily_pnl:.2f} points",
+                context={
+                    "daily_pnl": self._state.daily_pnl,
+                    "pdll_limit": self._pdll_limit,
+                    "trades_count": self._state.trades_count,
+                    "date": self._state.date.isoformat(),
+                    "timestamp": datetime.now().isoformat(),
+                },
             )
             return False, f"PDLL limit reached: {self._state.daily_pnl:.2f}"
         
@@ -210,6 +223,19 @@ class DailyStateTracker:
             logger.warning(
                 f"PDLL already hit after restoration: "
                 f"daily_pnl={total_pnl:.2f} <= -{self._pdll_limit}"
+            )
+            send_alert(
+                AlertLevel.CRITICAL,
+                AlertType.PDLL_HIT,
+                f"PDLL already hit (restored state): {total_pnl:.2f} points",
+                context={
+                    "daily_pnl": total_pnl,
+                    "pdll_limit": self._pdll_limit,
+                    "trades_count": self._state.trades_count,
+                    "date": current_date.isoformat(),
+                    "restored_on_startup": True,
+                    "timestamp": datetime.now().isoformat(),
+                },
             )
         
         logger.info(
