@@ -290,6 +290,33 @@ class ResilientDatabentoClient(DatabentoClientBase):
                         logger.info("Databento connection established successfully")
                     
                     yield tick
+                
+                # Stream ended normally (no exception) - server closed connection cleanly
+                # This can happen during rate limiting, maintenance, or graceful shutdown
+                self._state = "disconnected"
+                self._last_disconnect = datetime.now(UTC)
+                
+                # For normal disconnection, we still apply backoff to avoid tight reconnection loops
+                # but we don't increment failure counter (it's not an error)
+                # Use a smaller base delay for normal disconnections
+                delay = min(
+                    self.base_delay * (2 ** min(self._consecutive_failures, 3)),  # Cap at 3 for normal disconnects
+                    self.max_delay
+                )
+                
+                logger.info(
+                    f"Databento stream ended normally (server closed connection). "
+                    f"Reconnecting in {delay:.1f}s"
+                )
+                
+                # Wait before reconnecting to avoid overwhelming the API
+                await asyncio.sleep(delay)
+                
+                # Close and reset inner client for clean reconnection
+                try:
+                    await self.inner.close()
+                except Exception:
+                    pass  # Ignore close errors
             
             except Exception as e:
                 self._state = "disconnected"

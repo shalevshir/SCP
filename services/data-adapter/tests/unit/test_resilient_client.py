@@ -41,6 +41,33 @@ class MockFailingClient:
         self._closed = True
 
 
+class MockNormalDisconnectClient:
+    """Mock client that completes normally (no exception) after N ticks."""
+    
+    def __init__(self, ticks_per_connection: int = 2):
+        self.ticks_per_connection = ticks_per_connection
+        self.attempt = 0
+        self._closed = False
+    
+    async def stream_ticks(self):
+        """Stream ticks then complete normally (simulating server closing connection)."""
+        self.attempt += 1
+        
+        # Yield a few ticks, then stream ends normally (no exception)
+        for i in range(self.ticks_per_connection):
+            yield Tick(
+                timestamp=datetime(2025, 1, 15, 10, i, 0, tzinfo=UTC),
+                price=2650.0 + i,
+                volume=100.0,
+                symbol="GC",
+            )
+        # Stream ends here - no exception raised
+    
+    async def close(self):
+        """Close client."""
+        self._closed = True
+
+
 @pytest.mark.asyncio
 async def test_resilient_client_reconnects_after_failure():
     """Test that ResilientDatabentoClient reconnects after connection failure."""
@@ -158,4 +185,47 @@ async def test_resilient_client_closes_inner_on_error():
         break
     
     # Inner client should have been closed at least once during retry
+    assert mock_client._closed
+
+
+@pytest.mark.asyncio
+async def test_resilient_client_backoff_on_normal_disconnect():
+    """Test that ResilientDatabentoClient applies backoff when stream ends normally.
+    
+    This prevents tight reconnection loops when the server closes the connection
+    cleanly (e.g., during rate limiting or maintenance).
+    """
+    # Create mock client that completes normally after 2 ticks
+    mock_client = MockNormalDisconnectClient(ticks_per_connection=2)
+    
+    resilient = ResilientDatabentoClient(
+        inner=mock_client,
+        max_retries=5,
+        base_delay=0.05,  # 50ms base (longer for reliable timing)
+        max_delay=0.2,    # 200ms max
+    )
+    
+    # Track timing and reconnection attempts
+    start_time = asyncio.get_event_loop().time()
+    ticks_received = []
+    
+    # Collect ticks - should get 2 from first connection, then backoff, then 2 more
+    async for tick in resilient.stream_ticks():
+        ticks_received.append(tick)
+        
+        # Stop after receiving ticks from 2 reconnections (4 ticks total)
+        if len(ticks_received) >= 4:
+            break
+    
+    elapsed = asyncio.get_event_loop().time() - start_time
+    
+    # Verify we received ticks from multiple reconnections
+    assert len(ticks_received) >= 4  # 2 ticks per connection * 2 connections
+    assert mock_client.attempt >= 2  # Should have reconnected at least once
+    
+    # Verify backoff was applied (should take at least base_delay between reconnections)
+    # After first connection ends normally, should wait base_delay before reconnecting
+    assert elapsed >= 0.05  # At least one base_delay period
+    
+    # Verify inner client was closed between reconnections
     assert mock_client._closed
