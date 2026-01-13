@@ -219,6 +219,7 @@ async def _process_candle_with_features(
         trade_manager: Trade manager instance
         sm_manager: State machine manager instance
     """
+    global _is_killed  # noqa: PLW0603 - intentional global for kill switch
     candle_msg, features_msg = pair
     
     logger.info(f"Processing candle: {candle_msg.timestamp} (with matching features)")
@@ -255,9 +256,18 @@ async def _process_candle_with_features(
     # Only increment for valid candles (invalid candles already returned above)
     sm_manager.increment_bar_counter()
     
-    # Execute pending signals at this candle's open
-    # Pass candle timestamp so signals only execute at the correct time
-    await trade_manager.execute_pending_signals(candle_msg.open, candle_msg.timestamp)
+    # KILL SWITCH: Skip executing pending signals if killed
+    # This prevents signals that were already in _pending_signals when the
+    # kill switch was activated from being executed
+    if _is_killed:
+        if trade_manager._pending_signals:  # type: ignore[attr-defined]
+            logger.warning(
+                f"🚨 Kill switch active - skipping execution of {len(trade_manager._pending_signals)} pending signal(s)"
+            )
+    else:
+        # Execute pending signals at this candle's open
+        # Pass candle timestamp so signals only execute at the correct time
+        await trade_manager.execute_pending_signals(candle_msg.open, candle_msg.timestamp)
     
     # Monitor active trades for SL/TP and invalidation
     # Now we pass the CORRECT features that match this candle's timestamp
