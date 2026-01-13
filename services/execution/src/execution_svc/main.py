@@ -468,10 +468,14 @@ async def reset_state() -> dict[str, str]:
     Returns:
         Status message
     """
-    global _trade_manager, _broker, _sm_manager, _synchronizer
+    global _trade_manager, _broker, _sm_manager, _synchronizer, _is_killed
     
     if _trade_manager is None or _broker is None or _sm_manager is None:
         return {"status": "error", "message": "Service not fully initialized"}
+
+    # Reset kill switch in-memory flag for test isolation.
+    # Note: This does NOT alter the persisted kill switch state in the database.
+    _is_killed = False
     
     # Reset trade manager state
     _trade_manager._active_trades.clear()
