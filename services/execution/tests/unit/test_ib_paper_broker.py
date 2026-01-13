@@ -284,3 +284,47 @@ async def test_place_order_auto_closes_existing_position(mock_ib_client):
     
     assert result.status == "filled"
     assert mock_ib_client.place_order_async.call_count == 3  # Original + close + reopen
+
+
+@pytest.mark.asyncio
+async def test_place_order_raises_error_if_close_rejected(mock_ib_client):
+    """Test that placing an order raises error if auto-close is rejected."""
+    broker = IBPaperBroker("127.0.0.1", 7497, 1)
+    
+    # Place first order to create a position
+    mock_ib_client.place_order_async.return_value = OrderResult(
+        order_id="200",
+        symbol="GC",
+        side="long",
+        quantity=1,
+        filled_price=2650.0,
+        filled_at=datetime.utcnow(),
+        status="filled",
+    )
+    await broker.place_order("GC", "long", 1, 2650.0)
+    
+    # Verify position exists
+    position = await broker.get_position("GC")
+    assert position is not None
+    
+    # Now try to place a new order, but close order will be rejected
+    mock_ib_client.place_order_async.return_value = OrderResult(
+        order_id="201",
+        symbol="GC",
+        side="short",
+        quantity=1,
+        status="rejected",  # Close order rejected by IB
+    )
+    
+    # Should raise ValueError because close was rejected
+    with pytest.raises(ValueError, match="Cannot place order for GC: failed to close existing position"):
+        await broker.place_order("GC", "long", 1, 2660.0)
+    
+    # Verify position still exists (not closed)
+    position = await broker.get_position("GC")
+    assert position is not None
+    assert position.side == "long"
+    assert position.entry_price == 2650.0
+    
+    # Verify new order was never placed (only close order was attempted)
+    assert mock_ib_client.place_order_async.call_count == 2  # Original + rejected close

@@ -116,7 +116,43 @@ class IBPaperBroker(BaseBroker):
                 "Close existing position first."
             )
             # Auto-close for testing environments
-            await self.close_position(symbol, price=price)
+            close_result = await self.close_position(symbol, price=price)
+            
+            # If close order was rejected, we cannot proceed with new order
+            # This prevents state mismatch: internal tracking vs IB positions
+            if close_result.status == "rejected":
+                logger.error(
+                    f"Cannot place new order for {symbol}: close order was rejected. "
+                    f"Original position still exists in IB. (orderId={close_result.order_id})"
+                )
+                raise ValueError(
+                    f"Cannot place order for {symbol}: failed to close existing position. "
+                    f"Close order was rejected by IB (orderId={close_result.order_id}). "
+                    "Internal state and IB positions would be mismatched."
+                )
+            
+            # If close order is pending, we cannot proceed (position still exists)
+            if close_result.status == "pending":
+                logger.error(
+                    f"Cannot place new order for {symbol}: close order is still pending. "
+                    f"Original position still exists. (orderId={close_result.order_id})"
+                )
+                raise ValueError(
+                    f"Cannot place order for {symbol}: close order is still pending. "
+                    f"Wait for close to complete before placing new order. (orderId={close_result.order_id})"
+                )
+            
+            # Verify position was actually closed (should be removed from _positions on fill)
+            # This is a defensive check for bugs in close_position
+            if close_result.status == "filled" and symbol in self._positions:
+                logger.error(
+                    f"Position for {symbol} still exists after successful close order. "
+                    "This indicates a bug in close_position."
+                )
+                raise RuntimeError(
+                    f"Position for {symbol} was not closed despite successful close order. "
+                    "Internal state is inconsistent."
+                )
         
         # Place order through IB
         order_result = await self._client.place_order_async(symbol, side, quantity, price)

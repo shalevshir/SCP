@@ -490,7 +490,7 @@ class TradeManager:
                 id=trade_id,
                 signal_id=signal.id,
                 direction=signal.direction,
-                entry_price=entry_price,
+                entry_price=actual_entry_price,
                 sl_price=signal.sl_price,
                 tp_price=signal.tp_price,
                 quantity=1,
@@ -500,7 +500,7 @@ class TradeManager:
             
             logger.info(
                 f"Trade executed: {signal.direction} {signal.setup_type} "
-                f"@ {entry_price:.2f} (SL={signal.sl_price:.2f}, "
+                f"@ {actual_entry_price:.2f} (SL={signal.sl_price:.2f}, "
                 f"TP={signal.tp_price:.2f}, trade_id={trade_id})"
             )
             

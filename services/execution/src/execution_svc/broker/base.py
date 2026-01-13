@@ -66,7 +66,7 @@ class BaseBroker(ABC):
     async def place_order(
         self,
         symbol: str,
-        side: str,
+        side: Literal["long", "short"],
         quantity: int,
         price: float | None = None,
     ) -> OrderResult:
