@@ -1,0 +1,1 @@
+"""Alerts module unit tests."""
