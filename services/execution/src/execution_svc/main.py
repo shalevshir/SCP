@@ -10,6 +10,7 @@ from typing import Optional
 import redis.asyncio as redis
 from fastapi import FastAPI
 
+from scp_shared.admin import KillSwitchRepository
 from scp_shared.common import get_logger, mask_connection_url
 from scp_shared.common.types import Candle
 from scp_shared.database import DatabasePool
@@ -45,6 +46,10 @@ _broker: Optional[PaperBroker] = None
 _sm_manager: Optional[StateMachineManager] = None
 _synchronizer: Optional[CandleFeatureSynchronizer] = None
 
+# Global kill switch state (populated in lifespan)
+_kill_switch_repo: Optional[KillSwitchRepository] = None
+_is_killed: bool = False
+
 
 async def process_streams(
     redis_client: redis.Redis,
@@ -56,7 +61,7 @@ async def process_streams(
         redis_client: Redis client
         db_pool: Database pool
     """
-    global _trade_manager, _broker, _sm_manager
+    global _trade_manager, _broker, _sm_manager, _is_killed, _kill_switch_repo
     
     logger.info("Starting execution processing loop")
     
@@ -144,8 +149,15 @@ async def process_streams(
             )
             
             # Process signals (buffer for next bar execution)
-            for signal_msg in signals_list:
-                await trade_manager.on_signal(signal_msg)
+            # KILL SWITCH: Skip signal processing if killed
+            if _is_killed:
+                if signals_list:
+                    logger.warning(
+                        f"🚨 Kill switch active - rejecting {len(signals_list)} signal(s)"
+                    )
+            else:
+                for signal_msg in signals_list:
+                    await trade_manager.on_signal(signal_msg)
             
             # CRITICAL FIX: Interleave candle and feature processing to prevent
             # cleanup from dropping unpaired messages during high-speed replay.
@@ -256,6 +268,8 @@ async def _process_candle_with_features(
 @asynccontextmanager
 async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
     """Manage application lifecycle."""
+    global _kill_switch_repo, _is_killed
+    
     logger.info(f"Starting Execution Service v{config.service_version}")
     
     # Startup
@@ -265,6 +279,18 @@ async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
     db_pool = DatabasePool(config.database_url)
     await db_pool.connect()
     logger.info(f"Connected to database at {mask_connection_url(config.database_url)}")
+    
+    # Initialize kill switch repository and load state
+    _kill_switch_repo = KillSwitchRepository(db_pool)
+    kill_state = await _kill_switch_repo.get_state("execution")
+    _is_killed = kill_state.is_killed
+    if _is_killed:
+        logger.warning(
+            f"🚨 KILL SWITCH IS ACTIVE - Trading halted "
+            f"(killed at {kill_state.killed_at} by {kill_state.killed_by}: {kill_state.reason})"
+        )
+    else:
+        logger.info("✅ Kill switch inactive - Trading enabled")
     
     # Start processing task
     processing_task = asyncio.create_task(
@@ -303,6 +329,86 @@ health_router = create_health_router(
     version=config.service_version,
 )
 app.include_router(health_router)
+
+
+@app.post("/admin/kill")
+async def kill_switch(reason: str = "Manual kill via API") -> dict[str, str]:
+    """Activate kill switch to halt all trading.
+    
+    When activated:
+    - New signals are rejected
+    - Active trades continue to be monitored for SL/TP exits
+    - State persists across restarts
+    
+    Args:
+        reason: Reason for activation
+        
+    Returns:
+        Status message with kill state
+    """
+    global _kill_switch_repo, _is_killed
+    
+    if _kill_switch_repo is None:
+        return {"status": "error", "message": "Service not fully initialized"}
+    
+    await _kill_switch_repo.set_killed("execution", "admin", reason)
+    _is_killed = True
+    
+    logger.warning(f"🚨 KILL SWITCH ACTIVATED: {reason}")
+    
+    return {
+        "status": "killed",
+        "message": f"Trading halted: {reason}",
+        "timestamp": datetime.now().isoformat(),
+    }
+
+
+@app.post("/admin/resume")
+async def resume_trading() -> dict[str, str]:
+    """Deactivate kill switch to resume trading.
+    
+    Returns:
+        Status message
+    """
+    global _kill_switch_repo, _is_killed
+    
+    if _kill_switch_repo is None:
+        return {"status": "error", "message": "Service not fully initialized"}
+    
+    await _kill_switch_repo.set_resumed("execution")
+    _is_killed = False
+    
+    logger.info("✅ Kill switch deactivated - Trading resumed")
+    
+    return {
+        "status": "active",
+        "message": "Trading resumed",
+        "timestamp": datetime.now().isoformat(),
+    }
+
+
+@app.get("/admin/status")
+async def get_status() -> dict:
+    """Get current kill switch status.
+    
+    Returns:
+        Current kill switch state
+    """
+    global _kill_switch_repo, _is_killed
+    
+    if _kill_switch_repo is None:
+        return {"status": "error", "message": "Service not fully initialized"}
+    
+    kill_state = await _kill_switch_repo.get_state("execution")
+    
+    return {
+        "service": "execution",
+        "is_killed": kill_state.is_killed,
+        "killed_at": kill_state.killed_at.isoformat() if kill_state.killed_at else None,
+        "killed_by": kill_state.killed_by,
+        "reason": kill_state.reason,
+        "updated_at": kill_state.updated_at.isoformat(),
+    }
 
 
 @app.post("/admin/reset")
