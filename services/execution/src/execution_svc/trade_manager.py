@@ -301,7 +301,10 @@ class TradeManager:
             # 1. Bot Core already calculated the correct entry_price at signal generation time
             # 2. In replay mode, streams are desynchronized (signals arrive after candles)
             # 3. The signal.entry_price contains the correct price, not next_bar_open
-            # For live trading, signals arrive in real-time so this is not an issue
+            # 
+            # IMPORTANT: Kill switch clears _pending_signals when activated/resumed to prevent
+            # stale signals with outdated entry prices from executing after extended kill periods.
+            # This ensures entry prices remain current even if kill switch is active for hours/days.
             
             # Check concurrent trade limit FIRST
             # (prevents attempting execution when already at capacity)

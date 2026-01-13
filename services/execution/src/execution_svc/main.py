@@ -278,7 +278,7 @@ async def _process_candle_with_features(
 @asynccontextmanager
 async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
     """Manage application lifecycle."""
-    global _kill_switch_repo, _is_killed
+    global _kill_switch_repo, _is_killed, _broker
     
     logger.info(f"Starting Execution Service v{config.service_version}")
     
@@ -347,6 +347,7 @@ async def kill_switch(reason: str = "Manual kill via API") -> dict[str, str]:
     
     When activated:
     - New signals are rejected
+    - Pending signals are cleared (to prevent stale entry prices)
     - Active trades continue to be monitored for SL/TP exits
     - State persists across restarts
     
@@ -356,13 +357,25 @@ async def kill_switch(reason: str = "Manual kill via API") -> dict[str, str]:
     Returns:
         Status message with kill state
     """
-    global _kill_switch_repo, _is_killed
+    global _kill_switch_repo, _is_killed, _trade_manager
     
     if _kill_switch_repo is None:
         return {"status": "error", "message": "Service not fully initialized"}
     
     await _kill_switch_repo.set_killed("execution", "admin", reason)
     _is_killed = True
+    
+    # CRITICAL: Clear pending signals to prevent stale entry prices
+    # If kill switch is active for extended period, signals in _pending_signals
+    # will have outdated entry_price values. Clearing them prevents execution
+    # with incorrect prices when kill switch is deactivated.
+    if _trade_manager is not None:
+        pending_count = len(_trade_manager._pending_signals)  # type: ignore[attr-defined]
+        if pending_count > 0:
+            logger.warning(
+                f"🚨 Clearing {pending_count} pending signal(s) due to kill switch activation"
+            )
+            _trade_manager._pending_signals.clear()  # type: ignore[attr-defined]
     
     logger.warning(f"🚨 KILL SWITCH ACTIVATED: {reason}")
     
@@ -377,16 +390,32 @@ async def kill_switch(reason: str = "Manual kill via API") -> dict[str, str]:
 async def resume_trading() -> dict[str, str]:
     """Deactivate kill switch to resume trading.
     
+    When resumed:
+    - Pending signals are cleared (safety measure - they should already be empty
+      if kill switch was activated, but clear anyway to prevent any stale signals)
+    - New signals will be accepted and executed normally
+    
     Returns:
         Status message
     """
-    global _kill_switch_repo, _is_killed
+    global _kill_switch_repo, _is_killed, _trade_manager
     
     if _kill_switch_repo is None:
         return {"status": "error", "message": "Service not fully initialized"}
     
     await _kill_switch_repo.set_resumed("execution")
     _is_killed = False
+    
+    # CRITICAL: Clear any remaining pending signals as a safety measure
+    # (They should already be empty if kill switch was activated, but clear anyway
+    # to prevent any edge cases where stale signals might execute with outdated prices)
+    if _trade_manager is not None:
+        pending_count = len(_trade_manager._pending_signals)  # type: ignore[attr-defined]
+        if pending_count > 0:
+            logger.warning(
+                f"🚨 Clearing {pending_count} stale pending signal(s) on kill switch resume"
+            )
+            _trade_manager._pending_signals.clear()  # type: ignore[attr-defined]
     
     logger.info("✅ Kill switch deactivated - Trading resumed")
     
