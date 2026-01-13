@@ -72,3 +72,64 @@ class SessionFilter:
         # Handle wrap-around window (e.g., 22:00 - 02:00)
         return current_time >= self.window_start or current_time < self.window_end
 
+
+class GoldFuturesSessionFilter(SessionFilter):
+    """Session filter configured for Gold futures (GC) market hours.
+    
+    Gold futures trade:
+    - Sunday 6:00 PM ET to Friday 5:00 PM ET
+    - Daily maintenance break: 5:00 PM - 6:00 PM ET (Monday-Thursday)
+    
+    This filter accounts for weekend closures and daily maintenance windows.
+    """
+    
+    def __init__(self, enabled: bool = True) -> None:
+        """Initialize Gold futures session filter.
+        
+        Args:
+            enabled: Whether filtering is enabled (default: True)
+        """
+        # Initialize parent with ET timezone
+        # Note: window_start/end are not directly used since we have custom logic
+        super().__init__(
+            window_start=time(18, 0),  # 6 PM ET
+            window_end=time(17, 0),     # 5 PM ET (wraps around)
+            timezone="America/New_York",
+            enabled=enabled,
+            check_weekends=True,
+        )
+    
+    def is_trading_hours(self, candle: CandleMessage) -> bool:
+        """Check if candle timestamp is within Gold futures trading hours.
+        
+        Args:
+            candle: Candle to check
+            
+        Returns:
+            True if within trading hours, False otherwise
+        """
+        # If filtering disabled, allow all
+        if not self.enabled:
+            return True
+        
+        # Convert to ET timezone
+        local_dt = candle.timestamp.astimezone(self.timezone)
+        weekday = local_dt.weekday()  # 0=Monday, 6=Sunday
+        current_time = local_dt.time()
+        
+        # Weekend close: Friday 5 PM to Sunday 6 PM
+        if weekday == 4 and current_time >= time(17, 0):  # Friday after 5 PM
+            return False
+        if weekday == 5:  # Saturday - fully closed
+            return False
+        if weekday == 6 and current_time < time(18, 0):  # Sunday before 6 PM
+            return False
+        
+        # Daily maintenance break: 5 PM - 6 PM (Monday-Thursday)
+        # Weekday 0-3 = Monday-Thursday
+        if weekday < 4 and time(17, 0) <= current_time < time(18, 0):
+            return False
+        
+        # All other times are valid trading hours
+        return True
+

@@ -11,7 +11,12 @@ packages = [
 python = ">=3.11,<3.13"
 scp-shared = {path = "../shared", develop = true}
 databento = "^0.40.0"
+pandas = "^2.0.3"
 uvicorn = {extras = ["standard"], version = "^0.24.0"}
+
+# Note: TradingView integration requires external library (not in PyPI as of 2026)
+# For TradingView support, install manually: pip install tradingview-api
+# For production use, Databento is recommended (official API, reliable)
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.3.0"

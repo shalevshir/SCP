@@ -4,7 +4,7 @@ from datetime import UTC, datetime, time
 
 from scp_shared.messaging.schemas import CandleMessage
 
-from data_adapter.session_filter import SessionFilter
+from data_adapter.session_filter import GoldFuturesSessionFilter, SessionFilter
 
 
 class TestSessionFilter:
@@ -197,4 +197,170 @@ class TestSessionFilter:
         
         # Should be allowed (9:30 AM ET is within window)
         assert isinstance(result, bool)
+
+
+class TestGoldFuturesSessionFilter:
+    """Test suite for GoldFuturesSessionFilter (Gold futures market hours)."""
+    
+    def test_sunday_evening_market_open(self) -> None:
+        """Gold futures open Sunday 6 PM ET."""
+        filter_instance = GoldFuturesSessionFilter(enabled=True)
+        
+        # Sunday 6 PM ET = Sunday 23:00 UTC (standard time)
+        # Sunday 6 PM ET = Sunday 22:00 UTC (daylight time)
+        # Using January (standard time)
+        open_candle = CandleMessage(
+            timestamp=datetime(2025, 1, 19, 23, 0, tzinfo=UTC),  # Sunday 6 PM ET
+            symbol="GC",
+            timeframe="1m",
+            open=2650.0,
+            high=2652.0,
+            low=2649.0,
+            close=2651.0,
+            volume=1000.0,
+        )
+        
+        # Sunday 5 PM ET - should be closed
+        before_open_candle = CandleMessage(
+            timestamp=datetime(2025, 1, 19, 22, 0, tzinfo=UTC),  # Sunday 5 PM ET
+            symbol="GC",
+            timeframe="1m",
+            open=2650.0,
+            high=2652.0,
+            low=2649.0,
+            close=2651.0,
+            volume=1000.0,
+        )
+        
+        assert filter_instance.is_trading_hours(open_candle)
+        assert not filter_instance.is_trading_hours(before_open_candle)
+    
+    def test_friday_afternoon_market_close(self) -> None:
+        """Gold futures close Friday 5 PM ET."""
+        filter_instance = GoldFuturesSessionFilter(enabled=True)
+        
+        # Friday 5 PM ET = Friday 22:00 UTC (standard time)
+        close_candle = CandleMessage(
+            timestamp=datetime(2025, 1, 17, 22, 0, tzinfo=UTC),  # Friday 5 PM ET
+            symbol="GC",
+            timeframe="1m",
+            open=2650.0,
+            high=2652.0,
+            low=2649.0,
+            close=2651.0,
+            volume=1000.0,
+        )
+        
+        # Friday 4 PM ET - should be open
+        before_close_candle = CandleMessage(
+            timestamp=datetime(2025, 1, 17, 21, 0, tzinfo=UTC),  # Friday 4 PM ET
+            symbol="GC",
+            timeframe="1m",
+            open=2650.0,
+            high=2652.0,
+            low=2649.0,
+            close=2651.0,
+            volume=1000.0,
+        )
+        
+        assert not filter_instance.is_trading_hours(close_candle)
+        assert filter_instance.is_trading_hours(before_close_candle)
+    
+    def test_saturday_fully_closed(self) -> None:
+        """Saturday is fully closed for Gold futures."""
+        filter_instance = GoldFuturesSessionFilter(enabled=True)
+        
+        # Saturday noon
+        saturday_candle = CandleMessage(
+            timestamp=datetime(2025, 1, 18, 17, 0, tzinfo=UTC),  # Saturday noon ET
+            symbol="GC",
+            timeframe="1m",
+            open=2650.0,
+            high=2652.0,
+            low=2649.0,
+            close=2651.0,
+            volume=1000.0,
+        )
+        
+        assert not filter_instance.is_trading_hours(saturday_candle)
+    
+    def test_daily_maintenance_break(self) -> None:
+        """Daily maintenance break 5-6 PM ET (Monday-Thursday)."""
+        filter_instance = GoldFuturesSessionFilter(enabled=True)
+        
+        # Monday 5:30 PM ET = Monday 22:30 UTC
+        maintenance_candle = CandleMessage(
+            timestamp=datetime(2025, 1, 13, 22, 30, tzinfo=UTC),  # Monday 5:30 PM ET
+            symbol="GC",
+            timeframe="1m",
+            open=2650.0,
+            high=2652.0,
+            low=2649.0,
+            close=2651.0,
+            volume=1000.0,
+        )
+        
+        # Monday 4:30 PM ET - before maintenance
+        before_maintenance = CandleMessage(
+            timestamp=datetime(2025, 1, 13, 21, 30, tzinfo=UTC),  # Monday 4:30 PM ET
+            symbol="GC",
+            timeframe="1m",
+            open=2650.0,
+            high=2652.0,
+            low=2649.0,
+            close=2651.0,
+            volume=1000.0,
+        )
+        
+        # Monday 6:30 PM ET - after maintenance
+        after_maintenance = CandleMessage(
+            timestamp=datetime(2025, 1, 13, 23, 30, tzinfo=UTC),  # Monday 6:30 PM ET
+            symbol="GC",
+            timeframe="1m",
+            open=2650.0,
+            high=2652.0,
+            low=2649.0,
+            close=2651.0,
+            volume=1000.0,
+        )
+        
+        assert not filter_instance.is_trading_hours(maintenance_candle)
+        assert filter_instance.is_trading_hours(before_maintenance)
+        assert filter_instance.is_trading_hours(after_maintenance)
+    
+    def test_weekday_trading_hours(self) -> None:
+        """Weekday trading hours work correctly (outside maintenance)."""
+        filter_instance = GoldFuturesSessionFilter(enabled=True)
+        
+        # Tuesday 10 AM ET = Tuesday 15:00 UTC
+        weekday_candle = CandleMessage(
+            timestamp=datetime(2025, 1, 14, 15, 0, tzinfo=UTC),  # Tuesday 10 AM ET
+            symbol="GC",
+            timeframe="1m",
+            open=2650.0,
+            high=2652.0,
+            low=2649.0,
+            close=2651.0,
+            volume=1000.0,
+        )
+        
+        assert filter_instance.is_trading_hours(weekday_candle)
+    
+    def test_disabled_filter_allows_all_times(self) -> None:
+        """When disabled, all times are allowed."""
+        filter_instance = GoldFuturesSessionFilter(enabled=False)
+        
+        # Saturday (normally closed)
+        saturday_candle = CandleMessage(
+            timestamp=datetime(2025, 1, 18, 17, 0, tzinfo=UTC),
+            symbol="GC",
+            timeframe="1m",
+            open=2650.0,
+            high=2652.0,
+            low=2649.0,
+            close=2651.0,
+            volume=1000.0,
+        )
+        
+        assert filter_instance.is_trading_hours(saturday_candle)
 
