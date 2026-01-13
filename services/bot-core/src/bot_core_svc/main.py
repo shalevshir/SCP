@@ -9,6 +9,7 @@ from typing import Optional
 import redis.asyncio as redis
 from fastapi import FastAPI
 from scp_shared.admin import KillSwitchRepository
+from scp_shared.alerts import AlertLevel, AlertType, send_alert
 from scp_shared.common import get_logger, mask_connection_url
 from scp_shared.database import DatabasePool
 from scp_shared.health import create_health_router
@@ -130,6 +131,17 @@ async def process_features(
         raise
     except Exception as e:
         logger.error(f"Error in feature processing loop: {e}", exc_info=True)
+        send_alert(
+            AlertLevel.CRITICAL,
+            AlertType.SERVICE_CRASHED,
+            f"Bot Core Service crashed: {e}",
+            context={
+                "service": "bot-core",
+                "error_type": type(e).__name__,
+                "error_message": str(e),
+                "timestamp": datetime.now().isoformat(),
+            },
+        )
         raise
 
 
@@ -255,6 +267,21 @@ async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
     else:
         logger.info("✅ Kill switch inactive - Signal generation enabled")
     
+    # Send service started alert
+    send_alert(
+        AlertLevel.INFO,
+        AlertType.SERVICE_STARTED,
+        f"Bot Core Service v{config.service_version} started",
+        context={
+            "service": config.service_name,
+            "version": config.service_version,
+            "kill_switch_active": _is_killed,
+            "warmup_bars": config.warmup_bars,
+            "enforcer_tier": config.enforcer_tier,
+            "timestamp": datetime.now().isoformat(),
+        },
+    )
+    
     # Start processing task
     processing_task = asyncio.create_task(
         process_features(redis_client, db_pool)
@@ -318,6 +345,17 @@ async def kill_switch(reason: str = "Manual kill via API") -> dict[str, str]:
     _is_killed = True
     
     logger.warning(f"🚨 KILL SWITCH ACTIVATED: {reason}")
+    send_alert(
+        AlertLevel.CRITICAL,
+        AlertType.KILL_SWITCH_ACTIVATED,
+        f"Bot Core Service kill switch activated: {reason}",
+        context={
+            "service": "bot-core",
+            "killed_by": "admin",
+            "reason": reason,
+            "timestamp": datetime.now().isoformat(),
+        },
+    )
     
     return {
         "status": "killed",
@@ -342,6 +380,16 @@ async def resume_trading() -> dict[str, str]:
     _is_killed = False
     
     logger.info("✅ Kill switch deactivated - Signal generation resumed")
+    send_alert(
+        AlertLevel.INFO,
+        AlertType.KILL_SWITCH_RESUMED,
+        "Bot Core Service kill switch deactivated - signal generation resumed",
+        context={
+            "service": "bot-core",
+            "resumed_by": "admin",
+            "timestamp": datetime.now().isoformat(),
+        },
+    )
     
     return {
         "status": "active",
