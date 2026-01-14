@@ -26,12 +26,12 @@ class Tick:
     symbol: str
 
 
-class DatabentoClientBase(ABC):
-    """Base class for Databento clients."""
+class DataClientBase(ABC):
+    """Base class for data clients (provider-agnostic)."""
     
     @abstractmethod
     async def stream_ticks(self) -> AsyncIterator[Tick]:
-        """Stream ticks from Databento.
+        """Stream ticks from data provider.
         
         Yields:
             Tick objects as they arrive
@@ -43,7 +43,7 @@ class DatabentoClientBase(ABC):
         """Close connection and cleanup resources."""
         ...
     
-    async def __aenter__(self) -> "DatabentoClientBase":
+    async def __aenter__(self) -> "DataClientBase":
         """Async context manager entry."""
         return self
     
@@ -52,7 +52,7 @@ class DatabentoClientBase(ABC):
         await self.close()
 
 
-class DatabentoClient(DatabentoClientBase):
+class DatabentoClient(DataClientBase):
     """Real Databento WebSocket client for live data.
     
     Connects to Databento live WebSocket feed and streams tick data.
@@ -124,7 +124,10 @@ class DatabentoClient(DatabentoClientBase):
         """
         try:
             # Initialize Databento live client
-            logger.info(f"Connecting to Databento {self.dataset} with symbols {self.databento_symbols}")
+            logger.info(
+                f"Connecting to Databento {self.dataset} with symbols "
+                f"{self.databento_symbols}"
+            )
             self._client = db.Live(key=self.api_key)
             
             # Subscribe to symbols
@@ -142,10 +145,17 @@ class DatabentoClient(DatabentoClientBase):
                 # Convert Databento record to Tick with normalized symbol
                 normalized_symbol = self._normalize_symbol(record.symbol)
                 
+                # Parse timestamp
+                ts = (
+                    record.ts_event
+                    if hasattr(record, "ts_event")
+                    else datetime.now(UTC)
+                )
                 tick = Tick(
-                    timestamp=record.ts_event if hasattr(record, 'ts_event') else datetime.now(UTC),
-                    price=float(record.price) / 1e9,  # Databento uses fixed-point (nanoseconds)
-                    volume=float(record.size) if hasattr(record, 'size') else 0.0,
+                    timestamp=ts,
+                    # Databento uses fixed-point (nanoseconds)
+                    price=float(record.price) / 1e9,
+                    volume=float(record.size) if hasattr(record, "size") else 0.0,
                     symbol=normalized_symbol,
                 )
                 yield tick
@@ -170,7 +180,7 @@ class DatabentoClient(DatabentoClientBase):
                 self._client = None
 
 
-class MockDatabentoClient(DatabentoClientBase):
+class MockDatabentoClient(DataClientBase):
     """Mock Databento client for testing and replay.
     
     Streams pre-defined tick data for testing purposes.
@@ -233,7 +243,7 @@ class MockDatabentoClient(DatabentoClientBase):
         ]
 
 
-class ResilientDatabentoClient(DatabentoClientBase):
+class ResilientDatabentoClient(DataClientBase):
     """Wraps DatabentoClient with automatic reconnection and circuit breaker.
     
     Provides exponential backoff reconnection on connection failures,
@@ -280,7 +290,8 @@ class ResilientDatabentoClient(DatabentoClientBase):
         while True:
             try:
                 self._state = "connecting"
-                logger.info(f"Attempting to connect to Databento (failures: {self._consecutive_failures})")
+                failures = self._consecutive_failures
+                logger.info(f"Attempting Databento connection (failures: {failures})")
                 
                 async for tick in self.inner.stream_ticks():
                     # Successfully receiving data
@@ -291,16 +302,16 @@ class ResilientDatabentoClient(DatabentoClientBase):
                     
                     yield tick
                 
-                # Stream ended normally (no exception) - server closed connection cleanly
-                # This can happen during rate limiting, maintenance, or graceful shutdown
+                # Stream ended normally - server closed connection cleanly
+                # (rate limiting, maintenance, or graceful shutdown)
                 self._state = "disconnected"
                 self._last_disconnect = datetime.now(UTC)
                 
-                # For normal disconnection, we still apply backoff to avoid tight reconnection loops
-                # but we don't increment failure counter (it's not an error)
-                # Use a smaller base delay for normal disconnections
+                # For normal disconnection, apply backoff to avoid tight loops
+                # but don't increment failure counter (it's not an error)
+                # Cap at 3 for normal disconnects
                 delay = min(
-                    self.base_delay * (2 ** min(self._consecutive_failures, 3)),  # Cap at 3 for normal disconnects
+                    self.base_delay * (2 ** min(self._consecutive_failures, 3)),
                     self.max_delay
                 )
                 
@@ -324,7 +335,11 @@ class ResilientDatabentoClient(DatabentoClientBase):
                 self._consecutive_failures += 1
                 
                 # Check if max retries exceeded
-                if self.max_retries > 0 and self._consecutive_failures >= self.max_retries:
+                max_exceeded = (
+                    self.max_retries > 0
+                    and self._consecutive_failures >= self.max_retries
+                )
+                if max_exceeded:
                     logger.error(
                         f"Max retries ({self.max_retries}) exceeded. Giving up."
                     )
@@ -336,9 +351,10 @@ class ResilientDatabentoClient(DatabentoClientBase):
                     self.max_delay
                 )
                 
+                attempt = self._consecutive_failures
                 logger.warning(
                     f"Databento connection lost: {e}. "
-                    f"Reconnecting in {delay:.1f}s (attempt {self._consecutive_failures})"
+                    f"Reconnecting in {delay:.1f}s (attempt {attempt})"
                 )
                 
                 # Wait before reconnecting
@@ -403,8 +419,9 @@ class DatabentoHistoricalFetcher:
         """
         from scp_shared.messaging.schemas import CandleMessage
         
+        ts = record.ts_event if hasattr(record, "ts_event") else datetime.now(UTC)
         return CandleMessage(
-            timestamp=record.ts_event if hasattr(record, 'ts_event') else datetime.now(UTC),
+            timestamp=ts,
             symbol=symbol,
             timeframe="1m",
             open=float(record.open) / 1e9,
@@ -465,7 +482,7 @@ class DatabentoHistoricalFetcher:
             return []
 
 
-class ReplayDatabentoClient(DatabentoClientBase):
+class ReplayDatabentoClient(DataClientBase):
     """Replay client that streams historical candles as ticks.
     
     Useful for testing with historical data at accelerated speed.
