@@ -764,6 +764,21 @@ files = [
 ]
 
 [[package]]
+name = "eventkit"
+version = "1.0.3"
+description = "Event-driven data pipelines"
+optional = false
+python-versions = "*"
+groups = ["main"]
+files = [
+    {file = "eventkit-1.0.3-py3-none-any.whl", hash = "sha256:0e199527a89aff9d195b9671ad45d2cc9f79ecda0900de8ecfb4c864d67ad6a2"},
+    {file = "eventkit-1.0.3.tar.gz", hash = "sha256:99497f6f3c638a50ff7616f2f8cd887b18bbff3765dc1bd8681554db1467c933"},
+]
+
+[package.dependencies]
+numpy = "*"
+
+[[package]]
 name = "execnet"
 version = "2.1.2"
 description = "execnet: rapid multi-Python deployment"
@@ -940,6 +955,22 @@ files = [
     {file = "frozenlist-1.8.0-py3-none-any.whl", hash = "sha256:0c18a16eab41e82c295618a77502e17b195883241c563b00f0aa5106fc4eaa0d"},
     {file = "frozenlist-1.8.0.tar.gz", hash = "sha256:3ede829ed8d842f6cd48fc7081d7a41001a56f1f38603f9d49bf3020d59a31ad"},
 ]
+
+[[package]]
+name = "ib-insync"
+version = "0.9.86"
+description = "Python sync/async framework for Interactive Brokers API"
+optional = false
+python-versions = ">=3.6"
+groups = ["main"]
+files = [
+    {file = "ib_insync-0.9.86-py3-none-any.whl", hash = "sha256:a61fbe56ff405d93d211dad8238d7300de76dd6399eafc04c320470edec9a4a4"},
+    {file = "ib_insync-0.9.86.tar.gz", hash = "sha256:73af602ca2463f260999970c5bd937b1c4325e383686eff301743a4de08d381e"},
+]
+
+[package.dependencies]
+eventkit = "*"
+nest-asyncio = "*"
 
 [[package]]
 name = "idna"
@@ -2705,4 +2736,4 @@ cffi = ["cffi (>=1.17,<2.0) ; platform_python_implementation != \"PyPy\" and pyt
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11,<3.13"
-content-hash = "786f5730ed33c683bb4fce4b9512f853de5932bb93c97c54d4042f537d19840e"
+content-hash = "bfafa2e41bb0e751eb676035bbe1ae8ac41f62a08a8cbc9edaeca7a3c3754f3b"
