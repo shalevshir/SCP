@@ -63,6 +63,11 @@ class DataAdapterConfig(BaseServiceConfig):
         description="IB symbol for Dollar Index futures",
     )
 
+    ib_market_data_type: int = Field(
+        default=3,
+        description="IB market data type: 1=Live, 2=Frozen, 3=Delayed, 4=Delayed Frozen (default: 3=Delayed)",
+    )
+
     # Session filter configuration
     session_filter_enabled: bool = Field(
         default=True,

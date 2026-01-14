@@ -51,6 +51,7 @@ def create_data_client(config: DataAdapterConfig) -> DataClientBase:
             client_id=config.ib_client_id,
             gc_symbol=config.ib_gc_symbol,
             dxy_symbol=config.ib_dxy_symbol,
+            market_data_type=config.ib_market_data_type,
         )
         return ResilientIBDataClient(
             inner=inner_client,
