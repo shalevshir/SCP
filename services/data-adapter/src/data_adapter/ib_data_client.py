@@ -14,14 +14,7 @@ from data_adapter.databento_client import DataClientBase, Tick
 logger = get_logger(__name__)
 
 # Lazy import of ib_insync - only import when actually needed
-try:
-    from ib_insync import IB, Contract, Ticker
-    IB_INSYNC_AVAILABLE = True
-except ImportError:
-    IB_INSYNC_AVAILABLE = False
-    IB = None  # type: ignore[assignment,misc]
-    Contract = None  # type: ignore[assignment,misc]
-    Ticker = None  # type: ignore[assignment,misc]
+from ib_insync import IB, Contract, Ticker
 
 
 class IBDataClient(DataClientBase):
@@ -43,6 +36,7 @@ class IBDataClient(DataClientBase):
         client_id: int,
         gc_symbol: str = "GC",
         dxy_symbol: str = "DX",
+        market_data_type: int = 3,
     ) -> None:
         """Initialize IB data client.
         
@@ -52,27 +46,25 @@ class IBDataClient(DataClientBase):
             client_id: Unique client ID (differ from execution client)
             gc_symbol: IB symbol for Gold futures (default: "GC")
             dxy_symbol: IB symbol for Dollar Index (default: "DX")
+            market_data_type: Market data type (1=Live, 2=Frozen, 3=Delayed, 4=Delayed Frozen, default: 3)
             
         Raises:
             ImportError: If ib_insync is not installed
         """
-        if not IB_INSYNC_AVAILABLE:
-            raise ImportError(
-                "ib_insync is not installed. Install it with: poetry add ib-insync\n"
-                "Or use DATA_PROVIDER=databento or DATA_PROVIDER=mock"
-            )
-        
         self.host = host
         self.port = port
         self.client_id = client_id
         self.gc_symbol = gc_symbol
         self.dxy_symbol = dxy_symbol
+        self.market_data_type = market_data_type
         
         self._ib: IB | None = None
         self._connected = False
         
-        # Queue for tick events
-        self._tick_queue: asyncio.Queue[Tick] = asyncio.Queue()
+        # Queue for tick events (bounded to prevent unbounded growth)
+        # Max size of 10000 ticks (~10 seconds at 1000 ticks/sec) prevents memory issues
+        # while allowing reasonable buffering during processing spikes
+        self._tick_queue: asyncio.Queue[Tick] = asyncio.Queue(maxsize=10000)
     
     def _get_front_month(self, symbol: str) -> str:
         """Get the current front month contract for futures.
@@ -146,8 +138,34 @@ class IBDataClient(DataClientBase):
         """
         # Get last trade price and size
         if ticker.last is not None and ticker.last > 0:
+            # For futures, IB doesn't provide tick type 45 (Last Timestamp)
+            # Use ticker.time which is when data was received by the client
+            # For delayed data, this is typically close to the actual trade time
+            # (within seconds for delayed data feeds)
+            if hasattr(ticker, 'time') and ticker.time is not None:
+                tick_timestamp = ticker.time
+                # Ensure timezone-aware and convert to UTC
+                if tick_timestamp.tzinfo is None:
+                    # Naive datetime - assume UTC (common for IB delayed data)
+                    tick_timestamp = tick_timestamp.replace(tzinfo=UTC)
+                else:
+                    # Timezone-aware - convert to UTC
+                    tick_timestamp = tick_timestamp.astimezone(UTC)
+            elif hasattr(ticker, 'lastTimestamp') and ticker.lastTimestamp is not None:
+                # Fallback: if lastTimestamp somehow available (e.g., for stocks), use it
+                tick_timestamp = datetime.fromtimestamp(
+                    ticker.lastTimestamp, tz=UTC
+                )
+            else:
+                # Final fallback to current time
+                tick_timestamp = datetime.now(UTC)
+                logger.warning(
+                    f"No timestamp available for {internal_symbol}, "
+                    f"using current time"
+                )
+            
             tick = Tick(
-                timestamp=datetime.now(UTC),
+                timestamp=tick_timestamp,
                 price=float(ticker.last),
                 volume=float(ticker.lastSize) if ticker.lastSize else 0.0,
                 symbol=internal_symbol,
@@ -180,6 +198,13 @@ class IBDataClient(DataClientBase):
             await self._ib.connectAsync(self.host, self.port, clientId=self.client_id)
             self._connected = True
             logger.info("Connected to IB Gateway successfully")
+            
+            # Request market data type (configurable via IB_MARKET_DATA_TYPE env var)
+            # MarketDataType: 1=Live, 2=Frozen, 3=Delayed, 4=Delayed Frozen
+            self._ib.reqMarketDataType(self.market_data_type)
+            data_type_names = {1: "Live", 2: "Frozen", 3: "Delayed", 4: "Delayed Frozen"}
+            data_type_name = data_type_names.get(self.market_data_type, f"Unknown({self.market_data_type})")
+            logger.info(f"Requested market data type: {data_type_name} ({self.market_data_type})")
             
             # Create contracts for GC and DX
             gc_contract = self._create_contract(self.gc_symbol)

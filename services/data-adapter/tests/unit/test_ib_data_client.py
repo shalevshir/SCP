@@ -10,12 +10,34 @@ from data_adapter.databento_client import Tick
 from data_adapter.ib_data_client import IBDataClient, ResilientIBDataClient
 
 
+# Sentinel for default time value
+_DEFAULT_TIME = object()
+
 class MockTicker:
     """Mock ib_insync Ticker object."""
     
-    def __init__(self, last: float = 2650.0, last_size: float = 10.0):
+    def __init__(
+        self,
+        last: float = 2650.0,
+        last_size: float = 10.0,
+        time: datetime | None | object = _DEFAULT_TIME,
+        last_timestamp: float | None = None,  # UNIX timestamp (tick type 45)
+    ):
         self.last = last
         self.lastSize = last_size
+        if time is _DEFAULT_TIME:
+            # Default: use a specific datetime
+            self.time = datetime(2025, 1, 15, 10, 0, 0, tzinfo=UTC)
+        else:
+            # Explicitly provided (including None)
+            self.time = time
+        # lastTimestamp is the actual trade time (UNIX timestamp)
+        # If not provided, calculate from default time
+        if last_timestamp is None:
+            default_time = datetime(2025, 1, 15, 10, 0, 0, tzinfo=UTC)
+            self.lastTimestamp = default_time.timestamp()
+        else:
+            self.lastTimestamp = last_timestamp
         self.updateEvent = MockEvent()
 
 
@@ -48,6 +70,10 @@ class MockIB:
         """Mock connect."""
         self.connected = True
     
+    def reqMarketDataType(self, market_data_type):
+        """Mock market data type request."""
+        self.market_data_type = market_data_type
+    
     def reqMktData(self, contract, genericTickList="", snapshot=False):
         """Mock market data request."""
         if contract.symbol == "GC":
@@ -74,6 +100,11 @@ class MockContract:
         self.exchange = ""
         self.currency = ""
         self.lastTradeDateOrContractMonth = ""
+
+
+# MarketDataType constants (from IB API)
+# 1 = Live, 2 = Frozen, 3 = Delayed, 4 = Delayed Frozen
+MARKET_DATA_TYPE_DELAYED = 3
 
 
 @pytest.fixture
@@ -153,11 +184,21 @@ async def test_ib_data_client_create_contract(mock_ib_insync):
 
 @pytest.mark.asyncio
 async def test_ib_data_client_on_tick(mock_ib_insync):
-    """Test tick callback processing."""
+    """Test tick callback processing with ticker.time (receive time for futures).
+    
+    Note: For futures, IB doesn't provide tick type 45 (Last Timestamp),
+    so we use ticker.time which is when data was received (close to trade time
+    for delayed data).
+    """
     client = IBDataClient("127.0.0.1", 4002, 10)
     
-    # Create mock ticker
-    ticker = MockTicker(last=2650.5, last_size=10.0)
+    # Create mock ticker with specific time (receive time for futures)
+    expected_time = datetime(2025, 1, 15, 10, 30, 45, tzinfo=UTC)
+    ticker = MockTicker(
+        last=2650.5,
+        last_size=10.0,
+        time=expected_time
+    )
     
     # Process tick
     client._on_tick(ticker, "GC")
@@ -170,6 +211,80 @@ async def test_ib_data_client_on_tick(mock_ib_insync):
     assert tick.price == 2650.5
     assert tick.volume == 10.0
     assert isinstance(tick.timestamp, datetime)
+    # Verify timestamp matches ticker.time (receive time for futures)
+    assert tick.timestamp == expected_time
+
+
+@pytest.mark.asyncio
+async def test_ib_data_client_on_tick_fallback_timestamp(mock_ib_insync):
+    """Test tick callback fallback behavior when ticker.time is not available."""
+    client = IBDataClient("127.0.0.1", 4002, 10)
+    
+    # Test 1: ticker.time not available, but lastTimestamp is available
+    # Should use lastTimestamp if available (e.g., for stocks, not futures)
+    expected_time = datetime(2025, 1, 15, 10, 30, 45, tzinfo=UTC)
+    expected_timestamp = expected_time.timestamp()
+    ticker = MockTicker(
+        last=2650.5,
+        last_size=10.0,
+        time=None,
+        last_timestamp=expected_timestamp
+    )
+    del ticker.time  # Remove time to test fallback to lastTimestamp
+    
+    client._on_tick(ticker, "GC")
+    tick = await client._tick_queue.get()
+    # Should use lastTimestamp as fallback
+    assert tick.timestamp == expected_time
+    
+    # Test 2: Neither time nor lastTimestamp available
+    # Should fall back to current time with warning
+    ticker2 = MockTicker(last=2650.5, last_size=10.0, time=None)
+    del ticker2.time  # Remove time attribute
+    del ticker2.lastTimestamp  # Remove lastTimestamp
+    
+    before_time = datetime.now(UTC)
+    client._on_tick(ticker2, "GC")
+    after_time = datetime.now(UTC)
+    
+    tick2 = await client._tick_queue.get()
+    # Should use current time as final fallback
+    assert before_time <= tick2.timestamp <= after_time
+
+
+@pytest.mark.asyncio
+async def test_ib_data_client_queue_overflow_protection(mock_ib_insync, caplog):
+    """Test that queue overflow is handled gracefully.
+    
+    Verifies that when the tick queue is full, ticks are dropped
+    with a warning log instead of causing unbounded memory growth.
+    """
+    client = IBDataClient("127.0.0.1", 4002, 10)
+    
+    # Fill the queue to capacity (maxsize=10000)
+    # Use a smaller test queue to make the test faster
+    # Replace the queue with a smaller one for testing
+    small_queue = asyncio.Queue(maxsize=5)
+    client._tick_queue = small_queue
+    
+    # Fill the queue
+    ticker = MockTicker(last=2650.5, last_size=10.0)
+    for _ in range(5):
+        client._on_tick(ticker, "GC")
+    
+    # Queue should be full now
+    assert small_queue.full()
+    
+    # Next tick should trigger QueueFull exception and be dropped
+    # (This should log a warning but not raise)
+    client._on_tick(ticker, "GC")
+    
+    # Verify warning was logged
+    assert "Tick queue full, dropping tick" in caplog.text
+    
+    # Verify queue is still full (tick was dropped, not added)
+    assert small_queue.full()
+    assert small_queue.qsize() == 5
 
 
 @pytest.mark.asyncio
