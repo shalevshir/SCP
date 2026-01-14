@@ -15,7 +15,15 @@ services:
     environment:
       REDIS_URL: redis://redis:6379
       DATABASE_URL: postgresql://scp:${POSTGRES_PASSWORD:-scp_dev_password}@postgres:5432/scp
+      # Data provider configuration
+      DATA_PROVIDER: ${DATA_PROVIDER:-mock}
       DATABENTO_API_KEY: ${DATABENTO_API_KEY:-}
+      DATABENTO_DATASET: ${DATABENTO_DATASET:-GLBX.MDP3}
+      DATABENTO_GC_SYMBOL: ${DATABENTO_GC_SYMBOL:-GC.FUT}
+      DATABENTO_DXY_SYMBOL: ${DATABENTO_DXY_SYMBOL:-DX.FUT}
+      # Session and gap configuration
+      SESSION_FILTER_ENABLED: ${SESSION_FILTER_ENABLED:-true}
+      GAP_BACKFILL_ENABLED: ${GAP_BACKFILL_ENABLED:-true}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     depends_on:
       redis:
@@ -124,6 +132,11 @@ services:
       REDIS_URL: redis://redis:6379
       DATABASE_URL: postgresql://scp:${POSTGRES_PASSWORD:-scp_dev_password}@postgres:5432/scp
       BROKER_MODE: ${BROKER_MODE:-paper}
+      # IB connection settings (for ib_paper mode)
+      IB_HOST: ${IB_HOST:-127.0.0.1}
+      IB_PORT: ${IB_PORT:-4002}
+      IB_CLIENT_ID: ${IB_CLIENT_ID:-1}
+      IB_ACCOUNT: ${IB_ACCOUNT:-}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     depends_on:
       redis:
