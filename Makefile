@@ -23,6 +23,11 @@ help:
 	@echo "  make services-logs     View microservice logs"
 	@echo "  make services-ps       Show running microservices"
 	@echo ""
+	@echo "Paper Trading (Live Data + IB):"
+	@echo "  make paper-trading-up   Start paper trading with live data + IB"
+	@echo "  make paper-trading-down Stop paper trading services"
+	@echo "  (Requires: DATABENTO_API_KEY and IB Gateway/TWS running)"
+	@echo ""
 	@echo "Database:"
 	@echo "  make db-migrate        Apply database migrations"
 	@echo "  make db-reset          Drop and recreate database"
@@ -264,6 +269,48 @@ services-logs:
 services-ps:
 	@echo "Running services:"
 	docker compose -f infra/docker-compose.yml -f infra/docker-compose.services.yml ps
+
+# ============================================================================
+# Paper Trading Commands
+# ============================================================================
+
+paper-trading-up:
+	@echo "Starting paper trading with live data + IB integration..."
+	@if [ -z "$$DATABENTO_API_KEY" ]; then \
+		echo "❌ Error: DATABENTO_API_KEY not set"; \
+		echo "   export DATABENTO_API_KEY='db-your-key'"; \
+		exit 1; \
+	fi
+	@echo "✅ Databento API key found"
+	@echo ""
+	@echo "📦 Starting infrastructure..."
+	@$(MAKE) infra-up
+	@sleep 5
+	@echo "🚀 Starting services with paper trading configuration..."
+	docker compose \
+		-f infra/docker-compose.yml \
+		-f infra/docker-compose.services.yml \
+		-f infra/docker-compose.paper-trading.yml \
+		up -d --build
+	@echo ""
+	@echo "✅ Paper trading services started!"
+	@echo "   Data Adapter:   http://localhost:8001/health"
+	@echo "   Feature Engine: http://localhost:8002/health"
+	@echo "   HTF Bias:       http://localhost:8003/health"
+	@echo "   Bot Core:       http://localhost:8004/health"
+	@echo "   Execution:      http://localhost:8005/health"
+	@echo ""
+	@echo "📝 Monitor: make services-logs"
+	@echo "🛑 Stop: make services-down"
+
+paper-trading-down:
+	@echo "Stopping paper trading services..."
+	docker compose \
+		-f infra/docker-compose.yml \
+		-f infra/docker-compose.services.yml \
+		-f infra/docker-compose.paper-trading.yml \
+		down
+	@echo "✅ Paper trading services stopped"
 
 # ============================================================================
 # Replay Mode & Validation Commands (Phase 8)
