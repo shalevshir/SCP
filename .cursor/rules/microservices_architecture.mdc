@@ -613,7 +613,6 @@ async def reset_state():
     _trade_manager._invalidation_checker.reset_daily_state()
     _sm_manager._state_machines.clear()
     _sm_manager._bar_counter = 0
-    _sm_manager._reclaim_context_executions.clear()
     _broker.reset_state()
     _synchronizer.clear()
     return {"status": "ok"}
