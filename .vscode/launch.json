@@ -18,8 +18,29 @@
       "env": {
         "PYTHONPATH": "${workspaceFolder}/services/data-adapter/src:${workspaceFolder}/services/shared/src",
         "REDIS_URL": "redis://localhost:6379",
+        "DATABASE_URL": "postgresql://scp:scp_dev_password@localhost:5432/scp",
+        "LOG_LEVEL": "DEBUG",
+        // Data provider selection
+        "DATA_PROVIDER": "ib",
+        // Databento configuration
         "DATABENTO_API_KEY": "",
-        "LOG_LEVEL": "DEBUG"
+        "DATABENTO_DATASET": "GLBX.MDP3",
+        "DATABENTO_GC_SYMBOL": "GC.FUT",
+        "DATABENTO_DXY_SYMBOL": "DX.FUT",
+        // IB Gateway configuration (for IB data provider)
+        "IB_HOST": "127.0.0.1",
+        "IB_PORT": "4002",
+        "IB_CLIENT_ID": "10",
+        "IB_GC_SYMBOL": "GC",
+        "IB_DXY_SYMBOL": "DX",
+        // Session filter configuration
+        "SESSION_FILTER_ENABLED": "true",
+        // Gap detection configuration
+        "GAP_BACKFILL_ENABLED": "true",
+        // Reconnection configuration
+        "RECONNECT_MAX_RETRIES": "10",
+        "RECONNECT_BASE_DELAY": "1.0",
+        "RECONNECT_MAX_DELAY": "60.0"
       },
       "console": "integratedTerminal",
       "justMyCode": false,
@@ -133,11 +154,29 @@
         "PYTHONPATH": "${workspaceFolder}/services/execution/src:${workspaceFolder}/services/shared/src",
         "REDIS_URL": "redis://localhost:6379",
         "DATABASE_URL": "postgresql://scp:scp_dev_password@localhost:5432/scp",
+        "LOG_LEVEL": "DEBUG",
+        // Broker configuration
         "BROKER_MODE": "paper",
+        // Interactive Brokers connection settings
+        "IB_HOST": "127.0.0.1",
+        "IB_PORT": "7497",
+        "IB_CLIENT_ID": "1",
+        "IB_ACCOUNT": "",
+        // Trade limits
         "PDLL_LIMIT": "1000.0",
         "MAX_ACTIVE_TRADES": "3",
         "MAX_TRADES_PER_DAY": "10",
-        "LOG_LEVEL": "DEBUG"
+        // Position sizing
+        "SIZING_MODE": "fixed",
+        "FIXED_QUANTITY": "1",
+        "RISK_PER_TRADE_PERCENT": "1.0",
+        // Stop loss configuration
+        "SL_BUFFER_TICKS": "5",
+        // Slippage and commission (disabled for production)
+        "ENABLE_SLIPPAGE": "false",
+        "SLIPPAGE_POINTS": "0.5",
+        "ENABLE_COMMISSION": "false",
+        "COMMISSION_PER_TRADE": "5.0"
       },
       "console": "integratedTerminal",
       "justMyCode": false,

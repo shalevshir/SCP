@@ -1,0 +1,60 @@
+# Paper Trading Environment Overrides
+# Usage: docker compose -f docker-compose.infra.yml -f docker-compose.services.yml -f docker-compose.paper.yml up --build
+#
+# Features:
+# - Live market data via IB Gateway
+# - IB Gateway paper trading broker
+# - Production-like settings but safe for testing
+# - Session filtering enabled
+# - Full risk management and guardrails
+#
+# Prerequisites:
+# 1. IB Gateway running on host machine in paper trading mode (port 4002)
+# 2. IB API enabled in Gateway settings
+
+services:
+  data-adapter:
+    container_name: scp-data-adapter-paper
+    environment:
+      DATA_PROVIDER: ib
+      IB_HOST: ${IB_HOST:-host.docker.internal}
+      IB_PORT: ${IB_PORT:-4002}
+      IB_CLIENT_ID: ${IB_CLIENT_ID:-1}
+      IB_GC_CONTRACT: ${IB_GC_CONTRACT:-GC}
+      IB_DXY_CONTRACT: ${IB_DXY_CONTRACT:-DX}
+      SESSION_FILTER_ENABLED: "true"
+      GAP_BACKFILL_ENABLED: "true"
+      RECONNECT_MAX_RETRIES: 10
+      RECONNECT_BASE_DELAY: 1.0
+      RECONNECT_MAX_DELAY: 60.0
+      LOG_LEVEL: INFO
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  feature-engine:
+    container_name: scp-feature-engine-paper
+    environment:
+      LOG_LEVEL: INFO
+
+  htf-bias:
+    container_name: scp-htf-bias-paper
+    environment:
+      LOG_LEVEL: INFO
+
+  bot-core:
+    container_name: scp-bot-core-paper
+    environment:
+      SESSION_VALIDATION_ENABLED: "true"
+      LOG_LEVEL: INFO
+
+  execution:
+    container_name: scp-execution-paper
+    environment:
+      BROKER_MODE: ib_paper
+      IB_HOST: ${IB_HOST:-host.docker.internal}
+      IB_PORT: ${IB_PORT:-4002}  # IB Gateway paper trading port
+      IB_CLIENT_ID: ${IB_CLIENT_ID:-2}  # Different client ID than data adapter
+      IB_ACCOUNT: ${IB_ACCOUNT:-}
+      LOG_LEVEL: INFO
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

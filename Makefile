@@ -1,7 +1,7 @@
 # Force use of bash for all recipes (required for db-reset and other advanced shell features)
 SHELL := /bin/bash
 
-.PHONY: test test-unit test-verbose test-parallel test-coverage test-fast lint format check clean help install data-clean data-fetch data-resample data-resample-5m data-resample-1h infra-up infra-down infra-logs infra-ps db-migrate db-reset db-shell shared-install shared-test service-test-coverage service-test-coverage-all services-up services-down services-build services-logs services-ps replay compare-results validate-replay replay-clean
+.PHONY: test test-unit test-verbose test-parallel test-coverage test-fast lint format check clean help install data-clean data-fetch data-resample data-resample-5m data-resample-1h infra-up infra-down infra-logs infra-ps db-migrate db-reset db-shell shared-install shared-test service-test-coverage service-test-coverage-all services-up services-down services-build services-logs services-ps paper-trading-up paper-trading-down paper-trading-logs live-trading-up live-trading-down live-trading-logs replay compare-results validate-replay replay-clean
 
 help:
 	@echo "SCP Trading Bot - Development Commands"
@@ -17,11 +17,23 @@ help:
 	@echo "  make infra-ps          Show running containers"
 	@echo ""
 	@echo "Microservices:"
-	@echo "  make services-up       Start all microservices (builds if needed)"
-	@echo "  make services-down     Stop all microservices"
-	@echo "  make services-build    Build all microservice images"
-	@echo "  make services-logs     View microservice logs"
-	@echo "  make services-ps       Show running microservices"
+	@echo "  make services-up        Start all microservices (development mode)"
+	@echo "  make services-down      Stop all microservices"
+	@echo "  make services-build     Build all microservice images"
+	@echo "  make services-logs      View microservice logs"
+	@echo "  make services-ps        Show running microservices"
+	@echo ""
+	@echo "Paper Trading (IB Paper):"
+	@echo "  make paper-trading-up   Start paper trading with IB Gateway"
+	@echo "  make paper-trading-down Stop paper trading services"
+	@echo "  make paper-trading-logs View paper trading logs"
+	@echo "  (Requires: IB Gateway on port 4002)"
+	@echo ""
+	@echo "Live Trading (⚠️  REAL MONEY ⚠️):"
+	@echo "  make live-trading-up    Start LIVE trading with real money"
+	@echo "  make live-trading-down  Stop live trading services"
+	@echo "  make live-trading-logs  View live trading logs"
+	@echo "  (Requires: IB_ACCOUNT, POSTGRES_PASSWORD, IB Gateway on port 4001)"
 	@echo ""
 	@echo "Database:"
 	@echo "  make db-migrate        Apply database migrations"
@@ -151,7 +163,7 @@ backtest-view:
 
 infra-up:
 	@echo "Starting infrastructure (Redis + PostgreSQL/TimescaleDB)..."
-	docker compose -f infra/docker-compose.yml up -d
+	docker compose -f infra/docker-compose.infra.yml up -d
 	@echo "Waiting for services to be ready..."
 	@sleep 3
 	@echo "✓ Infrastructure is running"
@@ -160,16 +172,16 @@ infra-up:
 
 infra-down:
 	@echo "Stopping infrastructure..."
-	docker compose -f infra/docker-compose.yml down
+	docker compose -f infra/docker-compose.infra.yml down
 	@echo "✓ Infrastructure stopped"
 
 infra-logs:
 	@echo "Tailing infrastructure logs (Ctrl+C to stop)..."
-	docker compose -f infra/docker-compose.yml logs -f
+	docker compose -f infra/docker-compose.infra.yml logs -f
 
 infra-ps:
 	@echo "Running infrastructure containers:"
-	docker compose -f infra/docker-compose.yml ps
+	docker compose -f infra/docker-compose.infra.yml ps
 
 # ============================================================================
 # Database Commands
@@ -192,8 +204,8 @@ db-reset:
 	@read -p "Are you sure? [y/N] " -n 1 -r; \
 	echo; \
 	if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
-		docker compose -f infra/docker-compose.yml down -v; \
-		docker compose -f infra/docker-compose.yml up -d; \
+		docker compose -f infra/docker-compose.infra.yml down -v; \
+		docker compose -f infra/docker-compose.infra.yml up -d; \
 		echo "✓ Database reset complete"; \
 	else \
 		echo "Cancelled"; \
@@ -238,8 +250,8 @@ service-test-coverage-all:
 # ============================================================================
 
 services-up:
-	@echo "Starting all microservices..."
-	docker compose -f infra/docker-compose.yml -f infra/docker-compose.services.yml up -d --build
+	@echo "Starting all microservices (development mode)..."
+	docker compose -f infra/docker-compose.infra.yml -f infra/docker-compose.services.yml -f infra/docker-compose.dev.yml up -d --build
 	@echo "✓ All services are running"
 	@echo "  Data Adapter:    http://localhost:8001/health"
 	@echo "  Feature Engine:  http://localhost:8002/health"
@@ -249,21 +261,119 @@ services-up:
 
 services-down:
 	@echo "Stopping all microservices..."
-	docker compose -f infra/docker-compose.yml -f infra/docker-compose.services.yml down
+	docker compose -f infra/docker-compose.infra.yml -f infra/docker-compose.services.yml -f infra/docker-compose.dev.yml down
 	@echo "✓ All services stopped"
 
 services-build:
 	@echo "Building all microservice images..."
-	docker compose -f infra/docker-compose.yml -f infra/docker-compose.services.yml build
+	docker compose -f infra/docker-compose.infra.yml -f infra/docker-compose.services.yml -f infra/docker-compose.dev.yml build
 	@echo "✓ All images built"
 
 services-logs:
 	@echo "Tailing microservice logs (Ctrl+C to stop)..."
-	docker compose -f infra/docker-compose.yml -f infra/docker-compose.services.yml logs -f
+	docker compose -f infra/docker-compose.infra.yml -f infra/docker-compose.services.yml -f infra/docker-compose.dev.yml logs -f
 
 services-ps:
 	@echo "Running services:"
-	docker compose -f infra/docker-compose.yml -f infra/docker-compose.services.yml ps
+	docker compose -f infra/docker-compose.infra.yml -f infra/docker-compose.services.yml -f infra/docker-compose.dev.yml ps
+
+# ============================================================================
+# Paper Trading Commands
+# ============================================================================
+
+paper-trading-up:
+	@echo "Starting paper trading with IB Gateway integration..."
+	@echo "Ensure IB Gateway is running in paper trading mode on port 4002"
+	@echo ""
+	@echo "🚀 Starting paper trading services..."
+	docker compose \
+		-f infra/docker-compose.infra.yml \
+		-f infra/docker-compose.services.yml \
+		-f infra/docker-compose.paper.yml \
+		up -d --build
+	@echo ""
+	@echo "✅ Paper trading services started!"
+	@echo "   Data Adapter:   http://localhost:8001/health"
+	@echo "   Feature Engine: http://localhost:8002/health"
+	@echo "   HTF Bias:       http://localhost:8003/health"
+	@echo "   Bot Core:       http://localhost:8004/health"
+	@echo "   Execution:      http://localhost:8005/health"
+	@echo ""
+	@echo "📝 Monitor: make paper-trading-logs"
+	@echo "🛑 Stop: make paper-trading-down"
+
+paper-trading-down:
+	@echo "Stopping paper trading services..."
+	docker compose \
+		-f infra/docker-compose.infra.yml \
+		-f infra/docker-compose.services.yml \
+		-f infra/docker-compose.paper.yml \
+		down
+	@echo "✅ Paper trading services stopped"
+
+paper-trading-logs:
+	@echo "Tailing paper trading logs (Ctrl+C to stop)..."
+	docker compose -f infra/docker-compose.infra.yml -f infra/docker-compose.services.yml -f infra/docker-compose.paper.yml logs -f
+
+# ============================================================================
+# Live Trading Commands (⚠️  REAL MONEY ⚠️)
+# ============================================================================
+
+live-trading-up:
+	@echo "⚠️  WARNING: STARTING LIVE TRADING WITH REAL MONEY ⚠️"
+	@echo ""
+	@if [ -z "$$IB_ACCOUNT" ]; then \
+		echo "❌ Error: IB_ACCOUNT not set"; \
+		echo "   export IB_ACCOUNT='your-account-id'"; \
+		exit 1; \
+	fi
+	@if [ -z "$$POSTGRES_PASSWORD" ]; then \
+		echo "❌ Error: POSTGRES_PASSWORD not set"; \
+		echo "   export POSTGRES_PASSWORD='strong-password'"; \
+		exit 1; \
+	fi
+	@echo "✅ Required environment variables found"
+	@echo ""
+	@echo "⚠️  Final confirmation required!"
+	@echo "   This will place REAL TRADES with REAL MONEY"
+	@echo "   Ensure IB Gateway is running in LIVE mode on port 4001"
+	@read -p "Are you absolutely sure? Type 'YES' to continue: " confirm; \
+	if [ "$$confirm" != "YES" ]; then \
+		echo "Cancelled"; \
+		exit 1; \
+	fi
+	@echo ""
+	@echo "🚀 Starting LIVE trading services..."
+	docker compose \
+		-f infra/docker-compose.infra.yml \
+		-f infra/docker-compose.services.yml \
+		-f infra/docker-compose.live.yml \
+		up -d --build
+	@echo ""
+	@echo "✅ LIVE trading services started!"
+	@echo "   ⚠️  REAL MONEY AT RISK ⚠️"
+	@echo ""
+	@echo "   Data Adapter:   http://localhost:8001/health"
+	@echo "   Feature Engine: http://localhost:8002/health"
+	@echo "   HTF Bias:       http://localhost:8003/health"
+	@echo "   Bot Core:       http://localhost:8004/health"
+	@echo "   Execution:      http://localhost:8005/health"
+	@echo ""
+	@echo "📝 Monitor: make live-trading-logs"
+	@echo "🛑 Stop: make live-trading-down"
+
+live-trading-down:
+	@echo "Stopping LIVE trading services..."
+	docker compose \
+		-f infra/docker-compose.infra.yml \
+		-f infra/docker-compose.services.yml \
+		-f infra/docker-compose.live.yml \
+		down
+	@echo "✅ LIVE trading services stopped"
+
+live-trading-logs:
+	@echo "Tailing LIVE trading logs (Ctrl+C to stop)..."
+	docker compose -f infra/docker-compose.infra.yml -f infra/docker-compose.services.yml -f infra/docker-compose.live.yml logs -f
 
 # ============================================================================
 # Replay Mode & Validation Commands (Phase 8)
@@ -416,9 +526,9 @@ replay-clean:
 	echo; \
 	if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
 		echo "Stopping services..."; \
-		docker compose -f infra/docker-compose.yml -f infra/docker-compose.services.yml down; \
+		docker compose -f infra/docker-compose.infra.yml -f infra/docker-compose.services.yml -f infra/docker-compose.dev.yml down; \
 		echo "Starting infrastructure..."; \
-		docker compose -f infra/docker-compose.yml up -d; \
+		docker compose -f infra/docker-compose.infra.yml up -d; \
 		sleep 5; \
 		echo "Cleaning Redis streams..."; \
 		docker exec scp-redis redis-cli FLUSHDB; \

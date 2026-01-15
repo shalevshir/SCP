@@ -1,17 +1,18 @@
-version: '3.8'
-
-# Development overrides for docker-compose.yml
-# Usage: docker-compose -f docker-compose.yml -f docker-compose.dev.yml up
+# Development Environment Overrides
+# Usage: docker compose -f docker-compose.infra.yml -f docker-compose.services.yml -f docker-compose.dev.yml up --build
+#
+# Features:
+# - Debug logging enabled
+# - Verbose Postgres query logging
+# - Mock data provider (no external dependencies)
+# - Development database
+# - Session filtering disabled
 
 services:
   redis:
-    # Enable debug logging in development
     command: redis-server --appendonly yes --loglevel debug
-    ports:
-      - "6379:6379"
 
   postgres:
-    # Enable query logging and verbose output
     environment:
       POSTGRES_DB: scp_dev
       POSTGRES_USER: scp
@@ -22,15 +23,51 @@ services:
       - "log_statement=all"
       - "-c"
       - "log_duration=on"
-    ports:
-      - "5432:5432"
     volumes:
       - postgres_dev_data:/var/lib/postgresql/data
-      - ./migrations:/docker-entrypoint-initdb.d:ro
-      # Mount scripts for easy access
+      - ./migrations/001_initial_schema.sql:/docker-entrypoint-initdb.d/100_initial_schema.sql:ro
+      - ./migrations/002_indexes.sql:/docker-entrypoint-initdb.d/101_indexes.sql:ro
+      - ./migrations/003_add_trade_state_fields.sql:/docker-entrypoint-initdb.d/102_add_trade_state_fields.sql:ro
+      - ./migrations/004_add_htf_bias_fields.sql:/docker-entrypoint-initdb.d/103_add_htf_bias_fields.sql:ro
+      - ./migrations/005_add_kill_switch.sql:/docker-entrypoint-initdb.d/104_add_kill_switch.sql:ro
       - ./scripts:/scripts:ro
+
+  data-adapter:
+    container_name: scp-data-adapter-dev
+    environment:
+      DATABASE_URL: postgresql://scp:${POSTGRES_PASSWORD:-scp_dev_password}@postgres:5432/scp_dev
+      DATA_PROVIDER: mock
+      MOCK_DATA_PATH: ${MOCK_DATA_PATH:-/app/data}
+      SESSION_FILTER_ENABLED: "false"
+      GAP_BACKFILL_ENABLED: "false"
+      LOG_LEVEL: DEBUG
+
+  feature-engine:
+    container_name: scp-feature-engine-dev
+    environment:
+      DATABASE_URL: postgresql://scp:${POSTGRES_PASSWORD:-scp_dev_password}@postgres:5432/scp_dev
+      LOG_LEVEL: DEBUG
+
+  htf-bias:
+    container_name: scp-htf-bias-dev
+    environment:
+      DATABASE_URL: postgresql://scp:${POSTGRES_PASSWORD:-scp_dev_password}@postgres:5432/scp_dev
+      LOG_LEVEL: DEBUG
+
+  bot-core:
+    container_name: scp-bot-core-dev
+    environment:
+      DATABASE_URL: postgresql://scp:${POSTGRES_PASSWORD:-scp_dev_password}@postgres:5432/scp_dev
+      SESSION_VALIDATION_ENABLED: "false"
+      LOG_LEVEL: DEBUG
+
+  execution:
+    container_name: scp-execution-dev
+    environment:
+      DATABASE_URL: postgresql://scp:${POSTGRES_PASSWORD:-scp_dev_password}@postgres:5432/scp_dev
+      BROKER_MODE: paper
+      LOG_LEVEL: DEBUG
 
 volumes:
   postgres_dev_data:
     name: scp_postgres_dev_data
-

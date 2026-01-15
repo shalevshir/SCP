@@ -569,9 +569,7 @@ async def reset_state() -> dict[str, str]:
     # Reset state machine manager
     _sm_manager._state_machines.clear()
     _sm_manager._bar_counter = 0
-    _sm_manager._reclaim_context_executions.clear()  # CRITICAL: Reset reclaim context executions
-    _sm_manager._signal_timestamps.clear()  # Reset signal timestamps for context key generation
-    
+
     # Reset broker
     _broker.reset_state()
     

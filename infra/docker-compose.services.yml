@@ -1,8 +1,7 @@
-# Full stack with all microservices
-# Usage: docker-compose -f docker-compose.yml -f docker-compose.services.yml up --build
-#
-# This extends docker-compose.yml (Redis + PostgreSQL) with all SCP microservices.
-# Build context is ../services/ so Dockerfiles can access shared/ library.
+# Microservices Build Definitions
+# This file defines all microservice builds without environment-specific settings
+# Usage: Always compose with infra + services + environment overlay:
+#   docker compose -f docker-compose.infra.yml -f docker-compose.services.yml -f docker-compose.dev.yml up
 
 services:
   data-adapter:
@@ -15,8 +14,6 @@ services:
     environment:
       REDIS_URL: redis://redis:6379
       DATABASE_URL: postgresql://scp:${POSTGRES_PASSWORD:-scp_dev_password}@postgres:5432/scp
-      DATABENTO_API_KEY: ${DATABENTO_API_KEY:-}
-      LOG_LEVEL: ${LOG_LEVEL:-INFO}
     depends_on:
       redis:
         condition: service_healthy
@@ -40,7 +37,6 @@ services:
     environment:
       REDIS_URL: redis://redis:6379
       DATABASE_URL: postgresql://scp:${POSTGRES_PASSWORD:-scp_dev_password}@postgres:5432/scp
-      LOG_LEVEL: ${LOG_LEVEL:-INFO}
     depends_on:
       redis:
         condition: service_healthy
@@ -66,7 +62,6 @@ services:
     environment:
       REDIS_URL: redis://redis:6379
       DATABASE_URL: postgresql://scp:${POSTGRES_PASSWORD:-scp_dev_password}@postgres:5432/scp
-      LOG_LEVEL: ${LOG_LEVEL:-INFO}
     depends_on:
       redis:
         condition: service_healthy
@@ -92,7 +87,6 @@ services:
     environment:
       REDIS_URL: redis://redis:6379
       DATABASE_URL: postgresql://scp:${POSTGRES_PASSWORD:-scp_dev_password}@postgres:5432/scp
-      LOG_LEVEL: ${LOG_LEVEL:-INFO}
     volumes:
       - ../config:/app/bot-core/config:ro
       - ../config:/config:ro
@@ -123,8 +117,6 @@ services:
     environment:
       REDIS_URL: redis://redis:6379
       DATABASE_URL: postgresql://scp:${POSTGRES_PASSWORD:-scp_dev_password}@postgres:5432/scp
-      BROKER_MODE: ${BROKER_MODE:-paper}
-      LOG_LEVEL: ${LOG_LEVEL:-INFO}
     depends_on:
       redis:
         condition: service_healthy
@@ -139,4 +131,3 @@ services:
       timeout: 10s
       retries: 3
       start_period: 10s
-

@@ -446,7 +446,7 @@ jobs:
         run: |
           # Start test infrastructure (Redis on 6380, PostgreSQL on 5433) + all services
           # Always rebuild to ensure latest code is included in containers
-          docker compose -f infra/docker-compose.yml -f infra/docker-compose.services.yml -f infra/docker-compose.test.yml up -d --build
+          docker compose -f infra/docker-compose.infra.yml -f infra/docker-compose.services.yml -f infra/docker-compose.test.yml up -d --build
           
           # Wait for PostgreSQL to be ready
           echo "Waiting for PostgreSQL to initialize..."
@@ -506,10 +506,10 @@ jobs:
             done
             echo ""
             echo "=== Container Status ==="
-            docker compose -f infra/docker-compose.yml -f infra/docker-compose.services.yml -f infra/docker-compose.test.yml ps
+            docker compose -f infra/docker-compose.infra.yml -f infra/docker-compose.services.yml -f infra/docker-compose.test.yml ps
             echo ""
             echo "=== Service Logs ==="
-            docker compose -f infra/docker-compose.yml -f infra/docker-compose.services.yml -f infra/docker-compose.test.yml logs --tail=50
+            docker compose -f infra/docker-compose.infra.yml -f infra/docker-compose.services.yml -f infra/docker-compose.test.yml logs --tail=50
             exit 1
           fi
           
@@ -536,19 +536,19 @@ jobs:
         if: failure()
         run: |
           echo "=== Data Adapter Logs ==="
-          docker compose -f infra/docker-compose.yml -f infra/docker-compose.services.yml -f infra/docker-compose.test.yml logs data-adapter
+          docker compose -f infra/docker-compose.infra.yml -f infra/docker-compose.services.yml -f infra/docker-compose.test.yml logs data-adapter
           echo "=== Feature Engine Logs ==="
-          docker compose -f infra/docker-compose.yml -f infra/docker-compose.services.yml -f infra/docker-compose.test.yml logs feature-engine
+          docker compose -f infra/docker-compose.infra.yml -f infra/docker-compose.services.yml -f infra/docker-compose.test.yml logs feature-engine
           echo "=== HTF Bias Logs ==="
-          docker compose -f infra/docker-compose.yml -f infra/docker-compose.services.yml -f infra/docker-compose.test.yml logs htf-bias
+          docker compose -f infra/docker-compose.infra.yml -f infra/docker-compose.services.yml -f infra/docker-compose.test.yml logs htf-bias
           echo "=== Bot Core Logs ==="
-          docker compose -f infra/docker-compose.yml -f infra/docker-compose.services.yml -f infra/docker-compose.test.yml logs bot-core
+          docker compose -f infra/docker-compose.infra.yml -f infra/docker-compose.services.yml -f infra/docker-compose.test.yml logs bot-core
           echo "=== Execution Logs ==="
-          docker compose -f infra/docker-compose.yml -f infra/docker-compose.services.yml -f infra/docker-compose.test.yml logs execution
+          docker compose -f infra/docker-compose.infra.yml -f infra/docker-compose.services.yml -f infra/docker-compose.test.yml logs execution
       
       - name: Stop infrastructure
         if: always()
-        run: docker compose -f infra/docker-compose.yml -f infra/docker-compose.services.yml -f infra/docker-compose.test.yml down -v
+        run: docker compose -f infra/docker-compose.infra.yml -f infra/docker-compose.services.yml -f infra/docker-compose.test.yml down -v
 
   e2e-tests:
     name: E2E Tests
@@ -567,7 +567,7 @@ jobs:
       - name: Start all services
         run: |
           # Will start full microservices stack
-          docker compose -f infra/docker-compose.yml -f infra/docker-compose.services.yml up -d
+          docker compose -f infra/docker-compose.infra.yml -f infra/docker-compose.services.yml -f infra/docker-compose.dev.yml up -d
           sleep 10
       
       - name: Run E2E tests
@@ -577,5 +577,5 @@ jobs:
       
       - name: Stop all services
         if: always()
-        run: docker compose -f infra/docker-compose.yml -f infra/docker-compose.services.yml down
+        run: docker compose -f infra/docker-compose.infra.yml -f infra/docker-compose.services.yml -f infra/docker-compose.dev.yml down
 

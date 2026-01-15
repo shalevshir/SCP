@@ -1,0 +1,109 @@
+# Live Production Environment Overrides
+# Usage: docker compose -f docker-compose.infra.yml -f docker-compose.services.yml -f docker-compose.live.yml up --build
+#
+# ⚠️  WARNING: THIS CONFIGURATION PLACES REAL TRADES WITH REAL MONEY ⚠️
+#
+# Prerequisites:
+# 1. IB Gateway running on host machine in LIVE trading mode (port 4001)
+# 2. IB API enabled in Gateway settings
+# 3. IB_ACCOUNT environment variable set (required)
+# 4. POSTGRES_PASSWORD environment variable set (required)
+# 5. Adequate funds in IB account
+# 6. Risk limits configured in config/validation.yaml
+# 7. Monitoring/alerting infrastructure in place
+
+services:
+  redis:
+    restart: always
+
+  postgres:
+    restart: always
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}  # Required (no default)
+
+  data-adapter:
+    container_name: scp-data-adapter-live
+    environment:
+      DATABASE_URL: postgresql://scp:${POSTGRES_PASSWORD}@postgres:5432/scp
+      DATA_PROVIDER: ib
+      IB_HOST: ${IB_HOST:-host.docker.internal}
+      IB_PORT: ${IB_PORT:-4001}
+      IB_CLIENT_ID: ${IB_CLIENT_ID:-1}
+      IB_GC_CONTRACT: ${IB_GC_CONTRACT:-GC}
+      IB_DXY_CONTRACT: ${IB_DXY_CONTRACT:-DX}
+      SESSION_FILTER_ENABLED: "true"
+      GAP_BACKFILL_ENABLED: "true"
+      RECONNECT_MAX_RETRIES: 20
+      RECONNECT_BASE_DELAY: 2.0
+      RECONNECT_MAX_DELAY: 300.0
+      LOG_LEVEL: INFO
+    restart: always
+    healthcheck:
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  feature-engine:
+    container_name: scp-feature-engine-live
+    environment:
+      DATABASE_URL: postgresql://scp:${POSTGRES_PASSWORD}@postgres:5432/scp
+      LOG_LEVEL: INFO
+    restart: always
+    healthcheck:
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  htf-bias:
+    container_name: scp-htf-bias-live
+    environment:
+      DATABASE_URL: postgresql://scp:${POSTGRES_PASSWORD}@postgres:5432/scp
+      LOG_LEVEL: INFO
+    restart: always
+    healthcheck:
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  bot-core:
+    container_name: scp-bot-core-live
+    environment:
+      DATABASE_URL: postgresql://scp:${POSTGRES_PASSWORD}@postgres:5432/scp
+      SESSION_VALIDATION_ENABLED: "true"
+      MAX_TRADES_PER_DAY: ${MAX_TRADES_PER_DAY:-3}
+      PDLL_LIMIT: ${PDLL_LIMIT:-200.0}
+      MAX_ACTIVE_TRADES: ${MAX_ACTIVE_TRADES:-1}
+      LOG_LEVEL: INFO
+    restart: always
+    healthcheck:
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  execution:
+    container_name: scp-execution-live
+    environment:
+      DATABASE_URL: postgresql://scp:${POSTGRES_PASSWORD}@postgres:5432/scp
+      BROKER_MODE: ib_live  # ⚠️  REAL MONEY ⚠️
+      IB_HOST: ${IB_HOST:-host.docker.internal}
+      IB_PORT: ${IB_PORT:-4001}  # IB Gateway LIVE trading port
+      IB_CLIENT_ID: ${IB_CLIENT_ID:-2}  # Different client ID than data adapter
+      IB_ACCOUNT: ${IB_ACCOUNT}  # Required for live trading
+      MAX_ACTIVE_TRADES: ${MAX_ACTIVE_TRADES:-1}
+      PDLL_LIMIT: ${PDLL_LIMIT:-200.0}
+      MAX_TRADES_PER_DAY: ${MAX_TRADES_PER_DAY:-3}
+      LOG_LEVEL: INFO
+    restart: always
+    healthcheck:
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

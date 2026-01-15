@@ -13,7 +13,7 @@ class DataAdapterConfig(BaseServiceConfig):
     # Data provider selection
     data_provider: str = Field(
         default="mock",
-        description="Data provider: 'databento' or 'mock' (default: mock)",
+        description="Data provider: 'ib', 'databento', or 'mock' (default: mock)",
     )
 
     # Databento configuration
@@ -35,6 +35,37 @@ class DataAdapterConfig(BaseServiceConfig):
     databento_dxy_symbol: str = Field(
         default="DX.FUT",
         description="Databento symbol for Dollar Index (continuous contract)",
+    )
+
+    # IB Gateway configuration
+    ib_host: str = Field(
+        default="127.0.0.1",
+        description="IB Gateway/TWS host",
+    )
+
+    ib_port: int = Field(
+        default=4002,
+        description="IB Gateway port (4002=Gateway paper, 7497=TWS paper)",
+    )
+
+    ib_client_id: int = Field(
+        default=10,
+        description="IB client ID for data streaming (different from execution)",
+    )
+
+    ib_gc_symbol: str = Field(
+        default="GC",
+        description="IB symbol for Gold futures",
+    )
+
+    ib_dxy_symbol: str = Field(
+        default="DX",
+        description="IB symbol for Dollar Index futures",
+    )
+
+    ib_market_data_type: int = Field(
+        default=3,
+        description="IB market data type: 1=Live, 2=Frozen, 3=Delayed, 4=Delayed Frozen (default: 3=Delayed)",
     )
 
     # Session filter configuration

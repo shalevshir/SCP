@@ -1,8 +1,10 @@
-# Test overrides for docker-compose.yml + docker-compose.services.yml
-# Usage: docker-compose -f docker-compose.yml -f docker-compose.services.yml -f docker-compose.test.yml up
-# Ephemeral containers for CI/testing - no persistent volumes
+# Test Environment Overrides
+# Usage: docker compose -f docker-compose.infra.yml -f docker-compose.services.yml -f docker-compose.test.yml up --build
+#
+# Ephemeral containers for CI/testing - no persistent volumes, different ports
 
 services:
+  # Infrastructure overrides for testing
   redis:
     container_name: scp-redis-test
     ports:
@@ -27,6 +29,7 @@ services:
       - ./migrations/002_indexes.sql:/docker-entrypoint-initdb.d/101_indexes.sql:ro
       - ./migrations/003_add_trade_state_fields.sql:/docker-entrypoint-initdb.d/102_add_trade_state_fields.sql:ro
       - ./migrations/004_add_htf_bias_fields.sql:/docker-entrypoint-initdb.d/103_add_htf_bias_fields.sql:ro
+      - ./migrations/005_add_kill_switch.sql:/docker-entrypoint-initdb.d/104_add_kill_switch.sql:ro
     restart: "no"
     healthcheck:
       # Verify postgres is ready AND migrations have run (check for 'candles' table)
@@ -36,43 +39,52 @@ services:
       retries: 30
       start_period: 30s
 
-  # Service overrides to use test database credentials
+  # Service overrides to use test database credentials and settings
   data-adapter:
     container_name: scp-data-adapter-test
     environment:
       DATABASE_URL: postgresql://scp_test:scp_test_password@postgres:5432/scp_test
+      DATA_PROVIDER: mock
+      SESSION_FILTER_ENABLED: "false"
+      GAP_BACKFILL_ENABLED: "false"
+      LOG_LEVEL: INFO
     restart: "no"
 
   feature-engine:
     container_name: scp-feature-engine-test
     environment:
       DATABASE_URL: postgresql://scp_test:scp_test_password@postgres:5432/scp_test
+      LOG_LEVEL: INFO
     restart: "no"
 
   htf-bias:
     container_name: scp-htf-bias-test
     environment:
       DATABASE_URL: postgresql://scp_test:scp_test_password@postgres:5432/scp_test
+      LOG_LEVEL: INFO
     restart: "no"
 
   bot-core:
     container_name: scp-bot-core-test
     environment:
       DATABASE_URL: postgresql://scp_test:scp_test_password@postgres:5432/scp_test
-    volumes:
-      - ../config:/config:ro  # Mount config at /config for load_scoring_config() to find
+      LOG_LEVEL: INFO
     restart: "no"
 
   execution:
     container_name: scp-execution-test
     environment:
       DATABASE_URL: postgresql://scp_test:scp_test_password@postgres:5432/scp_test
+      BROKER_MODE: paper
+      LOG_LEVEL: INFO
     restart: "no"
 
+# Clear volumes from base infrastructure file
 volumes:
   redis_data: null
   postgres_data: null
 
+# Use test-specific network
 networks:
   default:
     name: scp_test_network

@@ -1,51 +1,40 @@
-# Docker Compose configuration for replay mode validation
+# Replay Mode Environment Overrides
+# Usage: docker compose -f docker-compose.infra.yml -f docker-compose.services.yml -f docker-compose.replay.yml up --build
 #
-# This extends the base docker-compose configuration with replay-specific settings:
-# - Disables session filtering for historical data
-# - Configures services for faster processing
-# - No live data connections
-#
-# Usage:
-#   docker-compose -f docker-compose.yml -f docker-compose.services.yml -f docker-compose.replay.yml up -d
-
-version: '3.8'
+# Features:
+# - Session filtering disabled (for historical data)
+# - Session validation disabled (for historical data)
+# - Mock data provider with historical data replay
+# - Paper broker
+# - Faster processing
 
 services:
-  # Data Adapter: Use replay mode (session filtering disabled)
   data-adapter:
+    container_name: scp-data-adapter-replay
     environment:
-      - SESSION_FILTER_ENABLED=false
-      - LOG_LEVEL=INFO
-  
-  # Feature Engine: Configure for faster processing
+      DATA_PROVIDER: mock
+      SESSION_FILTER_ENABLED: "false"
+      LOG_LEVEL: INFO
+
   feature-engine:
+    container_name: scp-feature-engine-replay
     environment:
-      - LOG_LEVEL=INFO
-      - WARMUP_ENABLED=true
-    volumes:
-      - ../.cursor:/app/.cursor
-  
-  # HTF Bias: Configure for faster processing
+      WARMUP_ENABLED: "true"
+      LOG_LEVEL: INFO
+
   htf-bias:
+    container_name: scp-htf-bias-replay
     environment:
-      - LOG_LEVEL=INFO
-    volumes:
-      - ../.cursor:/app/.cursor
-  
-  # Bot Core: Replay mode configuration
+      LOG_LEVEL: INFO
+
   bot-core:
+    container_name: scp-bot-core-replay
     environment:
-      - LOG_LEVEL=INFO
-      - SESSION_VALIDATION_ENABLED=false  # Disable session validation for historical data
-    volumes:
-      - ../.cursor:/app/.cursor
-  
-  # Execution: Paper mode with replay settings
+      SESSION_VALIDATION_ENABLED: "false"  # Disable for historical data
+      LOG_LEVEL: INFO
+
   execution:
+    container_name: scp-execution-replay
     environment:
-      - LOG_LEVEL=INFO
-      - BROKER_MODE=paper
-    volumes:
-      - ../.cursor:/app/.cursor
-
-
+      BROKER_MODE: paper
+      LOG_LEVEL: INFO

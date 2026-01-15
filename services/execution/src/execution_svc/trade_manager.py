@@ -591,11 +591,7 @@ class TradeManager:
             
             # Reset invalidation checker state
             self._invalidation_checker.reset_trade(trade.trade_id)
-            
-            # Reset context execution count to allow new trades for the same day
-            # This matches backtester behavior where multiple trades per day are allowed
-            self._sm_manager.reset_context_for_signal(trade.signal_id)
-            
+
             # Publish trade closed event
             trade_msg = TradeMessage(
                 id=trade.trade_id,

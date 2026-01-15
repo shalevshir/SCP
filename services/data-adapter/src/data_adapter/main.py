@@ -4,20 +4,21 @@ import asyncio
 from contextlib import asynccontextmanager
 
 import redis.asyncio as redis
-from scp_shared.common import get_logger, mask_connection_url
 from fastapi import FastAPI
+from scp_shared.common import get_logger, mask_connection_url
 from scp_shared.health import create_health_router
 
 from data_adapter.candle_aggregator import CandleAggregator
 from data_adapter.config import DataAdapterConfig
 from data_adapter.databento_client import (
     DatabentoClient,
-    DatabentoClientBase,
     DatabentoHistoricalFetcher,
+    DataClientBase,
     MockDatabentoClient,
     ResilientDatabentoClient,
 )
 from data_adapter.gap_detector import GapDetector
+from data_adapter.ib_data_client import IBDataClient, ResilientIBDataClient
 from data_adapter.publisher import CandlePublisher
 from data_adapter.session_events import SessionEventPublisher
 from data_adapter.session_filter import GoldFuturesSessionFilter, SessionFilter
@@ -31,18 +32,35 @@ config = DataAdapterConfig()
 shutdown_event = asyncio.Event()
 
 
-def create_data_client(config: DataAdapterConfig) -> DatabentoClientBase:
+def create_data_client(config: DataAdapterConfig) -> DataClientBase:
     """Create appropriate data client based on configuration.
     
     Args:
         config: Data adapter configuration
         
     Returns:
-        Data client instance (Mock or Databento)
+        Data client instance (IB, Databento, or Mock)
     """
     provider = config.data_provider.lower()
     
-    if provider == "databento":
+    if provider == "ib":
+        logger.info("Creating ResilientIBDataClient for IB Gateway live data")
+        inner_client = IBDataClient(
+            host=config.ib_host,
+            port=config.ib_port,
+            client_id=config.ib_client_id,
+            gc_symbol=config.ib_gc_symbol,
+            dxy_symbol=config.ib_dxy_symbol,
+            market_data_type=config.ib_market_data_type,
+        )
+        return ResilientIBDataClient(
+            inner=inner_client,
+            max_retries=config.reconnect_max_retries,
+            base_delay=config.reconnect_base_delay,
+            max_delay=config.reconnect_max_delay,
+        )
+    
+    elif provider == "databento":
         if not config.databento_api_key:
             logger.error("Databento provider selected but no API key provided")
             raise ValueError("DATABENTO_API_KEY required for databento provider")
@@ -150,7 +168,10 @@ async def consume_ticks(
                     if config.gap_backfill_enabled:
                         try:
                             backfilled = await gap_detector.backfill(candle.symbol)
-                            logger.info(f"Backfilled {len(backfilled)} candles for {candle.symbol}")
+                            logger.info(
+                                f"Backfilled {len(backfilled)} candles "
+                                f"for {candle.symbol}"
+                            )
                             
                             # Publish backfilled candles
                             for bf_candle in backfilled:
