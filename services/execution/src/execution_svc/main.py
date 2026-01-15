@@ -577,6 +577,10 @@ async def reset_state() -> dict[str, str]:
     # Note: This does NOT alter the persisted kill switch state in the database.
     _is_killed = False
     
+    # METRIC: Update trading state to reflect reset
+    exec_metrics.trading_enabled.labels(mode=config.service_mode, service=config.service_name).set(1)
+    exec_metrics.set_unsafe_state(None, config.service_mode, config.service_name)
+    
     # Reset trade manager state
     _trade_manager._active_trades.clear()
     _trade_manager._pending_signals.clear()
