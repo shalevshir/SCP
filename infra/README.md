@@ -4,7 +4,7 @@ This directory contains Docker Compose configurations for different deployment e
 
 ## File Structure
 
-- **`docker-compose.yml`** - Base infrastructure (Redis + PostgreSQL)
+- **`docker-compose.infra.yml`** - Base infrastructure (Redis + PostgreSQL)
 - **`docker-compose.dev.yml`** - Development environment
 - **`docker-compose.paper.yml`** - Paper trading environment
 - **`docker-compose.live.yml`** - Live production environment
@@ -17,7 +17,7 @@ This directory contains Docker Compose configurations for different deployment e
 
 ```bash
 cd infra
-docker-compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+docker compose -f docker-compose.infra.yml -f docker-compose.dev.yml up --build
 ```
 
 **Features:**
@@ -40,7 +40,7 @@ docker-compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 cd infra
 export DATABENTO_API_KEY="your-api-key"
 # Make sure IB Gateway is running in paper trading mode (port 4002)
-docker-compose -f docker-compose.yml -f docker-compose.paper.yml up --build
+docker compose -f docker-compose.infra.yml -f docker-compose.paper.yml up --build
 ```
 
 **Features:**
@@ -63,7 +63,7 @@ export DATABENTO_API_KEY="your-api-key"
 export IB_ACCOUNT="your-ib-account"
 export POSTGRES_PASSWORD="strong-password"
 # Make sure IB Gateway is running in LIVE mode (port 4001)
-docker-compose -f docker-compose.yml -f docker-compose.live.yml up --build
+docker compose -f docker-compose.infra.yml -f docker-compose.live.yml up --build
 ```
 
 **⚠️  WARNING: THIS PLACES REAL TRADES WITH REAL MONEY ⚠️**
@@ -87,7 +87,7 @@ docker-compose -f docker-compose.yml -f docker-compose.live.yml up --build
 
 ```bash
 cd infra
-docker-compose -f docker-compose.yml -f docker-compose.services.yml -f docker-compose.test.yml up --build
+docker compose -f docker-compose.infra.yml -f docker-compose.test.yml up --build
 ```
 
 **Features:**
@@ -100,7 +100,7 @@ docker-compose -f docker-compose.yml -f docker-compose.services.yml -f docker-co
 
 ```bash
 cd infra
-docker-compose -f docker-compose.yml -f docker-compose.services.yml -f docker-compose.replay.yml up --build
+docker compose -f docker-compose.infra.yml -f docker-compose.replay.yml up --build
 ```
 
 **Features:**
@@ -149,49 +149,49 @@ docker-compose -f docker-compose.yml -f docker-compose.services.yml -f docker-co
 
 ```bash
 # Development
-docker-compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+docker compose -f docker-compose.infra.yml -f docker-compose.dev.yml up --build
 
 # Paper trading
-docker-compose -f docker-compose.yml -f docker-compose.paper.yml up --build
+docker compose -f docker-compose.infra.yml -f docker-compose.paper.yml up --build
 
 # Live (use with caution)
-docker-compose -f docker-compose.yml -f docker-compose.live.yml up --build
+docker compose -f docker-compose.infra.yml -f docker-compose.live.yml up --build
 ```
 
 ### Stop Services
 
 ```bash
-docker-compose -f docker-compose.yml -f docker-compose.dev.yml down
+docker compose -f docker-compose.infra.yml -f docker-compose.dev.yml down
 ```
 
 ### View Logs
 
 ```bash
 # All services
-docker-compose -f docker-compose.yml -f docker-compose.dev.yml logs -f
+docker compose -f docker-compose.infra.yml -f docker-compose.dev.yml logs -f
 
 # Specific service
-docker-compose -f docker-compose.yml -f docker-compose.dev.yml logs -f data-adapter
+docker compose -f docker-compose.infra.yml -f docker-compose.dev.yml logs -f data-adapter
 ```
 
 ### Clean Volumes (Reset Database)
 
 ```bash
 # Development
-docker-compose -f docker-compose.yml -f docker-compose.dev.yml down -v
+docker compose -f docker-compose.infra.yml -f docker-compose.dev.yml down -v
 
 # Paper/Live (careful - deletes persistent data)
-docker-compose -f docker-compose.yml -f docker-compose.paper.yml down -v
+docker compose -f docker-compose.infra.yml -f docker-compose.paper.yml down -v
 ```
 
 ### Rebuild Services
 
 ```bash
 # Rebuild all services
-docker-compose -f docker-compose.yml -f docker-compose.dev.yml up --build --force-recreate
+docker compose -f docker-compose.infra.yml -f docker-compose.dev.yml up --build --force-recreate
 
 # Rebuild specific service
-docker-compose -f docker-compose.yml -f docker-compose.dev.yml up --build --force-recreate data-adapter
+docker compose -f docker-compose.infra.yml -f docker-compose.dev.yml up --build --force-recreate data-adapter
 ```
 
 ## Service Ports
@@ -242,7 +242,7 @@ On Linux, `host.docker.internal` may not work. Try:
 Check logs for the failing service:
 
 ```bash
-docker-compose -f docker-compose.yml -f docker-compose.dev.yml logs service-name
+docker compose -f docker-compose.infra.yml -f docker-compose.dev.yml logs service-name
 ```
 
 ### Database Connection Issues
@@ -250,7 +250,7 @@ docker-compose -f docker-compose.yml -f docker-compose.dev.yml logs service-name
 Verify PostgreSQL is healthy:
 
 ```bash
-docker-compose -f docker-compose.yml -f docker-compose.dev.yml ps postgres
+docker compose -f docker-compose.infra.yml -f docker-compose.dev.yml ps postgres
 ```
 
 Check migrations ran successfully:
@@ -263,20 +263,20 @@ docker exec -it scp-postgres psql -U scp -d scp_dev -c '\dt'
 
 ```bash
 # Stop all containers
-docker-compose -f docker-compose.yml -f docker-compose.dev.yml down
+docker compose -f docker-compose.infra.yml -f docker-compose.dev.yml down
 
 # Remove volumes (warning: deletes all data)
 docker volume rm scp_redis_data scp_postgres_data scp_postgres_dev_data
 
 # Rebuild from scratch
-docker-compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+docker compose -f docker-compose.infra.yml -f docker-compose.dev.yml up --build
 ```
 
 ## Development Workflow
 
 1. **Start infrastructure:**
    ```bash
-   docker-compose -f docker-compose.yml up -d
+   docker compose -f docker-compose.infra.yml up -d
    ```
 
 2. **Start specific service in dev mode:**
@@ -288,7 +288,7 @@ docker-compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 
 3. **Run other services in containers:**
    ```bash
-   docker-compose -f docker-compose.yml -f docker-compose.dev.yml up feature-engine htf-bias bot-core execution
+   docker compose -f docker-compose.infra.yml -f docker-compose.dev.yml up feature-engine htf-bias bot-core execution
    ```
 
 ## Production Deployment
