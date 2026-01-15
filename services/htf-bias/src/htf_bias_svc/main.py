@@ -12,8 +12,10 @@ from scp_shared.database import DatabasePool
 from scp_shared.health import create_health_router
 from scp_shared.messaging import RedisStreamConsumer, CandleSynchronizer
 from scp_shared.messaging.schemas import CandleMessage
+from scp_shared.metrics import create_metrics_router
 
 from htf_bias_svc.config import HTFBiasConfig
+from htf_bias_svc import metrics as bias_metrics
 from htf_bias_svc.processor import HTFBiasProcessor
 from htf_bias_svc.publisher import BiasPublisher
 from htf_bias_svc.repository import BiasRepository
@@ -190,8 +192,18 @@ async def process_candle_pair(
     """
     gc_candle, dxy_candle = pair
     
-    # Process through HTF bias calculator
-    bias = processor.process(gc_candle, dxy_candle)
+    # Get metric labels
+    mode = config.service_mode
+    service = config.service_name
+    
+    # METRIC: Count 1m bars processed
+    bias_metrics.htf_bars_processed_total.labels(
+        mode=mode, service=service, timeframe="1m"
+    ).inc()
+    
+    # Process through HTF bias calculator (with timing)
+    with bias_metrics.htf_processing_seconds.labels(mode=mode, service=service).time():
+        bias = processor.process(gc_candle, dxy_candle)
     
     # Only publish and persist if bias was computed (at HTF boundary)
     if bias is not None:
@@ -200,6 +212,9 @@ async def process_candle_pair(
         
         # Persist to database
         await repository.save_bias(bias)
+        
+        # METRIC: Update bias state and track changes
+        bias_metrics.update_bias_metrics(bias.bias, mode, service)
         
         logger.info(
             f"HTF bias updated: {bias.bias} "
@@ -260,6 +275,10 @@ health_router = create_health_router(
     version=config.service_version,
 )
 app.include_router(health_router)
+
+# Add metrics endpoint
+metrics_router = create_metrics_router()
+app.include_router(metrics_router)
 
 
 if __name__ == "__main__":
