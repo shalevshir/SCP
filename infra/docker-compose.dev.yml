@@ -1,17 +1,18 @@
-version: '3.8'
-
-# Development overrides for docker-compose.yml
-# Usage: docker-compose -f docker-compose.yml -f docker-compose.dev.yml up
+# Development Environment
+# Usage: docker-compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+#
+# Features:
+# - Debug logging enabled
+# - Verbose Postgres query logging
+# - Hot reload support
+# - Mock data provider (no external dependencies)
+# - Development database
 
 services:
   redis:
-    # Enable debug logging in development
     command: redis-server --appendonly yes --loglevel debug
-    ports:
-      - "6379:6379"
 
   postgres:
-    # Enable query logging and verbose output
     environment:
       POSTGRES_DB: scp_dev
       POSTGRES_USER: scp
@@ -22,15 +23,155 @@ services:
       - "log_statement=all"
       - "-c"
       - "log_duration=on"
-    ports:
-      - "5432:5432"
     volumes:
       - postgres_dev_data:/var/lib/postgresql/data
-      - ./migrations:/docker-entrypoint-initdb.d:ro
-      # Mount scripts for easy access
+      - ./migrations/001_initial_schema.sql:/docker-entrypoint-initdb.d/100_initial_schema.sql:ro
+      - ./migrations/002_indexes.sql:/docker-entrypoint-initdb.d/101_indexes.sql:ro
+      - ./migrations/003_add_trade_state_fields.sql:/docker-entrypoint-initdb.d/102_add_trade_state_fields.sql:ro
+      - ./migrations/004_add_htf_bias_fields.sql:/docker-entrypoint-initdb.d/103_add_htf_bias_fields.sql:ro
+      - ./migrations/005_add_kill_switch.sql:/docker-entrypoint-initdb.d/104_add_kill_switch.sql:ro
       - ./scripts:/scripts:ro
+
+  data-adapter:
+    build:
+      context: ../services
+      dockerfile: data-adapter/Dockerfile
+    container_name: scp-data-adapter-dev
+    ports:
+      - "8001:8001"
+    environment:
+      REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgresql://scp:${POSTGRES_PASSWORD:-scp_dev_password}@postgres:5432/scp_dev
+      # Mock data provider for development (no external dependencies)
+      DATA_PROVIDER: mock
+      MOCK_DATA_PATH: ${MOCK_DATA_PATH:-/app/data}
+      # Session and gap configuration
+      SESSION_FILTER_ENABLED: "false"  # Allow any time for development
+      GAP_BACKFILL_ENABLED: "false"
+      LOG_LEVEL: DEBUG
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  feature-engine:
+    build:
+      context: ../services
+      dockerfile: feature-engine/Dockerfile
+    container_name: scp-feature-engine-dev
+    ports:
+      - "8002:8002"
+    environment:
+      REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgresql://scp:${POSTGRES_PASSWORD:-scp_dev_password}@postgres:5432/scp_dev
+      LOG_LEVEL: DEBUG
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      data-adapter:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8002/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  htf-bias:
+    build:
+      context: ../services
+      dockerfile: htf-bias/Dockerfile
+    container_name: scp-htf-bias-dev
+    ports:
+      - "8003:8003"
+    environment:
+      REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgresql://scp:${POSTGRES_PASSWORD:-scp_dev_password}@postgres:5432/scp_dev
+      LOG_LEVEL: DEBUG
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      feature-engine:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8003/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  bot-core:
+    build:
+      context: ../services
+      dockerfile: bot-core/Dockerfile
+    container_name: scp-bot-core-dev
+    ports:
+      - "8004:8004"
+    environment:
+      REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgresql://scp:${POSTGRES_PASSWORD:-scp_dev_password}@postgres:5432/scp_dev
+      LOG_LEVEL: DEBUG
+    volumes:
+      - ../config:/app/bot-core/config:ro
+      - ../config:/config:ro
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      feature-engine:
+        condition: service_healthy
+      htf-bias:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8004/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  execution:
+    build:
+      context: ../services
+      dockerfile: execution/Dockerfile
+    container_name: scp-execution-dev
+    ports:
+      - "8005:8005"
+    environment:
+      REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgresql://scp:${POSTGRES_PASSWORD:-scp_dev_password}@postgres:5432/scp_dev
+      BROKER_MODE: paper  # Paper broker for development (no real orders)
+      LOG_LEVEL: DEBUG
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      bot-core:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8005/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
 
 volumes:
   postgres_dev_data:
     name: scp_postgres_dev_data
-

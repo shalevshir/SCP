@@ -1,30 +1,43 @@
-# Full stack with all microservices
-# Usage: docker-compose -f docker-compose.yml -f docker-compose.services.yml up --build
+# Paper Trading Environment
+# Usage: docker-compose -f docker-compose.yml -f docker-compose.paper.yml up --build
 #
-# This extends docker-compose.yml (Redis + PostgreSQL) with all SCP microservices.
-# Build context is ../services/ so Dockerfiles can access shared/ library.
+# Features:
+# - Live market data via Databento (requires DATABENTO_API_KEY)
+# - IB Gateway paper trading broker (requires IB Gateway/TWS running)
+# - Production-like settings but safe for testing
+# - Session filtering enabled
+# - Full risk management and guardrails
+#
+# Prerequisites:
+# 1. DATABENTO_API_KEY environment variable set
+# 2. IB Gateway running on host machine in paper trading mode (port 4002)
+# 3. IB API enabled in Gateway settings
 
 services:
   data-adapter:
     build:
       context: ../services
       dockerfile: data-adapter/Dockerfile
-    container_name: scp-data-adapter
+    container_name: scp-data-adapter-paper
     ports:
       - "8001:8001"
     environment:
       REDIS_URL: redis://redis:6379
       DATABASE_URL: postgresql://scp:${POSTGRES_PASSWORD:-scp_dev_password}@postgres:5432/scp
-      # Data provider configuration
-      DATA_PROVIDER: ${DATA_PROVIDER:-mock}
-      DATABENTO_API_KEY: ${DATABENTO_API_KEY:-}
+      # Databento live data
+      DATA_PROVIDER: databento
+      DATABENTO_API_KEY: ${DATABENTO_API_KEY}
       DATABENTO_DATASET: ${DATABENTO_DATASET:-GLBX.MDP3}
       DATABENTO_GC_SYMBOL: ${DATABENTO_GC_SYMBOL:-GC.FUT}
       DATABENTO_DXY_SYMBOL: ${DATABENTO_DXY_SYMBOL:-DX.FUT}
-      # Session and gap configuration
-      SESSION_FILTER_ENABLED: ${SESSION_FILTER_ENABLED:-true}
-      GAP_BACKFILL_ENABLED: ${GAP_BACKFILL_ENABLED:-true}
-      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      # Enable session filtering for live trading hours
+      SESSION_FILTER_ENABLED: "true"
+      GAP_BACKFILL_ENABLED: "true"
+      # Connection resilience
+      RECONNECT_MAX_RETRIES: 10
+      RECONNECT_BASE_DELAY: 1.0
+      RECONNECT_MAX_DELAY: 60.0
+      LOG_LEVEL: INFO
     depends_on:
       redis:
         condition: service_healthy
@@ -42,13 +55,13 @@ services:
     build:
       context: ../services
       dockerfile: feature-engine/Dockerfile
-    container_name: scp-feature-engine
+    container_name: scp-feature-engine-paper
     ports:
       - "8002:8002"
     environment:
       REDIS_URL: redis://redis:6379
       DATABASE_URL: postgresql://scp:${POSTGRES_PASSWORD:-scp_dev_password}@postgres:5432/scp
-      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      LOG_LEVEL: INFO
     depends_on:
       redis:
         condition: service_healthy
@@ -68,13 +81,13 @@ services:
     build:
       context: ../services
       dockerfile: htf-bias/Dockerfile
-    container_name: scp-htf-bias
+    container_name: scp-htf-bias-paper
     ports:
       - "8003:8003"
     environment:
       REDIS_URL: redis://redis:6379
       DATABASE_URL: postgresql://scp:${POSTGRES_PASSWORD:-scp_dev_password}@postgres:5432/scp
-      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      LOG_LEVEL: INFO
     depends_on:
       redis:
         condition: service_healthy
@@ -94,13 +107,14 @@ services:
     build:
       context: ../services
       dockerfile: bot-core/Dockerfile
-    container_name: scp-bot-core
+    container_name: scp-bot-core-paper
     ports:
       - "8004:8004"
     environment:
       REDIS_URL: redis://redis:6379
       DATABASE_URL: postgresql://scp:${POSTGRES_PASSWORD:-scp_dev_password}@postgres:5432/scp
-      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      SESSION_VALIDATION_ENABLED: "true"  # Enforce trading hours
+      LOG_LEVEL: INFO
     volumes:
       - ../config:/app/bot-core/config:ro
       - ../config:/config:ro
@@ -125,19 +139,22 @@ services:
     build:
       context: ../services
       dockerfile: execution/Dockerfile
-    container_name: scp-execution
+    container_name: scp-execution-paper
     ports:
       - "8005:8005"
     environment:
       REDIS_URL: redis://redis:6379
       DATABASE_URL: postgresql://scp:${POSTGRES_PASSWORD:-scp_dev_password}@postgres:5432/scp
-      BROKER_MODE: ${BROKER_MODE:-paper}
-      # IB connection settings (for ib_paper mode)
-      IB_HOST: ${IB_HOST:-127.0.0.1}
-      IB_PORT: ${IB_PORT:-4002}
+      # IB paper trading broker
+      BROKER_MODE: ib_paper
+      # IB connection settings (connect to host machine)
+      # On Mac/Windows: use host.docker.internal
+      # On Linux: use host's IP address or 172.17.0.1 (default Docker bridge)
+      IB_HOST: ${IB_HOST:-host.docker.internal}
+      IB_PORT: ${IB_PORT:-4002}  # IB Gateway paper trading port
       IB_CLIENT_ID: ${IB_CLIENT_ID:-1}
       IB_ACCOUNT: ${IB_ACCOUNT:-}
-      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      LOG_LEVEL: INFO
     depends_on:
       redis:
         condition: service_healthy
@@ -152,4 +169,8 @@ services:
       timeout: 10s
       retries: 3
       start_period: 10s
-
+    # Add network_mode: host on Linux if host.docker.internal doesn't work
+    # network_mode: host  # Uncomment on Linux if connection fails
+    extra_hosts:
+      # Ensure host.docker.internal resolves (works on Mac/Windows by default)
+      - "host.docker.internal:host-gateway"
