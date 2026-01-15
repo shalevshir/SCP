@@ -1,189 +1,109 @@
-# Live Production Environment
-# Usage: docker-compose -f docker-compose.yml -f docker-compose.live.yml up --build
-#
-# Features:
-# - Live market data via Databento (requires DATABENTO_API_KEY)
-# - IB Gateway LIVE trading broker (requires IB Gateway/TWS running)
-# - Conservative risk limits
-# - Full monitoring and alerting
-# - Production-grade settings
+# Live Production Environment Overrides
+# Usage: docker compose -f docker-compose.infra.yml -f docker-compose.services.yml -f docker-compose.live.yml up --build
 #
 # ⚠️  WARNING: THIS CONFIGURATION PLACES REAL TRADES WITH REAL MONEY ⚠️
 #
 # Prerequisites:
-# 1. DATABENTO_API_KEY environment variable set
-# 2. IB Gateway running on host machine in LIVE trading mode (port 4001)
-# 3. IB API enabled in Gateway settings
-# 4. Adequate funds in IB account
-# 5. Risk limits configured in config/validation.yaml
-# 6. Monitoring/alerting infrastructure in place
+# 1. IB Gateway running on host machine in LIVE trading mode (port 4001)
+# 2. IB API enabled in Gateway settings
+# 3. IB_ACCOUNT environment variable set (required)
+# 4. POSTGRES_PASSWORD environment variable set (required)
+# 5. Adequate funds in IB account
+# 6. Risk limits configured in config/validation.yaml
+# 7. Monitoring/alerting infrastructure in place
 
 services:
-  data-adapter:
-    build:
-      context: ../services
-      dockerfile: data-adapter/Dockerfile
-    container_name: scp-data-adapter-live
-    ports:
-      - "8001:8001"
+  redis:
+    restart: always
+
+  postgres:
+    restart: always
     environment:
-      REDIS_URL: redis://redis:6379
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}  # Required (no default)
+
+  data-adapter:
+    container_name: scp-data-adapter-live
+    environment:
       DATABASE_URL: postgresql://scp:${POSTGRES_PASSWORD}@postgres:5432/scp
-      # Databento live data
-      DATA_PROVIDER: databento
-      DATABENTO_API_KEY: ${DATABENTO_API_KEY}
-      DATABENTO_DATASET: ${DATABENTO_DATASET:-GLBX.MDP3}
-      DATABENTO_GC_SYMBOL: ${DATABENTO_GC_SYMBOL:-GC.FUT}
-      DATABENTO_DXY_SYMBOL: ${DATABENTO_DXY_SYMBOL:-DX.FUT}
-      # Enable session filtering for live trading hours
+      DATA_PROVIDER: ib
+      IB_HOST: ${IB_HOST:-host.docker.internal}
+      IB_PORT: ${IB_PORT:-4001}
+      IB_CLIENT_ID: ${IB_CLIENT_ID:-1}
+      IB_GC_CONTRACT: ${IB_GC_CONTRACT:-GC}
+      IB_DXY_CONTRACT: ${IB_DXY_CONTRACT:-DX}
       SESSION_FILTER_ENABLED: "true"
       GAP_BACKFILL_ENABLED: "true"
-      # Connection resilience (production settings)
       RECONNECT_MAX_RETRIES: 20
       RECONNECT_BASE_DELAY: 2.0
       RECONNECT_MAX_DELAY: 300.0
       LOG_LEVEL: INFO
-    depends_on:
-      redis:
-        condition: service_healthy
-      postgres:
-        condition: service_healthy
     restart: always
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
       interval: 15s
       timeout: 5s
       retries: 5
       start_period: 30s
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   feature-engine:
-    build:
-      context: ../services
-      dockerfile: feature-engine/Dockerfile
     container_name: scp-feature-engine-live
-    ports:
-      - "8002:8002"
     environment:
-      REDIS_URL: redis://redis:6379
       DATABASE_URL: postgresql://scp:${POSTGRES_PASSWORD}@postgres:5432/scp
       LOG_LEVEL: INFO
-    depends_on:
-      redis:
-        condition: service_healthy
-      postgres:
-        condition: service_healthy
-      data-adapter:
-        condition: service_healthy
     restart: always
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8002/health')"]
       interval: 15s
       timeout: 5s
       retries: 5
       start_period: 30s
 
   htf-bias:
-    build:
-      context: ../services
-      dockerfile: htf-bias/Dockerfile
     container_name: scp-htf-bias-live
-    ports:
-      - "8003:8003"
     environment:
-      REDIS_URL: redis://redis:6379
       DATABASE_URL: postgresql://scp:${POSTGRES_PASSWORD}@postgres:5432/scp
       LOG_LEVEL: INFO
-    depends_on:
-      redis:
-        condition: service_healthy
-      postgres:
-        condition: service_healthy
-      feature-engine:
-        condition: service_healthy
     restart: always
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8003/health')"]
       interval: 15s
       timeout: 5s
       retries: 5
       start_period: 30s
 
   bot-core:
-    build:
-      context: ../services
-      dockerfile: bot-core/Dockerfile
     container_name: scp-bot-core-live
-    ports:
-      - "8004:8004"
     environment:
-      REDIS_URL: redis://redis:6379
       DATABASE_URL: postgresql://scp:${POSTGRES_PASSWORD}@postgres:5432/scp
-      SESSION_VALIDATION_ENABLED: "true"  # Enforce trading hours
-      # Conservative production limits (override via config/validation.yaml)
+      SESSION_VALIDATION_ENABLED: "true"
       MAX_TRADES_PER_DAY: ${MAX_TRADES_PER_DAY:-3}
       PDLL_LIMIT: ${PDLL_LIMIT:-200.0}
       MAX_ACTIVE_TRADES: ${MAX_ACTIVE_TRADES:-1}
       LOG_LEVEL: INFO
-    volumes:
-      - ../config:/app/bot-core/config:ro
-      - ../config:/config:ro
-    depends_on:
-      redis:
-        condition: service_healthy
-      postgres:
-        condition: service_healthy
-      feature-engine:
-        condition: service_healthy
-      htf-bias:
-        condition: service_healthy
     restart: always
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8004/health')"]
       interval: 15s
       timeout: 5s
       retries: 5
       start_period: 30s
 
   execution:
-    build:
-      context: ../services
-      dockerfile: execution/Dockerfile
     container_name: scp-execution-live
-    ports:
-      - "8005:8005"
     environment:
-      REDIS_URL: redis://redis:6379
       DATABASE_URL: postgresql://scp:${POSTGRES_PASSWORD}@postgres:5432/scp
-      # ⚠️  IB LIVE TRADING BROKER - REAL MONEY ⚠️
-      BROKER_MODE: ib_live
-      # IB connection settings (connect to host machine)
-      # On Mac/Windows: use host.docker.internal
-      # On Linux: use host's IP address or 172.17.0.1 (default Docker bridge)
+      BROKER_MODE: ib_live  # ⚠️  REAL MONEY ⚠️
       IB_HOST: ${IB_HOST:-host.docker.internal}
       IB_PORT: ${IB_PORT:-4001}  # IB Gateway LIVE trading port
-      IB_CLIENT_ID: ${IB_CLIENT_ID:-1}
+      IB_CLIENT_ID: ${IB_CLIENT_ID:-2}  # Different client ID than data adapter
       IB_ACCOUNT: ${IB_ACCOUNT}  # Required for live trading
-      # Conservative production limits
       MAX_ACTIVE_TRADES: ${MAX_ACTIVE_TRADES:-1}
       PDLL_LIMIT: ${PDLL_LIMIT:-200.0}
       MAX_TRADES_PER_DAY: ${MAX_TRADES_PER_DAY:-3}
       LOG_LEVEL: INFO
-    depends_on:
-      redis:
-        condition: service_healthy
-      postgres:
-        condition: service_healthy
-      bot-core:
-        condition: service_healthy
     restart: always
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8005/health')"]
       interval: 15s
       timeout: 5s
       retries: 5
       start_period: 30s
-    # Add network_mode: host on Linux if host.docker.internal doesn't work
-    # network_mode: host  # Uncomment on Linux if connection fails
     extra_hosts:
-      # Ensure host.docker.internal resolves (works on Mac/Windows by default)
       - "host.docker.internal:host-gateway"

@@ -4,12 +4,30 @@ This directory contains Docker Compose configurations for different deployment e
 
 ## File Structure
 
-- **`docker-compose.infra.yml`** - Base infrastructure (Redis + PostgreSQL)
-- **`docker-compose.dev.yml`** - Development environment
-- **`docker-compose.paper.yml`** - Paper trading environment
-- **`docker-compose.live.yml`** - Live production environment
-- **`docker-compose.test.yml`** - CI/testing environment
-- **`docker-compose.replay.yml`** - Historical replay/validation
+Docker Compose uses a **layered approach** with three files in every command:
+
+1. **`docker-compose.infra.yml`** - Infrastructure layer (Redis + PostgreSQL)
+2. **`docker-compose.services.yml`** - Services layer (all microservice builds)
+3. **Environment overlay** - Environment-specific overrides
+
+### Infrastructure Layer
+- **`docker-compose.infra.yml`** - Redis + PostgreSQL/TimescaleDB with migrations
+
+### Services Layer
+- **`docker-compose.services.yml`** - Build definitions for all 5 microservices
+
+### Environment Overlays
+- **`docker-compose.dev.yml`** - Development (mock data, debug logging)
+- **`docker-compose.paper.yml`** - Paper trading (live data + IB paper broker)
+- **`docker-compose.live.yml`** - Production (live data + IB live broker)
+- **`docker-compose.test.yml`** - CI/testing (ephemeral containers, different ports)
+- **`docker-compose.replay.yml`** - Historical replay (session filtering disabled)
+
+**Why this structure?**
+- No duplication: Service builds defined once in `services.yml`
+- Clean overrides: Environment files only change what's different
+- Composable: Mix and match infrastructure, services, and environments
+- Easy maintenance: Update service config in one place
 
 ## Quick Start
 
@@ -17,7 +35,7 @@ This directory contains Docker Compose configurations for different deployment e
 
 ```bash
 cd infra
-docker compose -f docker-compose.infra.yml -f docker-compose.dev.yml up --build
+docker compose -f docker-compose.infra.yml -f docker-compose.services.yml -f docker-compose.dev.yml up --build
 ```
 
 **Features:**
@@ -34,73 +52,70 @@ docker compose -f docker-compose.infra.yml -f docker-compose.dev.yml up --build
 - Bot Core: http://localhost:8004/health
 - Execution: http://localhost:8005/health
 
-### Paper Trading (Live Data + Paper Broker)
+### Paper Trading (IB Paper)
 
 ```bash
 cd infra
-export DATABENTO_API_KEY="your-api-key"
 # Make sure IB Gateway is running in paper trading mode (port 4002)
-docker compose -f docker-compose.infra.yml -f docker-compose.paper.yml up --build
+docker compose -f docker-compose.infra.yml -f docker-compose.services.yml -f docker-compose.paper.yml up --build
 ```
 
 **Features:**
-- Live market data via Databento
+- Live market data via IB Gateway
 - IB Gateway paper trading broker
 - Production-like settings
 - Session filtering enabled
 - Full risk management
 
 **Prerequisites:**
-1. `DATABENTO_API_KEY` environment variable
-2. IB Gateway running on host (paper mode, port 4002)
-3. IB API enabled in Gateway settings
+1. IB Gateway running on host (paper mode, port 4002)
+2. IB API enabled in Gateway settings
 
 ### Live Production (Real Trading)
 
 ```bash
 cd infra
-export DATABENTO_API_KEY="your-api-key"
 export IB_ACCOUNT="your-ib-account"
 export POSTGRES_PASSWORD="strong-password"
 # Make sure IB Gateway is running in LIVE mode (port 4001)
-docker compose -f docker-compose.infra.yml -f docker-compose.live.yml up --build
+docker compose -f docker-compose.infra.yml -f docker-compose.services.yml -f docker-compose.live.yml up --build
 ```
 
 **⚠️  WARNING: THIS PLACES REAL TRADES WITH REAL MONEY ⚠️**
 
 **Features:**
-- Live market data via Databento
+- Live market data via IB Gateway
 - IB Gateway LIVE trading broker
 - Conservative risk limits
 - Full monitoring and alerting
 - Production-grade settings
 
 **Prerequisites:**
-1. `DATABENTO_API_KEY` environment variable
-2. `IB_ACCOUNT` environment variable (required)
-3. `POSTGRES_PASSWORD` environment variable (required)
-4. IB Gateway running on host (LIVE mode, port 4001)
-5. Adequate funds in IB account
-6. Risk limits configured in `config/validation.yaml`
+1. `IB_ACCOUNT` environment variable (required)
+2. `POSTGRES_PASSWORD` environment variable (required)
+3. IB Gateway running on host (LIVE mode, port 4001)
+4. Adequate funds in IB account
+5. Risk limits configured in `config/validation.yaml`
 
 ### Testing (CI/Integration Tests)
 
 ```bash
 cd infra
-docker compose -f docker-compose.infra.yml -f docker-compose.test.yml up --build
+docker compose -f docker-compose.infra.yml -f docker-compose.services.yml -f docker-compose.test.yml up --build
 ```
 
 **Features:**
 - Ephemeral containers (no persistent volumes)
-- Different ports (avoid conflicts)
+- Different ports (6380 for Redis, 5433 for PostgreSQL)
 - Test database credentials
-- No restart policies
+- Mock data provider
+- No restart policies (for CI environments)
 
 ### Replay Mode (Historical Validation)
 
 ```bash
 cd infra
-docker compose -f docker-compose.infra.yml -f docker-compose.replay.yml up --build
+docker compose -f docker-compose.infra.yml -f docker-compose.services.yml -f docker-compose.replay.yml up --build
 ```
 
 **Features:**
@@ -122,11 +137,12 @@ docker compose -f docker-compose.infra.yml -f docker-compose.replay.yml up --bui
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `DATA_PROVIDER` | Data provider (`mock`, `databento`, `ib`) | `mock` |
-| `DATABENTO_API_KEY` | Databento API key | - |
-| `DATABENTO_DATASET` | Databento dataset | `GLBX.MDP3` |
-| `DATABENTO_GC_SYMBOL` | Gold futures symbol | `GC.FUT` |
-| `DATABENTO_DXY_SYMBOL` | Dollar index symbol | `DX.FUT` |
+| `DATA_PROVIDER` | Data provider (`mock`, `ib`) | `mock` |
+| `IB_HOST` | IB Gateway host | `host.docker.internal` |
+| `IB_PORT` | IB Gateway port | `4002` (paper) / `4001` (live) |
+| `IB_CLIENT_ID` | IB API client ID (data adapter) | `1` |
+| `IB_GC_CONTRACT` | Gold futures contract symbol | `GC` |
+| `IB_DXY_CONTRACT` | Dollar index contract symbol | `DX` |
 | `SESSION_FILTER_ENABLED` | Filter by trading hours | `true` |
 | `GAP_BACKFILL_ENABLED` | Enable gap backfill | `true` |
 
@@ -137,61 +153,63 @@ docker compose -f docker-compose.infra.yml -f docker-compose.replay.yml up --bui
 | `BROKER_MODE` | Broker mode (`paper`, `ib_paper`, `ib_live`) | `paper` |
 | `IB_HOST` | IB Gateway host | `host.docker.internal` |
 | `IB_PORT` | IB Gateway port | `4002` (paper) / `4001` (live) |
-| `IB_CLIENT_ID` | IB API client ID | `1` |
+| `IB_CLIENT_ID` | IB API client ID (execution) | `2` |
 | `IB_ACCOUNT` | IB account number | - (required for live) |
 | `MAX_ACTIVE_TRADES` | Max concurrent trades | `1` |
 | `MAX_TRADES_PER_DAY` | Max trades per day | `3` |
 | `PDLL_LIMIT` | Per-day loss limit (dollars) | `200.0` |
+
+**Note:** Data Adapter uses `IB_CLIENT_ID=1`, Execution uses `IB_CLIENT_ID=2` to avoid conflicts when both connect to the same IB Gateway.
 
 ## Common Commands
 
 ### Start Services
 
 ```bash
-# Development
-docker compose -f docker-compose.infra.yml -f docker-compose.dev.yml up --build
+# Development (mock data)
+docker compose -f docker-compose.infra.yml -f docker-compose.services.yml -f docker-compose.dev.yml up --build
 
-# Paper trading
-docker compose -f docker-compose.infra.yml -f docker-compose.paper.yml up --build
+# Paper trading (IB Gateway required on port 4002)
+docker compose -f docker-compose.infra.yml -f docker-compose.services.yml -f docker-compose.paper.yml up --build
 
-# Live (use with caution)
-docker compose -f docker-compose.infra.yml -f docker-compose.live.yml up --build
+# Live trading (⚠️  use with caution - requires IB Gateway on port 4001)
+docker compose -f docker-compose.infra.yml -f docker-compose.services.yml -f docker-compose.live.yml up --build
 ```
 
 ### Stop Services
 
 ```bash
-docker compose -f docker-compose.infra.yml -f docker-compose.dev.yml down
+docker compose -f docker-compose.infra.yml -f docker-compose.services.yml -f docker-compose.dev.yml down
 ```
 
 ### View Logs
 
 ```bash
 # All services
-docker compose -f docker-compose.infra.yml -f docker-compose.dev.yml logs -f
+docker compose -f docker-compose.infra.yml -f docker-compose.services.yml -f docker-compose.dev.yml logs -f
 
 # Specific service
-docker compose -f docker-compose.infra.yml -f docker-compose.dev.yml logs -f data-adapter
+docker compose -f docker-compose.infra.yml -f docker-compose.services.yml -f docker-compose.dev.yml logs -f data-adapter
 ```
 
 ### Clean Volumes (Reset Database)
 
 ```bash
 # Development
-docker compose -f docker-compose.infra.yml -f docker-compose.dev.yml down -v
+docker compose -f docker-compose.infra.yml -f docker-compose.services.yml -f docker-compose.dev.yml down -v
 
 # Paper/Live (careful - deletes persistent data)
-docker compose -f docker-compose.infra.yml -f docker-compose.paper.yml down -v
+docker compose -f docker-compose.infra.yml -f docker-compose.services.yml -f docker-compose.paper.yml down -v
 ```
 
 ### Rebuild Services
 
 ```bash
 # Rebuild all services
-docker compose -f docker-compose.infra.yml -f docker-compose.dev.yml up --build --force-recreate
+docker compose -f docker-compose.infra.yml -f docker-compose.services.yml -f docker-compose.dev.yml up --build --force-recreate
 
 # Rebuild specific service
-docker compose -f docker-compose.infra.yml -f docker-compose.dev.yml up --build --force-recreate data-adapter
+docker compose -f docker-compose.infra.yml -f docker-compose.services.yml -f docker-compose.dev.yml up --build --force-recreate data-adapter
 ```
 
 ## Service Ports
@@ -242,7 +260,7 @@ On Linux, `host.docker.internal` may not work. Try:
 Check logs for the failing service:
 
 ```bash
-docker compose -f docker-compose.infra.yml -f docker-compose.dev.yml logs service-name
+docker compose -f docker-compose.infra.yml -f docker-compose.services.yml -f docker-compose.dev.yml logs service-name
 ```
 
 ### Database Connection Issues
@@ -250,7 +268,7 @@ docker compose -f docker-compose.infra.yml -f docker-compose.dev.yml logs servic
 Verify PostgreSQL is healthy:
 
 ```bash
-docker compose -f docker-compose.infra.yml -f docker-compose.dev.yml ps postgres
+docker compose -f docker-compose.infra.yml -f docker-compose.services.yml -f docker-compose.dev.yml ps postgres
 ```
 
 Check migrations ran successfully:
@@ -263,13 +281,13 @@ docker exec -it scp-postgres psql -U scp -d scp_dev -c '\dt'
 
 ```bash
 # Stop all containers
-docker compose -f docker-compose.infra.yml -f docker-compose.dev.yml down
+docker compose -f docker-compose.infra.yml -f docker-compose.services.yml -f docker-compose.dev.yml down
 
 # Remove volumes (warning: deletes all data)
 docker volume rm scp_redis_data scp_postgres_data scp_postgres_dev_data
 
 # Rebuild from scratch
-docker compose -f docker-compose.infra.yml -f docker-compose.dev.yml up --build
+docker compose -f docker-compose.infra.yml -f docker-compose.services.yml -f docker-compose.dev.yml up --build
 ```
 
 ## Development Workflow
@@ -288,7 +306,7 @@ docker compose -f docker-compose.infra.yml -f docker-compose.dev.yml up --build
 
 3. **Run other services in containers:**
    ```bash
-   docker compose -f docker-compose.infra.yml -f docker-compose.dev.yml up feature-engine htf-bias bot-core execution
+   docker compose -f docker-compose.infra.yml -f docker-compose.services.yml -f docker-compose.dev.yml up feature-engine htf-bias bot-core execution
    ```
 
 ## Production Deployment
