@@ -13,8 +13,16 @@ from data_adapter.databento_client import DataClientBase, Tick
 
 logger = get_logger(__name__)
 
-# Lazy import of ib_insync - only import when actually needed
-from ib_insync import IB, Contract, Ticker
+# Check if ib_insync is available
+try:
+    from ib_insync import IB, Contract, Ticker
+    IB_INSYNC_AVAILABLE = True
+except ImportError:
+    IB_INSYNC_AVAILABLE = False
+    # Create dummy classes for type checking when ib_insync is not available
+    IB = None  # type: ignore
+    Contract = None  # type: ignore
+    Ticker = None  # type: ignore
 
 
 class IBDataClient(DataClientBase):
@@ -51,6 +59,11 @@ class IBDataClient(DataClientBase):
         Raises:
             ImportError: If ib_insync is not installed
         """
+        if not IB_INSYNC_AVAILABLE:
+            raise ImportError(
+                "ib_insync is not installed. Install it with: pip install ib-insync"
+            )
+        
         self.host = host
         self.port = port
         self.client_id = client_id
