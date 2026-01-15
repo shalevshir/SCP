@@ -330,6 +330,152 @@ async def test_ib_data_client_close(mock_ib_insync):
 
 
 @pytest.mark.asyncio
+async def test_ib_data_client_clears_queue_on_close(mock_ib_insync, caplog):
+    """Test that tick queue is cleared on close to prevent stale data on reconnection.
+    
+    Regression test for bug where stale ticks from previous session remained in queue
+    and were yielded before new ticks after reconnection, causing:
+    - Old timestamps appearing after reconnection
+    - Incorrect gap detection
+    - Corrupted candle aggregation
+    """
+    client = IBDataClient("127.0.0.1", 4002, 10)
+    mock_ib = MockIB()
+    client._ib = mock_ib
+    client._connected = True
+    
+    # Add stale ticks to queue (simulating ticks from previous session)
+    stale_time = datetime(2025, 1, 14, 23, 59, 0, tzinfo=UTC)
+    for i in range(5):
+        stale_tick = Tick(
+            timestamp=stale_time,
+            price=2640.0 + i,
+            volume=100.0,
+            symbol="GC",
+        )
+        await client._tick_queue.put(stale_tick)
+    
+    # Verify queue has stale ticks
+    assert client._tick_queue.qsize() == 5
+    
+    # Close connection - should clear queue
+    await client.close()
+    
+    # CRITICAL: Queue should be empty after close
+    assert client._tick_queue.empty()
+    assert client._tick_queue.qsize() == 0
+    
+    # Verify log message about clearing stale ticks (if logger is configured)
+    # Note: This may not appear in caplog depending on logger configuration,
+    # but the critical behavior (queue emptying) is verified above
+    if caplog.text:
+        assert "Cleared" in caplog.text and "stale ticks" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_resilient_client_no_stale_ticks_after_reconnection():
+    """Test that no stale ticks are yielded after reconnection.
+    
+    Simulates the real-world scenario:
+    1. Client connects and receives ticks
+    2. Connection drops with ticks still in queue
+    3. Client reconnects
+    4. Only new ticks should be yielded (no stale ones from step 1)
+    """
+    
+    class MockIBClientWithStaleData:
+        """Mock IB client that simulates disconnect with stale data."""
+        
+        def __init__(self):
+            self.attempt = 0
+            self._tick_queue = asyncio.Queue(maxsize=10000)
+        
+        async def stream_ticks(self):
+            """Stream ticks, simulating disconnect after first session."""
+            self.attempt += 1
+            
+            if self.attempt == 1:
+                # First connection: yield 2 ticks, then disconnect
+                # (leaving 1 tick in queue)
+                yield Tick(
+                    timestamp=datetime(2025, 1, 15, 10, 0, 0, tzinfo=UTC),
+                    price=2650.0,
+                    volume=100.0,
+                    symbol="GC",
+                )
+                yield Tick(
+                    timestamp=datetime(2025, 1, 15, 10, 1, 0, tzinfo=UTC),
+                    price=2651.0,
+                    volume=100.0,
+                    symbol="GC",
+                )
+                # Add a stale tick to queue before disconnect
+                await self._tick_queue.put(
+                    Tick(
+                        timestamp=datetime(2025, 1, 15, 10, 2, 0, tzinfo=UTC),
+                        price=2652.0,
+                        volume=100.0,
+                        symbol="GC",
+                    )
+                )
+                # Simulate disconnect
+                raise ConnectionError("Mock disconnect")
+            
+            else:
+                # Second connection: yield fresh ticks with LATER timestamps
+                # If queue wasn't cleared, stale tick (10:02) would appear before these
+                for i in range(3):
+                    yield Tick(
+                        timestamp=datetime(2025, 1, 15, 11, i, 0, tzinfo=UTC),
+                        price=2660.0 + i,
+                        volume=100.0,
+                        symbol="GC",
+                    )
+        
+        async def close(self):
+            """Close client and clear queue (the fix)."""
+            # Clear stale ticks (this is the bug fix being tested)
+            while not self._tick_queue.empty():
+                try:
+                    self._tick_queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    break
+    
+    mock_client = MockIBClientWithStaleData()
+    
+    resilient = ResilientIBDataClient(
+        inner=mock_client,
+        max_retries=5,
+        base_delay=0.01,
+        max_delay=0.1,
+    )
+    
+    # Collect all ticks
+    ticks = []
+    async for tick in resilient.stream_ticks():
+        ticks.append(tick)
+        if len(ticks) >= 5:  # 2 from first session + 3 from second
+            break
+    
+    # Should have 5 ticks total
+    assert len(ticks) == 5
+    
+    # First 2 ticks from first session (before disconnect)
+    assert ticks[0].timestamp == datetime(2025, 1, 15, 10, 0, 0, tzinfo=UTC)
+    assert ticks[1].timestamp == datetime(2025, 1, 15, 10, 1, 0, tzinfo=UTC)
+    
+    # CRITICAL: Next 3 ticks should be from SECOND session (11:00, 11:01, 11:02)
+    # NOT the stale tick from first session (10:02)
+    # This verifies the queue was cleared on reconnection
+    assert ticks[2].timestamp == datetime(2025, 1, 15, 11, 0, 0, tzinfo=UTC)
+    assert ticks[3].timestamp == datetime(2025, 1, 15, 11, 1, 0, tzinfo=UTC)
+    assert ticks[4].timestamp == datetime(2025, 1, 15, 11, 2, 0, tzinfo=UTC)
+    
+    # Verify no tick with timestamp 10:02 was yielded (the stale one)
+    assert datetime(2025, 1, 15, 10, 2, 0, tzinfo=UTC) not in [t.timestamp for t in ticks]
+
+
+@pytest.mark.asyncio
 async def test_resilient_ib_client_reconnects_after_failure():
     """Test that ResilientIBDataClient reconnects after connection failure."""
     

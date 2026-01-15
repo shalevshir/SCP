@@ -264,12 +264,25 @@ class IBDataClient(DataClientBase):
             await self.close()
     
     async def close(self) -> None:
-        """Disconnect from IB Gateway."""
+        """Disconnect from IB Gateway and clear tick queue."""
         if self._ib and self._ib.isConnected():
             logger.info("Closing IB Gateway connection")
             self._ib.disconnect()
             self._connected = False
             self._ib = None
+        
+        # CRITICAL: Clear tick queue to prevent stale data on reconnection
+        # Drain all pending ticks from the previous session
+        drained_count = 0
+        while not self._tick_queue.empty():
+            try:
+                self._tick_queue.get_nowait()
+                drained_count += 1
+            except asyncio.QueueEmpty:
+                break
+        
+        if drained_count > 0:
+            logger.info(f"Cleared {drained_count} stale ticks from queue on disconnect")
 
 
 class ResilientIBDataClient(DataClientBase):
