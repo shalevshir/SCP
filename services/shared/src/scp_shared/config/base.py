@@ -47,6 +47,11 @@ class BaseServiceConfig(BaseSettings):
         description="Service version",
     )
 
+    service_mode: str = Field(
+        default="dev",
+        description="Service mode for metrics: dev|test|replay|paper|live",
+    )
+
     # Logging
     log_level: str = Field(
         default="INFO",
