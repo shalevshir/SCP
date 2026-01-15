@@ -15,11 +15,13 @@ from scp_shared.database import DatabasePool
 from scp_shared.health import create_health_router
 from scp_shared.messaging import RedisStreamConsumer
 from scp_shared.messaging.schemas import FeaturesMessage, HTFBiasMessage
+from scp_shared.metrics import create_metrics_router
 
 from bot_core_svc.active_trade_checker import ActiveTradeChecker
 from bot_core_svc.bias_cache import HTFBiasCache
 from bot_core_svc.config import BotCoreConfig
 from bot_core_svc.guardrails import GuardrailsService
+from bot_core_svc import metrics as core_metrics
 from bot_core_svc.publisher import SignalPublisher
 from bot_core_svc.session import SessionValidationService
 from bot_core_svc.signal_engine import SignalEngine
@@ -174,12 +176,18 @@ async def process_feature_message(
     """
     global _is_killed
     
+    # Get metric labels
+    mode = config.service_mode
+    service = config.service_name
+    
     # Increment bar counter
     warmup_bar_count += 1
     
     # KILL SWITCH: Skip signal generation if killed
     if _is_killed:
         logger.debug(f"🚨 Kill switch active - skipping signal generation at {features.timestamp}")
+        # METRIC: Track rejection
+        core_metrics.record_signal_rejection("kill_switch", mode, service)
         return warmup_bar_count
     
     # Check warmup period
@@ -187,6 +195,8 @@ async def process_feature_message(
         logger.debug(
             f"Warmup: bar {warmup_bar_count}/{warmup_bars} - skipping signal generation"
         )
+        # METRIC: Track rejection
+        core_metrics.record_signal_rejection("warmup", mode, service)
         return warmup_bar_count
     
     # 1. Validate session
@@ -195,6 +205,8 @@ async def process_feature_message(
         logger.debug(
             f"Session blocked at {features.timestamp}: {session_result.reason}"
         )
+        # METRIC: Track rejection
+        core_metrics.record_signal_rejection("session_filter", mode, service)
         return warmup_bar_count
     
     # 2. Check guardrails
@@ -203,11 +215,15 @@ async def process_feature_message(
         logger.debug(
             f"Guardrails blocked at {features.timestamp}: {guardrail_result.reasons}"
         )
+        # METRIC: Track rejection (use risk_limit as the general category)
+        core_metrics.record_signal_rejection("risk_limit", mode, service)
         return warmup_bar_count
     
     # 2.5. Check DXY availability (required for accurate scoring)
     if features.dxy_correlation is None and features.dxy_corr is None:
         logger.debug(f"DXY data unavailable at {features.timestamp} - skipping signal generation")
+        # METRIC: Track rejection
+        core_metrics.record_signal_rejection("invalid_context", mode, service)
         return warmup_bar_count
     
     # 2.6. CRITICAL: Check if active trade exists (matches backtest behavior)
@@ -217,6 +233,8 @@ async def process_feature_message(
         logger.debug(
             f"Signal blocked at {features.timestamp}: active trade exists ({active_count} active)"
         )
+        # METRIC: Track rejection
+        core_metrics.record_signal_rejection("active_trade", mode, service)
         return warmup_bar_count
     
     # 3. Get bias for this feature's timestamp (critical for replay mode)
@@ -230,12 +248,24 @@ async def process_feature_message(
         "enforcer_tier": config.enforcer_tier,
     }
     
-    # 5. Generate signal
-    signal_msg = signal_engine.generate(features, bias, context)
+    # 5. Generate signal (with timing)
+    with core_metrics.signal_generation_seconds.labels(mode=mode, service=service).time():
+        signal_msg = signal_engine.generate(features, bias, context)
     
     # 6. Publish A+ signals
     if signal_msg is not None:
         await signal_publisher.publish(signal_msg)
+        
+        # METRIC: Track signal generated
+        core_metrics.signals_generated_total.labels(
+            mode=mode,
+            service=service,
+            setup_type=signal_msg.setup_type,
+            timeframe=features.timeframe,
+        ).inc()
+    else:
+        # Signal didn't meet A+ criteria
+        core_metrics.record_signal_rejection("confidence_filter", mode, service)
     
     return warmup_bar_count
 
@@ -319,6 +349,10 @@ health_router = create_health_router(
     version=config.service_version,
 )
 app.include_router(health_router)
+
+# Add metrics endpoint
+metrics_router = create_metrics_router()
+app.include_router(metrics_router)
 
 
 @app.post("/admin/kill")
