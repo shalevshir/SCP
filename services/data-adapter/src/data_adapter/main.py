@@ -2,11 +2,13 @@
 
 import asyncio
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 
 import redis.asyncio as redis
 from fastapi import FastAPI
 from scp_shared.common import get_logger, mask_connection_url
 from scp_shared.health import create_health_router
+from scp_shared.metrics import create_metrics_router
 
 from data_adapter.candle_aggregator import CandleAggregator
 from data_adapter.config import DataAdapterConfig
@@ -19,6 +21,7 @@ from data_adapter.databento_client import (
 )
 from data_adapter.gap_detector import GapDetector
 from data_adapter.ib_data_client import IBDataClient, ResilientIBDataClient
+from data_adapter import metrics as adapter_metrics
 from data_adapter.publisher import CandlePublisher
 from data_adapter.session_events import SessionEventPublisher
 from data_adapter.session_filter import GoldFuturesSessionFilter, SessionFilter
@@ -136,6 +139,10 @@ async def consume_ticks(
     """
     logger.info("Starting tick consumption loop")
     
+    # Get metric labels
+    mode = config.service_mode
+    service = config.service_name
+    
     try:
         async for tick in client.stream_ticks():
             # Check for shutdown
@@ -143,11 +150,22 @@ async def consume_ticks(
                 logger.info("Shutdown signal received, stopping tick consumption")
                 break
             
+            # METRIC: Count ticks received
+            adapter_metrics.market_ticks_total.labels(
+                mode=mode, service=service, symbol=tick.symbol
+            ).inc()
+            
+            # Update tick timestamp for lag calculation
+            adapter_metrics.update_tick_timestamp(tick.symbol, tick.timestamp)
+            
             # Route to appropriate aggregator
             aggregator = gc_aggregator if tick.symbol == "GC" else dxy_aggregator
             
-            # Aggregate tick
-            candle = aggregator.update(tick)
+            # Aggregate tick (with timing)
+            with adapter_metrics.tick_processing_seconds.labels(
+                mode=mode, service=service, symbol=tick.symbol
+            ).time():
+                candle = aggregator.update(tick)
             
             if candle is not None:
                 logger.debug(
@@ -164,6 +182,11 @@ async def consume_ticks(
                         f"{gap_detector.gap_start} to {gap_detector.gap_end}"
                     )
                     
+                    # METRIC: Count gap detections
+                    adapter_metrics.data_gaps_detected_total.labels(
+                        mode=mode, service=service, symbol=candle.symbol
+                    ).inc()
+                    
                     # Trigger backfill if enabled
                     if config.gap_backfill_enabled:
                         try:
@@ -173,10 +196,20 @@ async def consume_ticks(
                                 f"for {candle.symbol}"
                             )
                             
+                            # METRIC: Count successful backfills
+                            adapter_metrics.gap_backfills_total.labels(
+                                mode=mode, service=service, symbol=candle.symbol
+                            ).inc()
+                            
                             # Publish backfilled candles
                             for bf_candle in backfilled:
                                 if session_filter.is_trading_hours(bf_candle):
                                     await publisher.publish(bf_candle)
+                                    # METRIC: Count backfilled candles published
+                                    adapter_metrics.bars_emitted_total.labels(
+                                        mode=mode, service=service,
+                                        symbol=bf_candle.symbol, timeframe=bf_candle.timeframe
+                                    ).inc()
                         except Exception as e:
                             logger.error(f"Backfill failed for {candle.symbol}: {e}")
                     
@@ -193,11 +226,29 @@ async def consume_ticks(
                         f"Published candle {candle.symbol} {candle.timestamp}: "
                         f"{message_id}"
                     )
+                    
+                    # METRIC: Count candles published
+                    adapter_metrics.bars_emitted_total.labels(
+                        mode=mode, service=service,
+                        symbol=candle.symbol, timeframe=candle.timeframe
+                    ).inc()
                 else:
                     logger.debug(
                         f"Candle outside trading hours, skipping: "
                         f"{candle.timestamp}"
                     )
+            
+            # METRIC: Update lag metrics periodically (every 100 ticks)
+            # Note: This is a simple heuristic to avoid calling datetime.now() on every tick
+            try:
+                tick_count = adapter_metrics.market_ticks_total.labels(
+                    mode=mode, service=service, symbol=tick.symbol
+                )._value.get()
+                if tick_count % 100 == 0:
+                    adapter_metrics.update_lag_metrics(datetime.now(UTC), mode, service)
+            except Exception:
+                # Silently ignore metric update errors to avoid disrupting data flow
+                pass
     
     except asyncio.CancelledError:
         logger.info("Tick consumption cancelled")
@@ -239,6 +290,12 @@ async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
     # Create data client based on provider configuration
     client = create_data_client(config)
     
+    # METRIC: Set provider connected (assume connected on startup)
+    provider = config.data_provider.lower()
+    adapter_metrics.data_provider_connected.labels(
+        mode=config.service_mode, service=config.service_name, provider=provider
+    ).set(1)
+    
     logger.info("Starting tick consumer task")
     
     # Start tick consumption in background
@@ -268,6 +325,11 @@ async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
     except Exception as e:
         logger.error(f"Consumer task failed with exception: {e}", exc_info=True)
     finally:
+        # METRIC: Set provider disconnected on shutdown
+        adapter_metrics.data_provider_connected.labels(
+            mode=config.service_mode, service=config.service_name, provider=provider
+        ).set(0)
+        
         # Ensure cleanup happens regardless of how consumer_task ended
         await client.close()
         await redis_client.aclose()
@@ -287,6 +349,10 @@ health_router = create_health_router(
     version=config.service_version,
 )
 app.include_router(health_router)
+
+# Add metrics endpoint
+metrics_router = create_metrics_router()
+app.include_router(metrics_router)
 
 
 if __name__ == "__main__":
