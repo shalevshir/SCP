@@ -1,0 +1,49 @@
+# Prometheus configuration for SCP microservices
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'scp'
+    environment: 'dev'
+
+scrape_configs:
+  - job_name: 'data-adapter'
+    static_configs:
+      - targets: ['data-adapter:8001']
+    metrics_path: /metrics
+    scrape_interval: 15s
+    scrape_timeout: 10s
+
+  - job_name: 'feature-engine'
+    static_configs:
+      - targets: ['feature-engine:8002']
+    metrics_path: /metrics
+    scrape_interval: 15s
+    scrape_timeout: 10s
+
+  - job_name: 'htf-bias'
+    static_configs:
+      - targets: ['htf-bias:8003']
+    metrics_path: /metrics
+    scrape_interval: 15s
+    scrape_timeout: 10s
+
+  - job_name: 'bot-core'
+    static_configs:
+      - targets: ['bot-core:8004']
+    metrics_path: /metrics
+    scrape_interval: 15s
+    scrape_timeout: 10s
+
+  - job_name: 'execution'
+    static_configs:
+      - targets: ['execution:8005']
+    metrics_path: /metrics
+    scrape_interval: 15s
+    scrape_timeout: 10s
+
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+    metrics_path: /metrics
+    scrape_interval: 30s
