@@ -9,7 +9,6 @@ from scp_shared.metrics import create_counter, create_gauge, create_histogram
 htf_bias_current = create_gauge(
     "htf_bias_current",
     "Current HTF bias (bullish=1, neutral=0, bearish=-1)",
-    labels=["bias"],
 )
 
 htf_bias_changes_total = create_counter(
@@ -50,9 +49,7 @@ def update_bias_metrics(current_bias: str, mode: str, service: str) -> None:
     bias_value = {"bullish": 1.0, "neutral": 0.0, "bearish": -1.0}.get(
         current_bias.lower(), 0.0
     )
-    htf_bias_current.labels(mode=mode, service=service, bias=current_bias).set(
-        bias_value
-    )
+    htf_bias_current.labels(mode=mode, service=service).set(bias_value)
     
     # Track bias changes
     if _last_bias is not None and _last_bias != current_bias:

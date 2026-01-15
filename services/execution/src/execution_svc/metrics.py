@@ -77,6 +77,7 @@ UNSAFE_STATE_REASONS = {
     "broker_disconnected",  # No broker connection
     "risk_limit",  # PDLL breached
     "manual_kill",  # Kill switch active
+    "invalid_state",  # Fallback for unknown/unexpected states
 }
 
 
