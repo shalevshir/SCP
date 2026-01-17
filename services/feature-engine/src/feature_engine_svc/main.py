@@ -12,9 +12,11 @@ from scp_shared.database import DatabasePool
 from scp_shared.health import create_health_router
 from scp_shared.messaging import RedisStreamConsumer, CandleSynchronizer
 from scp_shared.messaging.schemas import CandleMessage
+from scp_shared.metrics import create_metrics_router
 
 from feature_engine_svc.config import FeatureEngineConfig
 from feature_engine_svc.htf_aggregator import HTFCandleAggregator
+from feature_engine_svc import metrics as engine_metrics
 from feature_engine_svc.processor import FeatureProcessor
 from feature_engine_svc.publisher import FeaturePublisher
 from feature_engine_svc.repository import FeatureRepository
@@ -215,6 +217,10 @@ async def process_candles(
     
     logger.info("Feature Engine ready - consuming candles")
     
+    # Get metric labels
+    mode = config.service_mode
+    service = config.service_name
+    
     try:
         while not shutdown_event.is_set():
             # Read from both streams
@@ -245,9 +251,13 @@ async def process_candles(
                         repository,
                     )
             
+            # METRIC: Update queue depth gauge
+            stats = synchronizer.get_buffer_stats()
+            queue_depth = stats.get("total_unpaired", 0)
+            engine_metrics.feature_queue_depth.labels(mode=mode, service=service).set(queue_depth)
+            
             # Log buffer stats periodically
             if synchronizer.gc_buffer or synchronizer.dxy_buffer:
-                stats = synchronizer.get_buffer_stats()
                 logger.debug(f"Synchronizer buffer: {stats}")
     
     except asyncio.CancelledError:
@@ -282,14 +292,29 @@ async def process_candle_pair(
     """
     gc_candle, dxy_candle = pair
     
-    # Process 1m features
-    features_1m = processor_1m.process(gc_candle, dxy_candle)
+    # Get metric labels
+    mode = config.service_mode
+    service = config.service_name
+    
+    # METRIC: Count event processed
+    engine_metrics.events_processed_total.labels(mode=mode, service=service).inc()
+    
+    # Process 1m features (with timing)
+    with engine_metrics.event_processing_seconds.labels(
+        mode=mode, service=service, timeframe="1m"
+    ).time():
+        features_1m = processor_1m.process(gc_candle, dxy_candle)
     
     # Publish 1m features
     await publisher.publish(features_1m)
     
     # Persist 1m features
     await repository.save_features(features_1m)
+    
+    # METRIC: Count features computed
+    engine_metrics.features_computed_total.labels(
+        mode=mode, service=service, timeframe="1m"
+    ).inc()
     
     logger.debug(
         f"Processed 1m features: {gc_candle.timestamp} "
@@ -319,23 +344,47 @@ async def process_candle_pair(
                 f"No matching DXY {htf_candle_gc.timeframe} candle for "
                 f"GC candle at {htf_candle_gc.timestamp}. Skipping HTF feature processing."
             )
+            # METRIC: Count invalid event (missing pair)
+            engine_metrics.invalid_feature_events_total.labels(
+                mode=mode, service=service, reason="missing_htf_pair"
+            ).inc()
             continue
         
         if htf_candle_gc.timeframe == "15m":
-            # Process 15m features with matching 15m DXY candle
-            features_15m = processor_15m.process(htf_candle_gc, htf_candle_dxy)
+            # Process 15m features with matching 15m DXY candle (with timing)
+            with engine_metrics.event_processing_seconds.labels(
+                mode=mode, service=service, timeframe="15m"
+            ).time():
+                features_15m = processor_15m.process(htf_candle_gc, htf_candle_dxy)
+            
             await publisher.publish(features_15m)
             await repository.save_features(features_15m)
+            
+            # METRIC: Count features computed
+            engine_metrics.features_computed_total.labels(
+                mode=mode, service=service, timeframe="15m"
+            ).inc()
+            
             logger.info(
                 f"Processed 15m features: {htf_candle_gc.timestamp} "
                 f"(GC: {htf_candle_gc.close}, DXY: {htf_candle_dxy.close})"
             )
         
         elif htf_candle_gc.timeframe == "1h":
-            # Process 1h features with matching 1h DXY candle
-            features_1h = processor_1h.process(htf_candle_gc, htf_candle_dxy)
+            # Process 1h features with matching 1h DXY candle (with timing)
+            with engine_metrics.event_processing_seconds.labels(
+                mode=mode, service=service, timeframe="1h"
+            ).time():
+                features_1h = processor_1h.process(htf_candle_gc, htf_candle_dxy)
+            
             await publisher.publish(features_1h)
             await repository.save_features(features_1h)
+            
+            # METRIC: Count features computed
+            engine_metrics.features_computed_total.labels(
+                mode=mode, service=service, timeframe="1h"
+            ).inc()
+            
             logger.info(
                 f"Processed 1h features: {htf_candle_gc.timestamp} "
                 f"(GC: {htf_candle_gc.close}, DXY: {htf_candle_dxy.close})"
@@ -392,6 +441,10 @@ health_router = create_health_router(
     version=config.service_version,
 )
 app.include_router(health_router)
+
+# Add metrics endpoint
+metrics_router = create_metrics_router()
+app.include_router(metrics_router)
 
 
 if __name__ == "__main__":

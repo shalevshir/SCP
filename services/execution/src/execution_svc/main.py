@@ -18,9 +18,11 @@ from scp_shared.database import DatabasePool
 from scp_shared.health import create_health_router
 from scp_shared.messaging import RedisStreamConsumer, CandleFeatureSynchronizer
 from scp_shared.messaging.schemas import CandleMessage, FeaturesMessage, SignalMessage
+from scp_shared.metrics import create_metrics_router
 
 from execution_svc.broker import BaseBroker, create_broker
 from execution_svc.config import ExecutionConfig
+from execution_svc import metrics as exec_metrics
 from execution_svc.state_machine_manager import StateMachineManager
 from execution_svc.trade_manager import TradeManager, is_valid_candle
 from execution_svc.trade_publisher import TradePublisher
@@ -325,13 +327,21 @@ async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
     _kill_switch_repo = KillSwitchRepository(db_pool)
     kill_state = await _kill_switch_repo.get_state("execution")
     _is_killed = kill_state.is_killed
+    
+    # METRIC: Set trading enabled and unsafe state based on kill switch
+    mode = config.service_mode
+    service = config.service_name
     if _is_killed:
         logger.warning(
             f"🚨 KILL SWITCH IS ACTIVE - Trading halted "
             f"(killed at {kill_state.killed_at} by {kill_state.killed_by}: {kill_state.reason})"
         )
+        exec_metrics.trading_enabled.labels(mode=mode, service=service).set(0)
+        exec_metrics.set_unsafe_state("manual_kill", mode, service)
     else:
         logger.info("✅ Kill switch inactive - Trading enabled")
+        exec_metrics.trading_enabled.labels(mode=mode, service=service).set(1)
+        exec_metrics.set_unsafe_state(None, mode, service)
     
     # Send service started alert
     send_alert(
@@ -395,6 +405,10 @@ health_router = create_health_router(
 )
 app.include_router(health_router)
 
+# Add metrics endpoint
+metrics_router = create_metrics_router()
+app.include_router(metrics_router)
+
 
 @app.post("/admin/kill")
 async def kill_switch(reason: str = "Manual kill via API") -> dict[str, str]:
@@ -432,6 +446,10 @@ async def kill_switch(reason: str = "Manual kill via API") -> dict[str, str]:
                 f"🚨 Clearing {pending_count} pending signal(s) due to kill switch activation"
             )
             _trade_manager._pending_signals.clear()  # type: ignore[attr-defined]
+    
+    # METRIC: Update trading state
+    exec_metrics.trading_enabled.labels(mode=config.service_mode, service=config.service_name).set(0)
+    exec_metrics.set_unsafe_state("manual_kill", config.service_mode, config.service_name)
     
     logger.warning(f"🚨 KILL SWITCH ACTIVATED: {reason}")
     send_alert(
@@ -484,6 +502,10 @@ async def resume_trading() -> dict[str, str]:
                 f"🚨 Clearing {pending_count} stale pending signal(s) on kill switch resume"
             )
             _trade_manager._pending_signals.clear()  # type: ignore[attr-defined]
+    
+    # METRIC: Update trading state
+    exec_metrics.trading_enabled.labels(mode=config.service_mode, service=config.service_name).set(1)
+    exec_metrics.set_unsafe_state(None, config.service_mode, config.service_name)
     
     logger.info("✅ Kill switch deactivated - Trading resumed")
     send_alert(
@@ -554,6 +576,10 @@ async def reset_state() -> dict[str, str]:
     # Reset kill switch in-memory flag for test isolation.
     # Note: This does NOT alter the persisted kill switch state in the database.
     _is_killed = False
+    
+    # METRIC: Update trading state to reflect reset
+    exec_metrics.trading_enabled.labels(mode=config.service_mode, service=config.service_name).set(1)
+    exec_metrics.set_unsafe_state(None, config.service_mode, config.service_name)
     
     # Reset trade manager state
     _trade_manager._active_trades.clear()
