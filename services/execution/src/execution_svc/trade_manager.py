@@ -19,6 +19,7 @@ from scp_shared.messaging.schemas import (
 
 from execution_svc.broker import BaseBroker
 from execution_svc.daily_state import DailyStateTracker
+from execution_svc import metrics
 from execution_svc.state_machine_manager import StateMachineManager
 from execution_svc.trade_publisher import TradePublisher
 from execution_svc.trade_repository import TradeRepository
@@ -69,6 +70,8 @@ class TradeManager:
         max_active_trades: int = 1,
         pdll_limit: float = 600.0,
         max_trades_per_day: int = 2,
+        service_mode: str = "dev",
+        service_name: str = "execution",
     ) -> None:
         """Initialize trade manager.
         
@@ -81,6 +84,8 @@ class TradeManager:
             max_active_trades: Maximum concurrent trades (default: 1)
             pdll_limit: Per day loss limit in points (default: 600.0)
             max_trades_per_day: Maximum trades per day (default: 2)
+            service_mode: Service mode for metrics (dev/test/replay/paper/live)
+            service_name: Service name for metrics (default: execution)
         """
         self._broker = broker
         self._sm_manager = state_machine_manager
@@ -88,6 +93,8 @@ class TradeManager:
         self._publisher = trade_publisher
         self._candle_repo = CandleRepository(db_pool)
         self._max_active_trades = max_active_trades
+        self._service_mode = service_mode
+        self._service_name = service_name
         
         # Active trades (in-memory cache)
         self._active_trades: dict[str, TradeRecord] = {}
@@ -319,7 +326,17 @@ class TradeManager:
             can_trade, reason = self._daily_tracker.can_trade()
             if not can_trade:
                 logger.info(f"Signal {signal.id} blocked by daily limits: {reason}")
+                # Update halt reason metric
+                if reason:
+                    metrics.set_trading_halt_reason(
+                        reason, self._service_mode, self._service_name
+                    )
                 continue
+            else:
+                # Trading allowed - set halt reason to NONE
+                metrics.set_trading_halt_reason(
+                    "NONE", self._service_mode, self._service_name
+                )
             
             # Use signal.entry_price (calculated by Bot Core at signal generation time)
             # This is correct even in replay mode where streams are desynchronized
@@ -406,6 +423,13 @@ class TradeManager:
                 return None
             
             # Place order via broker
+            # Record order sent metric
+            metrics.orders_sent_total.labels(
+                mode=self._service_mode,
+                service=self._service_name,
+                side=signal.direction,
+            ).inc()
+            
             order_result = await self._broker.place_order(
                 symbol="GC",
                 side=cast(Literal["long", "short"], signal.direction),
@@ -418,7 +442,18 @@ class TradeManager:
                     f"Order not filled for signal {signal.id}: "
                     f"{order_result.status}"
                 )
+                # Record order rejection
+                metrics.record_order_rejection(
+                    "broker_error", self._service_mode, self._service_name
+                )
                 return None
+            
+            # Record order filled metric
+            metrics.orders_filled_total.labels(
+                mode=self._service_mode,
+                service=self._service_name,
+                side=signal.direction,
+            ).inc()
             
             # Use actual fill price from broker if available (for live/IB trading)
             # Fall back to expected entry_price for paper trading or if fill price missing
@@ -481,6 +516,11 @@ class TradeManager:
             
             # Record trade opened for daily limits tracking
             self._daily_tracker.record_trade_opened()
+            
+            # Update metrics
+            metrics.open_positions.labels(
+                mode=self._service_mode, service=self._service_name
+            ).set(len(self._active_trades))
             
             # Mark state machine as executed
             await self._sm_manager.execute(signal.id, self._sm_manager._bar_counter)
@@ -578,11 +618,36 @@ class TradeManager:
                 trade, won, pnl_points=pnl_points, close_timestamp=closed_at
             )
             
+            # Update metrics
+            metrics.daily_pnl.labels(
+                mode=self._service_mode, service=self._service_name
+            ).set(self._daily_tracker.state.daily_pnl)
+            
+            # Calculate daily drawdown (max loss from peak)
+            # For now, use daily_pnl if negative (simplified version)
+            daily_drawdown = min(0, self._daily_tracker.state.daily_pnl)
+            metrics.daily_drawdown.labels(
+                mode=self._service_mode, service=self._service_name
+            ).set(abs(daily_drawdown))
+            
+            # Update loss streak metric
+            loss_streak = self._invalidation_checker._daily_state.get(
+                "consecutive_losses", 0
+            )
+            metrics.loss_streak_current.labels(
+                mode=self._service_mode, service=self._service_name
+            ).set(loss_streak)
+            
             # Remove from active trades (critical - must happen even if broker failed)
             if trade.trade_id in self._active_trades:
                 del self._active_trades[trade.trade_id]
             if trade.trade_id in self._trade_entry_bars:
                 del self._trade_entry_bars[trade.trade_id]
+            
+            # Update open positions metric
+            metrics.open_positions.labels(
+                mode=self._service_mode, service=self._service_name
+            ).set(len(self._active_trades))
             
             # Track closed trade time range for data-time overlap detection
             # This prevents late signals from executing during periods when
