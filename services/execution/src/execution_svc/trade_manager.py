@@ -70,6 +70,7 @@ class TradeManager:
         max_active_trades: int = 1,
         pdll_limit: float = 600.0,
         max_trades_per_day: int = 2,
+        max_consecutive_losses: int = 2,
         service_mode: str = "dev",
         service_name: str = "execution",
     ) -> None:
@@ -84,6 +85,7 @@ class TradeManager:
             max_active_trades: Maximum concurrent trades (default: 1)
             pdll_limit: Per day loss limit in points (default: 600.0)
             max_trades_per_day: Maximum trades per day (default: 2)
+            max_consecutive_losses: Maximum consecutive losses before halt (default: 2)
             service_mode: Service mode for metrics (dev/test/replay/paper/live)
             service_name: Service name for metrics (default: execution)
         """
@@ -106,6 +108,7 @@ class TradeManager:
         self._daily_tracker = DailyStateTracker(
             pdll_limit=pdll_limit,
             max_trades_per_day=max_trades_per_day,
+            max_consecutive_losses=max_consecutive_losses,
         )
         
         # Invalidation checker (pass pdll_limit for PDLL breach detection)
@@ -630,10 +633,8 @@ class TradeManager:
                 mode=self._service_mode, service=self._service_name
             ).set(abs(daily_drawdown))
             
-            # Update loss streak metric
-            loss_streak = self._invalidation_checker._daily_state.get(
-                "consecutive_losses", 0
-            )
+            # Update loss streak metric (now tracked in DailyStateTracker)
+            loss_streak = self._daily_tracker.state.consecutive_losses
             metrics.loss_streak_current.labels(
                 mode=self._service_mode, service=self._service_name
             ).set(loss_streak)

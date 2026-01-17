@@ -2300,9 +2300,9 @@
     "list": [
       {
         "current": {
-          "selected": false,
-          "text": "dev",
-          "value": "dev"
+          "selected": true,
+          "text": "paper",
+          "value": "paper"
         },
         "hide": 0,
         "includeAll": false,

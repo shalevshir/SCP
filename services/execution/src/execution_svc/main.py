@@ -90,6 +90,7 @@ async def process_streams(
         max_active_trades=_max_active,
         pdll_limit=config.pdll_limit,
         max_trades_per_day=config.max_trades_per_day,
+        max_consecutive_losses=config.max_consecutive_losses,
         service_mode=config.service_mode,
         service_name=config.service_name,
     )
