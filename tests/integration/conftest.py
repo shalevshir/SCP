@@ -1,341 +1,447 @@
-"""Pytest fixtures for integration tests."""
+"""Shared fixtures for integration tests.
+
+This module provides fixtures for multi-service integration testing including:
+- Docker container management (Redis, PostgreSQL)
+- Service lifecycle management
+- Test data generators
+- Database initialization and cleanup
+"""
 
 import asyncio
-import time
+import os
 from datetime import datetime, timezone
 from typing import Any, AsyncGenerator
+from unittest.mock import AsyncMock
 
+import asyncpg
 import pytest
-import pytest_asyncio
-import redis.asyncio as redis
-from scp_shared.database import DatabasePool
-from scp_shared.messaging import RedisStreamPublisher
-from scp_shared.messaging.schemas import CandleMessage
+import redis.asyncio as aioredis
+from scp_shared.common.types import Candle
+from scp_shared.messaging.schemas import CandleMessage, FeaturesMessage, HTFBiasMessage
 
 
 @pytest.fixture(scope="session")
-def event_loop():
-    """Create an instance of the default event loop for the test session."""
-    loop = asyncio.get_event_loop_policy().new_event_loop()
-    yield loop
-    loop.close()
+def event_loop_policy():
+    """Set event loop policy for async tests."""
+    return asyncio.get_event_loop_policy()
 
 
-@pytest_asyncio.fixture(scope="function")
-async def redis_client() -> AsyncGenerator[redis.Redis, None]:
-    """Provide Redis client connected to test instance.
+@pytest.fixture(scope="session")
+async def redis_url() -> str:
+    """Provide Redis connection URL.
     
-    Connects to Redis on port specified by REDIS_PORT env var:
-    - Local development (default): 6379 (same as services via launch.json)
-    - CI/Docker: 6380 (test Redis via docker-compose.test.yml)
-    
-    Yields:
-        Redis client for integration tests
+    Uses environment variable or defaults to localhost.
+    Assumes Redis is running (via docker-compose or locally).
     """
-    import os
-    redis_port = int(os.environ.get("REDIS_PORT", "6379"))
-    
-    client = redis.Redis(
-        host="localhost",
-        port=redis_port,
-        decode_responses=False,  # Keep binary for stream handling
-    )
-    
-    try:
-        # Verify connection
-        await client.ping()
-        yield client
-    finally:
-        await client.aclose()
+    return os.getenv("REDIS_URL", "redis://localhost:6379")
 
 
-@pytest_asyncio.fixture(scope="function")
-async def db_pool() -> AsyncGenerator[DatabasePool, None]:
-    """Provide database pool connected to test PostgreSQL.
+@pytest.fixture(scope="session")
+async def postgres_url() -> str:
+    """Provide PostgreSQL connection URL.
     
-    Connects to PostgreSQL using DATABASE_URL env var or defaults:
-    - Local development (default): port 5432 with scp/scp_dev_password
-    - CI/Docker: port 5433 with scp_test/scp_test_password
-    
-    Yields:
-        Database pool for integration tests
+    Uses environment variable or defaults to localhost.
+    Assumes PostgreSQL is running with migrations applied.
     """
-    import os
-    database_url = os.environ.get(
+    return os.getenv(
         "DATABASE_URL",
-        "postgresql://scp:scp_dev_password@localhost:5432/scp"  # Match launch.json
-    )
-    pool = DatabasePool(database_url)
-    
-    try:
-        await pool.connect()
-        yield pool
-    finally:
-        await pool.close()
-
-
-@pytest_asyncio.fixture(scope="function")
-async def clean_streams(redis_client: redis.Redis) -> None:
-    """Clean Redis streams before each test.
-    
-    Uses XTRIM to clear messages while preserving consumer groups.
-    This is critical because messages published BEFORE a consumer group
-    is created are NOT delivered to that group.
-    
-    Args:
-        redis_client: Redis client fixture
-    """
-    streams_to_clean = [
-        "candles.1m.gc",
-        "candles.1m.dxy",
-        "candles.15m.gc",
-        "candles.1h.gc",
-        "features.1m",
-        "features.15m",
-        "features.1h",
-        "htf.bias",
-        "signals.pending",
-        "trades.opened",
-        "trades.closed",
-    ]
-    
-    for stream in streams_to_clean:
-        try:
-            # Use XTRIM to remove all messages but keep consumer groups intact
-            # MAXLEN 0 removes all entries
-            await redis_client.xtrim(stream, maxlen=0)
-        except Exception:
-            # Stream might not exist, that's ok
-            pass
-    
-    # Also acknowledge any pending messages in consumer groups
-    # to prevent them from being redelivered
-    # Include both service consumer groups and test consumer groups
-    consumer_groups = [
-        # Service consumer groups
-        ("signals.pending", "execution"),
-        ("candles.1m.gc", "execution"),
-        ("features.1m", "execution"),
-        ("candles.1m.gc", "feature-engine"),
-        ("candles.1m.dxy", "feature-engine"),
-        ("candles.1m.gc", "htf-bias"),
-        ("candles.1m.dxy", "htf-bias"),
-        # Test consumer groups (various tests use different group names)
-        ("trades.opened", "integration-test-trades"),
-        ("trades.opened", "integration-test-sl"),
-        ("trades.opened", "integration-test-tp"),
-        ("trades.opened", "integration-test-invalid-opened"),
-        ("trades.opened", "integration-test-pipeline"),
-        ("trades.closed", "integration-test-sl-closed"),
-        ("trades.closed", "integration-test-tp-closed"),
-        ("trades.closed", "integration-test-invalid"),
-        ("trades.closed", "integration-test-pipeline-closed"),
-        ("htf.bias", "integration-test-bias"),
-        ("htf.bias", "integration-test-structure"),
-        ("htf.bias", "integration-test-chop"),
-        ("htf.bias", "integration-test-timestamp"),
-        ("features.1m", "integration-test"),
-        ("features.1m", "integration-test-corr"),
-        ("features.1m", "integration-test-ts"),
-    ]
-    
-    for stream, group in consumer_groups:
-        try:
-            # Get pending messages and acknowledge them
-            # xpending returns dict with 'pending' count or similar structure
-            pending = await redis_client.xpending(stream, group)
-            # Handle various response formats
-            pending_count = 0
-            if isinstance(pending, dict):
-                pending_count = pending.get("pending", 0)
-            elif isinstance(pending, (list, tuple)) and len(pending) > 0:
-                # Some versions return [count, first_id, last_id, consumers]
-                pending_count = pending[0] if isinstance(pending[0], int) else 0
-            
-            if pending_count > 0:
-                # Read and ack all pending
-                messages = await redis_client.xreadgroup(
-                    groupname=group,
-                    consumername="cleanup",
-                    streams={stream: "0"},
-                    count=1000,
-                )
-                if messages:
-                    for _, stream_messages in messages:
-                        for msg_id, _ in stream_messages:
-                            await redis_client.xack(stream, group, msg_id)
-        except Exception:
-            # Group might not exist, that's ok
-            pass
-    
-    # Wait briefly for services to complete any in-flight reads
-    # This ensures services are in a clean state before test proceeds
-    await asyncio.sleep(0.5)
-
-
-@pytest_asyncio.fixture(scope="function")
-async def clean_database(db_pool: DatabasePool) -> None:
-    """Clean database tables before each test.
-    
-    Truncates all tables used by services to ensure clean test state.
-    
-    Args:
-        db_pool: Database pool fixture
-    """
-    tables_to_clean = [
-        "trades",
-        "state_machine_snapshots",
-        "daily_state",
-        "htf_bias_history",
-        "features",
-        "candles",
-    ]
-    
-    for table in tables_to_clean:
-        try:
-            await db_pool.execute(f"TRUNCATE TABLE {table} CASCADE")
-        except Exception:
-            # Table might not exist, that's ok
-            pass
-
-
-@pytest_asyncio.fixture(scope="function")
-async def redis_publisher(redis_client: redis.Redis) -> RedisStreamPublisher:
-    """Provide Redis stream publisher for test data injection.
-    
-    Args:
-        redis_client: Redis client fixture
-        
-    Returns:
-        RedisStreamPublisher instance
-    """
-    return RedisStreamPublisher(redis_client)
-
-
-def wait_for_service_health(
-    service_url: str, max_retries: int = 30, retry_delay: float = 1.0
-) -> bool:
-    """Wait for a service to become healthy.
-    
-    Args:
-        service_url: URL to health endpoint (e.g., "http://localhost:8001/health")
-        max_retries: Maximum number of retry attempts
-        retry_delay: Delay between retries in seconds
-        
-    Returns:
-        True if service became healthy, False if timed out
-    """
-    import requests
-    
-    for i in range(max_retries):
-        try:
-            response = requests.get(service_url, timeout=2)
-            if response.status_code == 200:
-                return True
-        except requests.exceptions.RequestException:
-            pass
-        
-        if i < max_retries - 1:
-            time.sleep(retry_delay)
-    
-    return False
-
-
-@pytest.fixture(scope="session")
-def docker_services() -> dict[str, str]:
-    """Provide service URLs for health checks.
-    
-    Returns:
-        Dictionary mapping service names to health endpoint URLs
-    """
-    return {
-        "data-adapter": "http://localhost:8001/health",
-        "feature-engine": "http://localhost:8002/health",
-        "htf-bias": "http://localhost:8003/health",
-        "bot-core": "http://localhost:8004/health",
-        "execution": "http://localhost:8005/health",
-    }
-
-
-@pytest.fixture(scope="function")
-def ensure_services_healthy(docker_services: dict[str, str]) -> None:
-    """Ensure all services are healthy before running tests.
-    
-    Also resets execution service state to ensure clean test isolation.
-    
-    Args:
-        docker_services: Dictionary of service health URLs
-        
-    Raises:
-        RuntimeError: If any service fails to become healthy
-    """
-    import requests
-    
-    for service_name, health_url in docker_services.items():
-        if not wait_for_service_health(health_url):
-            raise RuntimeError(
-                f"Service {service_name} did not become healthy within timeout. "
-                f"Ensure services are running: docker-compose -f infra/docker-compose.yml "
-                f"-f infra/docker-compose.services.yml -f infra/docker-compose.test.yml up -d"
-            )
-    
-    # Reset execution service state to ensure clean test isolation
-    # This clears in-memory state (active trades, pending signals, etc.)
-    try:
-        reset_response = requests.post("http://localhost:8005/admin/reset", timeout=5)
-        if reset_response.status_code != 200:
-            raise RuntimeError(
-                f"Failed to reset execution service: {reset_response.text}"
-            )
-    except requests.exceptions.RequestException as e:
-        raise RuntimeError(
-            f"Failed to reset execution service state: {e}"
-        )
-
-
-def make_candle(
-    timestamp: datetime,
-    symbol: str = "GC",
-    timeframe: str = "1m",
-    open_price: float = 2650.0,
-    high_price: float = 2652.0,
-    low_price: float = 2648.0,
-    close_price: float = 2651.0,
-    volume: float = 1000.0,
-) -> CandleMessage:
-    """Helper to create test candles.
-    
-    Args:
-        timestamp: Candle timestamp
-        symbol: Asset symbol
-        timeframe: Candle timeframe
-        open_price: Open price
-        high_price: High price
-        low_price: Low price
-        close_price: Close price
-        volume: Volume
-        
-    Returns:
-        CandleMessage instance
-    """
-    return CandleMessage(
-        timestamp=timestamp,
-        symbol=symbol,
-        timeframe=timeframe,
-        open=open_price,
-        high=high_price,
-        low=low_price,
-        close=close_price,
-        volume=volume,
+        "postgresql://scp:scp_dev_password@localhost:5432/scp"
     )
 
 
 @pytest.fixture
-def candle_factory():
-    """Provide candle factory function for tests.
+async def redis_client(redis_url: str) -> AsyncGenerator[aioredis.Redis, None]:
+    """Provide Redis client with automatic cleanup.
+    
+    Yields:
+        Connected Redis client
+        
+    Cleans up all test streams after test completes.
+    """
+    client = aioredis.from_url(redis_url, decode_responses=True)
+    
+    try:
+        await client.ping()
+        yield client
+    finally:
+        # Cleanup: delete all test streams
+        test_streams = [
+            "candles.1m.gc",
+            "candles.1m.dxy",
+            "features.1m",
+            "features.15m",
+            "features.1h",
+            "htf.bias",
+            "signals.pending",
+            "trades.opened",
+            "trades.closed",
+        ]
+        for stream in test_streams:
+            try:
+                await client.delete(stream)
+            except Exception:
+                pass
+        
+        await client.aclose()
+
+
+@pytest.fixture
+async def db_pool(postgres_url: str) -> AsyncGenerator[asyncpg.Pool, None]:
+    """Provide PostgreSQL connection pool with automatic cleanup.
+    
+    Yields:
+        Connection pool
+        
+    Cleans up test data after test completes.
+    """
+    pool = await asyncpg.create_pool(postgres_url, min_size=2, max_size=10)
+    
+    try:
+        yield pool
+    finally:
+        # Cleanup: truncate all tables (preserve schema)
+        async with pool.acquire() as conn:
+            await conn.execute("TRUNCATE TABLE trades CASCADE")
+            await conn.execute("TRUNCATE TABLE state_machine_snapshots CASCADE")
+            await conn.execute("TRUNCATE TABLE daily_state CASCADE")
+            await conn.execute("TRUNCATE TABLE htf_bias_history CASCADE")
+            await conn.execute("TRUNCATE TABLE features CASCADE")
+            await conn.execute("TRUNCATE TABLE candles CASCADE")
+        
+        await pool.close()
+
+
+@pytest.fixture
+def sample_candle_gc() -> Candle:
+    """Generate sample GC candle for testing.
     
     Returns:
-        Function that creates candles with sensible defaults
+        Candle with realistic GC price data
     """
-    return make_candle
+    return Candle(
+        timestamp=datetime(2025, 1, 15, 14, 30, 0, tzinfo=timezone.utc),
+        open=2050.0,
+        high=2052.0,
+        low=2049.0,
+        close=2051.0,
+        volume=1000.0,
+    )
 
+
+@pytest.fixture
+def sample_candle_dxy() -> Candle:
+    """Generate sample DXY candle for testing.
+    
+    Returns:
+        Candle with realistic DXY price data
+    """
+    return Candle(
+        timestamp=datetime(2025, 1, 15, 14, 30, 0, tzinfo=timezone.utc),
+        open=103.50,
+        high=103.60,
+        low=103.45,
+        close=103.55,
+        volume=500.0,
+    )
+
+
+@pytest.fixture
+def candle_message_factory():
+    """Factory for creating CandleMessage instances.
+    
+    Returns:
+        Callable that generates CandleMessage with custom parameters
+    """
+    def _create(
+        timestamp: datetime | None = None,
+        symbol: str = "GC",
+        timeframe: str = "1m",
+        open: float = 2050.0,
+        high: float = 2052.0,
+        low: float = 2049.0,
+        close: float = 2051.0,
+        volume: float = 1000.0,
+    ) -> CandleMessage:
+        if timestamp is None:
+            timestamp = datetime(2025, 1, 15, 14, 30, 0, tzinfo=timezone.utc)
+        
+        return CandleMessage(
+            timestamp=timestamp,
+            symbol=symbol,
+            timeframe=timeframe,
+            open=open,
+            high=high,
+            low=low,
+            close=close,
+            volume=volume,
+        )
+    
+    return _create
+
+
+@pytest.fixture
+def features_message_factory():
+    """Factory for creating FeaturesMessage instances.
+    
+    Returns:
+        Callable that generates FeaturesMessage with custom parameters
+    """
+    def _create(
+        timestamp: datetime | None = None,
+        symbol: str = "GC",
+        timeframe: str = "1m",
+        close: float = 2051.0,
+        vwap: float = 2050.5,
+        rsi: float = 55.0,
+        ema_9: float = 2050.0,
+        ema_20: float = 2049.0,
+        ema_50: float = 2048.0,
+        dxy_correlation: float = -0.75,
+        structure_label: str = "HH",
+        **kwargs: Any,
+    ) -> FeaturesMessage:
+        if timestamp is None:
+            timestamp = datetime(2025, 1, 15, 14, 30, 0, tzinfo=timezone.utc)
+        
+        return FeaturesMessage(
+            timestamp=timestamp,
+            symbol=symbol,
+            timeframe=timeframe,
+            close=close,
+            open=kwargs.get("open", close - 1.0),
+            high=kwargs.get("high", close + 1.0),
+            low=kwargs.get("low", close - 2.0),
+            volume=kwargs.get("volume", 1000.0),
+            vwap=vwap,
+            vwap_slope=kwargs.get("vwap_slope", 0.5),
+            vwap_deviation=kwargs.get("vwap_deviation", 0.5),
+            rsi=rsi,
+            ema_9=ema_9,
+            ema_20=ema_20,
+            ema_50=ema_50,
+            dxy_correlation=dxy_correlation,
+            dxy_corr=dxy_correlation,
+            dxy_structure=kwargs.get("dxy_structure", "HH"),
+            structure_label=structure_label,
+            htf_structure_label=kwargs.get("htf_structure_label"),
+            bos_direction=kwargs.get("bos_direction"),
+            bos_recent=kwargs.get("bos_recent", False),
+            bos_age=kwargs.get("bos_age", 0),
+            choch_detected=kwargs.get("choch_detected", False),
+            choch_direction=kwargs.get("choch_direction"),
+            structure_clarity=kwargs.get("structure_clarity", 8.0),
+            liquidity_sweep=kwargs.get("liquidity_sweep", False),
+            sweep_age=kwargs.get("sweep_age", 0),
+            expansion_detected=kwargs.get("expansion_detected", False),
+            expansion_reasons=kwargs.get("expansion_reasons", []),
+            second_confirmation_long=kwargs.get("second_confirmation_long", False),
+            second_confirmation_short=kwargs.get("second_confirmation_short", False),
+        )
+    
+    return _create
+
+
+@pytest.fixture
+def htf_bias_message_factory():
+    """Factory for creating HTFBiasMessage instances.
+    
+    Returns:
+        Callable that generates HTFBiasMessage with custom parameters
+    """
+    def _create(
+        timestamp: datetime | None = None,
+        bias: str = "bullish",
+        score: float = 8.5,
+        confidence: str = "A+",
+        structure_15m: str = "HH",
+        structure_1h: str = "HH",
+        dxy_aligned: bool = True,
+        chop_detected: bool = False,
+        **kwargs: Any,
+    ) -> HTFBiasMessage:
+        if timestamp is None:
+            timestamp = datetime(2025, 1, 15, 14, 30, 0, tzinfo=timezone.utc)
+        
+        return HTFBiasMessage(
+            timestamp=timestamp,
+            bias=bias,
+            score=score,
+            confidence=confidence,
+            structure_15m=structure_15m,
+            structure_1h=structure_1h,
+            dxy_aligned=dxy_aligned,
+            chop_detected=chop_detected,
+            seasonality_adjustment=kwargs.get("seasonality_adjustment", 0.0),
+            seasonality_period=kwargs.get("seasonality_period"),
+            vwap_trend_confirmed=kwargs.get("vwap_trend_confirmed", True),
+        )
+    
+    return _create
+
+
+@pytest.fixture
+async def publish_to_stream(redis_client: aioredis.Redis):
+    """Helper to publish messages to Redis streams.
+    
+    Args:
+        redis_client: Connected Redis client
+        
+    Returns:
+        Async function to publish messages
+    """
+    async def _publish(stream: str, message: dict[str, Any]) -> str:
+        """Publish message to stream and return message ID."""
+        # Convert datetime objects to ISO format strings
+        serialized = {}
+        for key, value in message.items():
+            if isinstance(value, datetime):
+                serialized[key] = value.isoformat()
+            elif isinstance(value, (list, dict)):
+                import json
+                serialized[key] = json.dumps(value)
+            else:
+                serialized[key] = str(value)
+        
+        msg_id = await redis_client.xadd(stream, serialized)
+        return msg_id
+    
+    return _publish
+
+
+@pytest.fixture
+async def read_from_stream(redis_client: aioredis.Redis):
+    """Helper to read messages from Redis streams.
+    
+    Args:
+        redis_client: Connected Redis client
+        
+    Returns:
+        Async function to read messages
+    """
+    async def _read(
+        stream: str,
+        count: int = 10,
+        block_ms: int = 1000,
+    ) -> list[dict[str, Any]]:
+        """Read messages from stream."""
+        results = await redis_client.xread({stream: "0"}, count=count, block=block_ms)
+        
+        if not results:
+            return []
+        
+        messages = []
+        for _, msg_list in results:
+            for msg_id, data in msg_list:
+                messages.append({"id": msg_id, "data": data})
+        
+        return messages
+    
+    return _read
+
+
+@pytest.fixture
+def mock_broker():
+    """Provide mock broker for testing execution without real orders.
+    
+    Returns:
+        AsyncMock configured as a broker
+    """
+    broker = AsyncMock()
+    broker.connect = AsyncMock(return_value=True)
+    broker.disconnect = AsyncMock(return_value=True)
+    broker.place_order = AsyncMock(return_value={"order_id": "test_order_123", "status": "filled"})
+    broker.close_position = AsyncMock(return_value={"status": "closed"})
+    broker.get_position = AsyncMock(return_value=None)
+    broker.get_all_positions = AsyncMock(return_value=[])
+    
+    return broker
+
+
+@pytest.fixture
+async def cleanup_consumer_groups(redis_client: aioredis.Redis):
+    """Cleanup consumer groups after tests.
+    
+    Yields control back to test, then cleans up consumer groups.
+    """
+    yield
+    
+    # Cleanup consumer groups
+    test_streams = [
+        "candles.1m.gc",
+        "candles.1m.dxy",
+        "features.1m",
+        "htf.bias",
+        "signals.pending",
+    ]
+    
+    for stream in test_streams:
+        try:
+            # Try to destroy consumer groups (ignore if they don't exist)
+            groups = await redis_client.xinfo_groups(stream)
+            for group_info in groups:
+                group_name = group_info["name"]
+                await redis_client.xgroup_destroy(stream, group_name)
+        except Exception:
+            # Stream or group doesn't exist - that's fine
+            pass
+
+
+# ============================================================================
+# Compatibility fixtures for existing integration tests
+# ============================================================================
+
+
+@pytest.fixture
+async def redis_publisher(redis_client: aioredis.Redis):
+    """Provide RedisStreamPublisher for existing tests.
+    
+    This is a compatibility fixture for tests written before the
+    publish_to_stream helper was introduced.
+    """
+    from scp_shared.messaging import RedisStreamPublisher
+    
+    publisher = RedisStreamPublisher(redis_client)
+    return publisher
+
+
+@pytest.fixture
+async def clean_streams(redis_client: aioredis.Redis):
+    """Cleanup Redis streams before test (compatibility fixture).
+    
+    Yields control to test, streams are cleaned up by redis_client fixture.
+    """
+    # Cleanup happens in redis_client fixture
+    yield
+
+
+@pytest.fixture
+async def ensure_services_healthy():
+    """Placeholder fixture for service health checks.
+    
+    In a full integration test environment, this would verify that
+    all required services (data-adapter, feature-engine, etc.) are
+    running and healthy before executing tests.
+    
+    For now, tests run against infrastructure only (Redis, PostgreSQL).
+    """
+    # TODO: Add actual health checks when running full service stack
+    yield
+
+
+# ============================================================================
+# Pytest configuration
+# ============================================================================
+
+
+def pytest_configure(config):
+    """Configure custom pytest markers."""
+    config.addinivalue_line("markers", "integration: All integration tests")
+    config.addinivalue_line(
+        "markers",
+        "infrastructure: Infrastructure-only tests (no services required)"
+    )
+    config.addinivalue_line(
+        "markers",
+        "e2e: End-to-end tests (require full service stack)"
+    )
+    config.addinivalue_line("markers", "slow: Slow running tests")
