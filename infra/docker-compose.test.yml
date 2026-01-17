@@ -43,6 +43,7 @@ services:
   data-adapter:
     container_name: scp-data-adapter-test
     environment:
+      SERVICE_MODE: test
       DATABASE_URL: postgresql://scp_test:scp_test_password@postgres:5432/scp_test
       DATA_PROVIDER: mock
       SESSION_FILTER_ENABLED: "false"
@@ -53,6 +54,7 @@ services:
   feature-engine:
     container_name: scp-feature-engine-test
     environment:
+      SERVICE_MODE: test
       DATABASE_URL: postgresql://scp_test:scp_test_password@postgres:5432/scp_test
       LOG_LEVEL: INFO
     restart: "no"
@@ -60,6 +62,7 @@ services:
   htf-bias:
     container_name: scp-htf-bias-test
     environment:
+      SERVICE_MODE: test
       DATABASE_URL: postgresql://scp_test:scp_test_password@postgres:5432/scp_test
       LOG_LEVEL: INFO
     restart: "no"
@@ -67,6 +70,7 @@ services:
   bot-core:
     container_name: scp-bot-core-test
     environment:
+      SERVICE_MODE: test
       DATABASE_URL: postgresql://scp_test:scp_test_password@postgres:5432/scp_test
       LOG_LEVEL: INFO
     restart: "no"
@@ -74,6 +78,7 @@ services:
   execution:
     container_name: scp-execution-test
     environment:
+      SERVICE_MODE: test
       DATABASE_URL: postgresql://scp_test:scp_test_password@postgres:5432/scp_test
       BROKER_MODE: paper
       LOG_LEVEL: INFO
