@@ -762,6 +762,11 @@ class TradeManager:
         
         logger.info(f"Restored {len(open_trades)} active trades from database")
         
+        # Update open positions metric to reflect restored trades
+        metrics.open_positions.labels(
+            mode=self._service_mode, service=self._service_name
+        ).set(len(self._active_trades))
+        
         # Step 3: Reconcile broker positions with restored trades
         if open_trades:
             # Build list of (symbol, side, entry_price, quantity) tuples
