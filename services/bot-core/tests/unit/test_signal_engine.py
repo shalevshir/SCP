@@ -144,10 +144,11 @@ class TestSignalEngine:
         )
         context = {"session_ok": True, "enforcer_tier": "Conservative"}
         
-        # Should return None (filtered out) instead of raising ValidationError
-        result = engine.generate(features, htf_bias, context)
+        # Should return (None, rejection_reason) instead of raising ValidationError
+        result, rejection_reason = engine.generate(features, htf_bias, context)
         
         assert result is None
+        assert rejection_reason == "neutral_direction"
         mock_score_signal.assert_called_once()
 
 
@@ -536,9 +537,63 @@ class TestSignalEngineGenerate:
             chop_detected=False,
         )
         
-        result = engine.generate(features, htf_bias, {"session_ok": True})
+        result, rejection_reason = engine.generate(features, htf_bias, {"session_ok": True})
         
         assert result is None
+        assert rejection_reason == "confidence_filter"
+    
+    @patch("bot_core_svc.signal_engine.score_signal")
+    def test_generate_returns_none_for_htf_validity_failure(
+        self, mock_score_signal: Mock
+    ) -> None:
+        """Generate returns None with htf_validity reason when conflict or chop detected."""
+        signal = Signal(
+            timestamp=datetime(2025, 1, 15, 10, 0, tzinfo=timezone.utc),
+            symbol="GC",
+            timeframe="1m",
+            direction="long",
+            setup_type="VWAP_RECLAIM",
+            htf_bias="bullish",
+            score=8.5,  # High score but HTF invalid
+            confidence="A+",
+            factors={"structure_alignment": 2.5},
+            rationale="Strong signal but HTF conflict",
+            validation_flags={"session_ok": True},
+            enforcer_tier="Conservative",
+        )
+        mock_score_signal.return_value = signal
+        
+        engine = SignalEngine()
+        features = FeaturesMessage(
+            timestamp=datetime(2025, 1, 15, 10, 0, tzinfo=timezone.utc),
+            symbol="GC",
+            timeframe="1m",
+            close=2650.0,
+            vwap=2645.0,
+            rsi=55.0,
+            ema_9=2648.0,
+            ema_20=2645.0,
+            ema_50=2640.0,
+            dxy_correlation=-0.75,
+            structure_label="HH",
+            vwap_deviation=0.5,
+        )
+        # HTF bias with conflict detected
+        htf_bias = HTFBiasMessage(
+            timestamp=datetime(2025, 1, 15, 10, 0, tzinfo=timezone.utc),
+            bias="bullish",
+            score=8.5,
+            confidence="A+",
+            dxy_aligned=True,
+            chop_detected=False,
+            conflict_detected=True,
+            conflict_reason="15m/1h structure mismatch",
+        )
+        
+        result, rejection_reason = engine.generate(features, htf_bias, {"session_ok": True})
+        
+        assert result is None
+        assert rejection_reason == "htf_validity"
     
     @patch("bot_core_svc.signal_engine.score_signal")
     def test_generate_returns_signal_for_a_plus(
@@ -586,9 +641,10 @@ class TestSignalEngineGenerate:
             chop_detected=False,
         )
         
-        result = engine.generate(features, htf_bias, {"session_ok": True})
+        result, rejection_reason = engine.generate(features, htf_bias, {"session_ok": True})
         
         assert result is not None
+        assert rejection_reason is None
         assert isinstance(result, SignalMessage)
         assert result.direction == "long"
         assert result.setup_type == "VWAP_RECLAIM"

@@ -62,7 +62,10 @@ async def process_features(
     # Initialize components
     # max_history=2000 to cover multi-day replays (6 days @ 15-min intervals = ~576 entries)
     bias_cache = HTFBiasCache(ttl_seconds=config.bias_cache_ttl_seconds, max_history=2000)
-    signal_engine = SignalEngine()
+    signal_engine = SignalEngine(
+        service_mode=config.service_mode,
+        service_name=config.service_name,
+    )
     signal_publisher = SignalPublisher(redis_client)
     session_service = SessionValidationService(config_path=config.session_config_path)
     # StateRepository needs the trading timezone to match SessionValidator's date calculation
@@ -250,7 +253,7 @@ async def process_feature_message(
     
     # 5. Generate signal (with timing)
     with core_metrics.signal_generation_seconds.labels(mode=mode, service=service).time():
-        signal_msg = signal_engine.generate(features, bias, context)
+        signal_msg, rejection_reason = signal_engine.generate(features, bias, context)
     
     # 6. Publish A+ signals
     if signal_msg is not None:
@@ -264,8 +267,10 @@ async def process_feature_message(
             timeframe=features.timeframe,
         ).inc()
     else:
-        # Signal didn't meet A+ criteria
-        core_metrics.record_signal_rejection("confidence_filter", mode, service)
+        # Signal was rejected - record the specific reason
+        # rejection_reason will be one of: "htf_validity", "confidence_filter", "neutral_direction"
+        if rejection_reason:
+            core_metrics.record_signal_rejection(rejection_reason, mode, service)
     
     return warmup_bar_count
 
@@ -296,6 +301,13 @@ async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
         )
     else:
         logger.info("✅ Kill switch inactive - Signal generation enabled")
+    
+    # Set enforcer tier metric
+    mode = config.service_mode
+    service = config.service_name
+    tier_value = core_metrics.ENFORCER_TIER_MAP.get(config.enforcer_tier, 1.0)
+    core_metrics.enforcer_tier.labels(mode=mode, service=service).set(tier_value)
+    logger.info(f"Enforcer tier: {config.enforcer_tier} (metric value: {tier_value})")
     
     # Send service started alert
     send_alert(

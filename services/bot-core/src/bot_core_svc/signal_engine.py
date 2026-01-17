@@ -8,6 +8,7 @@ from scp_shared.common.logger import get_logger
 from scp_shared.messaging.schemas import FeaturesMessage, HTFBiasMessage, SignalMessage
 from scp_shared.rule_engine import Signal, score_signal
 from scp_shared.rule_engine.htf.types import HTFBias
+from bot_core_svc import metrics
 
 logger = get_logger(__name__)
 
@@ -256,12 +257,22 @@ class SignalEngine:
         ...     print(f"A+ signal generated: {signal_msg.direction}")
     """
     
+    def __init__(self, service_mode: str = "dev", service_name: str = "bot-core") -> None:
+        """Initialize signal engine.
+        
+        Args:
+            service_mode: Service mode for metrics (dev/test/replay/paper/live)
+            service_name: Service name for metrics (default: bot-core)
+        """
+        self._service_mode = service_mode
+        self._service_name = service_name
+    
     def generate(
         self,
         features: FeaturesMessage,
         htf_bias: HTFBiasMessage,
         context: dict,
-    ) -> SignalMessage | None:
+    ) -> tuple[SignalMessage | None, str | None]:
         """Generate signal from features and bias.
         
         Args:
@@ -270,7 +281,9 @@ class SignalEngine:
             context: Context dict with session_ok, enforcer_tier
             
         Returns:
-            SignalMessage if A+ signal generated, None otherwise
+            Tuple of (SignalMessage, rejection_reason):
+                - SignalMessage if A+ signal generated, None otherwise
+                - rejection_reason if signal rejected, None if signal generated
         """
         # Convert messages to expected types
         features_series = features_message_to_series(features)
@@ -278,6 +291,14 @@ class SignalEngine:
         
         # Generate signal
         signal = score_signal(features_series, htf_bias_obj, context)
+        
+        # Record signal score metrics (for all signals, not just A+)
+        metrics.signal_score.labels(
+            mode=self._service_mode, service=self._service_name
+        ).set(signal.score)
+        metrics.last_signal_score.labels(
+            mode=self._service_mode, service=self._service_name
+        ).set(signal.score)
         
         # HTF validity check (must reject if conflict or DXY chop detected)
         # This matches the backtester's validate_signal_with_sop behavior
@@ -292,7 +313,7 @@ class SignalEngine:
                 f"Signal rejected (htf_valid=False): {signal.direction} {signal.setup_type} "
                 f"score={signal.score:.1f} - {', '.join(rejection_reasons)}"
             )
-            return None
+            return None, "htf_validity"
         
         # Filter for A+ signals only
         if signal.confidence != "A+":
@@ -300,7 +321,7 @@ class SignalEngine:
                 f"Signal rejected (confidence={signal.confidence}): "
                 f"{signal.direction} {signal.setup_type} score={signal.score:.1f}"
             )
-            return None
+            return None, "confidence_filter"
         
         # Filter out neutral signals (SignalMessage only accepts "long" or "short")
         # This can occur when close == vwap exactly (very rare edge case)
@@ -310,7 +331,7 @@ class SignalEngine:
                 f"{signal.setup_type} score={signal.score:.1f} "
                 f"(close={features.close}, vwap={features.vwap})"
             )
-            return None
+            return None, "neutral_direction"
         
         # Convert to message
         signal_msg = signal_to_message(signal, features)
@@ -320,5 +341,5 @@ class SignalEngine:
             f"(score: {signal.score:.1f}, timestamp: {signal.timestamp})"
         )
         
-        return signal_msg
+        return signal_msg, None
 
