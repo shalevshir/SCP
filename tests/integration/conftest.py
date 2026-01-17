@@ -27,7 +27,7 @@ def event_loop_policy():
 
 
 @pytest.fixture(scope="session")
-async def redis_url() -> str:
+def redis_url() -> str:
     """Provide Redis connection URL.
     
     Uses environment variable or defaults to localhost.
@@ -37,7 +37,7 @@ async def redis_url() -> str:
 
 
 @pytest.fixture(scope="session")
-async def postgres_url() -> str:
+def postgres_url() -> str:
     """Provide PostgreSQL connection URL.
     
     Uses environment variable or defaults to localhost.
