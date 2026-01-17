@@ -63,7 +63,7 @@ class TestWarmupPeriod:
         from scp_shared.validation import GuardrailResult
         guardrails_service.evaluate.return_value = GuardrailResult(allowed=True)
         
-        # Mock signal engine to return A+ signal
+        # Mock signal engine to return A+ signal (as tuple: signal, rejection_reason)
         a_plus_signal = SignalMessage(
             id="test-signal-1",
             timestamp=datetime(2025, 11, 6, 8, 0, tzinfo=timezone.utc),
@@ -76,7 +76,7 @@ class TestWarmupPeriod:
             tp_price=2674.0,
             factors={"test": 1.0},
         )
-        signal_engine.generate.return_value = a_plus_signal
+        signal_engine.generate.return_value = (a_plus_signal, None)  # Returns tuple
         
         # Add HTF bias to cache
         bias_msg = HTFBiasMessage(
@@ -180,7 +180,7 @@ class TestWarmupPeriod:
             tp_price=2674.0,
             factors={"test": 1.0},
         )
-        signal_engine.generate.return_value = a_plus_signal
+        signal_engine.generate.return_value = (a_plus_signal, None)  # Returns tuple
         
         bias_msg = HTFBiasMessage(
             timestamp=datetime(2025, 11, 6, 9, 0, tzinfo=timezone.utc),

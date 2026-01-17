@@ -60,7 +60,7 @@ class TestDXYAvailabilityCheck:
         bias_cache = HTFBiasCache(ttl_seconds=300)
         bias_cache.update(base_bias)
         signal_engine = Mock(spec=SignalEngine)
-        signal_engine.generate = Mock(return_value=None)
+        signal_engine.generate = Mock(return_value=(None, "no_signal"))  # Returns tuple
         signal_publisher = AsyncMock()
         guardrails_service = Mock()
         guardrails_service.evaluate = Mock(return_value=Mock(allowed=True))
@@ -103,7 +103,7 @@ class TestDXYAvailabilityCheck:
         bias_cache = HTFBiasCache(ttl_seconds=300)
         bias_cache.update(base_bias)
         signal_engine = Mock(spec=SignalEngine)
-        signal_engine.generate = Mock(return_value=None)  # No signal generated
+        signal_engine.generate = Mock(return_value=(None, "no_signal"))  # No signal generated (returns tuple)
         signal_publisher = AsyncMock()
         guardrails_service = Mock()
         guardrails_service.evaluate = Mock(return_value=Mock(allowed=True))
