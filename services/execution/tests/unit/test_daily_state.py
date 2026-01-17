@@ -88,8 +88,7 @@ class TestDailyStateTracker:
         can_trade, reason = tracker.can_trade()
         
         assert can_trade is False
-        assert "Daily trade limit" in reason
-        assert "2/2" in reason
+        assert reason == "MAX_TRADES"
     
     def test_pdll_blocks_before_trade_limit(self) -> None:
         """Test PDLL takes priority over trade count limit."""
@@ -163,7 +162,7 @@ class TestDailyStateTracker:
         
         can_trade, reason = tracker.can_trade()
         assert can_trade is False  # Still blocked
-        assert "PDLL hit" in reason
+        assert reason == "PDLL"
 
 
 

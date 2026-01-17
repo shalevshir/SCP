@@ -162,7 +162,7 @@ async def test_daily_state_restored_on_startup(
     # ASSERT: Should block new trades (already at max_trades_per_day=2)
     can_trade, reason = trade_manager._daily_tracker.can_trade()
     assert not can_trade, "Should not be able to trade after reaching max_trades_per_day"
-    assert "Daily trade limit" in reason, f"Expected daily trade limit reason, got: {reason}"
+    assert reason == "MAX_TRADES", f"Expected MAX_TRADES halt code, got: {reason}"
 
 
 @pytest.mark.asyncio
