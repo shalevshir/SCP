@@ -257,3 +257,127 @@ class TestLossStreakHaltReason:
         # NOTE: The actual metric update happens in _close_trade() which calls
         # metrics.loss_streak_current.labels(...).set(loss_streak)
         # We can verify the value is tracked correctly in DailyStateTracker
+    
+    @pytest.mark.asyncio
+    async def test_halt_metric_reflects_restored_state_on_startup(
+        self,
+        mock_broker: Mock,
+        mock_state_machine_manager: Mock,
+        mock_trade_repository: Mock,
+        mock_trade_publisher: Mock,
+        mock_db_pool: Mock,
+    ) -> None:
+        """Test halt metric correctly reflects restored state after service restart.
+        
+        This test verifies the fix for the issue where the halt reason metric
+        was unconditionally set to "NONE" after restore_active_trades(), even
+        if the restored state had a halt condition active (e.g., loss streak).
+        """
+        from scp_shared.execution.types import TradeRecord
+        from datetime import date
+        
+        # Create closed trades from today with 2 consecutive losses
+        today = date.today()
+        closed_trades = [
+            TradeRecord(
+                trade_id="trade-1",
+                signal_id="signal-1",
+                symbol="GC",
+                direction="long",
+                setup_type="VWAP_RECLAIM",
+                entry_price=2650.0,
+                sl_price=2640.0,
+                tp_price=2670.0,
+                risk_amount=10.0,
+                reward_amount=20.0,
+                entry_timestamp=datetime(2025, 1, 17, 9, 0, tzinfo=timezone.utc),
+                exit_timestamp=datetime(2025, 1, 17, 9, 5, tzinfo=timezone.utc),
+                exit_price=2640.0,
+                exit_reason="SL_HIT",
+                pnl=-10.0,
+            ),
+            TradeRecord(
+                trade_id="trade-2",
+                signal_id="signal-2",
+                symbol="GC",
+                direction="short",
+                setup_type="VWAP_FADE",
+                entry_price=2655.0,
+                sl_price=2665.0,
+                tp_price=2645.0,
+                risk_amount=10.0,
+                reward_amount=10.0,
+                entry_timestamp=datetime(2025, 1, 17, 10, 0, tzinfo=timezone.utc),
+                exit_timestamp=datetime(2025, 1, 17, 10, 8, tzinfo=timezone.utc),
+                exit_price=2665.0,
+                exit_reason="SL_HIT",
+                pnl=-10.0,
+            ),
+        ]
+        
+        # Mock repository to return these trades
+        mock_trade_repository.get_trades_for_date = AsyncMock(return_value=closed_trades)
+        mock_trade_repository.get_open_trades = AsyncMock(return_value=[])
+        
+        # Create trade manager with 2 loss limit
+        trade_manager = TradeManager(
+            broker=mock_broker,
+            state_machine_manager=mock_state_machine_manager,
+            trade_repository=mock_trade_repository,
+            trade_publisher=mock_trade_publisher,
+            db_pool=mock_db_pool,
+            max_consecutive_losses=2,
+            max_trades_per_day=5,
+            pdll_limit=1000.0,
+            service_mode="test",
+            service_name="execution",
+        )
+        
+        # Simulate service restart: restore state from database
+        await trade_manager.restore_active_trades()
+        
+        # Verify daily state was correctly restored
+        assert trade_manager._daily_tracker.state.consecutive_losses == 2
+        assert trade_manager._daily_tracker.state.losses == 2
+        assert trade_manager._daily_tracker.state.trades_count == 2
+        assert trade_manager._daily_tracker.state.daily_pnl == -20.0
+        
+        # Verify trading is blocked due to loss streak
+        can_trade, halt_reason = trade_manager._daily_tracker.can_trade()
+        assert can_trade is False
+        assert halt_reason == "LOSS_STREAK"
+        
+        # Verify the halt reason that would be set by main.py after restore
+        # (This is what the fix in main.py should do)
+        # In the actual service, main.py would call:
+        # exec_metrics.set_trading_halt_reason(halt_reason, mode, service)
+        # We can't easily test the metric call here, but we verify the
+        # can_trade() result is correct
+        
+        # Try to execute a signal - should be blocked
+        signal = SignalMessage(
+            id="signal-3",
+            timestamp=datetime(2025, 1, 17, 11, 0, tzinfo=timezone.utc),
+            direction="long",
+            setup_type="VWAP_RECLAIM",
+            score=9.0,
+            confidence="A+",
+            entry_price=2660.0,
+            sl_price=2650.0,
+            tp_price=2680.0,
+            factors={},
+        )
+        
+        trade_manager._pending_signals = [signal]
+        
+        # Execute pending signals - should be blocked by loss streak
+        await trade_manager.execute_pending_signals(2660.0, signal.timestamp)
+        
+        # Signal should remain pending (blocked by loss streak)
+        assert len(trade_manager._pending_signals) == 1
+        
+        # No order should have been placed
+        mock_broker.place_order.assert_not_called()
+        
+        # After the fix in main.py, the metric would be set to "LOSS_STREAK"
+        # instead of "NONE", making Grafana show the correct halt status

@@ -104,9 +104,28 @@ async def process_streams(
     await sm_manager.restore_from_db()
     await trade_manager.restore_active_trades()
     
-    # Initialize trading halt reason metric (default to NONE = trading allowed)
-    exec_metrics.set_trading_halt_reason("NONE", config.service_mode, config.service_name)
-    logger.info("Initialized trading halt reason metric to NONE")
+    # Set trading halt reason metric based on actual restored state
+    # Check if trading is blocked due to restored state (PDLL, loss streak, etc.)
+    can_trade, halt_reason = trade_manager._daily_tracker.can_trade()
+    if can_trade:
+        exec_metrics.set_trading_halt_reason("NONE", config.service_mode, config.service_name)
+        logger.info("Trading allowed after state restore - halt reason: NONE")
+    else:
+        # Trading is blocked - set the actual halt reason
+        exec_metrics.set_trading_halt_reason(
+            halt_reason or "UNSAFE_STATE", config.service_mode, config.service_name
+        )
+        logger.warning(
+            f"Trading blocked after state restore - halt reason: {halt_reason or 'UNSAFE_STATE'}"
+        )
+    
+    # Update loss streak metric based on restored state
+    exec_metrics.loss_streak_current.labels(
+        mode=config.service_mode, service=config.service_name
+    ).set(trade_manager._daily_tracker.state.consecutive_losses)
+    logger.info(
+        f"Restored loss streak: {trade_manager._daily_tracker.state.consecutive_losses}"
+    )
     
     # Create consumers
     signals_consumer = RedisStreamConsumer(
