@@ -70,7 +70,10 @@ class DailyStateTracker:
         
         Returns:
             Tuple of (allowed, reason) where allowed is True if trading is permitted,
-            and reason explains why if blocked.
+            and reason explains why if blocked. Reason uses standardized halt codes:
+            - "PDLL" for per-day loss limit
+            - "MAX_TRADES" for daily trade count limit
+            - None if trading is allowed
         
         Checks (in priority order):
             1. PDLL already hit today
@@ -79,7 +82,7 @@ class DailyStateTracker:
         """
         # Check if PDLL was already hit
         if self._state.pdll_hit:
-            return False, "PDLL hit - no further trading today"
+            return False, "PDLL"
         
         # Check if daily P&L exceeds loss limit
         if self._state.daily_pnl <= -self._pdll_limit:
@@ -99,11 +102,11 @@ class DailyStateTracker:
                     "timestamp": datetime.now().isoformat(),
                 },
             )
-            return False, f"PDLL limit reached: {self._state.daily_pnl:.2f}"
+            return False, "PDLL"
         
         # Check if daily trade count exceeded
         if self._state.trades_count >= self._max_trades_per_day:
-            return False, f"Daily trade limit: {self._state.trades_count}/{self._max_trades_per_day}"
+            return False, "MAX_TRADES"
         
         return True, None
     

@@ -18,7 +18,7 @@ from scp_shared.database import DatabasePool
 from scp_shared.health import create_health_router
 from scp_shared.messaging import RedisStreamConsumer, CandleFeatureSynchronizer
 from scp_shared.messaging.schemas import CandleMessage, FeaturesMessage, SignalMessage
-from scp_shared.metrics import create_metrics_router
+from scp_shared.metrics import create_metrics_router, infrastructure
 
 from execution_svc.broker import BaseBroker, create_broker
 from execution_svc.config import ExecutionConfig
@@ -90,6 +90,8 @@ async def process_streams(
         max_active_trades=_max_active,
         pdll_limit=config.pdll_limit,
         max_trades_per_day=config.max_trades_per_day,
+        service_mode=config.service_mode,
+        service_name=config.service_name,
     )
     
     # Store global references for reset endpoint
@@ -100,6 +102,10 @@ async def process_streams(
     # Restore state from database
     await sm_manager.restore_from_db()
     await trade_manager.restore_active_trades()
+    
+    # Initialize trading halt reason metric (default to NONE = trading allowed)
+    exec_metrics.set_trading_halt_reason("NONE", config.service_mode, config.service_name)
+    logger.info("Initialized trading halt reason metric to NONE")
     
     # Create consumers
     signals_consumer = RedisStreamConsumer(
@@ -303,6 +309,10 @@ async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
     # Startup
     redis_client = redis.Redis.from_url(config.redis_url)
     logger.info(f"Connected to Redis at {mask_connection_url(config.redis_url)}")
+    # Set redis connected metric
+    infrastructure.redis_connected.labels(
+        mode=config.service_mode, service=config.service_name
+    ).set(1)
     
     db_pool = DatabasePool(config.database_url)
     await db_pool.connect()
@@ -317,11 +327,23 @@ async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
         try:
             await broker.connect()
             logger.info(f"✅ Broker connected (mode: {config.broker_mode})")
+            # Set broker connected metric
+            exec_metrics.broker_connected.labels(
+                mode=config.service_mode, service=config.service_name
+            ).set(1)
         except Exception as e:
             logger.error(f"❌ Failed to connect broker: {e}")
+            # Set broker disconnected metric
+            exec_metrics.broker_connected.labels(
+                mode=config.service_mode, service=config.service_name
+            ).set(0)
             raise
     else:
         logger.info(f"✅ Broker initialized (mode: {config.broker_mode})")
+        # Paper broker is always "connected" (local)
+        exec_metrics.broker_connected.labels(
+            mode=config.service_mode, service=config.service_name
+        ).set(1)
     
     # Initialize kill switch repository and load state
     _kill_switch_repo = KillSwitchRepository(db_pool)
@@ -385,6 +407,16 @@ async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
                 logger.info("Broker disconnected")
             except Exception as e:
                 logger.error(f"Error disconnecting broker: {e}")
+        
+        # Set broker disconnected metric
+        exec_metrics.broker_connected.labels(
+            mode=config.service_mode, service=config.service_name
+        ).set(0)
+        
+        # Set redis disconnected metric
+        infrastructure.redis_connected.labels(
+            mode=config.service_mode, service=config.service_name
+        ).set(0)
         
         await redis_client.aclose()
         await db_pool.close()

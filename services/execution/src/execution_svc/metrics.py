@@ -80,6 +80,36 @@ UNSAFE_STATE_REASONS = {
     "invalid_state",  # Fallback for unknown/unexpected states
 }
 
+# Trading halt reasons (finite set)
+trading_halt_reason = create_gauge(
+    "trading_halt_reason",
+    "Current trading halt reason (1=active for that reason, 0=inactive)",
+    labels=["reason"],
+)
+
+# Valid halt reasons (finite set)
+HALT_REASONS = {
+    "NONE",  # No halt (trading allowed)
+    "PDLL",  # Per-day loss limit hit
+    "LOSS_STREAK",  # Loss streak limit hit
+    "FATIGUE",  # Fatigue detection
+    "UNSAFE_STATE",  # Unsafe state (kill switch, data lag, etc.)
+    "CEO_OVERRIDE",  # Manual override by CEO
+    "MAX_TRADES",  # Max trades per day reached
+}
+
+# Broker connectivity
+broker_connected = create_gauge(
+    "broker_connected",
+    "Broker connection status (1=connected, 0=disconnected)",
+)
+
+# Loss streak tracking
+loss_streak_current = create_gauge(
+    "loss_streak_current",
+    "Current consecutive loss count",
+)
+
 
 def record_order_rejection(reason: str, mode: str, service: str) -> None:
     """Record an order rejection with validation of reason label.
@@ -115,3 +145,23 @@ def set_unsafe_state(reason: str | None, mode: str, service: str) -> None:
         
         # Set this specific unsafe state
         unsafe_state.labels(mode=mode, service=service, reason=reason).set(1)
+
+
+def set_trading_halt_reason(reason: str, mode: str, service: str) -> None:
+    """Set trading halt reason metrics.
+    
+    Args:
+        reason: Halt reason (must be from HALT_REASONS set)
+        mode: Service mode (dev/test/replay/paper/live)
+        service: Service name (execution)
+    """
+    # Validate reason
+    if reason not in HALT_REASONS:
+        reason = "UNSAFE_STATE"  # Default for unknown reasons
+    
+    # Clear all halt reasons first
+    for halt_reason in HALT_REASONS:
+        trading_halt_reason.labels(mode=mode, service=service, reason=halt_reason).set(0)
+    
+    # Set the active halt reason
+    trading_halt_reason.labels(mode=mode, service=service, reason=reason).set(1)
