@@ -58,7 +58,7 @@ def ensure_services_running():
     """Ensure microservices are running."""
     # Check if services are running
     result = subprocess.run(
-        ["docker", "compose", "-f", "infra/docker-compose.yml", "-f", "infra/docker-compose.services.yml", "ps"],
+        ["docker", "compose", "-f", "infra/docker-compose.infra.yml", "-f", "infra/docker-compose.services.yml", "ps"],
         capture_output=True,
         text=True,
     )
@@ -66,7 +66,7 @@ def ensure_services_running():
     if "data-adapter" not in result.stdout:
         pytest.skip(
             "Microservices not running. Start with: "
-            "docker-compose -f infra/docker-compose.yml -f infra/docker-compose.services.yml -f infra/docker-compose.replay.yml up -d"
+            "docker-compose -f infra/docker-compose.infra.yml -f infra/docker-compose.services.yml -f infra/docker-compose.replay.yml up -d"
         )
 
 

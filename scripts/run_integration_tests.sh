@@ -55,9 +55,7 @@ if [ "$REDIS_OK" = false ] || [ "$POSTGRES_OK" = false ]; then
     echo -e "${YELLOW}Infrastructure not running. Starting with docker-compose...${NC}"
     echo ""
     
-    cd infra
-    docker-compose up -d redis postgres
-    cd ..
+    docker-compose -f infra/docker-compose.infra.yml up -d redis postgres
     
     echo "Waiting for services to be ready..."
     sleep 5

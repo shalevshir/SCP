@@ -200,7 +200,7 @@ async def test_features_timestamp_matches_candles(
     redis_publisher: RedisStreamPublisher,
     clean_streams: None,
     ensure_services_healthy: None,
-    candle_factory,
+    candle_message_factory,
 ) -> None:
     """Test that feature timestamps match published candle timestamps."""
     features_consumer = RedisStreamConsumer(
@@ -220,8 +220,8 @@ async def test_features_timestamp_matches_candles(
     for i in range(5):
         ts = test_timestamp + timedelta(minutes=i)
         
-        gc_candle = candle_factory(timestamp=ts, symbol="GC")
-        dxy_candle = candle_factory(timestamp=ts, symbol="DXY")
+        gc_candle = candle_message_factory(timestamp=ts, symbol="GC")
+        dxy_candle = candle_message_factory(timestamp=ts, symbol="DXY")
         
         await redis_publisher.publish("candles.1m.gc", gc_candle)
         await redis_publisher.publish("candles.1m.dxy", dxy_candle)
