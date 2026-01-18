@@ -42,7 +42,7 @@ sleep 5
 # Start services with paper trading overlay
 echo "🚀 Starting all services with paper trading configuration..."
 docker compose \
-  -f infra/docker-compose.yml \
+  -f infra/docker-compose.infra.yml \
   -f infra/docker-compose.services.yml \
   -f infra/docker-compose.paper-trading.yml \
   up -d --build

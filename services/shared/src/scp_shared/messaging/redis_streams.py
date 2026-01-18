@@ -1,5 +1,6 @@
 """Redis Streams pub/sub utilities."""
 
+import asyncio
 import json
 from datetime import UTC, datetime
 from typing import Any, Generic, TypeVar
@@ -114,10 +115,8 @@ class RedisStreamConsumer(Generic[T]):
         """Create consumer group if it doesn't exist.
         
         This is idempotent - safe to call multiple times.
+        Verifies group existence and recreates if necessary (e.g., after stream deletion).
         """
-        if self._initialized:
-            return
-
         @with_retry(self.retry_config)
         async def _ensure_group() -> None:
             try:
@@ -128,12 +127,27 @@ class RedisStreamConsumer(Generic[T]):
                     mkstream=True,
                 )
             except redis.ResponseError as e:
-                # Group already exists
+                # Group already exists - this is expected
                 if "BUSYGROUP" not in str(e):
                     raise
 
-        await _ensure_group()
-        self._initialized = True
+        # Verify group still exists (it may have been deleted with stream)
+        # This is critical for integration tests that clean streams between runs
+        try:
+            groups = await self.redis.xinfo_groups(self.stream)
+            group_exists = any(
+                (g.get(b"name") or g.get("name")) == (self.group.encode() if isinstance(g.get(b"name") or g.get("name"), bytes) else self.group)
+                for g in groups
+            )
+            if not group_exists:
+                await _ensure_group()
+                self._initialized = True
+            else:
+                self._initialized = True
+        except redis.ResponseError:
+            # Stream doesn't exist - create it with the consumer group
+            await _ensure_group()
+            self._initialized = True
 
     async def read(
         self,
@@ -156,28 +170,13 @@ class RedisStreamConsumer(Generic[T]):
         """
         await self.ensure_group()
 
-        # Only retry the read operation, not the entire read+ack loop
+        # Retry the read operation with connection error handling
         @with_retry(self.retry_config)
         async def _read() -> list[tuple[Any, dict[bytes, bytes]]]:
-            try:
-                results = await self.redis.xreadgroup(
-                    groupname=self.group,
-                    consumername=self.consumer_name,
-                    streams={self.stream: ">"},
-                    count=count,
-                    block=block_ms,
-                )
-                # Flatten results to list of (message_id, data) tuples
-                flat_messages = []
-                for _stream_name, stream_messages in results:
-                    flat_messages.extend(stream_messages)
-                return flat_messages
-            except redis.ResponseError as e:
-                # If consumer group was deleted (e.g., by test cleanup), recreate it
-                if "NOGROUP" in str(e):
-                    self._initialized = False  # Force recreation
-                    await self.ensure_group()
-                    # Retry the read after recreating group
+            # Retry NOGROUP errors with exponential backoff (max 3 attempts)
+            max_nogroup_retries = 3
+            for nogroup_attempt in range(max_nogroup_retries):
+                try:
                     results = await self.redis.xreadgroup(
                         groupname=self.group,
                         consumername=self.consumer_name,
@@ -185,13 +184,31 @@ class RedisStreamConsumer(Generic[T]):
                         count=count,
                         block=block_ms,
                     )
+                    # Flatten results to list of (message_id, data) tuples
                     flat_messages = []
                     for _stream_name, stream_messages in results:
                         flat_messages.extend(stream_messages)
                     return flat_messages
-                raise
+                except redis.ResponseError as e:
+                    # If consumer group was deleted (e.g., by test cleanup), recreate it
+                    if "NOGROUP" in str(e):
+                        self._initialized = False  # Force recreation
+                        await self.ensure_group()
+                        
+                        # If this was the last attempt, raise
+                        if nogroup_attempt >= max_nogroup_retries - 1:
+                            raise
+                        
+                        # Wait before retrying (with exponential backoff)
+                        delay = 0.1 * (2 ** nogroup_attempt)  # 0.1s, 0.2s, 0.4s
+                        await asyncio.sleep(delay)
+                        continue  # Retry
+                    raise
+            
+            # Should never reach here, but satisfies type checker
+            raise redis.ResponseError("Failed to read after retrying NOGROUP errors")
 
-        # Retry only the read operation
+        # Retry the read operation (with connection error retries)
         raw_messages = await _read()
 
         # Process and acknowledge messages WITHOUT retry wrapper

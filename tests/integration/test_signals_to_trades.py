@@ -28,8 +28,8 @@ async def test_signal_triggers_trade_execution(
     redis_publisher: RedisStreamPublisher,
     db_pool: DatabasePool,
     clean_streams: None,
-    clean_database: None,
     ensure_services_healthy: None,
+    reset_execution_state: None,
 ) -> None:
     """Test that a signal published to signals.pending triggers trade execution.
     
@@ -157,8 +157,8 @@ async def test_sl_hit_closes_trade(
     redis_publisher: RedisStreamPublisher,
     db_pool: DatabasePool,
     clean_streams: None,
-    clean_database: None,
     ensure_services_healthy: None,
+    reset_execution_state: None,
 ) -> None:
     """Test that price hitting SL closes the trade.
     
@@ -352,8 +352,8 @@ async def test_tp_hit_closes_trade(
     redis_publisher: RedisStreamPublisher,
     db_pool: DatabasePool,
     clean_streams: None,
-    clean_database: None,
     ensure_services_healthy: None,
+    reset_execution_state: None,
 ) -> None:
     """Test that price hitting TP closes the trade with profit."""
     trades_opened_consumer = RedisStreamConsumer(
@@ -542,8 +542,8 @@ async def test_invalidation_closes_trade(
     redis_client: redis.Redis,
     redis_publisher: RedisStreamPublisher,
     clean_streams: None,
-    clean_database: None,
     ensure_services_healthy: None,
+    reset_execution_state: None,
 ) -> None:
     """Test that invalidation (VWAP loss) closes the trade early."""
     trades_opened_consumer = RedisStreamConsumer(
