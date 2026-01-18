@@ -39,6 +39,8 @@ class _DummyStateMachineManager:
     def __init__(self) -> None:
         self._state_machines: dict = {"sm1": object()}
         self._bar_counter = 42
+        self._reclaim_context_executions: dict = {"ctx": 1}
+        self._signal_timestamps: dict = {"sig": "ts"}
 
 
 class _DummyBroker:
