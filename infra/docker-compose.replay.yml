@@ -12,6 +12,7 @@ services:
   data-adapter:
     container_name: scp-data-adapter-replay
     environment:
+      SERVICE_MODE: replay
       DATA_PROVIDER: mock
       SESSION_FILTER_ENABLED: "false"
       LOG_LEVEL: INFO
@@ -19,22 +20,26 @@ services:
   feature-engine:
     container_name: scp-feature-engine-replay
     environment:
+      SERVICE_MODE: replay
       WARMUP_ENABLED: "true"
       LOG_LEVEL: INFO
 
   htf-bias:
     container_name: scp-htf-bias-replay
     environment:
+      SERVICE_MODE: replay
       LOG_LEVEL: INFO
 
   bot-core:
     container_name: scp-bot-core-replay
     environment:
+      SERVICE_MODE: replay
       SESSION_VALIDATION_ENABLED: "false"  # Disable for historical data
       LOG_LEVEL: INFO
 
   execution:
     container_name: scp-execution-replay
     environment:
+      SERVICE_MODE: replay
       BROKER_MODE: paper
       LOG_LEVEL: INFO

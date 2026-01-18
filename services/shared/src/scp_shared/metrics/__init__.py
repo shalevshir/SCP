@@ -30,10 +30,12 @@ from scp_shared.metrics.registry import (
     create_histogram,
 )
 from scp_shared.metrics.router import create_metrics_router
+from scp_shared.metrics import infrastructure
 
 __all__ = [
     "create_counter",
     "create_gauge",
     "create_histogram",
     "create_metrics_router",
+    "infrastructure",
 ]

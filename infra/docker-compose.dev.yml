@@ -35,6 +35,7 @@ services:
   data-adapter:
     container_name: scp-data-adapter-dev
     environment:
+      SERVICE_MODE: dev
       DATABASE_URL: postgresql://scp:${POSTGRES_PASSWORD:-scp_dev_password}@postgres:5432/scp_dev
       DATA_PROVIDER: mock
       MOCK_DATA_PATH: ${MOCK_DATA_PATH:-/app/data}
@@ -45,18 +46,21 @@ services:
   feature-engine:
     container_name: scp-feature-engine-dev
     environment:
+      SERVICE_MODE: dev
       DATABASE_URL: postgresql://scp:${POSTGRES_PASSWORD:-scp_dev_password}@postgres:5432/scp_dev
       LOG_LEVEL: DEBUG
 
   htf-bias:
     container_name: scp-htf-bias-dev
     environment:
+      SERVICE_MODE: dev
       DATABASE_URL: postgresql://scp:${POSTGRES_PASSWORD:-scp_dev_password}@postgres:5432/scp_dev
       LOG_LEVEL: DEBUG
 
   bot-core:
     container_name: scp-bot-core-dev
     environment:
+      SERVICE_MODE: dev
       DATABASE_URL: postgresql://scp:${POSTGRES_PASSWORD:-scp_dev_password}@postgres:5432/scp_dev
       SESSION_VALIDATION_ENABLED: "false"
       LOG_LEVEL: DEBUG
@@ -64,6 +68,7 @@ services:
   execution:
     container_name: scp-execution-dev
     environment:
+      SERVICE_MODE: dev
       DATABASE_URL: postgresql://scp:${POSTGRES_PASSWORD:-scp_dev_password}@postgres:5432/scp_dev
       BROKER_MODE: paper
       LOG_LEVEL: DEBUG

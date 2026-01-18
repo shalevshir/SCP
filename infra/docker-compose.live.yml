@@ -24,6 +24,7 @@ services:
   data-adapter:
     container_name: scp-data-adapter-live
     environment:
+      SERVICE_MODE: live
       DATABASE_URL: postgresql://scp:${POSTGRES_PASSWORD}@postgres:5432/scp
       DATA_PROVIDER: ib
       IB_HOST: ${IB_HOST:-host.docker.internal}
@@ -49,6 +50,7 @@ services:
   feature-engine:
     container_name: scp-feature-engine-live
     environment:
+      SERVICE_MODE: live
       DATABASE_URL: postgresql://scp:${POSTGRES_PASSWORD}@postgres:5432/scp
       LOG_LEVEL: INFO
     restart: always
@@ -61,6 +63,7 @@ services:
   htf-bias:
     container_name: scp-htf-bias-live
     environment:
+      SERVICE_MODE: live
       DATABASE_URL: postgresql://scp:${POSTGRES_PASSWORD}@postgres:5432/scp
       LOG_LEVEL: INFO
     restart: always
@@ -73,6 +76,7 @@ services:
   bot-core:
     container_name: scp-bot-core-live
     environment:
+      SERVICE_MODE: live
       DATABASE_URL: postgresql://scp:${POSTGRES_PASSWORD}@postgres:5432/scp
       SESSION_VALIDATION_ENABLED: "true"
       MAX_TRADES_PER_DAY: ${MAX_TRADES_PER_DAY:-3}
@@ -89,6 +93,7 @@ services:
   execution:
     container_name: scp-execution-live
     environment:
+      SERVICE_MODE: live
       DATABASE_URL: postgresql://scp:${POSTGRES_PASSWORD}@postgres:5432/scp
       BROKER_MODE: ib_live  # ⚠️  REAL MONEY ⚠️
       IB_HOST: ${IB_HOST:-host.docker.internal}

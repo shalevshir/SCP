@@ -21,12 +21,18 @@ class DailyState:
         daily_pnl: Cumulative P&L in points for the day
         trades_count: Number of trades executed today
         pdll_hit: Whether PDLL (Per Day Loss Limit) was hit today
+        consecutive_losses: Number of consecutive losses today
+        wins: Number of winning trades today
+        losses: Number of losing trades today
     """
     
     date: date
     daily_pnl: float = 0.0
     trades_count: int = 0
     pdll_hit: bool = False
+    consecutive_losses: int = 0
+    wins: int = 0
+    losses: int = 0
 
 
 class DailyStateTracker:
@@ -49,20 +55,24 @@ class DailyStateTracker:
         self,
         pdll_limit: float = 600.0,
         max_trades_per_day: int = 2,
+        max_consecutive_losses: int = 2,
     ) -> None:
         """Initialize daily state tracker.
         
         Args:
             pdll_limit: Per day loss limit in points (default: 600.0)
             max_trades_per_day: Maximum trades allowed per day (default: 2)
+            max_consecutive_losses: Maximum consecutive losses before halt (default: 2)
         """
         self._pdll_limit = pdll_limit
         self._max_trades_per_day = max_trades_per_day
+        self._max_consecutive_losses = max_consecutive_losses
         self._state = DailyState(date=date.today())
         
         logger.info(
             f"DailyStateTracker initialized: pdll_limit={pdll_limit}, "
-            f"max_trades_per_day={max_trades_per_day}"
+            f"max_trades_per_day={max_trades_per_day}, "
+            f"max_consecutive_losses={max_consecutive_losses}"
         )
     
     def can_trade(self) -> tuple[bool, str | None]:
@@ -70,16 +80,21 @@ class DailyStateTracker:
         
         Returns:
             Tuple of (allowed, reason) where allowed is True if trading is permitted,
-            and reason explains why if blocked.
+            and reason explains why if blocked. Reason uses standardized halt codes:
+            - "PDLL" for per-day loss limit
+            - "LOSS_STREAK" for consecutive loss limit
+            - "MAX_TRADES" for daily trade count limit
+            - None if trading is allowed
         
         Checks (in priority order):
             1. PDLL already hit today
             2. Daily P&L at or below negative PDLL limit
-            3. Daily trade count at or above maximum
+            3. Loss streak at or above maximum
+            4. Daily trade count at or above maximum
         """
         # Check if PDLL was already hit
         if self._state.pdll_hit:
-            return False, "PDLL hit - no further trading today"
+            return False, "PDLL"
         
         # Check if daily P&L exceeds loss limit
         if self._state.daily_pnl <= -self._pdll_limit:
@@ -99,11 +114,15 @@ class DailyStateTracker:
                     "timestamp": datetime.now().isoformat(),
                 },
             )
-            return False, f"PDLL limit reached: {self._state.daily_pnl:.2f}"
+            return False, "PDLL"
+        
+        # Check if loss streak exceeded
+        if self._state.consecutive_losses >= self._max_consecutive_losses:
+            return False, "LOSS_STREAK"
         
         # Check if daily trade count exceeded
         if self._state.trades_count >= self._max_trades_per_day:
-            return False, f"Daily trade limit: {self._state.trades_count}/{self._max_trades_per_day}"
+            return False, "MAX_TRADES"
         
         return True, None
     
@@ -124,9 +143,32 @@ class DailyStateTracker:
             pnl: Trade P&L in points (positive for profit, negative for loss)
         """
         self._state.daily_pnl += pnl
-        logger.debug(
-            f"Trade closed: pnl={pnl:.2f} points, daily_pnl now {self._state.daily_pnl:.2f}"
-        )
+        
+        # Update win/loss tracking
+        if pnl > 0:
+            # Win: increment wins, reset loss streak
+            self._state.wins += 1
+            self._state.consecutive_losses = 0
+            logger.debug(
+                f"Trade closed (WIN): pnl={pnl:.2f} points, "
+                f"daily_pnl now {self._state.daily_pnl:.2f}, "
+                f"consecutive_losses reset to 0"
+            )
+        elif pnl < 0:
+            # Loss: increment losses and loss streak
+            self._state.losses += 1
+            self._state.consecutive_losses += 1
+            logger.debug(
+                f"Trade closed (LOSS): pnl={pnl:.2f} points, "
+                f"daily_pnl now {self._state.daily_pnl:.2f}, "
+                f"consecutive_losses now {self._state.consecutive_losses}"
+            )
+        else:
+            # Breakeven: no change to win/loss/streak
+            logger.debug(
+                f"Trade closed (BREAKEVEN): pnl=0.00 points, "
+                f"daily_pnl now {self._state.daily_pnl:.2f}"
+            )
         
         # Log warning if approaching PDLL
         if self._state.daily_pnl < 0:
@@ -208,14 +250,31 @@ class DailyStateTracker:
         # Count all trades (open and closed) opened today
         self._state.trades_count = len(trades)
         
-        # Sum P&L from closed trades only (open trades have no P&L yet)
+        # Sum P&L and track wins/losses from closed trades only
         total_pnl = 0.0
-        for trade in trades:
-            if trade.pnl is not None:  # Closed trade
-                # Convert Decimal to float for arithmetic compatibility
-                total_pnl += float(trade.pnl)
+        wins = 0
+        losses = 0
+        consecutive_losses = 0
+        
+        # Sort trades by close time to compute consecutive losses correctly
+        closed_trades = [t for t in trades if t.pnl is not None]
+        closed_trades.sort(key=lambda t: t.exit_timestamp or t.entry_timestamp)
+        
+        for trade in closed_trades:
+            pnl = float(trade.pnl)
+            total_pnl += pnl
+            
+            if pnl > 0:
+                wins += 1
+                consecutive_losses = 0  # Reset on win
+            elif pnl < 0:
+                losses += 1
+                consecutive_losses += 1
         
         self._state.daily_pnl = total_pnl
+        self._state.wins = wins
+        self._state.losses = losses
+        self._state.consecutive_losses = consecutive_losses
         
         # Check if PDLL was already hit
         if total_pnl <= -self._pdll_limit:
@@ -242,6 +301,8 @@ class DailyStateTracker:
             f"Daily state restored: date={current_date}, "
             f"trades_count={self._state.trades_count}, "
             f"daily_pnl={self._state.daily_pnl:.2f}, "
+            f"wins={self._state.wins}, losses={self._state.losses}, "
+            f"consecutive_losses={self._state.consecutive_losses}, "
             f"pdll_hit={self._state.pdll_hit}"
         )
     

@@ -40,6 +40,11 @@ class ExecutionConfig(BaseServiceConfig):
         description="Maximum trades per day",
     )
     
+    max_consecutive_losses: int = Field(
+        default=2,
+        description="Maximum consecutive losses before halt",
+    )
+    
     # Slippage configuration (disabled by default for production)
     enable_slippage: bool = Field(
         default=False,
