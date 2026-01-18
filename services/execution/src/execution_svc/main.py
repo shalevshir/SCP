@@ -119,12 +119,26 @@ async def process_streams(
             f"Trading blocked after state restore - halt reason: {halt_reason or 'UNSAFE_STATE'}"
         )
     
-    # Update loss streak metric based on restored state
+    # Update metrics based on restored state
     exec_metrics.loss_streak_current.labels(
         mode=config.service_mode, service=config.service_name
     ).set(trade_manager._daily_tracker.state.consecutive_losses)
+    
+    exec_metrics.daily_pnl.labels(
+        mode=config.service_mode, service=config.service_name
+    ).set(trade_manager._daily_tracker.state.daily_pnl)
+    
+    # Calculate daily drawdown (max loss from peak)
+    daily_drawdown = min(0, trade_manager._daily_tracker.state.daily_pnl)
+    exec_metrics.daily_drawdown.labels(
+        mode=config.service_mode, service=config.service_name
+    ).set(abs(daily_drawdown))
+    
     logger.info(
-        f"Restored loss streak: {trade_manager._daily_tracker.state.consecutive_losses}"
+        f"Restored daily state metrics: "
+        f"loss_streak={trade_manager._daily_tracker.state.consecutive_losses}, "
+        f"daily_pnl={trade_manager._daily_tracker.state.daily_pnl:.2f}, "
+        f"daily_drawdown={abs(daily_drawdown):.2f}"
     )
     
     # Create consumers
