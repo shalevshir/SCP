@@ -41,6 +41,14 @@ class TestDailyStateTracker:
         assert tracker.state.trades_count == 0
         assert tracker.state.pdll_hit is False
         assert tracker.state.consecutive_losses == 0
+
+    def test_initialization_rejects_non_positive_max_consecutive_losses(self) -> None:
+        """Test invalid max_consecutive_losses raises errors."""
+        with pytest.raises(ValueError):
+            DailyStateTracker(max_consecutive_losses=0)
+
+        with pytest.raises(ValueError):
+            DailyStateTracker(max_consecutive_losses=-1)
     
     def test_can_trade_returns_true_initially(self) -> None:
         """Test can_trade returns True when no limits hit."""

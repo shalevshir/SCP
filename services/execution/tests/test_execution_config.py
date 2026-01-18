@@ -94,5 +94,16 @@ class TestExecutionConfig:
         assert config.sizing_mode == "risk_ladder"
         assert config.risk_per_trade_percent == 1.0
 
+    def test_config_rejects_non_positive_max_consecutive_losses(self):
+        """Configuration should reject non-positive max_consecutive_losses."""
+        from execution_svc.config import ExecutionConfig
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            ExecutionConfig(max_consecutive_losses=0)
+
+        with pytest.raises(ValidationError):
+            ExecutionConfig(max_consecutive_losses=-2)
+
 
 
