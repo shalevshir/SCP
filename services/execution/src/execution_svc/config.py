@@ -42,6 +42,7 @@ class ExecutionConfig(BaseServiceConfig):
     
     max_consecutive_losses: int = Field(
         default=2,
+        ge=1,
         description="Maximum consecutive losses before halt",
     )
     

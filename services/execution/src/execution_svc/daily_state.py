@@ -64,6 +64,8 @@ class DailyStateTracker:
             max_trades_per_day: Maximum trades allowed per day (default: 2)
             max_consecutive_losses: Maximum consecutive losses before halt (default: 2)
         """
+        if max_consecutive_losses < 1:
+            raise ValueError("max_consecutive_losses must be at least 1")
         self._pdll_limit = pdll_limit
         self._max_trades_per_day = max_trades_per_day
         self._max_consecutive_losses = max_consecutive_losses
