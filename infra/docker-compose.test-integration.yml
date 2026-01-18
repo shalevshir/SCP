@@ -1,0 +1,38 @@
+# Integration Test Environment Overrides
+# Usage: docker compose -f docker-compose.infra.yml -f docker-compose.services.yml -f docker-compose.test-integration.yml up
+#
+# Features:
+# - Paper broker (no IB Gateway required)
+# - Session filtering disabled
+# - Session validation disabled
+# - Suitable for integration tests
+
+services:
+  data-adapter:
+    container_name: scp-data-adapter-test
+    environment:
+      DATA_PROVIDER: mock
+      SESSION_FILTER_ENABLED: "false"
+      LOG_LEVEL: INFO
+
+  feature-engine:
+    container_name: scp-feature-engine-test
+    environment:
+      LOG_LEVEL: INFO
+
+  htf-bias:
+    container_name: scp-htf-bias-test
+    environment:
+      LOG_LEVEL: INFO
+
+  bot-core:
+    container_name: scp-bot-core-test
+    environment:
+      SESSION_VALIDATION_ENABLED: "false"
+      LOG_LEVEL: INFO
+
+  execution:
+    container_name: scp-execution-test
+    environment:
+      BROKER_MODE: paper  # Use in-memory paper broker (no IB Gateway)
+      LOG_LEVEL: INFO

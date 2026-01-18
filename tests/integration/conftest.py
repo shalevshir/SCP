@@ -428,6 +428,35 @@ async def ensure_services_healthy():
     yield
 
 
+@pytest.fixture
+async def reset_execution_state():
+    """Reset Execution service state before each test.
+    
+    Calls the /admin/reset endpoint to clear active trades, pending signals,
+    and other runtime state. This prevents test interference when running
+    multiple tests in sequence.
+    """
+    import httpx
+    
+    # Reset state before test
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.post("http://localhost:8005/admin/reset", timeout=5.0)
+            if response.status_code == 200:
+                pass  # Success
+    except Exception:
+        pass  # Service might not be running or endpoint might not exist
+    
+    yield
+    
+    # Reset state after test (cleanup)
+    try:
+        async with httpx.AsyncClient() as client:
+            await client.post("http://localhost:8005/admin/reset", timeout=5.0)
+    except Exception:
+        pass
+
+
 # ============================================================================
 # Pytest configuration
 # ============================================================================

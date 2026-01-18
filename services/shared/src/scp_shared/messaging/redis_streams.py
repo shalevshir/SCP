@@ -115,10 +115,8 @@ class RedisStreamConsumer(Generic[T]):
         """Create consumer group if it doesn't exist.
         
         This is idempotent - safe to call multiple times.
+        Verifies group existence and recreates if necessary (e.g., after stream deletion).
         """
-        if self._initialized:
-            return
-
         @with_retry(self.retry_config)
         async def _ensure_group() -> None:
             try:
@@ -129,12 +127,27 @@ class RedisStreamConsumer(Generic[T]):
                     mkstream=True,
                 )
             except redis.ResponseError as e:
-                # Group already exists
+                # Group already exists - this is expected
                 if "BUSYGROUP" not in str(e):
                     raise
 
-        await _ensure_group()
-        self._initialized = True
+        # Verify group still exists (it may have been deleted with stream)
+        # This is critical for integration tests that clean streams between runs
+        try:
+            groups = await self.redis.xinfo_groups(self.stream)
+            group_exists = any(
+                (g.get(b"name") or g.get("name")) == (self.group.encode() if isinstance(g.get(b"name") or g.get("name"), bytes) else self.group)
+                for g in groups
+            )
+            if not group_exists:
+                await _ensure_group()
+                self._initialized = True
+            else:
+                self._initialized = True
+        except redis.ResponseError:
+            # Stream doesn't exist - create it with the consumer group
+            await _ensure_group()
+            self._initialized = True
 
     async def read(
         self,
