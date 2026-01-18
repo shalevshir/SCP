@@ -24,7 +24,6 @@ async def test_full_pipeline_candles_to_trades(
     redis_publisher: RedisStreamPublisher,
     db_pool: DatabasePool,
     clean_streams: None,
-    clean_database: None,
     ensure_services_healthy: None,
 ) -> None:
     """Test full pipeline from candles to trades.
@@ -213,7 +212,6 @@ async def test_pipeline_handles_rapid_candles(
     redis_client: redis.Redis,
     redis_publisher: RedisStreamPublisher,
     clean_streams: None,
-    clean_database: None,
     ensure_services_healthy: None,
 ) -> None:
     """Test that pipeline can handle rapid candle publication without dropping messages."""
@@ -271,7 +269,6 @@ async def test_pipeline_state_persistence(
     redis_publisher: RedisStreamPublisher,
     db_pool: DatabasePool,
     clean_streams: None,
-    clean_database: None,
     ensure_services_healthy: None,
 ) -> None:
     """Test that pipeline persists state to database for recovery.
