@@ -216,6 +216,9 @@ async def process_candle_pair(
         # METRIC: Update bias state and track changes
         bias_metrics.update_bias_metrics(bias.bias, mode, service)
         
+        # METRIC: Update detailed bias metrics for trader dashboard
+        bias_metrics.update_htf_detail_metrics(bias, mode, service)
+        
         logger.info(
             f"HTF bias updated: {bias.bias} "
             f"(score: {bias.score:.1f}, confidence: {bias.confidence}, "
@@ -237,6 +240,23 @@ async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
     db_pool = DatabasePool(config.database_url)
     await db_pool.connect()
     logger.info(f"Connected to database at {mask_connection_url(config.database_url)}")
+    
+    # Initialize HTF bias metrics with defaults
+    mode = config.service_mode
+    service = config.service_name
+    bias_metrics.htf_bias_current.labels(mode=mode, service=service).set(0.0)
+    bias_metrics.htf_bias_score.labels(mode=mode, service=service).set(0.0)
+    bias_metrics.htf_bias_confidence.labels(mode=mode, service=service).set(0.0)
+    bias_metrics.htf_dxy_aligned.labels(mode=mode, service=service).set(0.0)
+    bias_metrics.htf_chop_detected.labels(mode=mode, service=service).set(0.0)
+    bias_metrics.htf_conflict_detected.labels(mode=mode, service=service).set(0.0)
+    bias_metrics.htf_vwap_trend_confirmed.labels(mode=mode, service=service).set(0.0)
+    bias_metrics.htf_bos_detected.labels(mode=mode, service=service).set(0.0)
+    bias_metrics.htf_liquidity_sweep_detected.labels(mode=mode, service=service).set(0.0)
+    bias_metrics.htf_structure_15m.labels(mode=mode, service=service).set(0.0)
+    bias_metrics.htf_structure_1h.labels(mode=mode, service=service).set(0.0)
+    bias_metrics.htf_seasonality_adjustment.labels(mode=mode, service=service).set(0.0)
+    logger.info("Initialized HTF bias metrics with default values")
     
     # Start processing task
     processing_task = asyncio.create_task(
