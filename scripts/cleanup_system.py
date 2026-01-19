@@ -21,7 +21,6 @@ import asyncpg
 import redis.asyncio as redis
 from redis.asyncio import Redis
 
-
 # Configuration
 POSTGRES_CONFIG = {
     "host": "localhost",
@@ -107,14 +106,13 @@ async def cleanup_redis() -> None:
 
 async def get_data_counts() -> dict[str, Any]:
     """Get current data counts before cleanup."""
-    conn = await asyncpg.connect(**POSTGRES_CONFIG)
-    redis_client: Redis = await redis.from_url(REDIS_URL, decode_responses=True)
-    
     counts = {
         "postgres": {},
         "redis": {},
     }
     
+    # Use nested try/finally blocks to ensure proper cleanup
+    conn = await asyncpg.connect(**POSTGRES_CONFIG)
     try:
         # Get PostgreSQL counts
         for table in TABLES_TO_TRUNCATE:
@@ -124,17 +122,21 @@ async def get_data_counts() -> dict[str, Any]:
             except Exception:
                 counts["postgres"][table] = "N/A"
         
-        # Get Redis stream lengths
-        for stream in REDIS_STREAMS:
-            try:
-                length = await redis_client.xlen(stream)
-                counts["redis"][stream] = length
-            except Exception:
-                counts["redis"][stream] = 0
+        # Create Redis connection only after postgres queries succeed
+        redis_client: Redis = await redis.from_url(REDIS_URL, decode_responses=True)
+        try:
+            # Get Redis stream lengths
+            for stream in REDIS_STREAMS:
+                try:
+                    length = await redis_client.xlen(stream)
+                    counts["redis"][stream] = length
+                except Exception:
+                    counts["redis"][stream] = 0
+        finally:
+            await redis_client.close()
     
     finally:
         await conn.close()
-        await redis_client.close()
     
     return counts
 

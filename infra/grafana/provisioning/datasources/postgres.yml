@@ -6,10 +6,10 @@ datasources:
     type: postgres
     access: proxy
     url: postgres:5432
-    database: scp_test
-    user: scp_test
+    database: ${POSTGRES_DB}
+    user: ${POSTGRES_USER}
     secureJsonData:
-      password: scp_test_password
+      password: ${POSTGRES_PASSWORD}
     jsonData:
       sslmode: disable
       postgresVersion: 1500

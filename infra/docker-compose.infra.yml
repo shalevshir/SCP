@@ -68,6 +68,8 @@ services:
       - GF_USERS_ALLOW_SIGN_UP=false
       - GF_SERVER_ROOT_URL=http://localhost:3000
       - GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/var/lib/grafana/dashboards/operations.json
+      - POSTGRES_DB=scp
+      - POSTGRES_USER=scp
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-scp_dev_password}
     volumes:
       - grafana_data:/var/lib/grafana

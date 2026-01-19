@@ -40,6 +40,8 @@ services:
     container_name: scp-data-adapter-test
     environment:
       SERVICE_MODE: paper
+      REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgresql://scp_test:scp_test_password@postgres:5432/scp_test
       DATA_PROVIDER: ib
       IB_HOST: ${IB_HOST:-host.docker.internal}
       IB_PORT: ${IB_PORT:-4002}
@@ -52,7 +54,6 @@ services:
       RECONNECT_BASE_DELAY: 1.0
       RECONNECT_MAX_DELAY: 60.0
       LOG_LEVEL: INFO
-
     restart: "no"
 
   feature-engine:
@@ -86,6 +87,19 @@ services:
       DATABASE_URL: postgresql://scp_test:scp_test_password@postgres:5432/scp_test
       BROKER_MODE: paper
       LOG_LEVEL: INFO
+    restart: "no"
+
+  # Override Grafana to use test database credentials
+  grafana:
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_SERVER_ROOT_URL=http://localhost:3000
+      - GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/var/lib/grafana/dashboards/operations.json
+      - POSTGRES_DB=scp_test
+      - POSTGRES_USER=scp_test
+      - POSTGRES_PASSWORD=scp_test_password
     restart: "no"
 
 # Clear volumes from base infrastructure file
