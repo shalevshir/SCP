@@ -18,6 +18,128 @@ def base_features():
     )
 
 
+class TestSLValidation:
+    """Test SL placement validation (SOP critical requirement)."""
+    
+    def test_long_rejects_sl_above_entry(self, base_features):
+        """Long trade rejected when SL is above entry price (invalid stop)."""
+        entry_price = 2650.0
+        sl_price = 2655.0  # INVALID: SL above entry for long
+        
+        base_features.nearest_liquidity_long = 2680.0
+        
+        tp_price, rejection = validate_tp_target(
+            direction="long",
+            entry_price=entry_price,
+            sl_price=sl_price,
+            features=base_features,
+            min_rr=3.0,
+        )
+        
+        assert tp_price is None
+        assert rejection is not None
+        assert "Invalid SL" in rejection
+        assert "below entry" in rejection
+    
+    def test_long_rejects_sl_equal_to_entry(self, base_features):
+        """Long trade rejected when SL equals entry (zero risk)."""
+        entry_price = 2650.0
+        sl_price = 2650.0  # INVALID: Zero risk distance
+        
+        base_features.nearest_liquidity_long = 2680.0
+        
+        tp_price, rejection = validate_tp_target(
+            direction="long",
+            entry_price=entry_price,
+            sl_price=sl_price,
+            features=base_features,
+            min_rr=3.0,
+        )
+        
+        assert tp_price is None
+        assert rejection is not None
+        assert "Invalid SL" in rejection
+        # Zero risk is caught by direction-specific check (sl_price >= entry_price)
+        assert "below entry" in rejection
+    
+    def test_short_rejects_sl_below_entry(self, base_features):
+        """Short trade rejected when SL is below entry price (invalid stop)."""
+        entry_price = 2650.0
+        sl_price = 2645.0  # INVALID: SL below entry for short
+        
+        base_features.nearest_liquidity_short = 2620.0
+        
+        tp_price, rejection = validate_tp_target(
+            direction="short",
+            entry_price=entry_price,
+            sl_price=sl_price,
+            features=base_features,
+            min_rr=3.0,
+        )
+        
+        assert tp_price is None
+        assert rejection is not None
+        assert "Invalid SL" in rejection
+        assert "above entry" in rejection
+    
+    def test_short_rejects_sl_equal_to_entry(self, base_features):
+        """Short trade rejected when SL equals entry (zero risk)."""
+        entry_price = 2650.0
+        sl_price = 2650.0  # INVALID: Zero risk distance
+        
+        base_features.nearest_liquidity_short = 2620.0
+        
+        tp_price, rejection = validate_tp_target(
+            direction="short",
+            entry_price=entry_price,
+            sl_price=sl_price,
+            features=base_features,
+            min_rr=3.0,
+        )
+        
+        assert tp_price is None
+        assert rejection is not None
+        assert "Invalid SL" in rejection
+        # Zero risk is caught by direction-specific check (sl_price <= entry_price)
+        assert "above entry" in rejection
+    
+    def test_long_accepts_valid_sl_below_entry(self, base_features):
+        """Long trade accepted when SL is correctly below entry."""
+        entry_price = 2650.0
+        sl_price = 2640.0  # VALID: SL below entry for long
+        
+        base_features.nearest_liquidity_long = 2680.0
+        
+        tp_price, rejection = validate_tp_target(
+            direction="long",
+            entry_price=entry_price,
+            sl_price=sl_price,
+            features=base_features,
+            min_rr=3.0,
+        )
+        
+        assert rejection is None
+        assert tp_price == 2680.0
+    
+    def test_short_accepts_valid_sl_above_entry(self, base_features):
+        """Short trade accepted when SL is correctly above entry."""
+        entry_price = 2640.0
+        sl_price = 2650.0  # VALID: SL above entry for short
+        
+        base_features.nearest_liquidity_short = 2610.0
+        
+        tp_price, rejection = validate_tp_target(
+            direction="short",
+            entry_price=entry_price,
+            sl_price=sl_price,
+            features=base_features,
+            min_rr=3.0,
+        )
+        
+        assert rejection is None
+        assert tp_price == 2610.0
+
+
 class TestTPStructuralValidation:
     """Test TP structural target validation (SOP Section 4.3)."""
     

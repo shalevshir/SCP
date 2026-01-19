@@ -142,6 +142,22 @@ def validate_tp_target(
     Returns:
         Tuple of (tp_price, rejection_reason)
     """
+    # ========================================================================
+    # SOP CRITICAL: Validate SL placement BEFORE any R:R calculations
+    # ========================================================================
+    # Long trades: SL must be BELOW entry (sl_price < entry_price)
+    # This also catches zero-risk trades (sl_price == entry_price)
+    if direction == "long" and sl_price >= entry_price:
+        return None, "Invalid SL: long trade SL must be below entry"
+    
+    # Short trades: SL must be ABOVE entry (sl_price > entry_price)
+    # This also catches zero-risk trades (sl_price == entry_price)
+    if direction == "short" and sl_price <= entry_price:
+        return None, "Invalid SL: short trade SL must be above entry"
+    
+    # ========================================================================
+    # Compute risk distance (now safe after validation)
+    # ========================================================================
     risk_distance = abs(entry_price - sl_price)
     min_tp_distance = risk_distance * min_rr
     
