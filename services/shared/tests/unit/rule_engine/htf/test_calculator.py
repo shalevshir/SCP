@@ -58,13 +58,16 @@ class TestHTFCalculatorBiasConsistency:
             }
         )
 
-        # DXY in chop mode on 1H (large wicks, small bodies)
+        # DXY in chop mode on 1H - SOP compliant:
+        # 1. Large wicks relative to body (ratio >= 1.0)
+        # 2. Range-bound (flat highs/lows)
+        # 3. No directional progress (no HH/HL or LL/LH)
         dxy_1h_chop = pd.DataFrame(
             {
-                "high": [101.0, 101.5, 102.0, 102.5, 103.0],
-                "low": [99.0, 99.5, 100.0, 100.5, 101.0],
-                "open": [100.0, 100.5, 101.0, 101.5, 102.0],
-                "close": [100.2, 100.7, 101.2, 101.7, 102.2],
+                "high": [101.0] * 20,   # Flat highs - no progression
+                "low": [99.0] * 20,     # Flat lows - no progression
+                "open": [100.0] * 20,
+                "close": [100.1] * 20,  # Tiny bodies → high wick ratio
             }
         )
 
@@ -213,14 +216,23 @@ class TestHTFCalculatorDXYChop:
 
     @pytest.fixture
     def dxy_chop_data(self) -> pd.DataFrame:
-        """Create DXY data with chop (large wicks, small bodies)."""
+        """Create DXY data with true SOP-compliant chop.
+        
+        SOP chop requires:
+        1. Large wicks relative to body (ratio >= 1.0)
+        2. Range-bound (no expanding range)
+        3. No directional progress (no HH/HL or LL/LH)
+        """
+        # All candles at same level - flat highs/lows, no progression
+        # Need 20+ candles for reliable ATR calculation
         return pd.DataFrame(
             {
-                "high": [101.0, 101.5, 102.0, 102.5, 103.0],
-                "low": [99.0, 99.5, 100.0, 100.5, 101.0],
-                "open": [100.0, 100.5, 101.0, 101.5, 102.0],
-                "close": [100.2, 100.7, 101.2, 101.7, 102.2],
-                # Large wick-to-body ratio = chop
+                "high": [101.0] * 20,   # Flat highs - no HH/LH
+                "low": [99.0] * 20,     # Flat lows - no HL/LL
+                "open": [100.0] * 20,
+                "close": [100.1] * 20,  # Tiny bodies
+                # Body = 0.1, Wicks = 1.9 total → ratio = 19 (well above 1.0)
+                # Range-bound (flat), no directional progress
             }
         )
 
@@ -585,13 +597,13 @@ class TestHTFCalculatorConflictRules:
         Bug: If DXY chop neutralizes bias first, sweep detection receives
         neutral bias and returns early, missing the sweep conflict.
         """
-        # Create DXY chop data
+        # Create DXY chop data - SOP compliant (range-bound, no progression)
         dxy_chop = pd.DataFrame(
             {
-                "high": [101.0, 101.5, 102.0, 102.5, 103.0],
-                "low": [99.0, 99.5, 100.0, 100.5, 101.0],
-                "open": [100.0, 100.5, 101.0, 101.5, 102.0],
-                "close": [100.2, 100.7, 101.2, 101.7, 102.2],
+                "high": [101.0] * 20,   # Flat highs - no progression
+                "low": [99.0] * 20,     # Flat lows - no progression
+                "open": [100.0] * 20,
+                "close": [100.1] * 20,  # Tiny bodies → high wick ratio
             }
         )
 
