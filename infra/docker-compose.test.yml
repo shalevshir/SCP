@@ -39,7 +39,7 @@ services:
   data-adapter:
     container_name: scp-data-adapter-test
     environment:
-      SERVICE_MODE: paper
+      SERVICE_MODE: test
       REDIS_URL: redis://redis:6379
       DATABASE_URL: postgresql://scp_test:scp_test_password@postgres:5432/scp_test
       DATA_PROVIDER: ib
