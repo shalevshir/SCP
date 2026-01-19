@@ -675,37 +675,42 @@ async def test_invalidation_closes_trade(
         await redis_publisher.publish("features.1m", grace_features)
         await asyncio.sleep(0.1)
     
-    # Now publish candle AND features showing VWAP invalidation (after grace period)
-    invalid_timestamp = last_entry_candle.timestamp + timedelta(minutes=11)
+    # Now publish 2 CONSECUTIVE invalidation candles (VWAP_RECLAIM requires 2-bar confirmation)
+    # First invalidation candle (after grace period)
+    for i in range(2):  # Publish 2 consecutive bars with close < VWAP
+        invalid_timestamp = last_entry_candle.timestamp + timedelta(minutes=11 + i)
+        
+        invalid_candle = CandleMessage(
+            timestamp=invalid_timestamp,
+            symbol="GC",
+            timeframe="1m",
+            open=2646.0,
+            high=2647.0,
+            low=2644.0,
+            close=2645.0,  # Below VWAP
+            volume=1000.0,
+        )
+        
+        invalid_features = FeaturesMessage(
+            timestamp=invalid_timestamp,
+            symbol="GC",
+            timeframe="1m",
+            close=2645.0,
+            vwap=2648.0,  # VWAP above price - invalidation for long
+            rsi=40.0,
+            ema_9=2647.0,
+            ema_20=2650.0,
+            ema_50=2655.0,
+            dxy_correlation=-0.3,
+            structure_label="LH",
+            vwap_deviation=-0.11,
+        )
+        
+        await redis_publisher.publish("candles.1m.gc", invalid_candle)
+        await redis_publisher.publish("features.1m", invalid_features)
+        await asyncio.sleep(0.5)  # Small delay between bars
     
-    invalid_candle = CandleMessage(
-        timestamp=invalid_timestamp,
-        symbol="GC",
-        timeframe="1m",
-        open=2646.0,
-        high=2647.0,
-        low=2644.0,
-        close=2645.0,  # Below VWAP
-        volume=1000.0,
-    )
-    
-    invalid_features = FeaturesMessage(
-        timestamp=invalid_timestamp,
-        symbol="GC",
-        timeframe="1m",
-        close=2645.0,
-        vwap=2648.0,  # VWAP above price - invalidation for long
-        rsi=40.0,
-        ema_9=2647.0,
-        ema_20=2650.0,
-        ema_50=2655.0,
-        dxy_correlation=-0.3,
-        structure_label="LH",
-        vwap_deviation=-0.11,
-    )
-    
-    await redis_publisher.publish("candles.1m.gc", invalid_candle)
-    await redis_publisher.publish("features.1m", invalid_features)
+    # Wait for invalidation processing
     await asyncio.sleep(2.0)
     
     # Check if trade was closed due to invalidation
