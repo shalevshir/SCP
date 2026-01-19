@@ -209,6 +209,11 @@ class StructureContextTracker:
         self.reclaim_candle_low: float | None = None
         self.reclaim_candle_open: float | None = None
         self.reclaim_candle_close: float | None = None
+        
+        # SL Priority System: Persistent tracking of HL/LH swing extremes (SOP Section 3.2-3.3 Priority A)
+        # These persist across subsequent swings to ensure SL Priority A remains available
+        self.swing_hl_low: float | None = None  # Low of most recent HL swing
+        self.swing_lh_high: float | None = None  # High of most recent LH swing
 
         # VWAP reclaim state machine (Sprint 1: Foundation + Visibility)
         self.vwap_reclaim_sm = VWAPReclaimStateMachine(max_confirm_window=10)
@@ -287,12 +292,18 @@ class StructureContextTracker:
                 # Append to swing high indices list and store value
                 self.swing_high_indices.append(self.last_swing_high_idx)
                 self.swing_high_values[self.last_swing_high_idx] = self.last_swing_high
+                # SL Priority A: Track LH swing high for short SL
+                if new_label == "LH":
+                    self.swing_lh_high = self.last_swing_high
             elif new_label in ["HL", "LL"]:
                 self.last_swing_low_idx = self.bar_count - self.swing_window
                 self.last_swing_low = self.low_buffer[self.swing_window]
                 # Append to swing low indices list and store value
                 self.swing_low_indices.append(self.last_swing_low_idx)
                 self.swing_low_values[self.last_swing_low_idx] = self.last_swing_low
+                # SL Priority A: Track HL swing low for long SL
+                if new_label == "HL":
+                    self.swing_hl_low = self.last_swing_low
 
         # Compute derived metrics (using CURRENT label_history after new swing added)
         trend_direction, trend_confidence = self._compute_trend()
@@ -366,14 +377,6 @@ class StructureContextTracker:
             else (self.bar_count - self.last_sweep_idx)
         )
         
-        # SL Priority System: Track HL/LH swing extremes (SOP Section 3.2-3.3)
-        swing_hl_low = None
-        swing_lh_high = None
-        if self.last_structure_label == "HL" and self.last_swing_low is not None:
-            swing_hl_low = self.last_swing_low
-        elif self.last_structure_label == "LH" and self.last_swing_high is not None:
-            swing_lh_high = self.last_swing_high
-        
         # TP Structural Targets: Find nearest swing extremes (SOP Section 4.3)
         # Nearest swing high above current price (for long TP)
         nearest_swing_high_above = None
@@ -425,9 +428,9 @@ class StructureContextTracker:
             sweep_direction=self.last_sweep_direction if sweep_detected else None,
             sweep_price=self.last_sweep_price if sweep_detected else None,
             sweep_age=sweep_age,
-            # SL Priority System fields
-            swing_hl_low=swing_hl_low,
-            swing_lh_high=swing_lh_high,
+            # SL Priority System fields (persistent, not reset by subsequent swings)
+            swing_hl_low=self.swing_hl_low,
+            swing_lh_high=self.swing_lh_high,
             # TP Structural Target fields
             nearest_swing_high_above=nearest_swing_high_above,
             nearest_swing_low_below=nearest_swing_low_below,
