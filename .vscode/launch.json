@@ -17,11 +17,14 @@
       "cwd": "${workspaceFolder}/services/data-adapter",
       "env": {
         "PYTHONPATH": "${workspaceFolder}/services/data-adapter/src:${workspaceFolder}/services/shared/src",
+        "SERVICE_MODE": "dev",
         "REDIS_URL": "redis://localhost:6379",
         "DATABASE_URL": "postgresql://scp:scp_dev_password@localhost:5432/scp",
         "LOG_LEVEL": "DEBUG",
-        // Data provider selection
-        "DATA_PROVIDER": "ib",
+        // Data provider selection (use "mock" for local dev without IB Gateway, "ib" for live testing)
+        "DATA_PROVIDER": "mock",
+        // Mock data configuration
+        "MOCK_DATA_PATH": "${workspaceFolder}/data",
         // Databento configuration
         "DATABENTO_API_KEY": "",
         "DATABENTO_DATASET": "GLBX.MDP3",
@@ -33,10 +36,10 @@
         "IB_CLIENT_ID": "10",
         "IB_GC_SYMBOL": "GC",
         "IB_DXY_SYMBOL": "DX",
-        // Session filter configuration
-        "SESSION_FILTER_ENABLED": "true",
-        // Gap detection configuration
-        "GAP_BACKFILL_ENABLED": "true",
+        // Session filter configuration (disabled for local dev)
+        "SESSION_FILTER_ENABLED": "false",
+        // Gap detection configuration (disabled for local dev)
+        "GAP_BACKFILL_ENABLED": "false",
         // Reconnection configuration
         "RECONNECT_MAX_RETRIES": "10",
         "RECONNECT_BASE_DELAY": "1.0",
@@ -65,6 +68,7 @@
       "cwd": "${workspaceFolder}/services/feature-engine",
       "env": {
         "PYTHONPATH": "${workspaceFolder}/services/feature-engine/src:${workspaceFolder}/services/shared/src",
+        "SERVICE_MODE": "dev",
         "REDIS_URL": "redis://localhost:6379",
         "DATABASE_URL": "postgresql://scp:scp_dev_password@localhost:5432/scp",
         "ENABLE_WARMUP": "false",
@@ -93,6 +97,7 @@
       "cwd": "${workspaceFolder}/services/htf-bias",
       "env": {
         "PYTHONPATH": "${workspaceFolder}/services/htf-bias/src:${workspaceFolder}/services/shared/src",
+        "SERVICE_MODE": "dev",
         "REDIS_URL": "redis://localhost:6379",
         "DATABASE_URL": "postgresql://scp:scp_dev_password@localhost:5432/scp",
         "ENABLE_WARMUP": "true",
@@ -123,9 +128,11 @@
       "cwd": "${workspaceFolder}/services/bot-core",
       "env": {
         "PYTHONPATH": "${workspaceFolder}/services/bot-core/src:${workspaceFolder}/services/shared/src",
+        "SERVICE_MODE": "dev",
         "REDIS_URL": "redis://localhost:6379",
         "DATABASE_URL": "postgresql://scp:scp_dev_password@localhost:5432/scp",
         "SESSION_CONFIG_PATH": "${workspaceFolder}/config/validation.yaml",
+        "SESSION_VALIDATION_ENABLED": "false",
         "ENFORCER_TIER": "EarlyMild",
         "LOG_LEVEL": "DEBUG"
       },
@@ -152,6 +159,7 @@
       "cwd": "${workspaceFolder}/services/execution",
       "env": {
         "PYTHONPATH": "${workspaceFolder}/services/execution/src:${workspaceFolder}/services/shared/src",
+        "SERVICE_MODE": "dev",
         "REDIS_URL": "redis://localhost:6379",
         "DATABASE_URL": "postgresql://scp:scp_dev_password@localhost:5432/scp",
         "LOG_LEVEL": "DEBUG",

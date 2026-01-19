@@ -43,7 +43,9 @@ services:
     ports:
       - "9090:9090"
     volumes:
-      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      # Default: Local development (services on host.docker.internal)
+      # Override with prometheus.yml in environment files when services run in Docker
+      - ./prometheus/prometheus.local.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus_data:/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
