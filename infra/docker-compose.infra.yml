@@ -26,12 +26,8 @@ services:
       PGDATA: /var/lib/postgresql/data/pgdata
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      # Mount migrations to run after TimescaleDB init (numbered 100+)
-      - ./migrations/001_initial_schema.sql:/docker-entrypoint-initdb.d/100_initial_schema.sql:ro
-      - ./migrations/002_indexes.sql:/docker-entrypoint-initdb.d/101_indexes.sql:ro
-      - ./migrations/003_add_trade_state_fields.sql:/docker-entrypoint-initdb.d/102_add_trade_state_fields.sql:ro
-      - ./migrations/004_add_htf_bias_fields.sql:/docker-entrypoint-initdb.d/103_add_htf_bias_fields.sql:ro
-      - ./migrations/005_add_kill_switch.sql:/docker-entrypoint-initdb.d/104_add_kill_switch.sql:ro
+      # Mount entire migrations directory - all .sql files run in alphabetical order
+      - ./migrations:/docker-entrypoint-initdb.d:ro
     restart: unless-stopped
     healthcheck:
       # Verify database is ready AND migrations have run (check for 'candles' table)
@@ -72,6 +68,7 @@ services:
       - GF_USERS_ALLOW_SIGN_UP=false
       - GF_SERVER_ROOT_URL=http://localhost:3000
       - GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/var/lib/grafana/dashboards/operations.json
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-scp_dev_password}
     volumes:
       - grafana_data:/var/lib/grafana
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
@@ -79,6 +76,7 @@ services:
     restart: unless-stopped
     depends_on:
       - prometheus
+      - postgres
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/api/health"]
       interval: 30s

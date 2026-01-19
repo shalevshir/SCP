@@ -24,12 +24,8 @@ services:
       POSTGRES_PASSWORD: scp_test_password
       PGDATA: /tmp/pgdata  # Use tmp directory instead of persistent volume
     volumes:
-      # Only mount migration files, no persistent data volume
-      - ./migrations/001_initial_schema.sql:/docker-entrypoint-initdb.d/100_initial_schema.sql:ro
-      - ./migrations/002_indexes.sql:/docker-entrypoint-initdb.d/101_indexes.sql:ro
-      - ./migrations/003_add_trade_state_fields.sql:/docker-entrypoint-initdb.d/102_add_trade_state_fields.sql:ro
-      - ./migrations/004_add_htf_bias_fields.sql:/docker-entrypoint-initdb.d/103_add_htf_bias_fields.sql:ro
-      - ./migrations/005_add_kill_switch.sql:/docker-entrypoint-initdb.d/104_add_kill_switch.sql:ro
+      # Mount entire migrations directory - all .sql files run in alphabetical order
+      - ./migrations:/docker-entrypoint-initdb.d:ro
     restart: "no"
     healthcheck:
       # Verify postgres is ready AND migrations have run (check for 'candles' table)
@@ -43,12 +39,20 @@ services:
   data-adapter:
     container_name: scp-data-adapter-test
     environment:
-      SERVICE_MODE: test
-      DATABASE_URL: postgresql://scp_test:scp_test_password@postgres:5432/scp_test
-      DATA_PROVIDER: mock
-      SESSION_FILTER_ENABLED: "false"
-      GAP_BACKFILL_ENABLED: "false"
+      SERVICE_MODE: paper
+      DATA_PROVIDER: ib
+      IB_HOST: ${IB_HOST:-host.docker.internal}
+      IB_PORT: ${IB_PORT:-4002}
+      IB_CLIENT_ID: ${IB_CLIENT_ID:-1}
+      IB_GC_CONTRACT: ${IB_GC_CONTRACT:-GC}
+      IB_DXY_CONTRACT: ${IB_DXY_CONTRACT:-DX}
+      SESSION_FILTER_ENABLED: "true"
+      GAP_BACKFILL_ENABLED: "true"
+      RECONNECT_MAX_RETRIES: 10
+      RECONNECT_BASE_DELAY: 1.0
+      RECONNECT_MAX_DELAY: 60.0
       LOG_LEVEL: INFO
+
     restart: "no"
 
   feature-engine:
