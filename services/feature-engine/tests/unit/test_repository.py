@@ -157,6 +157,7 @@ class TestFeatureRepositorySaveFeatures:
             timeframe="1m",
             close=2650.0,
             vwap=2645.0,
+            vwap_slope=0.15,  # Added vwap_slope field
             rsi=55.0,
             ema_9=2648.0,
             ema_20=2645.0,
@@ -169,13 +170,14 @@ class TestFeatureRepositorySaveFeatures:
         await repo.save_features(features)
         
         call_args = mock_db_pool.execute.call_args[0]
-        # Check all values are passed
+        # Check all values are passed (order: timestamp, symbol, timeframe, close, vwap, vwap_slope, rsi, ...)
         assert call_args[1] == features.timestamp
         assert call_args[2] == "GC"
         assert call_args[3] == "1m"
-        assert call_args[4] == 2650.0
-        assert call_args[5] == 2645.0
-        assert call_args[6] == 55.0
+        assert call_args[4] == 2650.0  # close
+        assert call_args[5] == 2645.0  # vwap
+        assert call_args[6] == 0.15    # vwap_slope (NEW field after migration 007)
+        assert call_args[7] == 55.0    # rsi
     
     @pytest.mark.asyncio
     async def test_save_features_handles_none_values(
