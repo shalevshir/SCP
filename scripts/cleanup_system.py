@@ -24,13 +24,13 @@ from redis.asyncio import Redis
 # Configuration
 POSTGRES_CONFIG = {
     "host": "localhost",
-    "port": 5433,
-    "database": "scp_test",
-    "user": "scp_test",
-    "password": "scp_test_password",
+    "port": 5432,
+    "database": "scp",
+    "user": "scp",
+    "password": "scp_dev_password",
 }
 
-REDIS_URL = "redis://localhost:6380"
+REDIS_URL = "redis://localhost:6379"
 
 # Tables to truncate (in order, respecting foreign keys)
 TABLES_TO_TRUNCATE = [
