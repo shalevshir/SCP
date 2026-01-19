@@ -135,4 +135,11 @@ class HTFBiasProcessor:
             conflict_detected=htf_bias.conflict_detected,
             conflict_reason=htf_bias.conflict_reason,
             dxy_chop_detected=htf_bias.dxy_chop_detected,
+            # DXY correlation and structure fields for DXY_CONTINUATION detection
+            dxy_corr_1m=htf_bias.dxy_corr_1m,
+            dxy_corr_5m=htf_bias.dxy_corr_5m,
+            dxy_corr_15m=htf_bias.dxy_corr_15m,
+            dxy_corr_1h=htf_bias.dxy_corr_1h,
+            dxy_structure=htf_bias.dxy_structure,
+            dxy_chop_5m=htf_bias.dxy_chop_5m if htf_bias.dxy_chop_5m is not None else False,
         )

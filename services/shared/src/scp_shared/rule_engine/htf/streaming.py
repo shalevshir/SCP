@@ -250,6 +250,7 @@ class StreamingHTFBiasCalculator:
                         else:
                             dxy_1h = pd.DataFrame(self.dxy_1h_buffer)
 
+                
                 # Call existing HTF bias calculator
                 self.current_htf_bias = compute_htf_bias(
                     features_1h=self.features_1h,

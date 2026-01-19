@@ -191,6 +191,26 @@ class HTFBiasMessage(BaseModel):
     dxy_chop_detected: bool = Field(
         default=False, description="DXY chop detected on 1H"
     )
+    
+    # DXY correlation and structure fields required for DXY_CONTINUATION detection
+    dxy_corr_1m: float | None = Field(
+        default=None, description="DXY 1M micro correlation (5-bar window)"
+    )
+    dxy_corr_5m: float | None = Field(
+        default=None, description="DXY 5M micro correlation (5-bar window)"
+    )
+    dxy_corr_15m: float | None = Field(
+        default=None, description="DXY 15M correlation"
+    )
+    dxy_corr_1h: float | None = Field(
+        default=None, description="DXY 1H correlation"
+    )
+    dxy_structure: str | None = Field(
+        default=None, description="DXY structure label (HH/HL/LH/LL)"
+    )
+    dxy_chop_5m: bool = Field(
+        default=False, description="DXY chop detected on 5M"
+    )
 
     class Config:
         json_schema_extra = {
