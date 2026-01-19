@@ -40,12 +40,31 @@ enforcer_tier = create_gauge(
     "Active enforcer tier (1=Conservative, 2=Early Mild, 3=Mild, 4=Offensive)",
 )
 
+# Session and setup tracking (for trader decision dashboard)
+session_valid = create_gauge(
+    "session_valid",
+    "Session validity status (1=valid, 0=invalid)",
+)
+
+current_setup_type = create_gauge(
+    "current_setup_type",
+    "Current setup type (VWAP_RECLAIM=1, VWAP_FADE=2, DXY_CONTINUATION=3, NONE=0)",
+)
+
 # Map enforcer tier names to numeric values
 ENFORCER_TIER_MAP = {
     "Conservative": 1.0,
     "Early Mild": 2.0,
     "Mild": 3.0,
     "Offensive": 4.0,
+}
+
+# Setup type encoding for metrics
+SETUP_TYPE_ENCODING = {
+    "VWAP_RECLAIM": 1.0,
+    "VWAP_FADE": 2.0,
+    "DXY_CONTINUATION": 3.0,
+    None: 0.0,
 }
 
 # Valid rejection reasons (finite set to prevent cardinality explosion)

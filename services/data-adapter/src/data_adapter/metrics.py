@@ -53,7 +53,6 @@ tick_processing_seconds = create_histogram(
     labels=["symbol"],
 )
 
-
 # Track last tick timestamp per symbol for lag calculation
 _last_tick_timestamps: dict[str, datetime] = {}
 
