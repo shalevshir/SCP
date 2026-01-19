@@ -204,6 +204,11 @@ async def process_feature_message(
     
     # 1. Validate session
     session_result = session_service.evaluate(features.timestamp)
+    
+    # METRIC: Update session validity for trader dashboard
+    session_valid_value = 1.0 if session_result.session_ok else 0.0
+    core_metrics.session_valid.labels(mode=mode, service=service).set(session_valid_value)
+    
     if not session_result.session_ok:
         logger.debug(
             f"Session blocked at {features.timestamp}: {session_result.reason}"
@@ -266,11 +271,18 @@ async def process_feature_message(
             setup_type=signal_msg.setup_type,
             timeframe=features.timeframe,
         ).inc()
+        
+        # METRIC: Update current setup type for trader dashboard
+        setup_type_value = core_metrics.SETUP_TYPE_ENCODING.get(signal_msg.setup_type, 0.0)
+        core_metrics.current_setup_type.labels(mode=mode, service=service).set(setup_type_value)
     else:
         # Signal was rejected - record the specific reason
         # rejection_reason will be one of: "htf_validity", "confidence_filter", "neutral_direction"
         if rejection_reason:
             core_metrics.record_signal_rejection(rejection_reason, mode, service)
+        
+        # METRIC: Clear setup type when no signal generated
+        core_metrics.current_setup_type.labels(mode=mode, service=service).set(0.0)
     
     return warmup_bar_count
 
@@ -308,6 +320,12 @@ async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
     tier_value = core_metrics.ENFORCER_TIER_MAP.get(config.enforcer_tier, 1.0)
     core_metrics.enforcer_tier.labels(mode=mode, service=service).set(tier_value)
     logger.info(f"Enforcer tier: {config.enforcer_tier} (metric value: {tier_value})")
+    
+    # Initialize session and setup type metrics with defaults
+    core_metrics.session_valid.labels(mode=mode, service=service).set(0.0)
+    core_metrics.current_setup_type.labels(mode=mode, service=service).set(0.0)
+    core_metrics.signal_score.labels(mode=mode, service=service).set(0.0)
+    logger.info("Initialized session/setup metrics with default values")
     
     # Send service started alert
     send_alert(

@@ -11,7 +11,7 @@ from scp_shared.common import get_logger, mask_connection_url
 from scp_shared.database import DatabasePool
 from scp_shared.health import create_health_router
 from scp_shared.messaging import RedisStreamConsumer, CandleSynchronizer
-from scp_shared.messaging.schemas import CandleMessage
+from scp_shared.messaging.schemas import CandleMessage, FeaturesMessage
 from scp_shared.metrics import create_metrics_router
 
 from feature_engine_svc.config import FeatureEngineConfig
@@ -28,6 +28,62 @@ config = FeatureEngineConfig()
 
 # Global shutdown event
 shutdown_event = asyncio.Event()
+
+
+class DXYVWAPTracker:
+    """Lightweight VWAP tracker for DXY participation context.
+    
+    Only computes VWAP and slope (not full features like GC).
+    Used solely for DXY VWAP Slope visualization in dashboard.
+    """
+    
+    def __init__(self, session_reset: bool = True):
+        """Initialize DXY VWAP tracker.
+        
+        Args:
+            session_reset: Whether to reset VWAP at session boundaries
+        """
+        self.session_reset = session_reset
+        self.vwap_pv_sum = 0.0
+        self.vwap_v_sum = 0.0
+        self.vwap_current_session: str | None = None
+        self.prev_vwap: float | None = None
+    
+    def update(self, dxy_candle: CandleMessage) -> tuple[float, float | None]:
+        """Update VWAP state with new DXY candle.
+        
+        Args:
+            dxy_candle: New DXY candle
+            
+        Returns:
+            Tuple of (vwap, vwap_slope)
+        """
+        from scp_shared.indicators.timezone_utils import get_vwap_session_id
+        
+        # Check for session boundary
+        session_id = get_vwap_session_id(dxy_candle.timestamp)
+        if self.session_reset and session_id != self.vwap_current_session:
+            self.vwap_pv_sum = 0.0
+            self.vwap_v_sum = 0.0
+            self.vwap_current_session = session_id
+            self.prev_vwap = None
+        
+        # Calculate typical price and update cumulative sums
+        typical_price = (dxy_candle.high + dxy_candle.low + dxy_candle.close) / 3
+        volume = max(dxy_candle.volume, 1e-10)
+        
+        self.vwap_pv_sum += typical_price * volume
+        self.vwap_v_sum += volume
+        
+        vwap = self.vwap_pv_sum / self.vwap_v_sum if self.vwap_v_sum > 0 else dxy_candle.close
+        
+        # Calculate VWAP slope
+        vwap_slope = None
+        if self.prev_vwap is not None:
+            vwap_slope = vwap - self.prev_vwap
+        self.prev_vwap = vwap
+        
+        return vwap, vwap_slope
 
 
 async def warmup_processor(
@@ -199,6 +255,9 @@ async def process_candles(
     await warmup_htf_aggregator(htf_aggregator_gc, repository, symbol="GC")
     await warmup_htf_aggregator(htf_aggregator_dxy, repository, symbol="DXY")
     
+    # DXY VWAP tracker for participation context (dashboard visualization)
+    dxy_vwap_tracker = DXYVWAPTracker(session_reset=True)
+    
     # Create consumers for GC and DXY candles
     gc_consumer = RedisStreamConsumer(
         redis_client,
@@ -238,6 +297,9 @@ async def process_candles(
             all_candles.sort(key=lambda c: c.timestamp)
             
             for candle in all_candles:
+                # PERSISTENCE: Save candle to database for historical charts
+                await repository.save_candle(candle)
+                
                 pair = synchronizer.add_candle(candle)
                 if pair:
                     await process_candle_pair(
@@ -249,6 +311,7 @@ async def process_candles(
                         htf_aggregator_dxy,
                         publisher,
                         repository,
+                        dxy_vwap_tracker,
                     )
             
             # METRIC: Update queue depth gauge
@@ -277,6 +340,7 @@ async def process_candle_pair(
     htf_aggregator_dxy: HTFCandleAggregator,
     publisher: FeaturePublisher,
     repository: FeatureRepository,
+    dxy_vwap_tracker: DXYVWAPTracker | None = None,
 ) -> None:
     """Process a synchronized candle pair.
     
@@ -289,12 +353,37 @@ async def process_candle_pair(
         htf_aggregator_dxy: HTF candle aggregator for DXY
         publisher: Feature publisher
         repository: Feature repository
+        dxy_vwap_tracker: Optional DXY VWAP tracker for slope metric
     """
     gc_candle, dxy_candle = pair
     
     # Get metric labels
     mode = config.service_mode
     service = config.service_name
+    
+    # Update DXY VWAP slope metric (for dashboard participation context)
+    if dxy_vwap_tracker is not None:
+        dxy_vwap, dxy_vwap_slope = dxy_vwap_tracker.update(dxy_candle)
+        if dxy_vwap_slope is not None:
+            engine_metrics.feature_vwap_slope.labels(
+                mode=mode, service=service, symbol="DXY"
+            ).set(dxy_vwap_slope)
+            
+            # Persist DXY VWAP slope to database for historical dashboard queries
+            # Create minimal DXY features message (only VWAP fields populated)
+            dxy_features = FeaturesMessage(
+                timestamp=dxy_candle.timestamp,
+                symbol="DXY",
+                timeframe="1m",
+                close=dxy_candle.close,
+                open=dxy_candle.open,
+                high=dxy_candle.high,
+                low=dxy_candle.low,
+                volume=dxy_candle.volume,
+                vwap=dxy_vwap,
+                vwap_slope=dxy_vwap_slope,
+            )
+            await repository.save_features(dxy_features)
     
     # METRIC: Count event processed
     engine_metrics.events_processed_total.labels(mode=mode, service=service).inc()
@@ -315,6 +404,9 @@ async def process_candle_pair(
     engine_metrics.features_computed_total.labels(
         mode=mode, service=service, timeframe="1m"
     ).inc()
+    
+    # METRIC: Update detailed feature metrics for trader dashboard
+    engine_metrics.update_feature_metrics(features_1m, mode, service)
     
     logger.debug(
         f"Processed 1m features: {gc_candle.timestamp} "
@@ -403,6 +495,28 @@ async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
     db_pool = DatabasePool(config.database_url)
     await db_pool.connect()
     logger.info(f"Connected to database at {mask_connection_url(config.database_url)}")
+    
+    # Initialize feature metrics with defaults
+    mode = config.service_mode
+    service = config.service_name
+    engine_metrics.feature_vwap.labels(mode=mode, service=service).set(0.0)
+    engine_metrics.feature_vwap_slope.labels(mode=mode, service=service, symbol="GC").set(0.0)
+    engine_metrics.feature_vwap_slope.labels(mode=mode, service=service, symbol="DXY").set(0.0)
+    engine_metrics.feature_vwap_deviation.labels(mode=mode, service=service).set(0.0)
+    engine_metrics.feature_rsi.labels(mode=mode, service=service).set(0.0)
+    engine_metrics.feature_ema_9.labels(mode=mode, service=service).set(0.0)
+    engine_metrics.feature_ema_20.labels(mode=mode, service=service).set(0.0)
+    engine_metrics.feature_ema_50.labels(mode=mode, service=service).set(0.0)
+    engine_metrics.feature_dxy_corr.labels(mode=mode, service=service).set(0.0)
+    engine_metrics.feature_dxy_5m_corr.labels(mode=mode, service=service).set(0.0)
+    engine_metrics.feature_bos_recent.labels(mode=mode, service=service).set(0.0)
+    engine_metrics.feature_bos_age.labels(mode=mode, service=service).set(0.0)
+    engine_metrics.feature_choch_detected.labels(mode=mode, service=service).set(0.0)
+    engine_metrics.feature_structure_clarity.labels(mode=mode, service=service).set(0.0)
+    engine_metrics.feature_expansion_detected.labels(mode=mode, service=service).set(0.0)
+    engine_metrics.feature_second_confirmation_long.labels(mode=mode, service=service).set(0.0)
+    engine_metrics.feature_second_confirmation_short.labels(mode=mode, service=service).set(0.0)
+    logger.info("Initialized feature metrics with default values")
     
     # Start processing task
     processing_task = asyncio.create_task(

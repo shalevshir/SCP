@@ -1,7 +1,7 @@
 # Force use of bash for all recipes (required for db-reset and other advanced shell features)
 SHELL := /bin/bash
 
-.PHONY: test test-unit test-verbose test-parallel test-coverage test-fast lint format check clean help install data-clean data-fetch data-resample data-resample-5m data-resample-1h infra-up infra-down infra-logs infra-ps db-migrate db-reset db-shell shared-install shared-test service-test-coverage service-test-coverage-all services-up services-down services-build services-logs services-ps paper-trading-up paper-trading-down paper-trading-logs live-trading-up live-trading-down live-trading-logs replay compare-results validate-replay replay-clean
+.PHONY: test test-unit test-verbose test-parallel test-coverage test-fast lint format check clean system-clean system-clean-yes system-clean-db system-clean-redis help install data-clean data-fetch data-resample data-resample-5m data-resample-1h infra-up infra-down infra-logs infra-ps db-migrate db-reset db-shell shared-install shared-test service-test-coverage service-test-coverage-all services-up services-down services-build services-logs services-ps paper-trading-up paper-trading-down paper-trading-logs live-trading-up live-trading-down live-trading-logs replay compare-results validate-replay replay-clean
 
 help:
 	@echo "SCP Trading Bot - Development Commands"
@@ -74,6 +74,10 @@ help:
 	@echo ""
 	@echo "Cleanup:"
 	@echo "  make clean             Remove test artifacts and caches"
+	@echo "  make system-clean      Clean database and Redis (interactive)"
+	@echo "  make system-clean-yes  Clean database and Redis (auto-confirm)"
+	@echo "  make system-clean-db   Clean only database tables"
+	@echo "  make system-clean-redis Clean only Redis streams"
 
 install:
 	poetry install
@@ -115,6 +119,26 @@ clean:
 	rm -rf .pytest_cache .coverage htmlcov .mypy_cache .ruff_cache
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 	@echo "Clean complete."
+
+# ============================================================================
+# System Cleanup Commands (Database + Redis)
+# ============================================================================
+
+system-clean:
+	@echo "🧹 Running system cleanup (database + Redis)..."
+	poetry run python scripts/cleanup_system.py
+
+system-clean-yes:
+	@echo "🧹 Running system cleanup (auto-confirm)..."
+	poetry run python scripts/cleanup_system.py --confirm
+
+system-clean-db:
+	@echo "🧹 Cleaning database only..."
+	poetry run python scripts/cleanup_system.py --postgres-only
+
+system-clean-redis:
+	@echo "🧹 Cleaning Redis streams only..."
+	poetry run python scripts/cleanup_system.py --redis-only
 
 data-clean:
 	@echo "Cleaning and deduplicating CSV data..."

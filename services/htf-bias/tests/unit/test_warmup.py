@@ -173,14 +173,23 @@ class TestProcessCandlePair:
         from htf_bias_svc.main import process_candle_pair
         from scp_shared.messaging.schemas import HTFBiasMessage
         
-        # Create mock bias
-        mock_bias = MagicMock(spec=HTFBiasMessage)
-        mock_bias.bias = "bullish"
-        mock_bias.score = 8.5
-        mock_bias.confidence = "A+"
+        # Create real HTFBiasMessage instance (cleaner than mocking)
+        bias = HTFBiasMessage(
+            timestamp=datetime(2025, 1, 15, 10, 0, tzinfo=timezone.utc),
+            bias="bullish",
+            score=8.5,
+            confidence="A+",
+            dxy_aligned=True,
+            chop_detected=False,
+            structure_15m=None,
+            structure_1h=None,
+            seasonality_adjustment=0.0,
+            seasonality_period=None,
+            vwap_trend_confirmed=False,
+        )
         
         mock_processor = MagicMock()
-        mock_processor.process = MagicMock(return_value=mock_bias)
+        mock_processor.process = MagicMock(return_value=bias)
         
         mock_publisher = MagicMock()
         mock_publisher.publish = AsyncMock()
@@ -207,8 +216,8 @@ class TestProcessCandlePair:
         )
         
         mock_processor.process.assert_called_once_with(gc_candle, dxy_candle)
-        mock_publisher.publish.assert_called_once_with(mock_bias)
-        mock_repository.save_bias.assert_called_once_with(mock_bias)
+        mock_publisher.publish.assert_called_once_with(bias)
+        mock_repository.save_bias.assert_called_once_with(bias)
     
     @pytest.mark.asyncio
     async def test_process_candle_pair_skips_when_no_bias(self) -> None:

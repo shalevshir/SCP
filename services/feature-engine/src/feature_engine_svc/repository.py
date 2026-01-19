@@ -20,6 +20,36 @@ class FeatureRepository:
         """
         self.db = db_pool
     
+    async def save_candle(self, candle: CandleMessage) -> None:
+        """Save candle to database.
+        
+        Args:
+            candle: Candle message to persist
+        """
+        query = """
+            INSERT INTO candles (
+                timestamp, symbol, timeframe, open, high, low, close, volume
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            ON CONFLICT (timestamp, symbol, timeframe) DO UPDATE SET
+                open = EXCLUDED.open,
+                high = EXCLUDED.high,
+                low = EXCLUDED.low,
+                close = EXCLUDED.close,
+                volume = EXCLUDED.volume
+        """
+        
+        await self.db.execute(
+            query,
+            candle.timestamp,
+            candle.symbol,
+            candle.timeframe,
+            candle.open,
+            candle.high,
+            candle.low,
+            candle.close,
+            candle.volume,
+        )
+    
     async def save_features(self, features: FeaturesMessage) -> None:
         """Save features to database.
         
@@ -28,20 +58,23 @@ class FeatureRepository:
         """
         query = """
             INSERT INTO features (
-                timestamp, symbol, timeframe, close, vwap, rsi,
+                timestamp, symbol, timeframe, close, vwap, vwap_slope, rsi,
                 ema_9, ema_20, ema_50, dxy_correlation,
-                structure_label, vwap_deviation
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+                structure_label, vwap_deviation, atr, vwap_deviation_normalized
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
             ON CONFLICT (timestamp, symbol, timeframe) DO UPDATE SET
                 close = EXCLUDED.close,
                 vwap = EXCLUDED.vwap,
+                vwap_slope = EXCLUDED.vwap_slope,
                 rsi = EXCLUDED.rsi,
                 ema_9 = EXCLUDED.ema_9,
                 ema_20 = EXCLUDED.ema_20,
                 ema_50 = EXCLUDED.ema_50,
                 dxy_correlation = EXCLUDED.dxy_correlation,
                 structure_label = EXCLUDED.structure_label,
-                vwap_deviation = EXCLUDED.vwap_deviation
+                vwap_deviation = EXCLUDED.vwap_deviation,
+                atr = EXCLUDED.atr,
+                vwap_deviation_normalized = EXCLUDED.vwap_deviation_normalized
         """
         
         await self.db.execute(
@@ -51,6 +84,7 @@ class FeatureRepository:
             features.timeframe,
             features.close,
             features.vwap,
+            features.vwap_slope if hasattr(features, 'vwap_slope') else None,
             features.rsi,
             features.ema_9,
             features.ema_20,
@@ -58,6 +92,8 @@ class FeatureRepository:
             features.dxy_correlation,
             features.structure_label,
             features.vwap_deviation,
+            features.atr if hasattr(features, 'atr') else None,
+            features.vwap_deviation_normalized if hasattr(features, 'vwap_deviation_normalized') else None,
         )
     
     async def load_recent_candles(

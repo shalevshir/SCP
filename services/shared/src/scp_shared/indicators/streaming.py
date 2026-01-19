@@ -168,6 +168,11 @@ class StreamingFeatureProcessor:
         self.vwap_current_session: str | None = None
         self.prev_vwap: float | None = None  # For vwap_slope calculation
 
+        # ATR state (14-period for normalized VWAP deviation)
+        self.atr_period = 14
+        self.atr_buffer: deque[float] = deque(maxlen=self.atr_period)
+        self.prev_close: float | None = None  # For True Range calculation
+
         # Warmup tracking
         self.bar_count = 0
 
@@ -250,6 +255,32 @@ class StreamingFeatureProcessor:
             features["vwap_deviation"] = abs((gc_bar.close - vwap) / vwap * 100)
         else:
             features["vwap_deviation"] = None
+
+        # === 3.5. ATR and Normalized VWAP Deviation ===
+        # Calculate True Range
+        if self.prev_close is not None:
+            # True Range = max(high-low, abs(high-prev_close), abs(low-prev_close))
+            hl = gc_bar.high - gc_bar.low
+            hc = abs(gc_bar.high - self.prev_close)
+            lc = abs(gc_bar.low - self.prev_close)
+            true_range = max(hl, hc, lc)
+            self.atr_buffer.append(true_range)
+        self.prev_close = gc_bar.close
+
+        # Calculate ATR (simple moving average of True Ranges)
+        if len(self.atr_buffer) >= self.atr_period:
+            atr = sum(self.atr_buffer) / len(self.atr_buffer)
+            features["atr"] = atr
+            
+            # Calculate Normalized VWAP Deviation: (Price - VWAP) / ATR
+            # This gives a dimensionless, volatility-adjusted deviation
+            if atr > 0:
+                features["vwap_deviation_normalized"] = (gc_bar.close - vwap) / atr
+            else:
+                features["vwap_deviation_normalized"] = None
+        else:
+            features["atr"] = None
+            features["vwap_deviation_normalized"] = None
 
         # === 4. RSI (incremental Wilder's smoothing for parity with backtester) ===
         features["rsi"] = self.rsi_state.update(gc_bar.close)

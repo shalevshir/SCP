@@ -25,12 +25,8 @@ services:
       - "log_duration=on"
     volumes:
       - postgres_dev_data:/var/lib/postgresql/data
-      - ./migrations/001_initial_schema.sql:/docker-entrypoint-initdb.d/100_initial_schema.sql:ro
-      - ./migrations/002_indexes.sql:/docker-entrypoint-initdb.d/101_indexes.sql:ro
-      - ./migrations/003_add_trade_state_fields.sql:/docker-entrypoint-initdb.d/102_add_trade_state_fields.sql:ro
-      - ./migrations/004_add_htf_bias_fields.sql:/docker-entrypoint-initdb.d/103_add_htf_bias_fields.sql:ro
-      - ./migrations/005_add_kill_switch.sql:/docker-entrypoint-initdb.d/104_add_kill_switch.sql:ro
-      - ./scripts:/scripts:ro
+      # Mount entire migrations directory - all .sql files run in alphabetical order
+      - ./migrations:/docker-entrypoint-initdb.d:ro
 
   data-adapter:
     container_name: scp-data-adapter-dev

@@ -18,6 +18,100 @@ def mock_db_pool() -> MagicMock:
     return pool
 
 
+class TestFeatureRepositorySaveCandle:
+    """Test save_candle method."""
+    
+    @pytest.mark.asyncio
+    async def test_save_candle_executes_upsert(
+        self, mock_db_pool: MagicMock
+    ) -> None:
+        """Save candle executes upsert query."""
+        repo = FeatureRepository(mock_db_pool)
+        
+        candle = CandleMessage(
+            timestamp=datetime(2025, 1, 15, 10, 0, tzinfo=timezone.utc),
+            symbol="GC",
+            timeframe="1m",
+            open=2650.0,
+            high=2655.0,
+            low=2648.0,
+            close=2652.0,
+            volume=1000.0,
+        )
+        
+        await repo.save_candle(candle)
+        
+        mock_db_pool.execute.assert_called_once()
+        call_args = mock_db_pool.execute.call_args[0]
+        assert "INSERT INTO candles" in call_args[0]
+        assert "ON CONFLICT" in call_args[0]
+    
+    @pytest.mark.asyncio
+    async def test_save_candle_passes_all_fields(
+        self, mock_db_pool: MagicMock
+    ) -> None:
+        """Save candle passes all OHLCV fields."""
+        repo = FeatureRepository(mock_db_pool)
+        
+        candle = CandleMessage(
+            timestamp=datetime(2025, 1, 15, 10, 0, tzinfo=timezone.utc),
+            symbol="DXY",
+            timeframe="1m",
+            open=107.250,
+            high=107.300,
+            low=107.200,
+            close=107.280,
+            volume=500.0,
+        )
+        
+        await repo.save_candle(candle)
+        
+        call_args = mock_db_pool.execute.call_args[0]
+        # Check all values are passed
+        assert call_args[1] == candle.timestamp
+        assert call_args[2] == "DXY"
+        assert call_args[3] == "1m"
+        assert call_args[4] == 107.250  # open
+        assert call_args[5] == 107.300  # high
+        assert call_args[6] == 107.200  # low
+        assert call_args[7] == 107.280  # close
+        assert call_args[8] == 500.0    # volume
+    
+    @pytest.mark.asyncio
+    async def test_save_candle_handles_both_symbols(
+        self, mock_db_pool: MagicMock
+    ) -> None:
+        """Save candle works for both GC and DXY."""
+        repo = FeatureRepository(mock_db_pool)
+        
+        gc_candle = CandleMessage(
+            timestamp=datetime(2025, 1, 15, 10, 0, tzinfo=timezone.utc),
+            symbol="GC",
+            timeframe="1m",
+            open=2650.0,
+            high=2655.0,
+            low=2648.0,
+            close=2652.0,
+            volume=1000.0,
+        )
+        
+        dxy_candle = CandleMessage(
+            timestamp=datetime(2025, 1, 15, 10, 0, tzinfo=timezone.utc),
+            symbol="DXY",
+            timeframe="1m",
+            open=107.250,
+            high=107.300,
+            low=107.200,
+            close=107.280,
+            volume=500.0,
+        )
+        
+        await repo.save_candle(gc_candle)
+        await repo.save_candle(dxy_candle)
+        
+        assert mock_db_pool.execute.call_count == 2
+
+
 class TestFeatureRepositorySaveFeatures:
     """Test save_features method."""
     
@@ -63,6 +157,7 @@ class TestFeatureRepositorySaveFeatures:
             timeframe="1m",
             close=2650.0,
             vwap=2645.0,
+            vwap_slope=0.15,  # Added vwap_slope field
             rsi=55.0,
             ema_9=2648.0,
             ema_20=2645.0,
@@ -75,13 +170,14 @@ class TestFeatureRepositorySaveFeatures:
         await repo.save_features(features)
         
         call_args = mock_db_pool.execute.call_args[0]
-        # Check all values are passed
+        # Check all values are passed (order: timestamp, symbol, timeframe, close, vwap, vwap_slope, rsi, ...)
         assert call_args[1] == features.timestamp
         assert call_args[2] == "GC"
         assert call_args[3] == "1m"
-        assert call_args[4] == 2650.0
-        assert call_args[5] == 2645.0
-        assert call_args[6] == 55.0
+        assert call_args[4] == 2650.0  # close
+        assert call_args[5] == 2645.0  # vwap
+        assert call_args[6] == 0.15    # vwap_slope (NEW field after migration 007)
+        assert call_args[7] == 55.0    # rsi
     
     @pytest.mark.asyncio
     async def test_save_features_handles_none_values(

@@ -113,6 +113,8 @@ class FeatureProcessor:
             vwap=self._safe_float(features_series.get("vwap")),
             vwap_slope=self._safe_float(features_series.get("vwap_slope")),
             vwap_deviation=self._safe_float(features_series.get("vwap_deviation")),
+            atr=self._safe_float(features_series.get("atr")),
+            vwap_deviation_normalized=self._safe_float(features_series.get("vwap_deviation_normalized")),
             # Trend indicators
             rsi=self._safe_float(features_series.get("rsi")),
             ema_9=self._safe_float(features_series.get("ema_9")),
