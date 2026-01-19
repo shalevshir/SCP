@@ -59,6 +59,11 @@ class FeaturesMessage(BaseModel):
     vwap: float | None = Field(default=None, description="VWAP value")
     vwap_slope: float | None = Field(default=None, description="VWAP slope (for FADE invalidation)")
     vwap_deviation: float | None = Field(default=None, description="VWAP deviation %")
+    atr: float | None = Field(default=None, description="Average True Range (14-period)")
+    vwap_deviation_normalized: float | None = Field(
+        default=None, 
+        description="Normalized VWAP deviation: (Price - VWAP) / ATR - dimensionless, volatility-adjusted metric"
+    )
     
     # Trend indicators
     rsi: float | None = Field(default=None, description="RSI value", ge=0, le=100)
