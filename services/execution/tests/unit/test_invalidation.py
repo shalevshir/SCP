@@ -149,16 +149,22 @@ class TestInvalidationChecker:
         assert "+1R not reached" in reason
     
     def test_check_vwap_invalidation_reclaim_long(self) -> None:
-        """Test VWAP invalidation for VWAP_RECLAIM long trade."""
+        """Test VWAP invalidation for VWAP_RECLAIM long trade requires 2-bar confirmation."""
         checker = InvalidationChecker()
         trade = make_trade(direction="long", setup_type="VWAP_RECLAIM")
-        candle = make_candle(close=2649.0)
         features = {"vwap": 2650.0}  # Close below VWAP
         
-        is_invalid, reason = checker.check_vwap_invalidation(trade, candle, features)
+        # First bar below VWAP
+        candle1 = make_candle(close=2649.0)
+        is_invalid, _ = checker.check_vwap_invalidation(trade, candle1, features)
+        assert is_invalid is False  # Not yet - need 2 bars
         
+        # Second bar below VWAP - now invalidated
+        candle2 = make_candle(close=2648.0)
+        is_invalid, reason = checker.check_vwap_invalidation(trade, candle2, features)
         assert is_invalid is True
         assert "VWAP invalidation" in reason
+        assert "2-bar confirmed" in reason
     
     def test_check_vwap_invalidation_fade_requires_2_bars(self) -> None:
         """Test VWAP_FADE invalidation requires 2 consecutive bars."""
