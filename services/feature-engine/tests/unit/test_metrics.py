@@ -41,7 +41,7 @@ def test_update_feature_metrics_all_fields():
     
     # Verify VWAP indicators
     assert metrics.feature_vwap.labels(mode="test", service="feature-engine")._value._value == 2650.5
-    assert metrics.feature_vwap_slope.labels(mode="test", service="feature-engine")._value._value == 0.05
+    assert metrics.feature_vwap_slope.labels(mode="test", service="feature-engine", symbol="GC")._value._value == 0.05
     assert metrics.feature_vwap_deviation.labels(mode="test", service="feature-engine")._value._value == 0.02
     
     # Verify trend indicators
