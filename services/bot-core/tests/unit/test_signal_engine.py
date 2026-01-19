@@ -185,6 +185,8 @@ class TestSignalToMessage:
             dxy_correlation=-0.75,
             structure_label="HH",
             vwap_deviation=0.5,
+            # TP Structural Target fields (required for SOP Section 4.3)
+            nearest_liquidity_long=2680.0,  # Valid target at ~3R
         )
         
         msg = signal_to_message(signal, features)
@@ -197,9 +199,8 @@ class TestSignalToMessage:
         assert msg.entry_price == 2650.0  # Close price
         # SL should be VWAP - buffer (30 ticks = 3.0 for GC)
         assert msg.sl_price == 2645.0 - 3.0  # VWAP - 30 ticks
-        # TP should be entry + 3R (htf_aligned and dxy_aligned in Nov)
-        expected_risk = 2650.0 - msg.sl_price
-        assert msg.tp_price == pytest.approx(2650.0 + expected_risk * 3.0, rel=0.01)
+        # TP should use structural target (nearest_liquidity_long)
+        assert msg.tp_price == 2680.0
         assert msg.id  # Should have a UUID
     
     def test_signal_to_message_short_vwap_reclaim(self) -> None:
@@ -232,6 +233,8 @@ class TestSignalToMessage:
             dxy_correlation=-0.75,
             structure_label="LL",
             vwap_deviation=-0.5,
+            # TP Structural Target fields (required for SOP Section 4.3)
+            nearest_liquidity_short=2615.0,  # Valid target at ~3R
         )
         
         msg = signal_to_message(signal, features)
@@ -241,9 +244,8 @@ class TestSignalToMessage:
         assert msg.entry_price == 2640.0
         # SL should be VWAP + buffer (30 ticks = 3.0)
         assert msg.sl_price == 2645.0 + 3.0  # VWAP + 30 ticks
-        # TP should be entry - 3R
-        expected_risk = msg.sl_price - 2640.0
-        assert msg.tp_price == pytest.approx(2640.0 - expected_risk * 3.0, rel=0.01)
+        # TP should use structural target (nearest_liquidity_short)
+        assert msg.tp_price == 2615.0
     
     def test_signal_to_message_vwap_fade(self) -> None:
         """Convert VWAP_FADE signal to message."""
@@ -359,13 +361,15 @@ class TestSignalToMessage:
             dxy_correlation=-0.75,
             structure_label="HH",
             vwap_deviation=0.5,
+            # TP Structural Target fields (September uses 2R)
+            # SL = VWAP - 30 ticks = 2642.0, Risk = 8.0, 2R = 2666.0
+            nearest_liquidity_long=2666.0,  # Valid target at 2R
         )
         
         msg = signal_to_message(signal, features)
         
-        # September uses 2R
-        expected_risk = 2650.0 - msg.sl_price
-        assert msg.tp_price == pytest.approx(2650.0 + expected_risk * 2.0, rel=0.01)
+        # TP should use structural target
+        assert msg.tp_price == 2666.0
     
     def test_signal_to_message_uses_timestamp_month_fallback(self) -> None:
         """Uses signal timestamp month when diagnostics month is missing."""
@@ -397,13 +401,15 @@ class TestSignalToMessage:
             dxy_correlation=-0.75,
             structure_label="HH",
             vwap_deviation=0.5,
+            # TP Structural Target fields (September uses 2R)
+            # SL = VWAP - 30 ticks = 2642.0, Risk = 8.0, 2R = 2666.0
+            nearest_liquidity_long=2666.0,  # Valid target at 2R
         )
         
         msg = signal_to_message(signal, features)
         
-        # Should use timestamp month (September = 2R)
-        expected_risk = 2650.0 - msg.sl_price
-        assert msg.tp_price == pytest.approx(2650.0 + expected_risk * 2.0, rel=0.01)
+        # Should use structural target
+        assert msg.tp_price == 2666.0
     
     def test_signal_to_message_factors_include_metadata(self) -> None:
         """Factors dict includes signal metadata."""
@@ -434,6 +440,8 @@ class TestSignalToMessage:
             dxy_correlation=-0.75,
             structure_label="HH",
             vwap_deviation=0.5,
+            # TP Structural Target fields
+            nearest_liquidity_long=2680.0,  # Valid target at 3R
         )
         
         msg = signal_to_message(signal, features)
@@ -478,6 +486,9 @@ class TestSignalToMessage:
             dxy_correlation=-0.75,
             structure_label="HH",
             vwap_deviation=0.1,
+            # TP Structural Target fields
+            # Entry: 2645.5, SL: 2642.0, Risk: 3.5, 3R: 2656.0
+            nearest_liquidity_long=2656.0,  # Valid target at 3R
         )
         
         msg = signal_to_message(signal, features)
@@ -631,6 +642,8 @@ class TestSignalEngineGenerate:
             dxy_correlation=-0.75,
             structure_label="HH",
             vwap_deviation=0.5,
+            # TP Structural Target fields
+            nearest_liquidity_long=2680.0,  # Valid target at 3R
         )
         htf_bias = HTFBiasMessage(
             timestamp=datetime(2025, 1, 15, 10, 0, tzinfo=timezone.utc),
