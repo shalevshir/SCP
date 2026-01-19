@@ -188,8 +188,16 @@ class TestSignalToMessage:
             # TP Structural Target fields (required for SOP Section 4.3)
             nearest_liquidity_long=2680.0,  # Valid target at ~3R
         )
+        htf_bias = HTFBiasMessage(
+            timestamp=datetime(2025, 1, 15, 10, 0, tzinfo=timezone.utc),
+            bias="bullish",
+            score=8.5,
+            confidence="A+",
+            dxy_aligned=True,
+            chop_detected=False,
+        )
         
-        msg = signal_to_message(signal, features)
+        msg = signal_to_message(signal, features, htf_bias)
         
         assert isinstance(msg, SignalMessage)
         assert msg.direction == "long"
@@ -236,8 +244,16 @@ class TestSignalToMessage:
             # TP Structural Target fields (required for SOP Section 4.3)
             nearest_liquidity_short=2615.0,  # Valid target at ~3R
         )
+        htf_bias = HTFBiasMessage(
+            timestamp=datetime(2025, 1, 15, 10, 0, tzinfo=timezone.utc),
+            bias="bearish",
+            score=8.5,
+            confidence="A+",
+            dxy_aligned=False,
+            chop_detected=False,
+        )
         
-        msg = signal_to_message(signal, features)
+        msg = signal_to_message(signal, features, htf_bias)
         
         assert msg.direction == "short"
         assert msg.setup_type == "VWAP_RECLAIM"
@@ -278,8 +294,16 @@ class TestSignalToMessage:
             structure_label="HH",
             vwap_deviation=0.5,
         )
+        htf_bias = HTFBiasMessage(
+            timestamp=datetime(2025, 1, 15, 10, 0, tzinfo=timezone.utc),
+            bias="bullish",
+            score=8.5,
+            confidence="A+",
+            dxy_aligned=True,
+            chop_detected=False,
+        )
         
-        msg = signal_to_message(signal, features)
+        msg = signal_to_message(signal, features, htf_bias)
         
         assert msg.direction == "long"
         assert msg.setup_type == "VWAP_FADE"
@@ -320,8 +344,16 @@ class TestSignalToMessage:
             structure_label="HH",
             vwap_deviation=0.5,
         )
+        htf_bias = HTFBiasMessage(
+            timestamp=datetime(2025, 1, 15, 10, 0, tzinfo=timezone.utc),
+            bias="bullish",
+            score=8.5,
+            confidence="A+",
+            dxy_aligned=False,
+            chop_detected=False,
+        )
         
-        msg = signal_to_message(signal, features)
+        msg = signal_to_message(signal, features, htf_bias)
         
         assert msg.direction == "long"
         assert msg.setup_type == "DXY_CONTINUATION"
@@ -365,8 +397,16 @@ class TestSignalToMessage:
             # SL = VWAP - 30 ticks = 2642.0, Risk = 8.0, 2R = 2666.0
             nearest_liquidity_long=2666.0,  # Valid target at 2R
         )
+        htf_bias = HTFBiasMessage(
+            timestamp=datetime(2025, 9, 15, 10, 0, tzinfo=timezone.utc),
+            bias="bullish",
+            score=8.5,
+            confidence="A+",
+            dxy_aligned=False,
+            chop_detected=False,
+        )
         
-        msg = signal_to_message(signal, features)
+        msg = signal_to_message(signal, features, htf_bias)
         
         # TP should use structural target
         assert msg.tp_price == 2666.0
@@ -405,8 +445,16 @@ class TestSignalToMessage:
             # SL = VWAP - 30 ticks = 2642.0, Risk = 8.0, 2R = 2666.0
             nearest_liquidity_long=2666.0,  # Valid target at 2R
         )
+        htf_bias = HTFBiasMessage(
+            timestamp=datetime(2025, 9, 15, 10, 0, tzinfo=timezone.utc),
+            bias="bullish",
+            score=8.5,
+            confidence="A+",
+            dxy_aligned=False,
+            chop_detected=False,
+        )
         
-        msg = signal_to_message(signal, features)
+        msg = signal_to_message(signal, features, htf_bias)
         
         # Should use structural target
         assert msg.tp_price == 2666.0
@@ -443,8 +491,16 @@ class TestSignalToMessage:
             # TP Structural Target fields
             nearest_liquidity_long=2680.0,  # Valid target at 3R
         )
+        htf_bias = HTFBiasMessage(
+            timestamp=datetime(2025, 1, 15, 10, 0, tzinfo=timezone.utc),
+            bias="bullish",
+            score=8.5,
+            confidence="A+",
+            dxy_aligned=False,
+            chop_detected=False,
+        )
         
-        msg = signal_to_message(signal, features)
+        msg = signal_to_message(signal, features, htf_bias)
         
         # Should include original factors and metadata
         assert "structure_alignment" in msg.factors
@@ -490,8 +546,16 @@ class TestSignalToMessage:
             # Entry: 2645.5, SL: 2642.0, Risk: 3.5, 3R: 2656.0
             nearest_liquidity_long=2656.0,  # Valid target at 3R
         )
+        htf_bias = HTFBiasMessage(
+            timestamp=datetime(2025, 1, 15, 10, 0, tzinfo=timezone.utc),
+            bias="bullish",
+            score=8.5,
+            confidence="A+",
+            dxy_aligned=False,
+            chop_detected=False,
+        )
         
-        msg = signal_to_message(signal, features)
+        msg = signal_to_message(signal, features, htf_bias)
         
         # VWAP - 30 ticks = 2642.0, but minimum is 20 ticks from entry
         # Entry 2645.5, so minimum SL = 2645.5 - 2.0 = 2643.5

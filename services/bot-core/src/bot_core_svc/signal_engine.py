@@ -66,6 +66,13 @@ def htf_bias_message_to_htf_bias(msg: HTFBiasMessage) -> HTFBias:
         conflict_detected=msg.conflict_detected,
         conflict_reason=msg.conflict_reason,
         dxy_chop_detected=msg.dxy_chop_detected,
+        # DXY correlation and structure fields for DXY_CONTINUATION detection
+        dxy_corr_1m=msg.dxy_corr_1m,
+        dxy_corr_5m=msg.dxy_corr_5m,
+        dxy_corr_15m=msg.dxy_corr_15m,
+        dxy_corr_1h=msg.dxy_corr_1h,
+        dxy_structure=msg.dxy_structure,
+        dxy_chop_5m=msg.dxy_chop_5m,
     )
 
 
@@ -238,12 +245,13 @@ def calculate_sl_price_vwap_reclaim(
     return sl_price
 
 
-def signal_to_message(signal: Signal, features: FeaturesMessage) -> SignalMessage:
+def signal_to_message(signal: Signal, features: FeaturesMessage, htf_bias: HTFBiasMessage) -> SignalMessage:
     """Convert Signal to SignalMessage.
     
     Args:
         signal: Signal object from score_signal
         features: Features message containing price data for entry/SL/TP calculation
+        htf_bias: HTF bias message containing alignment data
         
     Returns:
         SignalMessage for publishing
@@ -313,9 +321,13 @@ def signal_to_message(signal: Signal, features: FeaturesMessage) -> SignalMessag
     if month is None:
         month = signal.timestamp.month
     
-    # Get alignment flags from diagnostics or signal
-    htf_aligned = signal.diagnostics.get("htf_aligned", False)
-    dxy_aligned = signal.diagnostics.get("dxy_aligned", False)
+    # Get alignment flags from htf_bias message
+    # HTF aligned: signal direction matches HTF bias direction
+    # Map bias to direction: bullish -> long, bearish -> short
+    bias_direction_map = {"bullish": "long", "bearish": "short", "neutral": "neutral"}
+    htf_aligned = signal.direction == bias_direction_map.get(htf_bias.bias, "neutral")
+    # DXY aligned: direct field from HTF bias message
+    dxy_aligned = htf_bias.dxy_aligned
     
     # Determine R-multiple per SOP (from backtester/trade.py:671-688)
     if setup_type == "VWAP_FADE":
@@ -471,7 +483,7 @@ class SignalEngine:
         
         # Convert to message (may raise ValueError if TP validation fails)
         try:
-            signal_msg = signal_to_message(signal, features)
+            signal_msg = signal_to_message(signal, features, htf_bias)
         except ValueError as e:
             # TP validation failed - signal rejected
             logger.info(
