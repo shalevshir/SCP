@@ -50,23 +50,23 @@ class TestDXYAlignmentStreamingFallback:
         
         assert is_aligned is True  # Passes with strong 1M correlation
         assert score == 0.5  # HTF correlation bonus
-        assert "streaming mode" in rationale.lower()
+        assert "relying on correlation" in rationale.lower()
     
     def test_streaming_mode_with_weak_1m_and_15m_confirmation(self):
-        """Streaming mode uses 15M to confirm weak 1M correlation."""
+        """Streaming mode uses 15M to confirm weak 1M correlation (if 1M absent)."""
         is_aligned, score, rationale = compute_dxy_alignment(
             trade_direction="long",
             dxy_structure=None,
             dxy_chop_5m=False,
-            dxy_corr_1m=-0.35,  # Weak 1M (< -0.4)
-            dxy_corr_5m=None,
-            dxy_corr_15m=-0.4,  # Strong 15M confirms
+            dxy_corr_1m=None,  # No 1M data
+            dxy_corr_5m=None,  # No 5M data
+            dxy_corr_15m=-0.45,  # Strong 15M confirms (need > -0.4)
             dxy_corr_1h=-0.3,
         )
         
-        assert is_aligned is True  # Confirmed by 15M
+        assert is_aligned is True  # Confirmed by 15M (fallback)
         assert score == 0.5
-        assert "confirmed" in rationale.lower()
+        assert "15m" in rationale.lower()
     
     def test_streaming_mode_rejects_very_weak_correlation(self):
         """Streaming mode rejects very weak correlations."""

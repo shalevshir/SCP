@@ -865,18 +865,18 @@ def determine_setup_type(features: pd.Series, htf_bias: HTFBias) -> str:
     # VWAP_FADE: Strict structure-based validation
     from scp_shared.rule_engine.setup_detectors.vwap_fade import detect_vwap_fade
 
-    #fade_detected = detect_vwap_fade(features, htf_bias, df=None)
-    #if fade_detected:
-    #    return "VWAP_FADE"
+    fade_detected = detect_vwap_fade(features, htf_bias, df=None)
+    if fade_detected:
+        return "VWAP_FADE"
 
     # DXY_CONTINUATION: Strict multi-factor validation
-    #from scp_shared.rule_engine.setup_detectors.dxy_continuation import (
-    #    detect_dxy_continuation,
-    #)
+    from scp_shared.rule_engine.setup_detectors.dxy_continuation import (
+        detect_dxy_continuation,
+    )
 
-    #cont_detected = detect_dxy_continuation(features, htf_bias)
-    #if cont_detected:
-    #    return "DXY_CONTINUATION"
+    cont_detected = detect_dxy_continuation(features, htf_bias)
+    if cont_detected:
+        return "DXY_CONTINUATION"
     
     # VWAP_RECLAIM: Check context validity (NOT entry readiness)
     # Context validation determines if setup type is VWAP_RECLAIM

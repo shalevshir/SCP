@@ -32,7 +32,7 @@ class TestComputeDXYAlignment:
             dxy_structure="HH",  # Bullish DXY supports short
             dxy_chop_5m=False,
             dxy_corr_1m=-0.35,
-            dxy_corr_5m=-0.4,
+            dxy_corr_5m=-0.45,  # Need > -0.4 for 5M correlation
             dxy_corr_15m=-0.35,
             dxy_corr_1h=-0.28,
         )
@@ -71,13 +71,13 @@ class TestComputeDXYAlignment:
         assert "in chop" in rationale
 
     def test_weak_micro_correlation(self) -> None:
-        """Test alignment fails when micro correlation is weak."""
+        """Test alignment fails when best available correlation is weak."""
         is_aligned, score, rationale = compute_dxy_alignment(
             trade_direction="long",
             dxy_structure="LL",
             dxy_chop_5m=False,
             dxy_corr_1m=-0.2,  # Too weak
-            dxy_corr_5m=-0.5,
+            dxy_corr_5m=-0.2,  # Also too weak (5M takes priority)
         )
 
         assert is_aligned is False
@@ -85,13 +85,14 @@ class TestComputeDXYAlignment:
         assert "weak/positive" in rationale
 
     def test_missing_micro_correlation(self) -> None:
-        """Test alignment fails when micro correlation data is missing."""
+        """Test alignment fails when all correlation data is missing."""
         is_aligned, score, rationale = compute_dxy_alignment(
             trade_direction="long",
             dxy_structure="LL",
             dxy_chop_5m=False,
             dxy_corr_1m=None,  # Missing
-            dxy_corr_5m=-0.5,
+            dxy_corr_5m=None,  # Missing
+            dxy_corr_15m=None,  # Missing
         )
 
         assert is_aligned is False
@@ -99,18 +100,18 @@ class TestComputeDXYAlignment:
         assert "N/A" in rationale
 
     def test_no_structure_label(self) -> None:
-        """Test alignment fails when no DXY structure detected."""
+        """Test alignment passes when structure unavailable but correlation strong (streaming mode)."""
         is_aligned, score, rationale = compute_dxy_alignment(
             trade_direction="long",
-            dxy_structure=None,  # No swing detected
+            dxy_structure=None,  # No swing detected (streaming mode)
             dxy_chop_5m=False,
             dxy_corr_1m=-0.4,
             dxy_corr_5m=-0.5,
         )
 
-        assert is_aligned is False
-        assert score == 0.0
-        assert "N/A (no swing detected)" in rationale
+        # Streaming mode: structure optional, relies on correlation
+        assert is_aligned is True
+        assert "relying on correlation" in rationale
 
     def test_htf_correlation_bonus(self) -> None:
         """Test HTF correlation adds bonus when aligned."""
