@@ -144,6 +144,19 @@ class HTFBias:
     conflict_detected: bool = False
     conflict_reason: str | None = None
 
+    # TP Structural Targets (SOP Section 4.3)
+    # Priority hierarchy for long TPs: htf_range_high > untouched_liquidity_high > nearest_fvg_high
+    htf_range_high: float | None = None  # Upper boundary of HTF range
+    htf_range_low: float | None = None  # Lower boundary of HTF range
+    untouched_liquidity_high: float | None = None  # Unswept buy-side liquidity (clean HH)
+    untouched_liquidity_low: float | None = None  # Unswept sell-side liquidity (clean LL)
+    nearest_fvg_high: float | None = None  # Nearest bullish FVG above (for long TP)
+    nearest_fvg_low: float | None = None  # Nearest bearish FVG below (for short TP)
+    opposing_fvg_high: float | None = None  # Bearish FVG blocking longs (upper boundary)
+    opposing_fvg_low: float | None = None  # Bearish FVG blocking longs (lower boundary)
+    opposing_fvg_bullish_high: float | None = None  # Bullish FVG blocking shorts (upper)
+    opposing_fvg_bullish_low: float | None = None  # Bullish FVG blocking shorts (lower)
+
     def to_dict(self) -> dict:
         """Convert HTFBias to dictionary for logging/serialization."""
         return {
@@ -194,4 +207,15 @@ class HTFBias:
             "atr_15m": self.atr_15m,
             "conflict_detected": self.conflict_detected,
             "conflict_reason": self.conflict_reason,
+            # TP Structural Targets
+            "htf_range_high": self.htf_range_high,
+            "htf_range_low": self.htf_range_low,
+            "untouched_liquidity_high": self.untouched_liquidity_high,
+            "untouched_liquidity_low": self.untouched_liquidity_low,
+            "nearest_fvg_high": self.nearest_fvg_high,
+            "nearest_fvg_low": self.nearest_fvg_low,
+            "opposing_fvg_high": self.opposing_fvg_high,
+            "opposing_fvg_low": self.opposing_fvg_low,
+            "opposing_fvg_bullish_high": self.opposing_fvg_bullish_high,
+            "opposing_fvg_bullish_low": self.opposing_fvg_bullish_low,
         }
