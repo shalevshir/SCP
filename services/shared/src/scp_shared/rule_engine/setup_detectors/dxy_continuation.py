@@ -235,7 +235,11 @@ def detect_dxy_continuation(
         logger.debug("DXY continuation: skipping pullback recency check (insufficient data)")
 
     # All checks passed
-    corr_info = f"1m={corr_1m:.2f}, 5m={corr_5m:.2f}" if corr_5m is not None else f"corr={effective_corr:.2f}"
+    if corr_5m is not None:
+        corr_1m_label = f"{corr_1m:.2f}" if corr_1m is not None else "n/a"
+        corr_info = f"1m={corr_1m_label}, 5m={corr_5m:.2f}"
+    else:
+        corr_info = f"corr={effective_corr:.2f}"
     logger.info(
         f"DXY continuation DETECTED: {corr_info}, "
         f"dxy_structure={dxy_structure}, bars_since_bos={bars_since_bos}, "
