@@ -926,9 +926,10 @@ def compute_htf_bias(
                     # or None, not booleans, so we check for non-null values
                     bos_detected_bars = bos_series[bos_series.notna()]
                     if len(bos_detected_bars) > 0:
-                        # Get the actual index position of the last BOS event,
-                        # not the count minus one
-                        bos_index = bos_detected_bars.index[-1]
+                        # Get the integer position of the last BOS event
+                        # Convert index label (potentially Timestamp) to integer position
+                        bos_index_label = bos_detected_bars.index[-1]
+                        bos_index = df_1h.index.get_loc(bos_index_label)
 
                 # 8a. Compute HTF range boundaries
                 htf_range_high, htf_range_low = compute_htf_range(

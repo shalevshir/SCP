@@ -97,17 +97,18 @@ def compute_htf_range(
     range_high = scoped_df["high"].max()
     range_low = scoped_df["low"].min()
 
-    # Find the index (within scoped_df) where max high and min low occur
-    range_high_idx = scoped_df["high"].idxmax()
-    range_low_idx = scoped_df["low"].idxmin()
+    # Find the integer position (within scoped_df) where max high and min low occur
+    # Use argmax/argmin for integer positions, not idxmax/idxmin (which return labels)
+    range_high_pos = scoped_df["high"].argmax()
+    range_low_pos = scoped_df["low"].argmin()
 
     # Step 2: Check for invalidation (body acceptance through boundaries)
     # A boundary is invalidated if any subsequent close exceeds it
     # Wick touches are OK, only closes invalidate
 
     # Check if range_high is broken (any close above it after it formed)
-    if range_high_idx < scoped_df.index[-1]:
-        bars_after_high = scoped_df.loc[range_high_idx + 1:]
+    if range_high_pos < len(scoped_df) - 1:
+        bars_after_high = scoped_df.iloc[range_high_pos + 1:]
     else:
         bars_after_high = scoped_df.iloc[0:0]
     if len(bars_after_high) > 0:
@@ -116,8 +117,8 @@ def compute_htf_range(
             range_high = None
 
     # Check if range_low is broken (any close below it after it formed)
-    if range_low_idx < scoped_df.index[-1]:
-        bars_after_low = scoped_df.loc[range_low_idx + 1:]
+    if range_low_pos < len(scoped_df) - 1:
+        bars_after_low = scoped_df.iloc[range_low_pos + 1:]
     else:
         bars_after_low = scoped_df.iloc[0:0]
     if len(bars_after_low) > 0:
