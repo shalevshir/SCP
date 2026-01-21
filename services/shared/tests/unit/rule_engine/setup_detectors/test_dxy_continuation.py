@@ -51,6 +51,44 @@ class TestDXYContinuationDetector:
         result = detect_dxy_continuation(features, htf_bias, df)
         assert result is True
 
+    def test_missing_1m_corr_with_5m_corr_logs_cleanly(self):
+        """Test logging when 5m corr exists but 1m corr is missing."""
+        htf_bias = HTFBias(
+            bias="bullish",
+            direction="long",
+            score=8.5,
+            confidence="high",
+            dxy_corr_1m=None,  # 1m missing in streaming mode
+            dxy_corr_5m=-0.5,  # 5m available
+            dxy_structure="LL",
+            bars_since_bos=8,
+            dxy_chop_5m=False,
+            chop_detected=False,
+        )
+
+        features = pd.Series(
+            {
+                "open": 100.0,
+                "close": 105.0,
+                "high": 105.5,
+                "low": 99.5,
+                "atr": 3.0,
+                "structure_clarity": 0.7,
+                "is_chop": False,
+                "dxy_corr": -0.7,  # Fallback correlation source
+            }
+        )
+
+        df = pd.DataFrame(
+            {
+                "high": [102, 104, 103],
+                "low": [98, 100, 101],  # HL pattern
+            }
+        )
+
+        result = detect_dxy_continuation(features, htf_bias, df)
+        assert result is True
+
     def test_weak_correlation_rejects(self):
         """Test that weak correlation rejects continuation."""
         htf_bias = HTFBias(
