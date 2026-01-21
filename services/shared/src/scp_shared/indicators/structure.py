@@ -11,11 +11,13 @@ from __future__ import annotations
 
 from collections import deque
 from dataclasses import dataclass
+from datetime import date
 from typing import Literal
 
 import pandas as pd
 from scp_shared.common.logger import get_logger
 
+from scp_shared.indicators.timezone_utils import get_vwap_session_id
 from scp_shared.indicators.vwap_reclaim_state_machine import (
     VWAPReclaimState,
     VWAPReclaimStateMachine,
@@ -225,6 +227,14 @@ class StructureContextTracker:
 
         # Bar counter
         self.bar_count = 0
+        
+        # Session high/low tracking (SOP Section 4.3 - TP Structural Targets Priority #3)
+        # Sessions run from 08:20 ET to 08:19:59 ET next day (Gold futures RTH open)
+        self.current_session_id: date | None = None
+        self.current_session_high: float | None = None
+        self.current_session_low: float | None = None
+        self.prior_session_high: float | None = None
+        self.prior_session_low: float | None = None
 
     def update(self, high: float, low: float, close: float, open: float | None = None) -> StructureContext:
         """Update with new candle and return derived context.
@@ -415,10 +425,10 @@ class StructureContextTracker:
         immediate_resistance = nearest_swing_high_above
         immediate_support = nearest_swing_low_below
         
-        # Prior session high/low tracking
-        # TODO: Track actual session boundaries and persist session extremes
-        prior_session_high = None
-        prior_session_low = None
+        # Prior session high/low from tracked session state
+        # Sessions run from 08:20 ET to 08:19:59 ET next day (Gold futures RTH)
+        prior_session_high = self.prior_session_high
+        prior_session_low = self.prior_session_low
 
         return StructureContext(
             last_structure_label=self.last_structure_label,
@@ -622,6 +632,56 @@ class StructureContextTracker:
             volume: Current bar volume
         """
         self.volume_buffer.append(volume)
+
+    def update_session_state(self, timestamp: datetime, high: float, low: float) -> None:
+        """Update session high/low tracking for TP structural targets.
+        
+        Tracks session extremes using VWAP session boundaries (08:20 ET to 08:19:59 ET next day).
+        At session boundary, current session extremes are rolled over to prior session values.
+        
+        Args:
+            timestamp: Current bar timestamp (timezone-aware)
+            high: Current bar high price
+            low: Current bar low price
+            
+        Notes:
+            - prior_session_high/low remain None until first session boundary
+            - Sessions align with Gold futures RTH open (08:20 ET)
+            - DST transitions handled automatically by get_vwap_session_id
+        """
+        from datetime import datetime
+        
+        # Get session ID for this timestamp
+        session_id = get_vwap_session_id(timestamp)
+        
+        if self.current_session_id is None:
+            # First bar ever - initialize current session
+            self.current_session_id = session_id
+            self.current_session_high = high
+            self.current_session_low = low
+            # prior_session values remain None until we cross a session boundary
+            
+        elif session_id != self.current_session_id:
+            # Session boundary crossed - roll over current to prior
+            self.prior_session_high = self.current_session_high
+            self.prior_session_low = self.current_session_low
+            
+            # Reset current session tracking
+            self.current_session_id = session_id
+            self.current_session_high = high
+            self.current_session_low = low
+            
+            logger.debug(
+                f"Session boundary at {timestamp}: "
+                f"prior_high={self.prior_session_high}, prior_low={self.prior_session_low}"
+            )
+            
+        else:
+            # Same session - update extremes if exceeded
+            if self.current_session_high is None or high > self.current_session_high:
+                self.current_session_high = high
+            if self.current_session_low is None or low < self.current_session_low:
+                self.current_session_low = low
 
     def update_reclaim_state(self, current_bar_idx: int) -> None:
         """Update VWAP reclaim state machine (check expiration).
