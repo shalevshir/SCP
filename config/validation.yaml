@@ -7,8 +7,8 @@ timezone: "Asia/Jerusalem"
 # Default session rules (applied when no season-specific rule matches)
 default_session:
   name: "Default Conservative"
-  window_start: "01:00"  # ILT (Israel Local Time)
-  window_end: "23:59"    # ILT (Israel Local Time)
+  window_start: "09:00"  # ILT (Israel Local Time)
+  window_end: "14:00"    # ILT (Israel Local Time)
   allowed_tiers:
     - "Conservative"
     - "EarlyMild"
@@ -17,6 +17,7 @@ default_session:
   allowed_setups:
     - "VWAP_RECLAIM"
     - "DXY_CONTINUATION"
+    - "VWAP_FADE"
   min_score: 7.0
   max_losses: 2
   dxy_correlation_max: -0.6  # Must be below this threshold (more negative)
@@ -24,54 +25,54 @@ default_session:
 # Season-specific rules
 seasons:
   # September Defensive: Heightened caution, strict requirements
-  # - name: "September Defensive"
-  #   months: [9]  # September
-  #   window_start: "09:00"
-  #   window_end: "14:00"
-  #   allowed_tiers:
-  #     - "Conservative"
-  #     - "EarlyMild"
-  #   allowed_setups:
-  #     - "VWAP_RECLAIM"
-  #     - "DXY_CONTINUATION"
-  #   min_score: 8.0  # Higher threshold
-  #   max_losses: 1   # Halt after 1 loss
-  #   dxy_correlation_max: -0.7  # Stricter DXY requirement
+  - name: "September Defensive"
+    months: [9]  # September
+    window_start: "09:00"
+    window_end: "14:00"
+    allowed_tiers:
+      - "Conservative"
+      - "EarlyMild"
+    allowed_setups:
+      - "VWAP_RECLAIM"
+      - "DXY_CONTINUATION"
+    min_score: 8.0  # Higher threshold
+    max_losses: 1   # Halt after 1 loss
+    dxy_correlation_max: -0.7  # Stricter DXY requirement
 
-  # # October Base/Reconstruction: Transitional phase
-  # - name: "October Base/Reconstruction"
-  #   months: [10]  # October
-  #   window_start: "09:00"
-  #   window_end: "14:00"
-  #   allowed_tiers:
-  #     - "Conservative"
-  #     - "EarlyMild"
-  #     - "Mild"
-  #   allowed_setups:
-  #     - "VWAP_RECLAIM"
-  #     - "DXY_CONTINUATION"
-  #     - "VWAP_FADE"
-  #   min_score: 7.5
-  #   max_losses: 2
-  #   dxy_correlation_max: -0.6
+  # October Base/Reconstruction: Transitional phase
+  - name: "October Base/Reconstruction"
+    months: [10]  # October
+    window_start: "09:00"
+    window_end: "14:00"
+    allowed_tiers:
+      - "Conservative"
+      - "EarlyMild"
+      - "Mild"
+    allowed_setups:
+      - "VWAP_RECLAIM"
+      - "DXY_CONTINUATION"
+      - "VWAP_FADE"
+    min_score: 7.5
+    max_losses: 2
+    dxy_correlation_max: -0.6
 
-  # # November-December Trend Window: Optimal trading conditions
-  # - name: "November-December Trend Window"
-  #   months: [11, 12]  # November and December
-  #   window_start: "09:00"  # ILT (Israel Local Time)
-  #   window_end: "14:00"    # ILT (Israel Local Time)
-  #   allowed_tiers:
-  #     - "Conservative"
-  #     - "EarlyMild"
-  #     - "Mild"
-  #     - "Offensive"
-  #   allowed_setups:
-  #     - "VWAP_RECLAIM"
-  #     - "DXY_CONTINUATION"
-  #     - "VWAP_FADE"
-  #   min_score: 7.0
-  #   max_losses: 2
-  #   dxy_correlation_max: -0.6
+  # November-December Trend Window: Optimal trading conditions
+  - name: "November-December Trend Window"
+    months: [11, 12]  # November and December
+    window_start: "09:00"  # ILT (Israel Local Time)
+    window_end: "14:00"    # ILT (Israel Local Time)
+    allowed_tiers:
+      - "Conservative"
+      - "EarlyMild"
+      - "Mild"
+      - "Offensive"
+    allowed_setups:
+      - "VWAP_RECLAIM"
+      - "DXY_CONTINUATION"
+      - "VWAP_FADE"
+    min_score: 7.0
+    max_losses: 2
+    dxy_correlation_max: -0.6
 
 # US Holidays (trading blocked on these dates)
 # Format: YYYY-MM-DD
