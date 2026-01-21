@@ -396,8 +396,6 @@ def compute_htf_bias(
     original_score = score
 
     # Detect DXY chop if data provided
-    # NOTE: DXY chop neutralization DISABLED - keeping for data collection only
-    # Detect DXY chop if data provided
     # NOTE: DXY chop is detected and stored but does NOT neutralize bias
     # Instead, it's used in setup-specific validation (e.g., reject VWAP_RECLAIM)
     dxy_chop_detected = False
@@ -409,7 +407,7 @@ def compute_htf_bias(
                 dxy_chop_detected = bool(chop_series.iloc[-1])
                 if dxy_chop_detected:
                     logger.debug(
-                        f"DXY chop detected (stored in HTFBias, setup validation will handle)"
+                        "DXY chop detected (stored in HTFBias, setup validation will handle)"
                     )
         except Exception as e:
             logger.error(f"Error detecting DXY chop: {e}")
@@ -494,7 +492,8 @@ def compute_htf_bias(
     # Instead, it's used in setup-specific validation (e.g., reject VWAP_RECLAIM)
     if conflict_detected:
         logger.debug(
-            f"Conflict detected (stored in HTFBias, setup validation will handle): {conflict_reason}"
+            f"Conflict detected (stored in HTFBias, setup validation will handle): "
+            f"{conflict_reason}"
         )
 
     # Apply seasonality adjustment if timestamp provided
@@ -524,8 +523,8 @@ def compute_htf_bias(
             score,
         )
     
-    # NOTE: DXY chop and conflict detection do NOT cap score or neutralize bias
-    # They are stored in HTFBias and used by setup-specific validation
+    # NOTE: Neither conflict nor DXY chop cap score anymore
+    # They are detected and stored for setup-specific validation to handle
 
     # Determine confidence based on adjusted score
     if score >= 8.0:

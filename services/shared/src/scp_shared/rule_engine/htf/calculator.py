@@ -346,6 +346,7 @@ def compute_htf_bias(
     df_1h: pd.DataFrame | None = None,
     sweep_events_15m: pd.Series | None = None,
     timestamp: pd.Timestamp | None = None,
+    swept_levels: set[float] | None = None,
 ) -> HTFBias:
     """Compute comprehensive HTF bias with all components.
 
@@ -486,7 +487,8 @@ def compute_htf_bias(
     # Instead, it's used in setup-specific validation (e.g., reject VWAP_RECLAIM)
     if conflict_detected:
         logger.debug(
-            f"Conflict detected (stored in HTFBias, setup validation will handle): {conflict_reason}"
+            f"Conflict detected (stored in HTFBias, setup validation will handle): "
+            f"{conflict_reason}"
         )
 
     # Apply seasonality adjustment if timestamp provided
@@ -549,12 +551,8 @@ def compute_htf_bias(
             score,
         )
 
-    # Re-cap score after seasonality if neutralization conditions exist
-    # NOTE: All conflict/chop neutralization DISABLED for parity testing
-    # if conflict_detected:
-    #     # Re-cap score after any post-processing to enforce neutral bias
-    #     score = min(score, 5.0)
-    pass  # Score re-cap disabled for parity testing
+    # NOTE: Neither conflict nor DXY chop cap score anymore
+    # They are detected and stored for setup-specific validation to handle
 
     # Determine confidence based on adjusted score
     if score >= 8.0:
@@ -726,6 +724,7 @@ def compute_htf_bias(
 
     # 4. FVG alignment score
     fvg_alignment_score = 0.0
+    fvg_df = None  # Initialize for later use in target computation
     if df_1h is not None and len(df_1h) >= 3:
         try:
             # Detect FVGs on 1H timeframe
@@ -895,6 +894,94 @@ def compute_htf_bias(
             except Exception as e:
                 logger.debug(f"Failed to extract sweep candle: {e}")
 
+    # 8. TP Structural Targets (SOP Section 4.3)
+    from scp_shared.rule_engine.htf.structure.targets import (
+        compute_htf_range,
+        compute_untouched_liquidity,
+        find_nearest_fvg_targets,
+        find_opposing_fvgs,
+    )
+
+    htf_range_high = None
+    htf_range_low = None
+    untouched_liquidity_high = None
+    untouched_liquidity_low = None
+    nearest_fvg_high = None
+    nearest_fvg_low = None
+    opposing_fvg_high = None
+    opposing_fvg_low = None
+    opposing_fvg_bullish_high = None
+    opposing_fvg_bullish_low = None
+
+    if df_1h is not None and len(df_1h) > 0:
+        try:
+            # Get current price from features
+            current_price = features_1h.get("close")
+            if current_price is not None and not pd.isna(current_price):
+                # Determine BOS index for range scoping
+                bos_index = None
+                if bos_series is not None and len(bos_series) > 0:
+                    # Find most recent BOS before current timestamp
+                    bos_detected_bars = bos_series[bos_series == True]  # noqa: E712
+                    if len(bos_detected_bars) > 0:
+                        bos_index = len(bos_detected_bars) - 1
+
+                # 8a. Compute HTF range boundaries
+                htf_range_high, htf_range_low = compute_htf_range(
+                    df_1h, current_price, bos_index
+                )
+
+                # 8b. Compute untouched liquidity
+                # Use swept_levels from streaming calculator if available, otherwise empty set
+                swept_levels_combined = swept_levels if swept_levels is not None else set()
+                untouched_liquidity_high, untouched_liquidity_low = compute_untouched_liquidity(
+                    df_1h, current_price, swept_levels_combined
+                )
+
+                # 8c. Find nearest FVG targets (requires FVG detection from step 4)
+                if fvg_df is not None and len(fvg_df) > 0:
+                    # Use original_direction for FVG targeting
+                    direction = "long" if original_bias == "bullish" else "short"
+                    nearest_fvg_high, nearest_fvg_low = find_nearest_fvg_targets(
+                        fvg_df, current_price, direction
+                    )
+
+                    # 8d. Find opposing FVGs (needs a potential TP to check path)
+                    # Use highest priority target as potential TP for obstacle detection
+                    potential_tp = None
+                    if direction == "long":
+                        potential_tp = (
+                            untouched_liquidity_high
+                            or htf_range_high
+                            or nearest_fvg_high
+                        )
+                    else:
+                        potential_tp = (
+                            untouched_liquidity_low
+                            or htf_range_low
+                            or nearest_fvg_low
+                        )
+
+                    if potential_tp is not None:
+                        opposing_fvgs = find_opposing_fvgs(
+                            fvg_df, current_price, potential_tp, direction
+                        )
+                        opposing_fvg_high = opposing_fvgs.get("opposing_fvg_high")
+                        opposing_fvg_low = opposing_fvgs.get("opposing_fvg_low")
+                        opposing_fvg_bullish_high = opposing_fvgs.get("opposing_fvg_bullish_high")
+                        opposing_fvg_bullish_low = opposing_fvgs.get("opposing_fvg_bullish_low")
+
+                logger.debug(
+                    f"HTF Targets: range_high={htf_range_high}, "
+                    f"untouched_liq_high={untouched_liquidity_high}, "
+                    f"nearest_fvg_high={nearest_fvg_high}, "
+                    f"opposing_fvg_high={opposing_fvg_high}"
+                )
+
+        except Exception as e:
+            logger.error(f"Error calculating HTF structural targets: {e}")
+            # Continue with None values (graceful degradation)
+
     # Get structure labels, handling None/NaN/empty-string cases
     # Use the same logic as detect_structure_conflict (lines 433-438)
     raw_structure_1h = features_1h.get("structure_label") or features_1h.get(
@@ -957,6 +1044,17 @@ def compute_htf_bias(
         seasonality_adjustment=seasonality_adjustment,
         conflict_detected=conflict_detected,
         conflict_reason=conflict_reason,
+        # TP Structural Targets (SOP Section 4.3) - computed in section 8
+        htf_range_high=htf_range_high,
+        htf_range_low=htf_range_low,
+        untouched_liquidity_high=untouched_liquidity_high,
+        untouched_liquidity_low=untouched_liquidity_low,
+        nearest_fvg_high=nearest_fvg_high,
+        nearest_fvg_low=nearest_fvg_low,
+        opposing_fvg_high=opposing_fvg_high,
+        opposing_fvg_low=opposing_fvg_low,
+        opposing_fvg_bullish_high=opposing_fvg_bullish_high,
+        opposing_fvg_bullish_low=opposing_fvg_bullish_low,
     )
 
 
