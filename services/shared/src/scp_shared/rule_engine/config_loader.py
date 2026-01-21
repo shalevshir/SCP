@@ -1,7 +1,12 @@
 """Configuration loader for RuleEngine scoring.
 
-This module provides functionality to load and validate the scoring_config.yaml
-file that defines setup types, weights, thresholds, and validation rules.
+This module provides functionality to load and validate the config/setups.yaml
+file that defines setup types, weights, thresholds, constraints, and validation rules.
+
+Migration Note:
+    Previously loaded from scoring_config.yaml. Now uses the unified setups.yaml
+    which includes both constraints (for setup detection) and weights (for scoring).
+    Maps 'setups' key to 'setup_types' for backward compatibility with existing code.
 """
 
 from pathlib import Path
@@ -40,8 +45,8 @@ def load_scoring_config(config_path: str | None = None) -> ScoringConfig:
     """Load scoring configuration from YAML file.
 
     Args:
-        config_path: Path to scoring config file. If None, loads default
-                    config/scoring_config.yaml from project root or /config
+        config_path: Path to setups config file. If None, loads default
+                    config/setups.yaml from project root or /config
                     (for Docker containers).
 
     Returns:
@@ -54,19 +59,24 @@ def load_scoring_config(config_path: str | None = None) -> ScoringConfig:
         >>> config = load_scoring_config()
         >>> min_score = config.setup_types["VWAP_RECLAIM"]["min_score"]
         >>> print(f"VWAP_RECLAIM min score: {min_score}")
+    
+    Note:
+        Now loads from config/setups.yaml (unified config) instead of
+        scoring_config.yaml. Maps 'setups' key to 'setup_types' for
+        backward compatibility.
     """
     # Determine config file path
     if config_path is None:
         # Try multiple locations:
-        # 1. /config/scoring_config.yaml (Docker container mount)
-        # 2. config/scoring_config.yaml from project root (local development)
-        docker_config = Path("/config/scoring_config.yaml")
+        # 1. /config/setups.yaml (Docker container mount)
+        # 2. config/setups.yaml from project root (local development)
+        docker_config = Path("/config/setups.yaml")
         if docker_config.exists():
             config_path = str(docker_config)
         else:
             # Navigate from services/shared/src/scp_shared/rule_engine to project root
             project_root = Path(__file__).parent.parent.parent.parent.parent.parent
-            config_path = str(project_root / "config" / "scoring_config.yaml")
+            config_path = str(project_root / "config" / "setups.yaml")
 
     config_file = Path(config_path)
 
@@ -96,6 +106,10 @@ def load_scoring_config(config_path: str | None = None) -> ScoringConfig:
 
     # Validate configuration structure
     validate_scoring_config(config_data)
+    
+    # Map 'setups' to 'setup_types' for backward compatibility
+    if "setups" in config_data and "setup_types" not in config_data:
+        config_data["setup_types"] = config_data["setups"]
 
     return ScoringConfig(config_data)
 
@@ -110,24 +124,32 @@ def validate_scoring_config(config_data: dict[str, Any]) -> None:
         ConfigError: If validation fails
 
     Validation checks:
-        - Required top-level keys present (setup_types, confidence, validation)
+        - Required top-level keys present (setups or setup_types, confidence)
         - Each setup type has min_score and weights
         - min_score values are numeric and non-negative
         - weights are dictionaries
         - confidence thresholds are numeric
+    
+    Note:
+        Accepts both 'setups' (new format) and 'setup_types' (legacy format).
+        'validation' key is optional (not used by setups.yaml).
     """
-    # Check required top-level keys
-    required_keys = ["setup_types", "confidence", "validation"]
-    for key in required_keys:
-        if key not in config_data:
-            raise ConfigError(
-                f"Missing required key: {key}",
-                required_keys=required_keys,
-                found_keys=list(config_data.keys()),
-            )
+    # Check for setups or setup_types
+    if "setups" not in config_data and "setup_types" not in config_data:
+        raise ConfigError(
+            "Missing required key: 'setups' or 'setup_types'",
+            found_keys=list(config_data.keys()),
+        )
+    
+    # Check confidence key
+    if "confidence" not in config_data:
+        raise ConfigError(
+            "Missing required key: 'confidence'",
+            found_keys=list(config_data.keys()),
+        )
 
-    # Validate setup_types structure
-    setup_types = config_data["setup_types"]
+    # Validate setup_types/setups structure (support both keys)
+    setup_types = config_data.get("setup_types") or config_data.get("setups")
     if not isinstance(setup_types, dict):
         raise ConfigError(
             "setup_types must be a dictionary",
@@ -183,11 +205,12 @@ def validate_scoring_config(config_data: dict[str, Any]) -> None:
             found_type=type(confidence).__name__,
         )
 
-    # Validate validation section
-    validation = config_data["validation"]
-    if not isinstance(validation, dict):
-        raise ConfigError(
-            "validation must be a dictionary",
-            found_type=type(validation).__name__,
-        )
+    # Validate validation section (optional - not in setups.yaml)
+    if "validation" in config_data:
+        validation = config_data["validation"]
+        if not isinstance(validation, dict):
+            raise ConfigError(
+                "validation must be a dictionary",
+                found_type=type(validation).__name__,
+            )
 

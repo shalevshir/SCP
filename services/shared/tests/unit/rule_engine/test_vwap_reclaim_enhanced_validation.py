@@ -256,3 +256,121 @@ class TestVWAPReclaimEnhancedValidation:
         # Should accept as VWAP_RECLAIM (CHoCH direction overrides BOS)
         assert setup_type == "VWAP_RECLAIM"
 
+    def test_stale_bos_does_not_reject_long_reclaim_in_prerequisites(self) -> None:
+        """Test that stale BOS (>15 bars old) does NOT cause rejection for directional conflict.
+
+        This tests the fix for the inconsistency between validate_reclaim_prerequisites
+        and validate_reclaim_context. Stale BOS should be allowed through in both functions.
+        
+        BOS > 15 bars old is considered "stale" and not relevant to the current setup,
+        so a directional conflict with stale BOS should not cause rejection.
+        """
+        features = pd.Series(
+            {
+                "close": 2650.0,
+                "vwap": 2645.0,
+                "rsi": 55.0,
+                "dxy_corr": -0.75,
+                "structure_label": "HH",  # Required for validation
+                # BOS direction conflicts but is STALE (>15 bars old)
+                "bos_direction": "bearish",  # Wrong direction for long
+                "bos_age": 18,  # Stale BOS (>15)
+                "choch_detected": False,
+                "structure_conflict_flag": False,
+            }
+        )
+
+        htf_bias = HTFBias(
+            bias="bullish",
+            direction="long",
+            score=8.0,
+            confidence="high",
+            structure_1h="HH",  # Required for validation
+            bos_detected=True,
+            structure_clarity=0.8,
+            bars_since_bos=18,  # Stale BOS
+            liquidity_sweep_detected=True,
+            chop_detected=False,
+        )
+
+        setup_type = determine_setup_type(features, htf_bias)
+
+        # Should accept as VWAP_RECLAIM because BOS is stale (>15 bars)
+        # and therefore not relevant to current setup
+        assert setup_type == "VWAP_RECLAIM"
+
+    def test_stale_bos_does_not_reject_short_reclaim_in_prerequisites(self) -> None:
+        """Test that stale BOS (>15 bars old) does NOT cause rejection for short setup.
+
+        Same as above but for short direction - stale BOS should be allowed through.
+        """
+        features = pd.Series(
+            {
+                "close": 2640.0,
+                "vwap": 2645.0,
+                "rsi": 45.0,
+                "dxy_corr": -0.75,
+                "structure_label": "LL",  # Required for validation
+                # BOS direction conflicts but is STALE (>15 bars old)
+                "bos_direction": "bullish",  # Wrong direction for short
+                "bos_age": 16,  # Stale BOS (>15)
+                "choch_detected": False,
+                "structure_conflict_flag": False,
+            }
+        )
+
+        htf_bias = HTFBias(
+            bias="bearish",
+            direction="short",
+            score=8.0,
+            confidence="high",
+            structure_1h="LL",  # Required for validation
+            bos_detected=True,
+            structure_clarity=0.8,
+            bars_since_bos=16,  # Stale BOS
+            liquidity_sweep_detected=True,
+            chop_detected=False,
+        )
+
+        setup_type = determine_setup_type(features, htf_bias)
+
+        # Should accept as VWAP_RECLAIM because BOS is stale (>15 bars)
+        assert setup_type == "VWAP_RECLAIM"
+
+    def test_recent_bos_still_rejects_when_direction_conflicts(self) -> None:
+        """Test that RECENT BOS (<=15 bars old) still causes rejection for directional conflict.
+
+        This ensures we didn't break the original behavior - recent BOS should still
+        cause rejection when direction conflicts.
+        """
+        features = pd.Series(
+            {
+                "close": 2650.0,
+                "vwap": 2645.0,
+                "rsi": 55.0,
+                "dxy_corr": -0.75,
+                # Recent BOS with conflicting direction
+                "bos_direction": "bearish",  # Wrong direction for long
+                "bos_age": 5,  # Recent BOS (<=15)
+                "choch_detected": False,
+                "structure_conflict_flag": False,
+            }
+        )
+
+        htf_bias = HTFBias(
+            bias="bullish",
+            direction="long",
+            score=8.0,
+            confidence="high",
+            bos_detected=True,
+            structure_clarity=0.8,
+            bars_since_bos=5,  # Recent BOS
+            liquidity_sweep_detected=True,
+            chop_detected=False,
+        )
+
+        setup_type = determine_setup_type(features, htf_bias)
+
+        # Should REJECT because BOS is recent and conflicts with direction
+        assert setup_type == "REJECTED"
+

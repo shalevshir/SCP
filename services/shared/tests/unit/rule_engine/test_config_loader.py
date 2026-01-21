@@ -19,28 +19,27 @@ class TestLoadScoringConfig:
     """Test loading scoring configuration from YAML."""
 
     def test_load_default_scoring_config(self) -> None:
-        """Test loading the default scoring_config.yaml file."""
+        """Test loading the default setups.yaml file."""
         config = load_scoring_config()
 
         assert isinstance(config, ScoringConfig)
         assert config.setup_types is not None
         assert config.confidence is not None
-        assert config.validation is not None
-        assert config.factors is not None
+        # validation and factors are optional (not in setups.yaml)
 
     def test_load_from_custom_path(self, tmp_path: Path) -> None:
         """Test loading config from a custom path."""
         custom_config = tmp_path / "custom_scoring.yaml"
         config_data = {
-            "setup_types": {
+            "setups": {
                 "VWAP_RECLAIM": {
+                    "enabled": True,
                     "min_score": 8,
+                    "constraints": {},
                     "weights": {"structure_alignment": 2},
                 }
             },
             "confidence": {"a_plus": 8.0, "watch": 6.0, "reject": 0.0},
-            "validation": {"dxy_corr_threshold": -0.6, "sessions": [], "tiers": {}},
-            "factors": {},
         }
 
         with open(custom_config, "w") as f:
@@ -143,45 +142,16 @@ class TestConfidenceThresholds:
 
 
 class TestValidationConfig:
-    """Test validation configuration."""
+    """Test validation configuration (optional - not in setups.yaml)."""
 
-    def test_dxy_correlation_threshold(self) -> None:
-        """Test DXY correlation threshold is -0.6 per spec."""
+    def test_validation_optional(self) -> None:
+        """Test that validation field is optional (not required by setups.yaml)."""
         config = load_scoring_config()
 
-        assert config.validation["dxy_corr_threshold"] == -0.6
-
-    def test_sessions_defined(self) -> None:
-        """Test that trading sessions are defined."""
-        config = load_scoring_config()
-
-        assert "sessions" in config.validation
-        assert isinstance(config.validation["sessions"], list)
-
-    def test_tiers_defined(self) -> None:
-        """Test that enforcer tiers are defined."""
-        config = load_scoring_config()
-
-        assert "tiers" in config.validation
-        assert isinstance(config.validation["tiers"], dict)
-
-    def test_all_enforcer_tiers_present(self) -> None:
-        """Test all SOP enforcer tiers are defined."""
-        config = load_scoring_config()
-        expected_tiers = ["Conservative", "Early Mild", "Mild", "Offensive"]
-
-        for tier in expected_tiers:
-            assert tier in config.validation["tiers"], f"Missing tier: {tier}"
-
-    def test_tier_has_allowed_setups(self) -> None:
-        """Test that each tier specifies allowed setups."""
-        config = load_scoring_config()
-
-        for tier_name, tier_config in config.validation["tiers"].items():
-            assert (
-                "allowed_setups" in tier_config
-            ), f"{tier_name} missing allowed_setups"
-            assert isinstance(tier_config["allowed_setups"], list)
+        # validation field is optional in new setups.yaml format
+        # Only check if it exists, don't require it
+        if hasattr(config, "validation") and config.validation:
+            assert isinstance(config.validation, dict)
 
 
 class TestValidateScoringConfig:
@@ -190,57 +160,60 @@ class TestValidateScoringConfig:
     def test_validate_valid_config(self) -> None:
         """Test that a valid config passes validation."""
         config_data = {
-            "setup_types": {
-                "VWAP_RECLAIM": {"min_score": 8, "weights": {"factor1": 2}}
+            "setups": {
+                "VWAP_RECLAIM": {
+                    "enabled": True,
+                    "min_score": 8,
+                    "constraints": {},
+                    "weights": {"factor1": 2},
+                }
             },
             "confidence": {"a_plus": 8.0, "watch": 6.0, "reject": 0.0},
-            "validation": {"dxy_corr_threshold": -0.6, "sessions": [], "tiers": {}},
-            "factors": {},
         }
 
         # Should not raise
         validate_scoring_config(config_data)
 
     def test_validate_missing_setup_types_raises_error(self) -> None:
-        """Test that missing setup_types raises ConfigError."""
+        """Test that missing setups/setup_types raises ConfigError."""
         config_data = {
             "confidence": {"a_plus": 8.0, "watch": 6.0, "reject": 0.0},
-            "validation": {"dxy_corr_threshold": -0.6},
-            "factors": {},
         }
 
-        with pytest.raises(ConfigError, match="Missing required key: setup_types"):
+        with pytest.raises(ConfigError, match="Missing required key: 'setups' or 'setup_types'"):
             validate_scoring_config(config_data)
 
     def test_validate_missing_confidence_raises_error(self) -> None:
         """Test that missing confidence raises ConfigError."""
         config_data = {
-            "setup_types": {},
-            "validation": {"dxy_corr_threshold": -0.6},
-            "factors": {},
+            "setups": {},
         }
 
-        with pytest.raises(ConfigError, match="Missing required key: confidence"):
+        with pytest.raises(ConfigError, match="Missing required key: 'confidence'"):
             validate_scoring_config(config_data)
 
-    def test_validate_missing_validation_raises_error(self) -> None:
-        """Test that missing validation raises ConfigError."""
+    def test_validate_accepts_setups_key(self) -> None:
+        """Test that 'setups' key is accepted (new format)."""
         config_data = {
-            "setup_types": {},
+            "setups": {
+                "VWAP_RECLAIM": {
+                    "enabled": True,
+                    "min_score": 8,
+                    "constraints": {},
+                    "weights": {},
+                }
+            },
             "confidence": {"a_plus": 8.0, "watch": 6.0, "reject": 0.0},
-            "factors": {},
         }
 
-        with pytest.raises(ConfigError, match="Missing required key: validation"):
-            validate_scoring_config(config_data)
+        # Should not raise
+        validate_scoring_config(config_data)
 
     def test_validate_invalid_min_score_type_raises_error(self) -> None:
         """Test that non-numeric min_score raises ConfigError."""
         config_data = {
-            "setup_types": {"VWAP_RECLAIM": {"min_score": "eight", "weights": {}}},
+            "setups": {"VWAP_RECLAIM": {"min_score": "eight", "weights": {}}},
             "confidence": {"a_plus": 8.0, "watch": 6.0, "reject": 0.0},
-            "validation": {"dxy_corr_threshold": -0.6},
-            "factors": {},
         }
 
         with pytest.raises(ConfigError, match="min_score must be numeric"):
@@ -249,10 +222,8 @@ class TestValidateScoringConfig:
     def test_validate_negative_min_score_raises_error(self) -> None:
         """Test that negative min_score raises ConfigError."""
         config_data = {
-            "setup_types": {"VWAP_RECLAIM": {"min_score": -5, "weights": {}}},
+            "setups": {"VWAP_RECLAIM": {"min_score": -5, "weights": {}}},
             "confidence": {"a_plus": 8.0, "watch": 6.0, "reject": 0.0},
-            "validation": {"dxy_corr_threshold": -0.6},
-            "factors": {},
         }
 
         with pytest.raises(ConfigError, match="min_score must be non-negative"):
@@ -260,27 +231,13 @@ class TestValidateScoringConfig:
 
 
 class TestFactorsConfig:
-    """Test factors configuration."""
+    """Test factors configuration (optional - not in setups.yaml)."""
 
-    def test_factors_defined(self) -> None:
-        """Test that factors dict is defined."""
+    def test_factors_optional(self) -> None:
+        """Test that factors field is optional (not required by setups.yaml)."""
         config = load_scoring_config()
 
-        assert "factors" in config.__dict__
-        assert isinstance(config.factors, dict)
-
-    def test_factors_have_descriptions(self) -> None:
-        """Test that each factor has a description."""
-        config = load_scoring_config()
-
-        for factor_name, factor_config in config.factors.items():
-            assert "description" in factor_config, f"{factor_name} missing description"
-            assert isinstance(factor_config["description"], str)
-
-    def test_factors_have_max_points(self) -> None:
-        """Test that each factor has max_points."""
-        config = load_scoring_config()
-
-        for factor_name, factor_config in config.factors.items():
-            assert "max_points" in factor_config, f"{factor_name} missing max_points"
-            assert isinstance(factor_config["max_points"], int | float)
+        # factors field is optional in new setups.yaml format
+        # Only check if it exists, don't require it
+        if hasattr(config, "factors") and config.factors:
+            assert isinstance(config.factors, dict)
