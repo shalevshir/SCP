@@ -142,4 +142,15 @@ class HTFBiasProcessor:
             dxy_corr_1h=htf_bias.dxy_corr_1h,
             dxy_structure=htf_bias.dxy_structure,
             dxy_chop_5m=htf_bias.dxy_chop_5m if htf_bias.dxy_chop_5m is not None else False,
+            # TP Structural Targets from HTF analysis (SOP Section 4.3)
+            htf_range_high=htf_bias.htf_range_high,
+            htf_range_low=htf_bias.htf_range_low,
+            untouched_liquidity_high=htf_bias.untouched_liquidity_high,
+            untouched_liquidity_low=htf_bias.untouched_liquidity_low,
+            nearest_fvg_high=htf_bias.nearest_fvg_high,
+            nearest_fvg_low=htf_bias.nearest_fvg_low,
+            opposing_fvg_high=htf_bias.opposing_fvg_high,
+            opposing_fvg_low=htf_bias.opposing_fvg_low,
+            opposing_fvg_bullish_high=htf_bias.opposing_fvg_bullish_high,
+            opposing_fvg_bullish_low=htf_bias.opposing_fvg_bullish_low,
         )

@@ -407,10 +407,14 @@ class StreamingFeatureProcessor:
         features["reclaim_candle_high"] = self.structure_tracker.reclaim_candle_high
         features["reclaim_candle_idx"] = self.structure_tracker.vwap_reclaim_bar_idx
         # TP Structural Target fields (SOP Section 4.3)
+        # TP Structural Targets (SOP Section 4.3 - 1m timeframe only)
+        # NOTE: HTF targets (htf_range, untouched_liquidity, FVGs) come from HTF Bias Service
+        features["immediate_resistance"] = gc_structure_ctx.immediate_resistance
+        features["immediate_support"] = gc_structure_ctx.immediate_support
         features["nearest_swing_high_above"] = gc_structure_ctx.nearest_swing_high_above
         features["nearest_swing_low_below"] = gc_structure_ctx.nearest_swing_low_below
-        features["prior_session_high"] = None  # TODO: Track session highs/lows
-        features["prior_session_low"] = None  # TODO: Track session highs/lows
+        features["prior_session_high"] = gc_structure_ctx.prior_session_high
+        features["prior_session_low"] = gc_structure_ctx.prior_session_low
 
         # === 6b. Expansion Detection (for VWAP_RECLAIM entry timing) ===
         # Detect expansion signals to determine if market is resolving from compression

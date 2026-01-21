@@ -7,10 +7,14 @@ into Signal objects with SOP-compliant scoring and classification.
 from typing import Any
 
 import pandas as pd
+
 from scp_shared.common.logger import get_logger
 from scp_shared.rule_engine.config_loader import load_scoring_config
-from scp_shared.rule_engine.htf.validation import adjust_score_with_htf, validate_signal_with_htf
 from scp_shared.rule_engine.htf.types import ChopSeverity, HTFBias
+from scp_shared.rule_engine.htf.validation import (
+    adjust_score_with_htf,
+    validate_signal_with_htf,
+)
 from scp_shared.rule_engine.signal import Signal
 
 logger = get_logger(__name__)
@@ -750,7 +754,6 @@ def score_signal(features: pd.Series, htf_bias: HTFBias, context: dict) -> Signa
         
         # Rescale structure penalties
         if structure_penalties < 0:
-            structure_scale = structure_penalties * scale_factor
             if "chop_penalty" in factor_scores:
                 factor_scores["chop_penalty"] *= scale_factor
             if "noise_penalty" in factor_scores:
@@ -831,8 +834,143 @@ def score_signal(features: pd.Series, htf_bias: HTFBias, context: dict) -> Signa
     )
 
 
+# Module-level validator instance (lazy-loaded)
+_validator = None
+
+
+def get_validator():
+    """Get or create the SetupValidator instance."""
+    global _validator
+    if _validator is None:
+        from scp_shared.rule_engine.setup_validator import SetupValidator
+        _validator = SetupValidator()
+    return _validator
+
+
+def _normalize_direction(direction: str | None) -> str | None:
+    """Normalize direction from bullish/bearish to long/short.
+
+    Args:
+        direction: Direction string ("bullish", "bearish", "long", "short", or None)
+
+    Returns:
+        Normalized direction ("long", "short", or None)
+    """
+    if direction is None:
+        return None
+    direction_lower = str(direction).lower()
+    if direction_lower in ("bullish", "long"):
+        return "long"
+    elif direction_lower in ("bearish", "short"):
+        return "short"
+    elif direction_lower == "neutral":
+        return "neutral"
+    return direction  # Return as-is if unknown
+
+
+def build_setup_context(features: pd.Series, htf_bias: HTFBias) -> dict:
+    """Build context dictionary for setup validation from features and HTF bias.
+
+    Combines feature data and HTF bias data into a single context dictionary
+    that can be used by the config-driven setup validator.
+
+    Args:
+        features: Feature series with market data
+        htf_bias: HTFBias object with HTF analysis
+
+    Returns:
+        Dictionary containing all fields needed for setup validation
+
+    Example:
+        >>> context = build_setup_context(features, htf_bias)
+        >>> validator.validate_setup("VWAP_RECLAIM", context)
+    """
+    # Calculate body and wicks from OHLC if available
+    open_price = features.get("open")
+    high = features.get("high")
+    low = features.get("low")
+    close = features.get("close")
+
+    body = None
+    lower_wick = None
+    upper_wick = None
+
+    if all(v is not None for v in [open_price, high, low, close]):
+        body = abs(close - open_price)
+        lower_wick = min(open_price, close) - low
+        upper_wick = high - max(open_price, close)
+
+    # Handle structure_label with fallback logic (matches old validate_reclaim_context)
+    # Try structure_label first, fallback to last_structure_label
+    structure_label = features.get("structure_label")
+    if structure_label is None or (isinstance(structure_label, float) and pd.isna(structure_label)):
+        fallback = features.get("last_structure_label")
+        if fallback is not None:
+            logger.debug(f"Using last_structure_label={fallback} as fallback for structure_label")
+            structure_label = fallback
+
+    # Normalize directions from bullish/bearish to long/short for consistency
+    bos_direction = _normalize_direction(features.get("bos_direction"))
+    choch_direction = _normalize_direction(features.get("choch_direction"))
+    direction = _normalize_direction(features.get("direction"))
+    
+    # If direction not provided, infer from htf_bias
+    if direction is None:
+        direction = htf_bias.direction
+
+    # Build context with all fields from features and htf_bias
+    context = {
+        # From features - core price data
+        "close": features.get("close"),
+        "open": features.get("open"),
+        "high": features.get("high"),
+        "low": features.get("low"),
+        "vwap": features.get("vwap"),
+        # From features - indicators
+        "rsi": features.get("rsi"),
+        "ema_9": features.get("ema_9"),
+        "ema_20": features.get("ema_20"),
+        "ema_50": features.get("ema_50"),
+        # From features - DXY correlation
+        "dxy_corr": features.get("dxy_corr"),
+        # From features - structure (with fallback logic)
+        "structure_clarity": features.get("structure_clarity"),
+        "structure_label": structure_label,  # Unified structure label
+        "last_structure_label": features.get("last_structure_label"),
+        "trend_confidence": features.get("trend_confidence"),
+        # From features - BOS/CHoCH (normalized directions, with defaults)
+        "bos_direction": bos_direction,
+        "bos_recent": features.get("bos_recent", False),
+        "bos_age": features.get("bos_age"),
+        "choch_detected": features.get("choch_detected", False),
+        "choch_direction": choch_direction,
+        # From features - other
+        "liquidity_sweep": features.get("liquidity_sweep"),
+        "is_chop": features.get("is_chop"),
+        "direction": direction,  # Normalized direction
+        # Calculated fields
+        "body": body,
+        "lower_wick": lower_wick,
+        "upper_wick": upper_wick,
+        # From HTF bias
+        "structure_1h": htf_bias.structure_1h,
+        "structure_15m": htf_bias.structure_15m,
+        "htf_liquidity_sweep_detected": htf_bias.liquidity_sweep_detected,
+        "conflict_detected": htf_bias.conflict_detected,
+        "htf_bos_detected": htf_bias.bos_detected,
+        "bars_since_bos": htf_bias.bars_since_bos,
+        "dxy_structure": htf_bias.dxy_structure,
+        "dxy_corr_1m": htf_bias.dxy_corr_1m,
+        "dxy_corr_5m": htf_bias.dxy_corr_5m,
+        "vwap_deviation_normalized": features.get("vwap_deviation_normalized"),
+        "vwap_deviation": features.get("vwap_deviation"),
+    }
+
+    return context
+
+
 def determine_setup_type(features: pd.Series, htf_bias: HTFBias) -> str:
-    """Determine setup type based on market features with strict validation.
+    """Determine setup type based on market features using config-driven validation.
 
     Args:
         features: Feature data including VWAP, RSI, DXY correlation
@@ -842,59 +980,54 @@ def determine_setup_type(features: pd.Series, htf_bias: HTFBias) -> str:
         Setup type name: "VWAP_RECLAIM", "VWAP_FADE", "DXY_CONTINUATION", or "REJECTED"
 
     Logic:
-        - VWAP_FADE: RSI extreme (<30 or >70) with significant VWAP deviation
-        - DXY_CONTINUATION: Very strong inverse correlation (<-0.8)
-        - VWAP_RECLAIM: Requires full reclaim sequence validation
-        - REJECTED: No valid setup detected
+        Uses config-driven SetupValidator to check setups in priority order:
+        1. VWAP_FADE: Most specific (counter-trend fade)
+        2. VWAP_RECLAIM: Specific structural sequence
+        3. DXY_CONTINUATION: Broader correlation-based setup
 
     Note:
-        VWAP_RECLAIM now requires:
-        1. Liquidity sweep detected
-        2. Structure clarity >= 0.7
-        3. No chop detected
-        4. BOS detected within 15 bars
+        Constraints for each setup are defined in config/setups.yaml.
+        Setups can be enabled/disabled and constraints modified via config.
     """
-    close = features.get("close", 0)
-    vwap = features.get("vwap", 0)
-    rsi = features.get("rsi", 50)
-    dxy_corr = features.get("dxy_corr")
-
-    # Calculate VWAP deviation percentage
-    vwap_dev = abs((close - vwap) / vwap * 100) if vwap != 0 else 0
-
-    # VWAP_FADE: Strict structure-based validation (most specific)
-    from scp_shared.rule_engine.setup_detectors.vwap_fade import detect_vwap_fade
-
-    fade_detected = detect_vwap_fade(features, htf_bias, df=None)
-    if fade_detected:
-        return "VWAP_FADE"
-
-    # VWAP_RECLAIM: Check context validity (NOT entry readiness)
-    # Context validation determines if setup type is VWAP_RECLAIM
-    # Entry readiness is checked later in scoring to apply penalties
-    # Import here to avoid circular dependency
-    # Checked BEFORE DXY_CONTINUATION because VWAP_RECLAIM requires specific
-    # structural sequence (sweep → displacement → reclaim) while DXY_CONTINUATION
-    # is broader (correlation + structure). If both are valid, VWAP_RECLAIM takes priority.
-    from scp_shared.rule_engine.htf.vwap.reclaim import validate_reclaim_context
-
-    context_result = validate_reclaim_context(htf_bias, features)
-
-    if context_result.context_valid:
-        return "VWAP_RECLAIM"
-
-    # DXY_CONTINUATION: Strict multi-factor validation (fallback)
-    # Only checked if VWAP_RECLAIM context is invalid
-    from scp_shared.rule_engine.setup_detectors.dxy_continuation import (
-        detect_dxy_continuation,
-    )
-
-    cont_detected = detect_dxy_continuation(features, htf_bias)
-    if cont_detected:
-        return "DXY_CONTINUATION"
+    # Build context from features and HTF bias
+    context = build_setup_context(features, htf_bias)
     
-    # No valid setup detected - log rejection reason for debugging
-    logger.debug(f"No valid setup detected. VWAP_RECLAIM rejected: {context_result.reason}")
+    # Get validator instance
+    validator = get_validator()
+
+    # Check setups in priority order (most specific first)
+    # Priority ensures correct setup selection when multiple setups could match
+    
+    # 1. VWAP_FADE: Most specific (fade at extremes)
+    if validator.is_setup_enabled("VWAP_FADE"):
+        result = validator.validate_setup("VWAP_FADE", context)
+        if result.is_valid:
+            logger.debug("Setup detected: VWAP_FADE")
+            return "VWAP_FADE"
+        else:
+            logger.debug(f"VWAP_FADE rejected: {result.reject_reason}")
+
+    # 2. VWAP_RECLAIM: Specific structural sequence
+    # Takes priority over DXY_CONTINUATION because it requires more specific conditions
+    if validator.is_setup_enabled("VWAP_RECLAIM"):
+        result = validator.validate_setup("VWAP_RECLAIM", context)
+        if result.is_valid:
+            logger.debug("Setup detected: VWAP_RECLAIM")
+            return "VWAP_RECLAIM"
+        else:
+            logger.debug(f"VWAP_RECLAIM rejected: {result.reject_reason}")
+
+    # 3. DXY_CONTINUATION: Broader correlation-based setup (fallback)
+    if validator.is_setup_enabled("DXY_CONTINUATION"):
+        result = validator.validate_setup("DXY_CONTINUATION", context)
+        if result.is_valid:
+            logger.debug("Setup detected: DXY_CONTINUATION")
+            return "DXY_CONTINUATION"
+        else:
+            logger.debug(f"DXY_CONTINUATION rejected: {result.reject_reason}")
+
+    # No valid setup detected
+    logger.debug("No valid setup detected - all setups rejected")
     return "REJECTED"
 
 

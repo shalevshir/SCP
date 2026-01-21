@@ -1,0 +1,208 @@
+# Setup Configuration for SCP Trading Bot
+# Defines setups, their constraints (via expressions), and scoring weights.
+#
+# Each setup can be enabled/disabled, has constraints that must ALL pass,
+# and factor weights for scoring.
+#
+# Expressions use Python syntax and have access to:
+# - Feature values: rsi, close, vwap, structure_clarity, etc.
+# - HTF bias values: htf_direction, htf_liquidity_sweep_detected, htf_structure_1h, etc.
+# - Computed values: direction, body, lower_wick, upper_wick, etc.
+
+setups:
+  # ============================================================================
+  # VWAP_RECLAIM: Reclaim setup after price sweeps and reclaims VWAP
+  # ============================================================================
+  VWAP_RECLAIM:
+    enabled: true
+    min_score: 8.0
+
+    # Constraints - ALL must pass for setup to be detected
+    # Safety gates (hard rejection) - prevent structurally invalid setups
+    # Note: ATR-normalized deviation (≥0.5 ATR) filters micro-fakeouts and chop
+    constraints:
+      structure_1h_available:
+        expression: "structure_1h is not None and structure_1h != ''"
+        reject_reason: "HTF 1H structure missing - cannot validate HTF alignment"
+
+      htf_structure_integrity:
+        expression: "(direction != 'long' or structure_1h in ('HH', 'HL')) and (direction != 'short' or structure_1h in ('LL', 'LH'))"
+        reject_reason: "HTF structure no longer intact for reclaim"
+
+      structure_label_available:
+        expression: "structure_label is not None"
+        reject_reason: "No structure label available - cannot safely manage trade"
+
+      min_vwap_deviation:
+        expression: "vwap_deviation_normalized is None or abs(vwap_deviation_normalized) >= 0.5"
+        reject_reason: "VWAP deviation insufficient for reclaim (must be >= 0.5 ATR)"
+
+      direction_bos_alignment:
+        # Allow through if: no BOS, BOS matches direction, neutral direction, stale BOS (>15 bars), or CHoCH overrides
+        # Stale BOS (>15 bars old) is not relevant to current setup and shouldn't cause rejection
+        expression: "bos_direction is None or bos_direction == direction or direction == 'neutral' or (bos_age is not None and bos_age > 15) or (direction == 'long' and choch_detected and choch_direction == 'long') or (direction == 'short' and choch_detected and choch_direction == 'short')"
+        reject_reason: "Recent BOS direction conflicts with trade direction"
+
+      no_structure_conflict:
+        expression: "not conflict_detected"
+        reject_reason: "HTF structure conflict detected"
+
+      structure_label_direction_long:
+        expression: "direction != 'long' or structure_label is None or structure_label not in ('LH', 'LL')"
+        reject_reason: "Bearish micro structure conflicts with long direction"
+
+      structure_label_direction_short:
+        expression: "direction != 'short' or structure_label is None or structure_label not in ('HH', 'HL')"
+        reject_reason: "Bullish micro structure conflicts with short direction"
+
+    # Factor weights for scoring (sum to ~10 max)
+    weights:
+      structure_alignment: 2.5
+      vwap_relation: 2.0
+      rsi_state: 1.5
+      ema_stack: 1.5
+      dxy_corr: 1.0
+      fvg_alignment: 0.5
+      liquidity_sweep: 0.5
+      htf_bonus: 0.5
+
+    # Parameters used by factor calculators and penalties
+    params:
+      bos_recency_threshold: 15
+      clarity_high: 0.7
+      clarity_moderate: 0.5
+      clarity_low: 0.4
+      expansion_gate:
+        bos_recency_threshold: 10
+        range_expansion_ratio: 1.5
+        atr_expansion_threshold: 0.7
+        displacement_body_ratio: 2.0
+
+  # ============================================================================
+  # VWAP_FADE: Counter-trend setup at extreme deviation
+  # ============================================================================
+  VWAP_FADE:
+    enabled: true
+    min_score: 8.0
+
+    constraints:
+      has_liquidity_sweep:
+        expression: "htf_liquidity_sweep_detected or liquidity_sweep"
+        reject_reason: "No liquidity sweep detected"
+
+      has_rejection_wick_long:
+        expression: "direction != 'long' or (body is not None and lower_wick is not None and lower_wick > body * 1.3)"
+        reject_reason: "Long fade requires lower wick > 1.3x body"
+
+      has_rejection_wick_short:
+        expression: "direction != 'short' or (body is not None and upper_wick is not None and upper_wick > body * 1.3)"
+        reject_reason: "Short fade requires upper wick > 1.3x body"
+
+      min_clarity:
+        expression: "structure_clarity >= 0.4"
+        reject_reason: "Structure clarity too low for fade"
+
+      trend_weakening:
+        expression: "choch_detected or trend_confidence < 0.65"
+        reject_reason: "No trend weakening signal (CHoCH or low trend confidence)"
+
+      correct_swing_context_long:
+        expression: "direction != 'long' or last_structure_label == 'LH'"
+        reject_reason: "Long fade requires LH (lower high) structure"
+
+      correct_swing_context_short:
+        expression: "direction != 'short' or last_structure_label == 'HL'"
+        reject_reason: "Short fade requires HL (higher low) structure"
+
+      rsi_extreme:
+        expression: "rsi < 40 or rsi > 60"
+        reject_reason: "RSI not at extreme levels"
+
+      vwap_deviation:
+        expression: "vwap_deviation is None or vwap_deviation > 0.25"
+        reject_reason: "VWAP deviation too small for fade"
+
+      valid_direction:
+        expression: "direction in ('long', 'short')"
+        reject_reason: "Invalid direction for fade setup"
+
+    weights:
+      vwap_deviation: 3.0
+      rsi_extreme: 3.0
+      rejection_candle: 2.0
+      volume_spike: 2.0
+
+    params:
+      wick_body_ratio: 1.3
+      rsi_oversold: 40
+      rsi_overbought: 60
+      vwap_deviation_threshold: 0.25
+      clarity_threshold: 0.4
+      trend_conf_threshold: 0.65
+
+  # ============================================================================
+  # DXY_CONTINUATION: Gold trade aligned with DXY inverse correlation
+  # ============================================================================
+  DXY_CONTINUATION:
+    enabled: true
+    min_score: 8.0
+
+    constraints:
+      valid_direction:
+        expression: "direction in ('long', 'short')"
+        reject_reason: "Invalid direction for continuation"
+
+      strong_correlation:
+        # Either both 1m and 5m correlations are moderately negative,
+        # OR single correlation is strongly negative
+        expression: "(dxy_corr_1m is not None and dxy_corr_5m is not None and dxy_corr_1m < -0.3 and dxy_corr_5m < -0.3) or (dxy_corr is not None and dxy_corr < -0.6)"
+        reject_reason: "DXY correlation too weak for continuation"
+
+      dxy_structure_supports_long:
+        expression: "direction != 'long' or dxy_structure is None or dxy_structure in ('LL', 'LH')"
+        reject_reason: "DXY structure doesn't support long (need LL/LH)"
+
+      dxy_structure_supports_short:
+        expression: "direction != 'short' or dxy_structure is None or dxy_structure in ('HH', 'HL')"
+        reject_reason: "DXY structure doesn't support short (need HH/HL)"
+
+      bos_recency:
+        expression: "bars_since_bos is None or bars_since_bos <= 15 or htf_bos_detected"
+        reject_reason: "BOS too old for continuation"
+
+      min_clarity:
+        expression: "structure_clarity >= 0.5"
+        reject_reason: "Structure clarity too low for continuation"
+
+      no_chop:
+        expression: "not is_chop"
+        reject_reason: "Market in chop condition"
+
+      gold_structure_long:
+        expression: "direction != 'long' or last_structure_label is None or last_structure_label in ('HH', 'HL')"
+        reject_reason: "Gold structure contradicts long direction"
+
+      gold_structure_short:
+        expression: "direction != 'short' or last_structure_label is None or last_structure_label in ('LH', 'LL')"
+        reject_reason: "Gold structure contradicts short direction"
+
+    weights:
+      structure_alignment: 2.5
+      dxy_corr: 3.0
+      rsi_mid_reset: 1.5
+      vwap_relation: 1.5
+      ema_stack: 1.0
+      fvg_alignment: 0.5
+
+    params:
+      correlation_threshold: -0.6
+      dual_correlation_threshold: -0.3
+      bos_threshold: 15
+      displacement_threshold: 1.2
+      clarity_threshold: 0.5
+
+# Global confidence thresholds (same as scoring_config.yaml)
+confidence:
+  a_plus: 8.0
+  watch: 6.0
+  reject: 0.0

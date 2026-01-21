@@ -382,8 +382,8 @@ def calculate_noise_penalty(features: pd.Series, setup_type: str) -> float:
         
     Penalties:
         - VWAP_RECLAIM: -1.5 for structural chop, -0.5 for ATR compression
-        - VWAP_FADE: -1.0 for structural chop, -0.5 for ATR compression  
-        - DXY_CONTINUATION: No penalty (relies on trend continuation)
+        - VWAP_FADE: -0.5 for structural chop, -0.2 for ATR compression  
+        - DXY_CONTINUATION: -1.5 for structural chop, no ATR penalty
     """
     total_penalty = 0.0
     
@@ -392,14 +392,24 @@ def calculate_noise_penalty(features: pd.Series, setup_type: str) -> float:
         if setup_type == "VWAP_RECLAIM":
             total_penalty -= 1.5  # Stricter for momentum setups
         elif setup_type == "VWAP_FADE":
-            total_penalty -= 1.0  # More tolerant of sideways consolidation
-        # DXY_CONTINUATION: No penalty (trend continuation tolerates some chop)
+            total_penalty -= 0.5  # More tolerant of sideways consolidation
+        elif setup_type == "DXY_CONTINUATION":
+            total_penalty -= 1.5  # Trend continuation needs clean structure
     
     # ATR compression penalty (all setups except DXY_CONTINUATION)
     atr_compression = features.get("atr_compression_ratio")
     if atr_compression is not None and setup_type != "DXY_CONTINUATION":
         if atr_compression < 0.5:  # Severe compression
-            total_penalty -= 0.5
+            has_chop = features.get("is_structural_chop", False)
+            if has_chop:
+                # Amplifier when chop is present
+                if setup_type == "VWAP_RECLAIM":
+                    total_penalty -= 0.5  # ATR amplifier for momentum setups
+                elif setup_type == "VWAP_FADE":
+                    total_penalty -= 0.2  # ATR amplifier for fade setups
+            else:
+                # Standalone ATR penalty (no chop)
+                total_penalty -= 0.2  # Small penalty for compression alone
     
     return total_penalty
 

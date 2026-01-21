@@ -63,6 +63,8 @@ def load_session_config(config_path: str | None = None) -> SessionConfig:
 
     # Parse holidays
     holidays_data = config_data.get("holidays", [])
+    # Handle case where holidays key exists but has no content (is None)
+    holidays_data = holidays_data if holidays_data is not None else []
     holidays = frozenset(_parse_date(date_str) for date_str in holidays_data)
 
     logger.info(

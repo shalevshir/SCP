@@ -137,18 +137,20 @@ class InvalidationChecker:
                     if trade.direction == "long":
                         if candle.close > vwap:
                             state["vwap_reclaimed"] = True
-                            logger.debug(
-                                f"Trade {trade.trade_id} VWAP reclaimed at {candle.timestamp}"
-                            )
+                            msg = f"Trade {trade.trade_id} VWAP reclaimed"
+                            logger.debug(f"{msg} at {candle.timestamp}")
                     else:  # short
                         if candle.close < vwap:
                             state["vwap_reclaimed"] = True
-                            logger.debug(
-                                f"Trade {trade.trade_id} VWAP reclaimed at {candle.timestamp}"
-                            )
+                            msg = f"Trade {trade.trade_id} VWAP reclaimed"
+                            logger.debug(f"{msg} at {candle.timestamp}")
 
     def check_no_1r_reached(
-        self, trade: Trade, bars_elapsed: int, candle: Candle | None = None, month: int | None = None
+        self,
+        trade: Trade,
+        bars_elapsed: int,
+        candle: Candle | None = None,
+        month: int | None = None,
     ) -> tuple[bool, str | None]:
         """Check if +1R not reached within time limits (with optional protection).
 
@@ -174,7 +176,8 @@ class InvalidationChecker:
         # Get time limit for this setup type
         time_limit = R1_TIME_LIMITS.get(trade.setup_type, 20)
 
-        # TIME-STOP PROTECTION: Early exit for deep red losses (VWAP_RECLAIM + September only)
+        # TIME-STOP PROTECTION: Early exit for deep red losses
+        # (VWAP_RECLAIM + September only)
         if (
             trade.setup_type == "VWAP_RECLAIM"
             and candle is not None
@@ -190,7 +193,10 @@ class InvalidationChecker:
             
             # Early exit if deep red (< -0.2R)
             if current_r < -0.2:
-                reason = f"time_stop_protection: {current_r:.2f}R at bar {bars_elapsed} (September mode)"
+                reason = (
+                    f"time_stop_protection: {current_r:.2f}R "
+                    f"at bar {bars_elapsed} (September mode)"
+                )
                 logger.info(f"Trade {trade.trade_id} invalidated: {reason}")
                 return True, reason
 
@@ -225,11 +231,11 @@ class InvalidationChecker:
         SOP Rules:
             - Applies to VWAP_RECLAIM and VWAP_FADE setups only
             - VWAP_RECLAIM (continuation):
-              * Long: Invalid if close < VWAP (price falls below VWAP, breaking continuation)
-              * Short: Invalid if close > VWAP (price rises above VWAP, breaking continuation)
+              * Long: Invalid if close < VWAP (breaks continuation)  # noqa: E501
+              * Short: Invalid if close > VWAP (breaks continuation)  # noqa: E501
             - VWAP_FADE (fading VWAP):
-              * Long: Invalid if close > VWAP (price reclaims VWAP from below, invalidating fade)
-              * Short: Invalid if close < VWAP (price reclaims VWAP from above, invalidating fade)
+              * Long: Invalid if close > VWAP (invalidates fade)  # noqa: E501
+              * Short: Invalid if close < VWAP (invalidates fade)  # noqa: E501
         """
         # Only applies to VWAP-based setups
         if trade.setup_type not in ("VWAP_RECLAIM", "VWAP_FADE"):
@@ -288,9 +294,10 @@ class InvalidationChecker:
 
                 # Require 2 consecutive bars
                 if self._fade_invalidation_count[trade_id] >= 2:
+                    op = '>' if trade.direction == 'long' else '<'
                     reason = (
                         f"VWAP invalidation (2-bar confirmed): "
-                        f"close {candle.close:.2f} {'>' if trade.direction == 'long' else '<'} "
+                        f"close {candle.close:.2f} {op} "
                         f"VWAP {vwap:.2f}, slope {vwap_slope:.4f}"
                     )
                     logger.info(f"Trade {trade.trade_id} invalidated: {reason}")
@@ -422,7 +429,9 @@ class InvalidationChecker:
             
             # Confirmation B: HTF structure break (15m)
             if confirmation_reason is None:
-                htf_structure = features.get("htf_structure_label") or features.get("structure_15m")
+                htf_structure = features.get(
+                    "htf_structure_label"
+                ) or features.get("structure_15m")
                 if htf_structure is not None:
                     if trade.direction == "long" and htf_structure in ("LH", "LL"):
                         confirmation_reason = (
@@ -437,10 +446,12 @@ class InvalidationChecker:
             
             # No confirmation - VWAP_RECLAIM micro break alone is NOT enough to exit
             if confirmation_reason is None:
-                logger.debug(
-                    f"Trade {trade.trade_id} VWAP_RECLAIM: micro break {structure_label} "
+                msg = (
+                    f"Trade {trade.trade_id} VWAP_RECLAIM: "
+                    f"micro break {structure_label} "
                     f"NOT confirmed (VWAP/HTF intact) - HOLDING"
                 )
+                logger.debug(msg)
                 return False, None
             
             # Confirmed micro break for VWAP_RECLAIM
@@ -489,13 +500,13 @@ class InvalidationChecker:
         if trade.direction == "long":
             # Long trade invalidated only by LL (confirmed bearish break)
             if structure_label == "LL":
-                reason = f"HTF break: LL structure (bearish)"
+                reason = "HTF break: LL structure (bearish)"
                 logger.info(f"Trade {trade.trade_id} invalidated: {reason}")
                 return True, reason
         else:  # short
             # Short trade invalidated only by HH (confirmed bullish break)
             if structure_label == "HH":
-                reason = f"HTF break: HH structure (bullish)"
+                reason = "HTF break: HH structure (bullish)"
                 logger.info(f"Trade {trade.trade_id} invalidated: {reason}")
                 return True, reason
 
@@ -526,7 +537,7 @@ class InvalidationChecker:
         # Stricter logic for DXY_CONTINUATION setups
         if trade.setup_type == "DXY_CONTINUATION":
             # Get micro correlations and structure
-            # Support both HTFBias keys (dxy_corr_1m/5m) and streaming keys (dxy_corr_micro)
+            # Support HTFBias keys (dxy_corr_1m/5m) and streaming (dxy_corr_micro)  # noqa: E501
             corr_1m = _sanitize_float(
                 features.get("dxy_corr_1m") or features.get("dxy_corr_micro")
             )
@@ -614,7 +625,7 @@ class InvalidationChecker:
 
         # VWAP_RECLAIM DXY invalidation:
         # Uses raw features["dxy_corr"] field (same as entry scoring uses)
-        # Model is inverse-correlation: alignment = corr <= threshold, flip = corr >= 0.0
+        # Inverse-correlation: alignment = corr <= threshold, flip >= 0.0  # noqa: E501
         # Exit requires 3-bar persistence to avoid premature exits
         if trade.setup_type == "VWAP_RECLAIM":
             dxy_flip_bars_required = 3  # Require 3 consecutive bars of flip
@@ -624,8 +635,8 @@ class InvalidationChecker:
                 f"Trade {trade.trade_id} DXY exit check: dxy_corr={dxy_corr:.3f}"
             )
 
-            # Inverse-correlation model: flip when correlation goes non-negative (>= 0.0)
-            # This is consistent with entry which uses dxy_corr < threshold for alignment
+            # Inverse-correlation: flip when >= 0.0  # noqa: E501
+            # Consistent with entry (dxy_corr < threshold)  # noqa: E501
             condition_met = dxy_corr >= 0.0
 
             # Track consecutive bars meeting condition
@@ -711,7 +722,7 @@ class InvalidationChecker:
             pass
 
         # DXY_CONTINUATION: Window active during continuation
-        # For now, assume window stays active (can be enhanced with DXY structure tracking)
+        # Assume window stays active (can enhance with DXY tracking)  # noqa: E501
         if trade.setup_type == "DXY_CONTINUATION":
             # Window remains active during continuation
             pass
@@ -835,9 +846,11 @@ class InvalidationChecker:
         # First update state with current candle (pass features for VWAP tracking)
         self.update_state(trade, candle, features)
 
-        # Check +1R time limit (with time_stop_protection for VWAP_RECLAIM + September)
-        month = candle.timestamp.month if hasattr(candle.timestamp, 'month') else None
-        is_invalid, reason = self.check_no_1r_reached(trade, bars_elapsed, candle, month)
+        # Check +1R time limit (with time_stop_protection for VWAP_RECLAIM + September)  # noqa: E501
+        month = candle.timestamp.month if hasattr(candle.timestamp, 'month') else None  # noqa: E501
+        is_invalid, reason = self.check_no_1r_reached(
+            trade, bars_elapsed, candle, month
+        )
         if is_invalid:
             return is_invalid, reason
 

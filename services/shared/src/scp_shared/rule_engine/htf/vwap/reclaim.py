@@ -764,43 +764,56 @@ def validate_reclaim_prerequisites(
         # Only reject when there's an EXPLICIT directional conflict
         # Allow through when BOS direction is unknown (None) - matches backtester behavior
         bos_direction = features.get("bos_direction")
+        bos_age = features.get("bos_age")
         choch_detected = features.get("choch_detected", False)
         choch_direction = features.get("choch_direction")
 
         direction = htf_bias.direction
 
+        # Determine if BOS is stale (>15 bars old) - stale BOS should not cause rejection
+        # This matches the staleness logic in validate_reclaim_context for consistency
+        bos_is_stale = False
+        if bos_age is not None and not pd.isna(bos_age):
+            bos_is_stale = int(bos_age) > 15
+
         logger.debug(
             f"VWAP_RECLAIM direction check: direction={direction}, "
-            f"bos_direction={bos_direction}, choch={choch_detected}, choch_dir={choch_direction}"
+            f"bos_direction={bos_direction}, bos_age={bos_age}, bos_stale={bos_is_stale}, "
+            f"choch={choch_detected}, choch_dir={choch_direction}"
         )
 
-        # Only reject if there's an EXPLICIT directional conflict
+        # Only reject if there's an EXPLICIT directional conflict AND BOS is recent
         # None/unknown BOS direction is allowed (matches backtester where micro_bos was null)
+        # Stale BOS (>15 bars) is also allowed through (not relevant to current setup)
         if direction == "long":
-            has_bearish_conflict = (bos_direction == "bearish") and not (
-                choch_detected and choch_direction == "bullish"
+            has_bearish_conflict = (
+                bos_direction == "bearish"
+                and not bos_is_stale  # Only reject if BOS is recent
+                and not (choch_detected and choch_direction == "bullish")
             )
             if has_bearish_conflict:
                 logger.debug(
-                    f"VWAP_RECLAIM rejected: bearish BOS conflicts with long reclaim"
+                    f"VWAP_RECLAIM rejected: recent bearish BOS conflicts with long reclaim"
                 )
                 return (
                     False,
-                    f"Bearish BOS conflicts with long reclaim "
-                    f"(bos={bos_direction}, choch={choch_direction})",
+                    f"Recent bearish BOS conflicts with long reclaim "
+                    f"(bos={bos_direction}, age={bos_age}, choch={choch_direction})",
                 )
         elif direction == "short":
-            has_bullish_conflict = (bos_direction == "bullish") and not (
-                choch_detected and choch_direction == "bearish"
+            has_bullish_conflict = (
+                bos_direction == "bullish"
+                and not bos_is_stale  # Only reject if BOS is recent
+                and not (choch_detected and choch_direction == "bearish")
             )
             if has_bullish_conflict:
                 logger.debug(
-                    f"VWAP_RECLAIM rejected: bullish BOS conflicts with short reclaim"
+                    f"VWAP_RECLAIM rejected: recent bullish BOS conflicts with short reclaim"
                 )
                 return (
                     False,
-                    f"Bullish BOS conflicts with short reclaim "
-                    f"(bos={bos_direction}, choch={choch_direction})",
+                    f"Recent bullish BOS conflicts with short reclaim "
+                    f"(bos={bos_direction}, age={bos_age}, choch={choch_direction})",
                 )
 
         # Check 5: Reject if excessive structure conflict

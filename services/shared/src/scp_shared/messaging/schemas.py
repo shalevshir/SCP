@@ -106,10 +106,15 @@ class FeaturesMessage(BaseModel):
     reclaim_candle_idx: int | None = Field(default=None, description="Bar index of reclaim candle")
     
     # TP Structural Target fields (SOP Section 4.3)
-    nearest_liquidity_long: float | None = Field(default=None, description="Nearest swing high above (for long TP)")
-    nearest_liquidity_short: float | None = Field(default=None, description="Nearest swing low below (for short TP)")
+    # 1m timeframe structural levels (computed by Feature Engine)
+    immediate_resistance: float | None = Field(default=None, description="Immediate 1m resistance level within 1R (blocks long TPs)")
+    immediate_support: float | None = Field(default=None, description="Immediate 1m support level within 1R (blocks short TPs)")
     prior_session_high: float | None = Field(default=None, description="Previous session high")
     prior_session_low: float | None = Field(default=None, description="Previous session low")
+    nearest_liquidity_long: float | None = Field(default=None, description="Nearest 1m swing high above (fallback for long TP)")
+    nearest_liquidity_short: float | None = Field(default=None, description="Nearest 1m swing low below (fallback for short TP)")
+    
+    # NOTE: HTF structural targets (htf_range, untouched_liquidity, FVGs) are in HTFBiasMessage
     
     # Expansion gate fields
     expansion_detected: bool = Field(default=False, description="VWAP_RECLAIM expansion detected")
@@ -210,6 +215,39 @@ class HTFBiasMessage(BaseModel):
     )
     dxy_chop_5m: bool = Field(
         default=False, description="DXY chop detected on 5M"
+    )
+    
+    # TP Structural Targets from HTF analysis (SOP Section 4.3)
+    # Priority hierarchy for long TPs: htf_range_high > untouched_liquidity_high > nearest_fvg_high
+    htf_range_high: float | None = Field(
+        default=None, description="HTF range high (highest point in current 15m/1h consolidation/range)"
+    )
+    htf_range_low: float | None = Field(
+        default=None, description="HTF range low (lowest point in current 15m/1h consolidation/range)"
+    )
+    untouched_liquidity_high: float | None = Field(
+        default=None, description="Untouched HTF buy-side liquidity (clean HH on 15m/1h not yet violated)"
+    )
+    untouched_liquidity_low: float | None = Field(
+        default=None, description="Untouched HTF sell-side liquidity (clean LL on 15m/1h not yet violated)"
+    )
+    nearest_fvg_high: float | None = Field(
+        default=None, description="Nearest HTF FVG completion level above (for long TP)"
+    )
+    nearest_fvg_low: float | None = Field(
+        default=None, description="Nearest HTF FVG completion level below (for short TP)"
+    )
+    opposing_fvg_high: float | None = Field(
+        default=None, description="HTF bearish FVG upper boundary (blocks long TPs inside it)"
+    )
+    opposing_fvg_low: float | None = Field(
+        default=None, description="HTF bearish FVG lower boundary"
+    )
+    opposing_fvg_bullish_high: float | None = Field(
+        default=None, description="HTF bullish FVG upper boundary (blocks short TPs inside it)"
+    )
+    opposing_fvg_bullish_low: float | None = Field(
+        default=None, description="HTF bullish FVG lower boundary"
     )
 
     class Config:

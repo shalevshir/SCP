@@ -103,6 +103,7 @@ def features_message_to_series(msg: FeaturesMessage) -> pd.Series:
         "structure_label": msg.structure_label,
         "last_structure_label": msg.structure_label,  # Alias for VWAP_FADE detector
         "vwap_deviation": msg.vwap_deviation,
+        "vwap_deviation_normalized": msg.vwap_deviation_normalized,
         # BOS/CHoCH fields for VWAP_RECLAIM validation
         "bos_direction": msg.bos_direction,
         "bos_recent": msg.bos_recent,
@@ -119,11 +120,115 @@ def features_message_to_series(msg: FeaturesMessage) -> pd.Series:
     })
 
 
+def _check_tp_safety(
+    tp_price: float,
+    direction: str,
+    entry_price: float,
+    sl_price: float,
+    features: FeaturesMessage,
+    htf_bias: HTFBiasMessage,
+) -> tuple[bool, str | None]:
+    """Check if TP price passes safety filters.
+    
+    Safety checks (SOP-compliant):
+    0. SL is directionally valid (MANDATORY)
+    1. No opposing HTF FVG in the path between entry and TP
+    2. No immediate resistance/support in the path to TP (within 1R distance)
+    3. TP not beyond broken structure (TODO: need broken_structure_level field)
+    
+    Returns:
+        (is_safe, rejection_reason)
+    """
+    # ========================================================================
+    # Check 0: SL VALIDITY (MANDATORY - prevents invalid trades)
+    # ========================================================================
+    if direction == "long":
+        if sl_price >= entry_price:
+            return False, f"Invalid SL for long: SL ({sl_price:.2f}) must be < entry ({entry_price:.2f})"
+    else:  # short
+        if sl_price <= entry_price:
+            return False, f"Invalid SL for short: SL ({sl_price:.2f}) must be > entry ({entry_price:.2f})"
+    
+    # Calculate risk distance (now guaranteed valid)
+    risk_distance = abs(entry_price - sl_price)
+    one_r_distance = risk_distance  # 1R = one risk unit
+    
+    if direction == "long":
+        # ====================================================================
+        # Check 1: OPPOSING HTF FVG IN PATH (SOP CRITICAL)
+        # ====================================================================
+        # For longs: bearish FVG (opposing_fvg_*) blocks if it's BETWEEN entry and TP
+        # NOT just if TP is inside it - price must pass through FVG to reach TP
+        if (
+            htf_bias.opposing_fvg_high is not None 
+            and htf_bias.opposing_fvg_low is not None
+        ):
+            # Check if FVG lies in the path: entry < FVG_low < TP
+            # (FVG must be above entry and below TP to block the path)
+            if entry_price < htf_bias.opposing_fvg_low < tp_price:
+                return False, (
+                    f"Opposing HTF bearish FVG ({htf_bias.opposing_fvg_low:.2f}-{htf_bias.opposing_fvg_high:.2f}) "
+                    f"blocks path to TP (entry={entry_price:.2f}, TP={tp_price:.2f})"
+                )
+        
+        # ====================================================================
+        # Check 2: IMMEDIATE RESISTANCE IN PATH
+        # ====================================================================
+        # Check if resistance is between entry and TP, and within 1R of entry
+        if features.immediate_resistance is not None:
+            # Resistance must be above entry and below TP to be in path
+            if entry_price < features.immediate_resistance < tp_price:
+                resistance_distance = features.immediate_resistance - entry_price
+                # Only block if within 1R (too close to entry)
+                if resistance_distance < one_r_distance:
+                    return False, (
+                        f"Immediate resistance at {features.immediate_resistance:.2f} "
+                        f"in path to TP (within 1R at {resistance_distance:.2f})"
+                    )
+        
+        # TODO: Check 3 - TP beyond broken structure (need broken_structure_level field)
+        
+    else:  # short
+        # ====================================================================
+        # Check 1: OPPOSING HTF FVG IN PATH (SOP CRITICAL)
+        # ====================================================================
+        # For shorts: bullish FVG (opposing_fvg_bullish_*) blocks if BETWEEN entry and TP
+        if (
+            htf_bias.opposing_fvg_bullish_high is not None 
+            and htf_bias.opposing_fvg_bullish_low is not None
+        ):
+            # Check if FVG lies in the path: TP < FVG_high < entry
+            # (FVG must be below entry and above TP to block the path)
+            if tp_price < htf_bias.opposing_fvg_bullish_high < entry_price:
+                return False, (
+                    f"Opposing HTF bullish FVG ({htf_bias.opposing_fvg_bullish_low:.2f}-{htf_bias.opposing_fvg_bullish_high:.2f}) "
+                    f"blocks path to TP (entry={entry_price:.2f}, TP={tp_price:.2f})"
+                )
+        
+        # ====================================================================
+        # Check 2: IMMEDIATE SUPPORT IN PATH
+        # ====================================================================
+        # Check if support is between TP and entry, and within 1R of entry
+        if features.immediate_support is not None:
+            # Support must be below entry and above TP to be in path
+            if tp_price < features.immediate_support < entry_price:
+                support_distance = entry_price - features.immediate_support
+                # Only block if within 1R (too close to entry)
+                if support_distance < one_r_distance:
+                    return False, (
+                        f"Immediate support at {features.immediate_support:.2f} "
+                        f"in path to TP (within 1R at {support_distance:.2f})"
+                    )
+    
+    return True, None
+
+
 def validate_tp_target(
     direction: str,
     entry_price: float,
     sl_price: float,
     features: FeaturesMessage,
+    htf_bias: HTFBiasMessage,
     min_rr: float = 3.0,
 ) -> tuple[float | None, str | None]:
     """Validate structural TP target exists at minimum R:R.
@@ -136,7 +241,8 @@ def validate_tp_target(
         direction: Trade direction ("long" or "short")
         entry_price: Entry price
         sl_price: Stop loss price
-        features: Features message containing target data
+        features: Features message containing 1m structural data
+        htf_bias: HTF bias message containing 15m/1h structural targets
         min_rr: Minimum R:R ratio (default: 3.0)
     
     Returns:
@@ -164,30 +270,96 @@ def validate_tp_target(
     if direction == "long":
         min_tp_price = entry_price + min_tp_distance
         
-        # Check structural targets in priority order
+        # ========================================================================
+        # SOP CRITICAL: Check structural targets in PRIORITY ORDER
+        # ========================================================================
+        # 1. Untouched buy-side liquidity (HIGHEST - institutional magnet, clean HH)
+        # 2. HTF range high (major 15m/1h structure boundary)
+        # 3. Prior session high (prior day high)
+        # 4. HTF FVG completion level (15m/1h imbalance)
+        # 5. Nearest 1m swing high (fallback - lowest priority)
+        # ========================================================================
         candidates = [
-            ("nearest_liquidity", features.nearest_liquidity_long),
-            ("prior_session_high", features.prior_session_high),
+            ("untouched_liquidity_high", htf_bias.untouched_liquidity_high),  # From HTF service
+            ("htf_range_high", htf_bias.htf_range_high),  # From HTF service
+            ("prior_session_high", features.prior_session_high),  # From features (1m)
+            ("nearest_fvg_high", htf_bias.nearest_fvg_high),  # From HTF service
+            ("nearest_swing_high", features.nearest_liquidity_long),  # From features (1m)
         ]
-        for target_name, target in candidates:
-            if target is not None and target >= min_tp_price:
-                return target, None
         
-        # No valid target found
-        return None, f"No structural target at ≥{min_rr}R (min_tp={min_tp_price:.2f})"
+        # Filter candidates that meet minimum R:R requirement
+        valid_candidates = [
+            (name, price) 
+            for name, price in candidates 
+            if price is not None and price >= min_tp_price
+        ]
+        
+        if not valid_candidates:
+            return None, f"No structural target at ≥{min_rr}R (min_tp={min_tp_price:.2f})"
+        
+        # Select the NEAREST valid target (not highest priority target that's far away)
+        # This prevents targeting HTF high when a closer valid target exists
+        best_target_name, best_target_price = min(
+            valid_candidates, 
+            key=lambda x: x[1]  # Sort by price (nearest = lowest for longs)
+        )
+        
+        # ========================================================================
+        # SOP CRITICAL: Apply safety filters before returning TP
+        # ========================================================================
+        is_safe, rejection_reason = _check_tp_safety(
+            best_target_price, direction, entry_price, sl_price, features, htf_bias
+        )
+        if not is_safe:
+            return None, f"TP {best_target_name} at {best_target_price:.2f} rejected: {rejection_reason}"
+        
+        return best_target_price, None
     
     else:  # short
         max_tp_price = entry_price - min_tp_distance
         
+        # ========================================================================
+        # SOP CRITICAL: Check structural targets in PRIORITY ORDER (mirrored for shorts)
+        # 1. Untouched sell-side liquidity (HIGHEST - institutional magnet, clean LL)
+        # 2. HTF range low (major 15m/1h structure boundary)
+        # 3. Prior session low
+        # 4. HTF FVG completion level (15m/1h imbalance)
+        # 5. Nearest 1m swing low (fallback - lowest priority)
+        # ========================================================================
         candidates = [
-            ("nearest_liquidity", features.nearest_liquidity_short),
-            ("prior_session_low", features.prior_session_low),
+            ("untouched_liquidity_low", htf_bias.untouched_liquidity_low),  # From HTF service
+            ("htf_range_low", htf_bias.htf_range_low),  # From HTF service
+            ("prior_session_low", features.prior_session_low),  # From features (1m)
+            ("nearest_fvg_low", htf_bias.nearest_fvg_low),  # From HTF service
+            ("nearest_swing_low", features.nearest_liquidity_short),  # From features (1m)
         ]
-        for target_name, target in candidates:
-            if target is not None and target <= max_tp_price:
-                return target, None
         
-        return None, f"No structural target at ≥{min_rr}R (max_tp={max_tp_price:.2f})"
+        # Filter candidates that meet minimum R:R requirement
+        valid_candidates = [
+            (name, price) 
+            for name, price in candidates 
+            if price is not None and price <= max_tp_price
+        ]
+        
+        if not valid_candidates:
+            return None, f"No structural target at ≥{min_rr}R (max_tp={max_tp_price:.2f})"
+        
+        # Select the NEAREST valid target (highest price for shorts)
+        best_target_name, best_target_price = max(
+            valid_candidates, 
+            key=lambda x: x[1]  # Sort by price (nearest = highest for shorts)
+        )
+        
+        # ========================================================================
+        # SOP CRITICAL: Apply safety filters before returning TP
+        # ========================================================================
+        is_safe, rejection_reason = _check_tp_safety(
+            best_target_price, direction, entry_price, sl_price, features, htf_bias
+        )
+        if not is_safe:
+            return None, f"TP {best_target_name} at {best_target_price:.2f} rejected: {rejection_reason}"
+        
+        return best_target_price, None
 
 
 def calculate_sl_price_vwap_reclaim(
@@ -367,6 +539,7 @@ def signal_to_message(signal: Signal, features: FeaturesMessage, htf_bias: HTFBi
             entry_price=entry_price,
             sl_price=sl_price,
             features=features,
+            htf_bias=htf_bias,
             min_rr=r_multiple,
         )
         if rejection:

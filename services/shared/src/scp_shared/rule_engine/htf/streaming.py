@@ -100,6 +100,12 @@ class StreamingHTFBiasCalculator:
         self._cached_dxy_chop: bool = False
         self._first_hour_of_session: int = 7  # First trading hour (adjust as needed)
 
+        # Swept levels tracking for untouched liquidity computation
+        # Tracks price levels that have been swept (violated) so they can be excluded
+        # from untouched liquidity targets
+        self.swept_levels_high: set[float] = set()  # Swing highs that have been swept
+        self.swept_levels_low: set[float] = set()   # Swing lows that have been swept
+
         logger.info("Streaming HTF bias calculator initialized")
 
     def update(self, gc_bar: Candle, dxy_bar: Candle) -> HTFBias | None:
@@ -251,7 +257,14 @@ class StreamingHTFBiasCalculator:
                             dxy_1h = pd.DataFrame(self.dxy_1h_buffer)
 
                 
+                # Update swept levels tracking before computing bias
+                # This detects which swing highs/lows have been violated
+                self._update_swept_levels(gc_bar)
+                
                 # Call existing HTF bias calculator
+                # Combine swept levels into a single set for untouched liquidity computation
+                combined_swept_levels = self.swept_levels_high | self.swept_levels_low
+                
                 self.current_htf_bias = compute_htf_bias(
                     features_1h=self.features_1h,
                     features_15m=self.features_15m,
@@ -261,6 +274,7 @@ class StreamingHTFBiasCalculator:
                     df_1h=df_1h,
                     sweep_events_15m=None,  # TODO: Add liquidity sweep detection
                     timestamp=pd.Timestamp(gc_bar.timestamp),
+                    swept_levels=combined_swept_levels,
                 )
                 
                 # Cache DXY chop value at boundaries, use cached value otherwise
@@ -297,6 +311,18 @@ class StreamingHTFBiasCalculator:
                             conflict_reason=self.current_htf_bias.conflict_reason,
                             structure_clarity=self.current_htf_bias.structure_clarity,
                             liquidity_sweep_detected=self.current_htf_bias.liquidity_sweep_detected,
+                            # TP Structural Target fields (SOP Section 4.3)
+                            htf_range_high=self.current_htf_bias.htf_range_high,
+                            htf_range_low=self.current_htf_bias.htf_range_low,
+                            untouched_liquidity_high=self.current_htf_bias.untouched_liquidity_high,
+                            untouched_liquidity_low=self.current_htf_bias.untouched_liquidity_low,
+                            nearest_fvg_high=self.current_htf_bias.nearest_fvg_high,
+                            nearest_fvg_low=self.current_htf_bias.nearest_fvg_low,
+                            # Opposing FVG fields (critical for TP safety checks)
+                            opposing_fvg_high=self.current_htf_bias.opposing_fvg_high,
+                            opposing_fvg_low=self.current_htf_bias.opposing_fvg_low,
+                            opposing_fvg_bullish_high=self.current_htf_bias.opposing_fvg_bullish_high,
+                            opposing_fvg_bullish_low=self.current_htf_bias.opposing_fvg_bullish_low,
                         )
 
                 logger.debug(
@@ -601,6 +627,72 @@ class StreamingHTFBiasCalculator:
             Most recent HTFBias object, or None if not yet calculated
         """
         return self.current_htf_bias
+
+    def _update_swept_levels(self, current_bar: Candle) -> None:
+        """Update swept levels tracking based on current price action.
+
+        A level is considered "swept" when price violates it (high exceeds swing high,
+        or low breaks below swing low). This is used for untouched liquidity computation.
+
+        Args:
+            current_bar: Current 1M candle with high/low to check for sweeps
+
+        Logic:
+            - Check recent swing highs from df_1h_buffer
+            - If current bar's high exceeds a swing high, mark it as swept
+            - Similarly for swing lows
+            - Reset swept levels at major structure breaks (BOS)
+        """
+        if len(self.df_1h_buffer) < 3:
+            return  # Need at least 3 bars to identify swings
+
+        # Get recent swing highs and lows from the 1H buffer
+        # A simple swing high is a bar with high > neighbors
+        # A simple swing low is a bar with low < neighbors
+        for i in range(1, len(self.df_1h_buffer) - 1):
+            prev_bar = self.df_1h_buffer[i - 1]
+            curr_bar = self.df_1h_buffer[i]
+            next_bar = self.df_1h_buffer[i + 1]
+
+            # Check for swing high (local peak)
+            if curr_bar["high"] > prev_bar["high"] and curr_bar["high"] > next_bar["high"]:
+                swing_high = curr_bar["high"]
+                # If current price exceeded this swing high, mark as swept
+                if current_bar.high > swing_high:
+                    self.swept_levels_high.add(swing_high)
+
+            # Check for swing low (local trough)
+            if curr_bar["low"] < prev_bar["low"] and curr_bar["low"] < next_bar["low"]:
+                swing_low = curr_bar["low"]
+                # If current price broke below this swing low, mark as swept
+                if current_bar.low < swing_low:
+                    self.swept_levels_low.add(swing_low)
+
+        # Optional: Clear very old swept levels to prevent memory growth
+        # Keep only levels from the recent buffer window
+        if len(self.swept_levels_high) > 100:
+            # Keep only recent levels (within reasonable price range)
+            recent_highs = [bar["high"] for bar in self.df_1h_buffer[-20:]]
+            if recent_highs:
+                max_recent = max(recent_highs)
+                min_recent = min(recent_highs)
+                # Keep levels within 2x the recent range
+                range_buffer = (max_recent - min_recent) * 2
+                self.swept_levels_high = {
+                    level for level in self.swept_levels_high
+                    if min_recent - range_buffer <= level <= max_recent + range_buffer
+                }
+
+        if len(self.swept_levels_low) > 100:
+            recent_lows = [bar["low"] for bar in self.df_1h_buffer[-20:]]
+            if recent_lows:
+                max_recent = max(recent_lows)
+                min_recent = min(recent_lows)
+                range_buffer = (max_recent - min_recent) * 2
+                self.swept_levels_low = {
+                    level for level in self.swept_levels_low
+                    if min_recent - range_buffer <= level <= max_recent + range_buffer
+                }
 
     def is_warmed_up(self) -> bool:
         """Check if calculator has enough data for reliable HTF bias.

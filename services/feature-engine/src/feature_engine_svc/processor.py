@@ -144,11 +144,14 @@ class FeatureProcessor:
             reclaim_candle_low=self._safe_float(features_series.get("reclaim_candle_low")),
             reclaim_candle_high=self._safe_float(features_series.get("reclaim_candle_high")),
             reclaim_candle_idx=self._safe_int(features_series.get("reclaim_candle_idx")),
-            # TP Structural Target fields (SOP Section 4.3)
-            nearest_liquidity_long=self._safe_float(features_series.get("nearest_swing_high_above")),
-            nearest_liquidity_short=self._safe_float(features_series.get("nearest_swing_low_below")),
+            # TP Structural Target fields (SOP Section 4.3 - 1m timeframe only)
+            # NOTE: HTF targets (htf_range, untouched_liquidity, FVGs) come from HTF Bias Service
+            immediate_resistance=self._safe_float(features_series.get("immediate_resistance")),
+            immediate_support=self._safe_float(features_series.get("immediate_support")),
             prior_session_high=self._safe_float(features_series.get("prior_session_high")),
             prior_session_low=self._safe_float(features_series.get("prior_session_low")),
+            nearest_liquidity_long=self._safe_float(features_series.get("nearest_swing_high_above")),
+            nearest_liquidity_short=self._safe_float(features_series.get("nearest_swing_low_below")),
             # Expansion gate fields
             expansion_detected=bool(features_series.get("expansion_detected", False)),
             expansion_reasons=features_series.get("expansion_reasons", []) or [],
