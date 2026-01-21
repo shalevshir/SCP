@@ -922,9 +922,13 @@ def compute_htf_bias(
                 bos_index = None
                 if bos_series is not None and len(bos_series) > 0:
                     # Find most recent BOS before current timestamp
-                    bos_detected_bars = bos_series[bos_series == True]  # noqa: E712
+                    # Note: bos_series contains string values ("bullish_bos", "bearish_bos")
+                    # or None, not booleans, so we check for non-null values
+                    bos_detected_bars = bos_series[bos_series.notna()]
                     if len(bos_detected_bars) > 0:
-                        bos_index = len(bos_detected_bars) - 1
+                        # Get the actual index position of the last BOS event,
+                        # not the count minus one
+                        bos_index = bos_detected_bars.index[-1]
 
                 # 8a. Compute HTF range boundaries
                 htf_range_high, htf_range_low = compute_htf_range(
