@@ -7,9 +7,6 @@ packages = [
     { include = "scp", from = "src" },
     { include = "common" },
     { include = "data_layer" },
-    { include = "rule_engine" },
-    { include = "feature_engine" },
-    { include = "backtester" },
     { include = "validation" },
     { include = "dashboard" },
 ]
@@ -87,7 +84,7 @@ strict_equality = true
 exclude = ["tests/"]
 
 [tool.coverage.run]
-source = ["common", "data_layer", "src", "feature_engine", "backtester", "rule_engine", "validation", "dashboard"]
+source = ["common", "data_layer", "src", "validation", "dashboard"]
 omit = ["tests/*", "*/test_*.py", "*/__pycache__/*"]
 relative_files = true
 
