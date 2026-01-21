@@ -311,12 +311,18 @@ class StreamingHTFBiasCalculator:
                             conflict_reason=self.current_htf_bias.conflict_reason,
                             structure_clarity=self.current_htf_bias.structure_clarity,
                             liquidity_sweep_detected=self.current_htf_bias.liquidity_sweep_detected,
+                            # TP Structural Target fields (SOP Section 4.3)
                             htf_range_high=self.current_htf_bias.htf_range_high,
                             htf_range_low=self.current_htf_bias.htf_range_low,
                             untouched_liquidity_high=self.current_htf_bias.untouched_liquidity_high,
                             untouched_liquidity_low=self.current_htf_bias.untouched_liquidity_low,
                             nearest_fvg_high=self.current_htf_bias.nearest_fvg_high,
                             nearest_fvg_low=self.current_htf_bias.nearest_fvg_low,
+                            # Opposing FVG fields (critical for TP safety checks)
+                            opposing_fvg_high=self.current_htf_bias.opposing_fvg_high,
+                            opposing_fvg_low=self.current_htf_bias.opposing_fvg_low,
+                            opposing_fvg_bullish_high=self.current_htf_bias.opposing_fvg_bullish_high,
+                            opposing_fvg_bullish_low=self.current_htf_bias.opposing_fvg_bullish_low,
                         )
 
                 logger.debug(
