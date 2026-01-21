@@ -9,9 +9,11 @@ from scp_shared.rule_engine.signal import Signal
 
 from bot_core_svc.signal_engine import (
     SignalEngine,
+    _check_tp_safety,
     features_message_to_series,
     htf_bias_message_to_htf_bias,
     signal_to_message,
+    validate_tp_target,
 )
 
 
@@ -778,4 +780,378 @@ class TestHTFBiasConversion:
         htf_bias = htf_bias_message_to_htf_bias(msg)
         
         assert htf_bias.confidence == "low"
+
+
+class TestTPValidation:
+    """Test TP target validation with SOP structural hierarchy."""
+    
+    def test_long_tp_priority_order_selects_nearest_valid(self) -> None:
+        """Long TP: select NEAREST valid target from hierarchy (not first priority)."""
+        # Entry: 2650.0, SL: 2642.0 (below entry), Risk: 8.0, Min TP (3R): 2674.0
+        entry_price = 2650.0
+        sl_price = 2642.0  # Valid SL below entry
+        
+        features = FeaturesMessage(
+            timestamp=datetime(2025, 1, 15, 10, 0, tzinfo=timezone.utc),
+            symbol="GC",
+            timeframe="1m",
+            close=entry_price,
+            # 1m targets
+            prior_session_high=2678.0,  # Third priority, closest (should be selected)
+            nearest_liquidity_long=2695.0,  # Fallback (lowest priority)
+        )
+        
+        htf_bias = HTFBiasMessage(
+            timestamp=datetime(2025, 1, 15, 10, 0, tzinfo=timezone.utc),
+            bias="bullish",
+            score=8.0,
+            confidence="A+",
+            dxy_aligned=True,
+            chop_detected=False,
+            # HTF targets (all above min TP 2674.0)
+            htf_range_high=2700.0,  # Highest priority but furthest
+            untouched_liquidity_high=2685.0,  # Second priority, closer
+            nearest_fvg_high=2690.0,  # Fourth priority
+        )
+        
+        tp_price, rejection_reason = validate_tp_target(
+            "long", entry_price, sl_price, features, htf_bias, min_rr=3.0
+        )
+        
+        assert rejection_reason is None
+        # Should select prior_session_high (2678.0) because it's the NEAREST valid target
+        assert tp_price == 2678.0
+    
+    def test_short_tp_priority_order_selects_nearest_valid(self) -> None:
+        """Short TP: select NEAREST valid target from hierarchy."""
+        # Entry: 2640.0, SL: 2648.0 (above entry), Risk: 8.0, Max TP (3R): 2616.0
+        entry_price = 2640.0
+        sl_price = 2648.0  # Valid SL above entry
+        
+        features = FeaturesMessage(
+            timestamp=datetime(2025, 1, 15, 10, 0, tzinfo=timezone.utc),
+            symbol="GC",
+            timeframe="1m",
+            close=entry_price,
+            # 1m targets
+            prior_session_low=2615.0,  # Third priority, closest (should be selected)
+            nearest_liquidity_short=2608.0,  # Fallback (lowest priority)
+        )
+        
+        htf_bias = HTFBiasMessage(
+            timestamp=datetime(2025, 1, 15, 10, 0, tzinfo=timezone.utc),
+            bias="bearish",
+            score=8.0,
+            confidence="A+",
+            dxy_aligned=True,
+            chop_detected=False,
+            # HTF targets (all below max TP 2616.0)
+            htf_range_low=2600.0,  # Highest priority but furthest
+            untouched_liquidity_low=2610.0,  # Second priority, closer
+            nearest_fvg_low=2605.0,  # Fourth priority
+        )
+        
+        tp_price, rejection_reason = validate_tp_target(
+            "short", entry_price, sl_price, features, htf_bias, min_rr=3.0
+        )
+        
+        assert rejection_reason is None
+        # Should select prior_session_low (2615.0) because it's the NEAREST valid target
+        assert tp_price == 2615.0
+    
+    def test_long_tp_no_valid_target_at_3r(self) -> None:
+        """Long TP rejected when no structural target at ≥3R."""
+        entry_price = 2650.0
+        sl_price = 2642.0  # Risk: 8.0, Min TP (3R): 2674.0
+        
+        features = FeaturesMessage(
+            timestamp=datetime(2025, 1, 15, 10, 0, tzinfo=timezone.utc),
+            symbol="GC",
+            timeframe="1m",
+            close=entry_price,
+            # 1m targets below min TP requirement
+            prior_session_high=2668.0,  # Below 3R
+            nearest_liquidity_long=2672.0,  # Below 3R
+        )
+        
+        htf_bias = HTFBiasMessage(
+            timestamp=datetime(2025, 1, 15, 10, 0, tzinfo=timezone.utc),
+            bias="bullish",
+            score=8.0,
+            confidence="A+",
+            dxy_aligned=True,
+            chop_detected=False,
+            # HTF targets all below min TP requirement
+            htf_range_high=2670.0,  # Below 3R
+            untouched_liquidity_high=2665.0,  # Below 3R
+            nearest_fvg_high=None,
+        )
+        
+        tp_price, rejection_reason = validate_tp_target(
+            "long", entry_price, sl_price, features, htf_bias, min_rr=3.0
+        )
+        
+        assert tp_price is None
+        assert "No structural target at ≥3.0R" in rejection_reason
+        assert "min_tp=2674.00" in rejection_reason
+    
+    def test_long_tp_invalid_sl_above_entry_rejected(self) -> None:
+        """Long TP rejected when SL is above entry (invalid SL placement)."""
+        entry_price = 2650.0
+        sl_price = 2655.0  # Invalid: SL above entry for long
+        
+        features = FeaturesMessage(
+            timestamp=datetime(2025, 1, 15, 10, 0, tzinfo=timezone.utc),
+            symbol="GC",
+            timeframe="1m",
+            close=entry_price,
+            prior_session_high=2680.0,
+        )
+        
+        htf_bias = HTFBiasMessage(
+            timestamp=datetime(2025, 1, 15, 10, 0, tzinfo=timezone.utc),
+            bias="bullish",
+            score=8.0,
+            confidence="A+",
+            dxy_aligned=True,
+            chop_detected=False,
+        )
+        
+        tp_price, rejection_reason = validate_tp_target(
+            "long", entry_price, sl_price, features, htf_bias, min_rr=3.0
+        )
+        
+        assert tp_price is None
+        assert "Invalid SL: long trade SL must be below entry" in rejection_reason
+    
+    def test_short_tp_invalid_sl_below_entry_rejected(self) -> None:
+        """Short TP rejected when SL is below entry (invalid SL placement)."""
+        entry_price = 2640.0
+        sl_price = 2635.0  # Invalid: SL below entry for short
+        
+        features = FeaturesMessage(
+            timestamp=datetime(2025, 1, 15, 10, 0, tzinfo=timezone.utc),
+            symbol="GC",
+            timeframe="1m",
+            close=entry_price,
+            prior_session_low=2615.0,
+        )
+        
+        htf_bias = HTFBiasMessage(
+            timestamp=datetime(2025, 1, 15, 10, 0, tzinfo=timezone.utc),
+            bias="bearish",
+            score=8.0,
+            confidence="A+",
+            dxy_aligned=True,
+            chop_detected=False,
+        )
+        
+        tp_price, rejection_reason = validate_tp_target(
+            "short", entry_price, sl_price, features, htf_bias, min_rr=3.0
+        )
+        
+        assert tp_price is None
+        assert "Invalid SL: short trade SL must be above entry" in rejection_reason
+
+
+class TestTPSafetyChecks:
+    """Test TP safety filters (opposing FVG, immediate resistance)."""
+    
+    def test_long_tp_rejected_inside_opposing_htf_fvg(self) -> None:
+        """Long TP rejected when inside bearish HTF FVG."""
+        tp_price = 2678.0
+        entry_price = 2650.0
+        sl_price = 2642.0
+        
+        features = FeaturesMessage(
+            timestamp=datetime(2025, 1, 15, 10, 0, tzinfo=timezone.utc),
+            symbol="GC",
+            timeframe="1m",
+            close=entry_price,
+        )
+        
+        htf_bias = HTFBiasMessage(
+            timestamp=datetime(2025, 1, 15, 10, 0, tzinfo=timezone.utc),
+            bias="bullish",
+            score=8.0,
+            confidence="A+",
+            dxy_aligned=True,
+            chop_detected=False,
+            # TP falls inside opposing FVG
+            opposing_fvg_low=2675.0,
+            opposing_fvg_high=2685.0,
+        )
+        
+        is_safe, rejection_reason = _check_tp_safety(
+            tp_price, "long", entry_price, sl_price, features, htf_bias
+        )
+        
+        assert is_safe is False
+        assert "Opposing HTF bearish FVG" in rejection_reason
+        assert "blocks path to TP" in rejection_reason
+        assert "2675.00-2685.00" in rejection_reason
+    
+    def test_short_tp_rejected_inside_opposing_htf_fvg(self) -> None:
+        """Short TP rejected when inside bullish HTF FVG."""
+        tp_price = 2615.0
+        entry_price = 2640.0
+        sl_price = 2648.0
+        
+        features = FeaturesMessage(
+            timestamp=datetime(2025, 1, 15, 10, 0, tzinfo=timezone.utc),
+            symbol="GC",
+            timeframe="1m",
+            close=entry_price,
+        )
+        
+        htf_bias = HTFBiasMessage(
+            timestamp=datetime(2025, 1, 15, 10, 0, tzinfo=timezone.utc),
+            bias="bearish",
+            score=8.0,
+            confidence="A+",
+            dxy_aligned=True,
+            chop_detected=False,
+            # TP falls inside opposing FVG
+            opposing_fvg_bullish_low=2610.0,
+            opposing_fvg_bullish_high=2620.0,
+        )
+        
+        is_safe, rejection_reason = _check_tp_safety(
+            tp_price, "short", entry_price, sl_price, features, htf_bias
+        )
+        
+        assert is_safe is False
+        assert "Opposing HTF bullish FVG" in rejection_reason
+        assert "blocks path to TP" in rejection_reason
+        assert "2610.00-2620.00" in rejection_reason
+    
+    def test_long_tp_rejected_immediate_resistance_within_1r(self) -> None:
+        """Long TP rejected when immediate resistance within 1R."""
+        tp_price = 2680.0
+        entry_price = 2650.0
+        sl_price = 2642.0  # Risk: 8.0, 1R = 8.0
+        
+        features = FeaturesMessage(
+            timestamp=datetime(2025, 1, 15, 10, 0, tzinfo=timezone.utc),
+            symbol="GC",
+            timeframe="1m",
+            close=entry_price,
+            immediate_resistance=2655.0,  # 5.0 points away < 1R (8.0)
+        )
+        
+        htf_bias = HTFBiasMessage(
+            timestamp=datetime(2025, 1, 15, 10, 0, tzinfo=timezone.utc),
+            bias="bullish",
+            score=8.0,
+            confidence="A+",
+            dxy_aligned=True,
+            chop_detected=False,
+        )
+        
+        is_safe, rejection_reason = _check_tp_safety(
+            tp_price, "long", entry_price, sl_price, features, htf_bias
+        )
+        
+        assert is_safe is False
+        assert "Immediate resistance at 2655.00" in rejection_reason
+        assert "in path to TP" in rejection_reason
+    
+    def test_short_tp_rejected_immediate_support_within_1r(self) -> None:
+        """Short TP rejected when immediate support within 1R."""
+        tp_price = 2615.0
+        entry_price = 2640.0
+        sl_price = 2648.0  # Risk: 8.0, 1R = 8.0
+        
+        features = FeaturesMessage(
+            timestamp=datetime(2025, 1, 15, 10, 0, tzinfo=timezone.utc),
+            symbol="GC",
+            timeframe="1m",
+            close=entry_price,
+            immediate_support=2635.0,  # 5.0 points away < 1R (8.0)
+        )
+        
+        htf_bias = HTFBiasMessage(
+            timestamp=datetime(2025, 1, 15, 10, 0, tzinfo=timezone.utc),
+            bias="bearish",
+            score=8.0,
+            confidence="A+",
+            dxy_aligned=True,
+            chop_detected=False,
+        )
+        
+        is_safe, rejection_reason = _check_tp_safety(
+            tp_price, "short", entry_price, sl_price, features, htf_bias
+        )
+        
+        assert is_safe is False
+        assert "Immediate support at 2635.00" in rejection_reason
+        assert "in path to TP" in rejection_reason
+    
+    def test_long_tp_passes_safety_checks(self) -> None:
+        """Long TP passes when no safety violations."""
+        tp_price = 2678.0
+        entry_price = 2650.0
+        sl_price = 2642.0
+        
+        features = FeaturesMessage(
+            timestamp=datetime(2025, 1, 15, 10, 0, tzinfo=timezone.utc),
+            symbol="GC",
+            timeframe="1m",
+            close=entry_price,
+            immediate_resistance=2670.0,  # Resistance beyond 1R (20 points away)
+        )
+        
+        htf_bias = HTFBiasMessage(
+            timestamp=datetime(2025, 1, 15, 10, 0, tzinfo=timezone.utc),
+            bias="bullish",
+            score=8.0,
+            confidence="A+",
+            dxy_aligned=True,
+            chop_detected=False,
+            opposing_fvg_low=2680.0,  # TP not inside FVG
+            opposing_fvg_high=2690.0,
+        )
+        
+        is_safe, rejection_reason = _check_tp_safety(
+            tp_price, "long", entry_price, sl_price, features, htf_bias
+        )
+        
+        assert is_safe is True
+        assert rejection_reason is None
+    
+    def test_tp_validation_end_to_end_with_safety_rejection(self) -> None:
+        """TP validation: nearest valid target rejected by safety check, returns None."""
+        entry_price = 2650.0
+        sl_price = 2642.0  # Risk: 8.0, Min TP (3R): 2674.0
+        
+        features = FeaturesMessage(
+            timestamp=datetime(2025, 1, 15, 10, 0, tzinfo=timezone.utc),
+            symbol="GC",
+            timeframe="1m",
+            close=entry_price,
+            # Nearest valid target at 2678.0
+            prior_session_high=2678.0,
+            nearest_liquidity_long=2695.0,
+        )
+        
+        htf_bias = HTFBiasMessage(
+            timestamp=datetime(2025, 1, 15, 10, 0, tzinfo=timezone.utc),
+            bias="bullish",
+            score=8.0,
+            confidence="A+",
+            dxy_aligned=True,
+            chop_detected=False,
+            # But TP falls inside opposing FVG
+            opposing_fvg_low=2675.0,
+            opposing_fvg_high=2685.0,
+        )
+        
+        tp_price, rejection_reason = validate_tp_target(
+            "long", entry_price, sl_price, features, htf_bias, min_rr=3.0
+        )
+        
+        assert tp_price is None
+        assert "TP prior_session_high at 2678.00 rejected" in rejection_reason
+        assert "Opposing HTF bearish FVG" in rejection_reason
+        assert "blocks path to TP" in rejection_reason
 
