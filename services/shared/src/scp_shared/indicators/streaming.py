@@ -362,6 +362,9 @@ class StreamingFeatureProcessor:
         self.structure_tracker.update_vwap_state(
             vwap=vwap,
             close=gc_bar.close,
+            high=gc_bar.high,
+            low=gc_bar.low,
+            open=gc_bar.open,
         )
         
         # Update volume tracking for expansion confirmation
@@ -397,6 +400,17 @@ class StreamingFeatureProcessor:
         features["sweep_direction"] = gc_structure_ctx.sweep_direction
         features["sweep_price"] = gc_structure_ctx.sweep_price
         features["sweep_age"] = gc_structure_ctx.sweep_age
+        # SL Priority System fields (SOP Section 3.2-3.3)
+        features["swing_hl_low"] = gc_structure_ctx.swing_hl_low
+        features["swing_lh_high"] = gc_structure_ctx.swing_lh_high
+        features["reclaim_candle_low"] = self.structure_tracker.reclaim_candle_low
+        features["reclaim_candle_high"] = self.structure_tracker.reclaim_candle_high
+        features["reclaim_candle_idx"] = self.structure_tracker.vwap_reclaim_bar_idx
+        # TP Structural Target fields (SOP Section 4.3)
+        features["nearest_swing_high_above"] = gc_structure_ctx.nearest_swing_high_above
+        features["nearest_swing_low_below"] = gc_structure_ctx.nearest_swing_low_below
+        features["prior_session_high"] = None  # TODO: Track session highs/lows
+        features["prior_session_low"] = None  # TODO: Track session highs/lows
 
         # === 6b. Expansion Detection (for VWAP_RECLAIM entry timing) ===
         # Detect expansion signals to determine if market is resolving from compression

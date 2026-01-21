@@ -183,7 +183,7 @@ class TestVWAPReclaimExpansionIntegration:
             "ema_9": 2648.0,
             "ema_20": 2645.0,
             "ema_50": 2640.0,
-            "dxy_corr": -0.75,
+            "dxy_corr": -0.5,  # Weak correlation - fails DXY_CONTINUATION threshold (-0.6)
             # Invalid context (no sweep)
             "structure_clarity": 0.6,
             "liquidity_sweep": False,  # Missing sweep

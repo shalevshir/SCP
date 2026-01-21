@@ -862,34 +862,40 @@ def determine_setup_type(features: pd.Series, htf_bias: HTFBias) -> str:
     # Calculate VWAP deviation percentage
     vwap_dev = abs((close - vwap) / vwap * 100) if vwap != 0 else 0
 
-    # VWAP_FADE: Strict structure-based validation
+    # VWAP_FADE: Strict structure-based validation (most specific)
     from scp_shared.rule_engine.setup_detectors.vwap_fade import detect_vwap_fade
 
-    if detect_vwap_fade(features, htf_bias, df=None):
+    fade_detected = detect_vwap_fade(features, htf_bias, df=None)
+    if fade_detected:
         return "VWAP_FADE"
-
-    # DXY_CONTINUATION: Strict multi-factor validation
-    from scp_shared.rule_engine.setup_detectors.dxy_continuation import (
-        detect_dxy_continuation,
-    )
-
-    if detect_dxy_continuation(features, htf_bias):
-        return "DXY_CONTINUATION"
 
     # VWAP_RECLAIM: Check context validity (NOT entry readiness)
     # Context validation determines if setup type is VWAP_RECLAIM
     # Entry readiness is checked later in scoring to apply penalties
     # Import here to avoid circular dependency
+    # Checked BEFORE DXY_CONTINUATION because VWAP_RECLAIM requires specific
+    # structural sequence (sweep → displacement → reclaim) while DXY_CONTINUATION
+    # is broader (correlation + structure). If both are valid, VWAP_RECLAIM takes priority.
     from scp_shared.rule_engine.htf.vwap.reclaim import validate_reclaim_context
 
     context_result = validate_reclaim_context(htf_bias, features)
 
     if context_result.context_valid:
         return "VWAP_RECLAIM"
-    else:
-        # Log rejection reason for debugging
-        logger.debug(f"VWAP_RECLAIM rejected: {context_result.reason}")
-        return "REJECTED"
+
+    # DXY_CONTINUATION: Strict multi-factor validation (fallback)
+    # Only checked if VWAP_RECLAIM context is invalid
+    from scp_shared.rule_engine.setup_detectors.dxy_continuation import (
+        detect_dxy_continuation,
+    )
+
+    cont_detected = detect_dxy_continuation(features, htf_bias)
+    if cont_detected:
+        return "DXY_CONTINUATION"
+    
+    # No valid setup detected - log rejection reason for debugging
+    logger.debug(f"No valid setup detected. VWAP_RECLAIM rejected: {context_result.reason}")
+    return "REJECTED"
 
 
 def calculate_factor_scores(

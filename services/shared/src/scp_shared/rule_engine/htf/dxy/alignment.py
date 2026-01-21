@@ -1,8 +1,7 @@
-"""DXY alignment computation using behavior-based SOP rules.
+"""DXY alignment computation using behavior-based SOP rules (streaming mode).
 
-This module implements the SOP-aligned DXY alignment logic that replaces
-the overly strict statistical correlation approach. Alignment is determined
-by three mandatory conditions and optional HTF correlation weighting.
+This module implements the SOP-aligned DXY alignment logic for live streaming.
+Alignment is determined by correlation, structure (when available), and chop filters.
 """
 
 from scp_shared.common.logger import get_logger
@@ -19,15 +18,15 @@ def compute_dxy_alignment(
     dxy_corr_15m: float | None = None,
     dxy_corr_1h: float | None = None,
 ) -> tuple[bool, float, str]:
-    """Compute DXY alignment using behavior-based SOP rules.
+    """Compute DXY alignment using behavior-based SOP rules (streaming mode).
 
     Per SOP, DXY alignment requires:
-    1. DXY structure matches trade direction (MANDATORY)
+    1. DXY structure matches trade direction (when available)
        - Longs → DXY LL/LH (bearish DXY structure)
        - Shorts → DXY HH/HL (bullish DXY structure)
-    2. DXY is not in chop on 5M (MANDATORY)
-    3. Micro correlation (1M + 5M) shows inverse action (MANDATORY)
-    4. HTF correlation 15M/1H (OPTIONAL, low weight for scoring)
+    2. DXY is not in chop on 5M (when available)
+    3. Correlation shows inverse action (< -0.4 from best available source)
+    4. HTF correlation 15M/1H (OPTIONAL, provides bonus score)
 
     Args:
         trade_direction: Trade direction ("long" or "short")
@@ -40,7 +39,7 @@ def compute_dxy_alignment(
 
     Returns:
         Tuple of (is_aligned, alignment_score, rationale):
-        - is_aligned: True if all mandatory conditions met
+        - is_aligned: True if alignment conditions met
         - alignment_score: 0.0-0.5 bonus score from HTF correlation (only if aligned)
         - rationale: Human-readable explanation
 
@@ -52,23 +51,14 @@ def compute_dxy_alignment(
     """
     rationale_parts = []
 
-    # Detect if we're in streaming mode (missing 5M data entirely)
-    # Streaming mode: BOTH structure and 5M correlation are None (no 5M processor)
-    # Batch mode: May have neither (early bars) or both, but processes 5M data
-    streaming_mode = dxy_structure is None and dxy_corr_5m is None
-    
-    # 1. DXY structure matches direction (MANDATORY in batch, optional in streaming)
+    # 1. DXY structure matches direction (when available)
     # Longs → DXY LL/LH (bearish DXY structure = gold bullish)
     # Shorts → DXY HH/HL (bullish DXY structure = gold bearish)
     structure_aligned = False
     if dxy_structure is None:
-        if streaming_mode:
-            # Streaming mode: structure check is relaxed, will rely on correlation
-            structure_aligned = True  # Pass this check, rely on correlations
-            rationale_parts.append("DXY structure: N/A (streaming mode - relaxed)")
-        else:
-            # Batch mode but no structure detected yet (early bars or no swings)
-            rationale_parts.append("DXY structure: N/A (no swing detected)")
+        # Structure not available yet - will rely on correlation
+        structure_aligned = True
+        rationale_parts.append("DXY structure: N/A (relying on correlation)")
     elif trade_direction == "long" and dxy_structure in ["LL", "LH"]:
         structure_aligned = True
         rationale_parts.append(
@@ -84,67 +74,47 @@ def compute_dxy_alignment(
             f"DXY structure: {dxy_structure} (conflicts with {trade_direction})"
         )
 
-    # 2. No chop on 5M (MANDATORY in batch, optional in streaming)
+    # 2. No chop on 5M (when available)
     no_chop = not dxy_chop_5m
     if no_chop:
         rationale_parts.append("DXY 5M: trending (no chop)")
     else:
-        if not streaming_mode:
-            rationale_parts.append("DXY 5M: in chop (ranging)")
-        else:
-            # Streaming mode: 5M chop check unavailable, will rely on HTF correlation
-            rationale_parts.append("DXY 5M: N/A (streaming mode)")
-            no_chop = True  # Pass this check in streaming mode
+        rationale_parts.append("DXY 5M: in chop (ranging)")
 
-    # 3. Micro correlation inverse (MANDATORY with fallback for streaming)
-    # Batch mode: Both 1M and 5M must show inverse correlation < -0.3
-    # Streaming mode: 1M alone with stricter threshold OR HTF correlation as fallback
+    # 3. Correlation check - use best available correlation
+    # Priority: 5M > 1M > 15M
     micro_aligned = False
-    if dxy_corr_1m is not None and dxy_corr_5m is not None:
-        # Batch mode: both correlations available
-        if dxy_corr_1m < -0.3 and dxy_corr_5m < -0.3:
+    effective_corr = None
+    corr_source = None
+    
+    if dxy_corr_5m is not None:
+        effective_corr = dxy_corr_5m
+        corr_source = "5M"
+    elif dxy_corr_1m is not None:
+        effective_corr = dxy_corr_1m
+        corr_source = "1M"
+    elif dxy_corr_15m is not None:
+        effective_corr = dxy_corr_15m
+        corr_source = "15M"
+    
+    if effective_corr is not None:
+        # Require inverse correlation < -0.4
+        if effective_corr < -0.4:
             micro_aligned = True
             rationale_parts.append(
-                f"Micro corr: 1M={dxy_corr_1m:.2f}, 5M={dxy_corr_5m:.2f} (inverse)"
+                f"Correlation: {corr_source}={effective_corr:.2f} (inverse)"
             )
         else:
             rationale_parts.append(
-                (
-                    f"Micro corr: 1M={dxy_corr_1m:.2f}, "
-                    f"5M={dxy_corr_5m:.2f} (weak/positive)"
-                )
-            )
-    elif dxy_corr_1m is not None and streaming_mode:
-        # Streaming mode fallback: use 1M with stricter threshold
-        # OR use 15M as confirmation
-        if dxy_corr_1m < -0.4:
-            # Strong 1M correlation alone
-            micro_aligned = True
-            rationale_parts.append(
-                f"Micro corr: 1M={dxy_corr_1m:.2f} (strong inverse, streaming mode)"
-            )
-        elif dxy_corr_1m < -0.3 and dxy_corr_15m is not None and dxy_corr_15m < -0.3:
-            # Weaker 1M but confirmed by 15M
-            micro_aligned = True
-            rationale_parts.append(
-                f"Micro corr: 1M={dxy_corr_1m:.2f}, 15M={dxy_corr_15m:.2f} (confirmed, streaming mode)"
-            )
-        else:
-            rationale_parts.append(
-                f"Micro corr: 1M={dxy_corr_1m:.2f} (weak, streaming mode)"
+                f"Correlation: {corr_source}={effective_corr:.2f} (weak/positive)"
             )
     else:
-        rationale_parts.append("Micro corr: N/A (insufficient data)")
+        rationale_parts.append("Correlation: N/A (no data)")
 
-    # Final alignment: all three mandatory conditions must pass
+    # Final alignment: structure + no_chop + correlation
     is_aligned = structure_aligned and no_chop and micro_aligned
-    
-    # Log streaming mode usage for debugging
-    if streaming_mode and is_aligned:
-        logger.info("DXY alignment computed in streaming mode (relaxed criteria)")
 
-    # 4. HTF correlation (OPTIONAL, low weight)
-    # Only contributes to score if alignment is already established
+    # 4. HTF correlation bonus (only if already aligned)
     htf_score = 0.0
     if is_aligned:
         htf_parts = []

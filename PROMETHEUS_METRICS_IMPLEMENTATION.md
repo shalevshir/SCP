@@ -135,17 +135,31 @@ Scrape configuration for all 5 services (15s interval).
 
 ### Starting Prometheus
 
+**For local development (services running in terminal):**
 ```bash
-# Start infrastructure (includes Prometheus)
+# Start infrastructure only (uses prometheus.local.yml by default)
 cd infra
 docker-compose -f docker-compose.infra.yml up -d
 
-# Start services
-docker-compose -f docker-compose.infra.yml -f docker-compose.services.yml up -d
+# Then start your services in terminal
+cd ../services/feature-engine
+poetry run python -m feature_engine_svc.main
 
 # Access Prometheus UI
 open http://localhost:9090
 ```
+
+**For Docker-based deployment (all services in Docker):**
+```bash
+# Start infrastructure + services (automatically uses prometheus.yml)
+cd infra
+docker-compose -f docker-compose.infra.yml -f docker-compose.services.yml -f docker-compose.dev.yml up -d
+
+# Access Prometheus UI
+open http://localhost:9090
+```
+
+**Note:** `docker-compose.infra.yml` defaults to `prometheus.local.yml` (targets `host.docker.internal`) for local development. Environment overlays (services.yml, dev.yml, paper.yml, live.yml) automatically override to `prometheus.yml` (targets Docker service names).
 
 ### Querying Metrics
 

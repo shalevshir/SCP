@@ -43,3 +43,9 @@ services:
       SERVICE_MODE: replay
       BROKER_MODE: paper
       LOG_LEVEL: INFO
+
+  # Override Prometheus to scrape Docker service names (not host.docker.internal)
+  prometheus:
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus

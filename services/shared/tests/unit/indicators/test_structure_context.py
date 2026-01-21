@@ -108,6 +108,110 @@ class TestStructureContextTracker:
             # Next bars should preserve this value
             ctx_next = tracker.update(high=99.0, low=96.0, close=97.0)
             assert ctx_next.last_swing_high == swing_high
+    
+    def test_swing_hl_low_persists_across_subsequent_swings(self):
+        """Test that swing_hl_low persists after HL swing even when subsequent swings occur.
+        
+        Bug: swing_hl_low and swing_lh_high were only set when last_structure_label
+        was "HL" or "LH", causing them to become None after subsequent swings.
+        This broke SL Priority A calculation per SOP Section 3.2-3.3.
+        
+        Fix: Use persistent state (self.swing_hl_low, self.swing_lh_high) that is
+        set when HL/LH swings are detected and persists across subsequent swings.
+        """
+        tracker = StructureContextTracker(swing_window=2)
+        
+        # Create clear uptrend: swing lows should be rising (HL pattern)
+        # Pattern: Low at 95 → High at 102 → Low at 98 (HL) → High at 105
+        
+        # First swing low at 95
+        tracker.update(high=100.0, low=95.0, close=98.0)
+        tracker.update(high=102.0, low=98.0, close=101.0)
+        tracker.update(high=101.0, low=97.0, close=99.0)  # Swing low at 95
+        tracker.update(high=102.0, low=98.0, close=100.0)
+        tracker.update(high=103.0, low=99.0, close=102.0)
+        
+        # Second swing low at 98 (higher than 95 → HL)
+        tracker.update(high=102.0, low=98.0, close=100.0)
+        tracker.update(high=101.0, low=99.0, close=100.0)
+        tracker.update(high=100.0, low=98.0, close=99.0)  # Center: swing low at 98
+        tracker.update(high=101.0, low=99.0, close=100.0)
+        ctx_hl = tracker.update(high=102.0, low=100.0, close=101.0)
+        
+        # Find when HL is detected and capture swing_hl_low
+        swing_hl_low_value = None
+        for _ in range(20):  # Continue for several bars
+            ctx = tracker.update(high=103.0, low=100.0, close=102.0)
+            if ctx.swing_hl_low is not None:
+                swing_hl_low_value = ctx.swing_hl_low
+                break
+            ctx = tracker.update(high=104.0, low=101.0, close=103.0)
+            if ctx.swing_hl_low is not None:
+                swing_hl_low_value = ctx.swing_hl_low
+                break
+        
+        # Verify HL was detected
+        assert swing_hl_low_value is not None, "HL swing should have been detected"
+        
+        # Now create more swings and verify persistence
+        # Add 20 more bars to trigger additional swing detections
+        for i in range(20):
+            ctx = tracker.update(
+                high=105.0 + i * 0.5, 
+                low=102.0 + i * 0.5, 
+                close=104.0 + i * 0.5
+            )
+            # Critical test: swing_hl_low should persist throughout
+            assert ctx.swing_hl_low == swing_hl_low_value, \
+                f"swing_hl_low should persist (bar {i})"
+    
+    def test_swing_lh_high_persists_across_subsequent_swings(self):
+        """Test that swing_lh_high persists after LH swing even when subsequent swings occur."""
+        tracker = StructureContextTracker(swing_window=2)
+        
+        # Create clear downtrend: swing highs should be falling (LH pattern)
+        # Pattern: High at 105 → Low at 98 → High at 102 (LH) → Low at 95
+        
+        # First swing high at 105
+        tracker.update(high=105.0, low=100.0, close=103.0)
+        tracker.update(high=104.0, low=99.0, close=101.0)
+        tracker.update(high=103.0, low=98.0, close=100.0)  # Swing high at 105
+        tracker.update(high=102.0, low=97.0, close=99.0)
+        tracker.update(high=101.0, low=96.0, close=98.0)
+        
+        # Second swing high at 102 (lower than 105 → LH)
+        tracker.update(high=102.0, low=97.0, close=100.0)
+        tracker.update(high=103.0, low=98.0, close=101.0)
+        tracker.update(high=102.0, low=99.0, close=101.0)  # Center: swing high at 102/103
+        tracker.update(high=101.0, low=98.0, close=100.0)
+        ctx_lh = tracker.update(high=100.0, low=97.0, close=99.0)
+        
+        # Find when LH is detected and capture swing_lh_high
+        swing_lh_high_value = None
+        for _ in range(20):  # Continue for several bars
+            ctx = tracker.update(high=99.0, low=96.0, close=98.0)
+            if ctx.swing_lh_high is not None:
+                swing_lh_high_value = ctx.swing_lh_high
+                break
+            ctx = tracker.update(high=98.0, low=95.0, close=97.0)
+            if ctx.swing_lh_high is not None:
+                swing_lh_high_value = ctx.swing_lh_high
+                break
+        
+        # Verify LH was detected
+        assert swing_lh_high_value is not None, "LH swing should have been detected"
+        
+        # Now create more swings and verify persistence
+        # Add 20 more bars to trigger additional swing detections
+        for i in range(20):
+            ctx = tracker.update(
+                high=97.0 - i * 0.5, 
+                low=94.0 - i * 0.5, 
+                close=96.0 - i * 0.5
+            )
+            # Critical test: swing_lh_high should persist throughout
+            assert ctx.swing_lh_high == swing_lh_high_value, \
+                f"swing_lh_high should persist (bar {i})"
 
 
 class TestTrendDirection:

@@ -57,6 +57,8 @@ def load_session_config(config_path: str | None = None) -> SessionConfig:
 
     # Parse season-specific rules
     seasons_data = config_data.get("seasons", [])
+    if seasons_data is None:
+        seasons_data = []
     seasons = tuple(_parse_season_rule(season_data) for season_data in seasons_data)
 
     # Parse holidays

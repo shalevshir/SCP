@@ -62,18 +62,23 @@ class InvalidationChecker:
         ...         break
     """
 
-    def __init__(self, pdll_limit: float | None = None) -> None:
+    def __init__(self, pdll_limit: float | None = None, vwap_hold_confirm_bars: int = 2) -> None:
         """Initialize invalidation checker with empty state.
         
         Args:
             pdll_limit: Permitted Daily Loss Limit in points (optional).
                 If provided, enables PDLL breach detection in check_daily_risk_breach.
+            vwap_hold_confirm_bars: Number of consecutive bars required to confirm VWAP hold (default: 2).
+                Implements SOP Section 3.6 "Hold" definition.
         """
         self._trade_states: dict[str, dict[str, Any]] = {}
         # Track consecutive invalidation bars for FADE setups (2-bar confirmation)
         self._fade_invalidation_count: dict[str, int] = {}
         # Track consecutive DXY flip bars for VWAP_RECLAIM (3-bar persistence required)
         self._dxy_flip_count: dict[str, int] = {}
+        # Track consecutive VWAP invalidation bars for VWAP_RECLAIM (N-bar confirmation per SOP Section 3.6)
+        self._vwap_reclaim_invalidation_count: dict[str, int] = {}
+        self._vwap_hold_confirm_bars = vwap_hold_confirm_bars
         # Daily state for risk breach checking
         self._daily_state: dict[str, Any] = {
             "consecutive_losses": 0,
@@ -291,22 +296,43 @@ class InvalidationChecker:
 
         # Check VWAP invalidation - different logic for RECLAIM vs FADE
         if trade.setup_type == "VWAP_RECLAIM":
-            # Continuation setups: invalid if price moves against continuation
+            # RECLAIM setups require N CONSECUTIVE bars meeting invalidation criteria
+            # Implements SOP Section 3.6 "Hold" definition
+            trade_id = trade.trade_id
+            condition_met = False
+            
             if trade.direction == "long":
+                # Long reclaim: invalid if price closes below VWAP
                 if candle.close < vwap:
-                    reason = (
-                        f"VWAP invalidation: close {candle.close:.2f} < VWAP {vwap:.2f}"
-                    )
-                    logger.info(f"Trade {trade.trade_id} invalidated: {reason}")
-                    return True, reason
+                    condition_met = True
             else:  # short
+                # Short reclaim: invalid if price closes above VWAP
                 if candle.close > vwap:
+                    condition_met = True
+            
+            # Track consecutive bars meeting condition
+            if condition_met:
+                # Increment counter
+                current_count = self._vwap_reclaim_invalidation_count.get(trade_id, 0)
+                self._vwap_reclaim_invalidation_count[trade_id] = current_count + 1
+                
+                # Require N consecutive bars (configurable, default 2)
+                if self._vwap_reclaim_invalidation_count[trade_id] >= self._vwap_hold_confirm_bars:
                     reason = (
-                        f"VWAP invalidation: close {candle.close:.2f} > VWAP {vwap:.2f}"
+                        f"VWAP invalidation ({self._vwap_hold_confirm_bars}-bar confirmed): "
+                        f"close {candle.close:.2f} {'<' if trade.direction == 'long' else '>'} "
+                        f"VWAP {vwap:.2f}"
                     )
                     logger.info(f"Trade {trade.trade_id} invalidated: {reason}")
+                    # Clear counter after invalidation
+                    self._vwap_reclaim_invalidation_count[trade_id] = 0
                     return True, reason
-        else:  # VWAP_FADE
+            else:
+                # Condition NOT met - reset counter
+                if trade_id in self._vwap_reclaim_invalidation_count:
+                    self._vwap_reclaim_invalidation_count[trade_id] = 0
+        
+        elif trade.setup_type == "VWAP_FADE":
             # FADE setups require 2 CONSECUTIVE bars meeting invalidation criteria
             # AND require VWAP slope confirmation to prevent noise-based exits
             trade_id = trade.trade_id
@@ -894,12 +920,15 @@ class InvalidationChecker:
             del self._fade_invalidation_count[trade_id]
         if trade_id in self._dxy_flip_count:
             del self._dxy_flip_count[trade_id]
+        if trade_id in self._vwap_reclaim_invalidation_count:
+            del self._vwap_reclaim_invalidation_count[trade_id]
 
     def clear_all(self) -> None:
         """Clear all trade states."""
         self._trade_states.clear()
         self._fade_invalidation_count.clear()
         self._dxy_flip_count.clear()
+        self._vwap_reclaim_invalidation_count.clear()
     
     def reset_daily_state(self) -> None:
         """Reset daily state to initial values while preserving PDLL limit.

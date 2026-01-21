@@ -66,6 +66,13 @@ def htf_bias_message_to_htf_bias(msg: HTFBiasMessage) -> HTFBias:
         conflict_detected=msg.conflict_detected,
         conflict_reason=msg.conflict_reason,
         dxy_chop_detected=msg.dxy_chop_detected,
+        # DXY correlation and structure fields for DXY_CONTINUATION detection
+        dxy_corr_1m=msg.dxy_corr_1m,
+        dxy_corr_5m=msg.dxy_corr_5m,
+        dxy_corr_15m=msg.dxy_corr_15m,
+        dxy_corr_1h=msg.dxy_corr_1h,
+        dxy_structure=msg.dxy_structure,
+        dxy_chop_5m=msg.dxy_chop_5m,
     )
 
 
@@ -112,12 +119,155 @@ def features_message_to_series(msg: FeaturesMessage) -> pd.Series:
     })
 
 
-def signal_to_message(signal: Signal, features: FeaturesMessage) -> SignalMessage:
+def validate_tp_target(
+    direction: str,
+    entry_price: float,
+    sl_price: float,
+    features: FeaturesMessage,
+    min_rr: float = 3.0,
+) -> tuple[float | None, str | None]:
+    """Validate structural TP target exists at minimum R:R.
+    
+    Returns:
+        (tp_price, None) if valid target found
+        (None, rejection_reason) if no valid target
+    
+    Args:
+        direction: Trade direction ("long" or "short")
+        entry_price: Entry price
+        sl_price: Stop loss price
+        features: Features message containing target data
+        min_rr: Minimum R:R ratio (default: 3.0)
+    
+    Returns:
+        Tuple of (tp_price, rejection_reason)
+    """
+    # ========================================================================
+    # SOP CRITICAL: Validate SL placement BEFORE any R:R calculations
+    # ========================================================================
+    # Long trades: SL must be BELOW entry (sl_price < entry_price)
+    # This also catches zero-risk trades (sl_price == entry_price)
+    if direction == "long" and sl_price >= entry_price:
+        return None, "Invalid SL: long trade SL must be below entry"
+    
+    # Short trades: SL must be ABOVE entry (sl_price > entry_price)
+    # This also catches zero-risk trades (sl_price == entry_price)
+    if direction == "short" and sl_price <= entry_price:
+        return None, "Invalid SL: short trade SL must be above entry"
+    
+    # ========================================================================
+    # Compute risk distance (now safe after validation)
+    # ========================================================================
+    risk_distance = abs(entry_price - sl_price)
+    min_tp_distance = risk_distance * min_rr
+    
+    if direction == "long":
+        min_tp_price = entry_price + min_tp_distance
+        
+        # Check structural targets in priority order
+        candidates = [
+            ("nearest_liquidity", features.nearest_liquidity_long),
+            ("prior_session_high", features.prior_session_high),
+        ]
+        for target_name, target in candidates:
+            if target is not None and target >= min_tp_price:
+                return target, None
+        
+        # No valid target found
+        return None, f"No structural target at ≥{min_rr}R (min_tp={min_tp_price:.2f})"
+    
+    else:  # short
+        max_tp_price = entry_price - min_tp_distance
+        
+        candidates = [
+            ("nearest_liquidity", features.nearest_liquidity_short),
+            ("prior_session_low", features.prior_session_low),
+        ]
+        for target_name, target in candidates:
+            if target is not None and target <= max_tp_price:
+                return target, None
+        
+        return None, f"No structural target at ≥{min_rr}R (max_tp={max_tp_price:.2f})"
+
+
+def calculate_sl_price_vwap_reclaim(
+    direction: str,
+    entry_price: float,
+    features: FeaturesMessage,
+    sl_buffer_ticks: int = 30,
+    min_sl_ticks: int = 20,
+) -> float:
+    """Calculate SL using priority system per SOP for VWAP_RECLAIM.
+    
+    Priority A: Structure-based (HL/LH anchor)
+    Priority B: Reclaim candle extreme
+    Priority C: VWAP zone (last resort)
+    
+    Args:
+        direction: Trade direction ("long" or "short")
+        entry_price: Entry price
+        features: Features message containing structure and VWAP data
+        sl_buffer_ticks: Buffer in ticks (default: 30)
+        min_sl_ticks: Minimum SL distance in ticks (default: 20)
+    
+    Returns:
+        SL price
+    """
+    TICK_SIZE = 0.1
+    buffer = sl_buffer_ticks * TICK_SIZE
+    min_distance = min_sl_ticks * TICK_SIZE
+    
+    sl_price = None
+    
+    if direction == "long":
+        # Priority A: HL swing low
+        if features.swing_hl_low is not None:
+            sl_price = features.swing_hl_low - buffer
+        # Priority B: Reclaim candle low
+        elif features.reclaim_candle_low is not None:
+            sl_price = features.reclaim_candle_low - buffer
+        # Priority C: VWAP zone bottom
+        elif features.vwap is not None:
+            sl_price = features.vwap - buffer
+        
+        # Ensure minimum distance from entry
+        if sl_price is not None:
+            if entry_price - sl_price < min_distance:
+                sl_price = entry_price - min_distance
+    
+    else:  # short
+        # Priority A: LH swing high
+        if features.swing_lh_high is not None:
+            sl_price = features.swing_lh_high + buffer
+        # Priority B: Reclaim candle high
+        elif features.reclaim_candle_high is not None:
+            sl_price = features.reclaim_candle_high + buffer
+        # Priority C: VWAP zone top
+        elif features.vwap is not None:
+            sl_price = features.vwap + buffer
+        
+        # Ensure minimum distance from entry
+        if sl_price is not None:
+            if sl_price - entry_price < min_distance:
+                sl_price = entry_price + min_distance
+    
+    # Fallback if no valid SL method available
+    if sl_price is None:
+        if direction == "long":
+            sl_price = entry_price - min_distance
+        else:
+            sl_price = entry_price + min_distance
+    
+    return sl_price
+
+
+def signal_to_message(signal: Signal, features: FeaturesMessage, htf_bias: HTFBiasMessage) -> SignalMessage:
     """Convert Signal to SignalMessage.
     
     Args:
         signal: Signal object from score_signal
         features: Features message containing price data for entry/SL/TP calculation
+        htf_bias: HTF bias message containing alignment data
         
     Returns:
         SignalMessage for publishing
@@ -144,22 +294,15 @@ def signal_to_message(signal: Signal, features: FeaturesMessage) -> SignalMessag
     setup_type = signal.setup_type
     direction = signal.direction
     
-    if setup_type == "VWAP_RECLAIM" and features.vwap is not None:
-        # VWAP-zone SL: VWAP ± buffer ticks
-        buffer_amount = VWAP_SL_BUFFER_TICKS * TICK_SIZE_GC
-        if direction == "long":
-            sl_price = features.vwap - buffer_amount
-        else:  # short
-            sl_price = features.vwap + buffer_amount
-        
-        # Ensure minimum 20-tick distance from entry
-        risk_distance = abs(entry_price - sl_price)
-        risk_ticks = risk_distance / TICK_SIZE_GC
-        if risk_ticks < MIN_SL_TICKS_VWAP_RECLAIM:
-            if direction == "long":
-                sl_price = entry_price - (MIN_SL_TICKS_VWAP_RECLAIM * TICK_SIZE_GC)
-            else:
-                sl_price = entry_price + (MIN_SL_TICKS_VWAP_RECLAIM * TICK_SIZE_GC)
+    if setup_type == "VWAP_RECLAIM":
+        # Priority-based SL: Structure (HL/LH) -> Reclaim candle -> VWAP zone
+        sl_price = calculate_sl_price_vwap_reclaim(
+            direction=direction,
+            entry_price=entry_price,
+            features=features,
+            sl_buffer_ticks=VWAP_SL_BUFFER_TICKS,
+            min_sl_ticks=MIN_SL_TICKS_VWAP_RECLAIM,
+        )
     
     elif setup_type == "VWAP_FADE":
         # Fade: minimum 15-tick buffer
@@ -194,9 +337,13 @@ def signal_to_message(signal: Signal, features: FeaturesMessage) -> SignalMessag
     if month is None:
         month = signal.timestamp.month
     
-    # Get alignment flags from diagnostics or signal
-    htf_aligned = signal.diagnostics.get("htf_aligned", False)
-    dxy_aligned = signal.diagnostics.get("dxy_aligned", False)
+    # Get alignment flags from htf_bias message
+    # HTF aligned: signal direction matches HTF bias direction
+    # Map bias to direction: bullish -> long, bearish -> short
+    bias_direction_map = {"bullish": "long", "bearish": "short", "neutral": "neutral"}
+    htf_aligned = signal.direction == bias_direction_map.get(htf_bias.bias, "neutral")
+    # DXY aligned: direct field from HTF bias message
+    dxy_aligned = htf_bias.dxy_aligned
     
     # Determine R-multiple per SOP (from backtester/trade.py:671-688)
     if setup_type == "VWAP_FADE":
@@ -212,11 +359,28 @@ def signal_to_message(signal: Signal, features: FeaturesMessage) -> SignalMessag
         else:
             r_multiple = 3.0
     
-    # Calculate take profit: entry ± (risk_distance × R_multiple)
-    if direction == "long":
-        tp_price = entry_price + (risk_distance * r_multiple)
-    else:  # short
-        tp_price = entry_price - (risk_distance * r_multiple)
+    # TP Structural Target Validation (SOP Section 4.3)
+    # For VWAP_RECLAIM, validate structural target exists at minimum R:R
+    if setup_type == "VWAP_RECLAIM":
+        tp_price, rejection = validate_tp_target(
+            direction=direction,
+            entry_price=entry_price,
+            sl_price=sl_price,
+            features=features,
+            min_rr=r_multiple,
+        )
+        if rejection:
+            logger.info(f"VWAP_RECLAIM signal rejected: {rejection}")
+            # Return None to indicate signal rejection
+            # The caller (SignalEngine.generate) should handle this
+            raise ValueError(f"Signal rejected: {rejection}")
+    else:
+        # For non-VWAP_RECLAIM setups, use simple R-multiple calculation
+        # (TP validation not required for FADE/DXY_CONTINUATION per SOP)
+        if direction == "long":
+            tp_price = entry_price + (risk_distance * r_multiple)
+        else:  # short
+            tp_price = entry_price - (risk_distance * r_multiple)
     
     # Build factors dict from signal data
     # Include relevant signal metadata in factors for Execution service
@@ -333,8 +497,16 @@ class SignalEngine:
             )
             return None, "neutral_direction"
         
-        # Convert to message
-        signal_msg = signal_to_message(signal, features)
+        # Convert to message (may raise ValueError if TP validation fails)
+        try:
+            signal_msg = signal_to_message(signal, features, htf_bias)
+        except ValueError as e:
+            # TP validation failed - signal rejected
+            logger.info(
+                f"Signal rejected (TP validation): {signal.direction} {signal.setup_type} "
+                f"score={signal.score:.1f} - {str(e)}"
+            )
+            return None, "tp_validation"
         
         logger.info(
             f"A+ signal generated: {signal.direction} {signal.setup_type} "

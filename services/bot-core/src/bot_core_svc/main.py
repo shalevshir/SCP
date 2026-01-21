@@ -186,6 +186,7 @@ async def process_feature_message(
     # Increment bar counter
     warmup_bar_count += 1
     
+    
     # KILL SWITCH: Skip signal generation if killed
     if _is_killed:
         logger.debug(f"🚨 Kill switch active - skipping signal generation at {features.timestamp}")
@@ -275,6 +276,7 @@ async def process_feature_message(
         # METRIC: Update current setup type for trader dashboard
         setup_type_value = core_metrics.SETUP_TYPE_ENCODING.get(signal_msg.setup_type, 0.0)
         core_metrics.current_setup_type.labels(mode=mode, service=service).set(setup_type_value)
+        
     else:
         # Signal was rejected - record the specific reason
         # rejection_reason will be one of: "htf_validity", "confidence_filter", "neutral_direction"
@@ -283,6 +285,7 @@ async def process_feature_message(
         
         # METRIC: Clear setup type when no signal generated
         core_metrics.current_setup_type.labels(mode=mode, service=service).set(0.0)
+        
     
     return warmup_bar_count
 

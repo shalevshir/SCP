@@ -136,3 +136,9 @@ services:
       timeout: 10s
       retries: 3
       start_period: 10s
+
+  # Override Prometheus to scrape Docker service names (not host.docker.internal)
+  prometheus:
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus

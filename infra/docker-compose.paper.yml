@@ -63,3 +63,9 @@ services:
       LOG_LEVEL: INFO
     extra_hosts:
       - "host.docker.internal:host-gateway"
+
+  # Override Prometheus to scrape Docker service names (not host.docker.internal)
+  prometheus:
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus

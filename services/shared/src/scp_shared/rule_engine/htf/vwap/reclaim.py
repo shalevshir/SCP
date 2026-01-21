@@ -12,7 +12,7 @@ A valid VWAP_RECLAIM setup requires ALL of these components.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-
+from datetime import datetime, timezone
 import pandas as pd
 from scp_shared.common.logger import get_logger
 
@@ -313,48 +313,67 @@ def validate_reclaim_context(
         )
 
     # SAFETY CHECK 1: BOS or CHoCH alignment with trade direction
-    # This is a SAFETY gate - direction mismatch is a hard rejection
+    # Only reject when there's an EXPLICIT, RECENT directional conflict
+    # Allow through when:
+    # - BOS direction is unknown (None) - matches backtester where micro_bos was null
+    # - BOS is stale (old) - not relevant to current market structure
     if features is not None:
         bos_direction = features.get("bos_direction")
+        bos_recent = features.get("bos_recent", False)
+        bos_age = features.get("bos_age")
         choch_detected = features.get("choch_detected", False)
         choch_direction = features.get("choch_direction")
         
         direction = htf_bias.direction
         
+        # Determine if BOS is stale (>15 bars old) - stale BOS should not cause rejection
+        bos_is_stale = False
+        if bos_age is not None and not pd.isna(bos_age):
+            bos_is_stale = int(bos_age) > 15
+        
         logger.debug(
             f"VWAP_RECLAIM direction check: direction={direction}, "
-            f"bos_direction={bos_direction}, choch={choch_detected}, choch_dir={choch_direction}"
+            f"bos_direction={bos_direction}, bos_recent={bos_recent}, bos_age={bos_age}, "
+            f"bos_stale={bos_is_stale}, choch={choch_detected}, choch_dir={choch_direction}"
         )
         
-        # Either BOS or CHoCH should align with trade direction
+        # Only reject if there's an EXPLICIT directional conflict AND BOS is recent
+        # None/unknown BOS direction is allowed (matches backtester where micro_bos was null)
+        # Stale BOS is also allowed through (not relevant to current setup)
         if direction == "long":
-            has_bullish_signal = (bos_direction == "bullish") or (
-                choch_detected and choch_direction == "bullish"
+            # Reject only if BOS is explicitly bearish AND recent AND no bullish CHoCH
+            has_bearish_conflict = (
+                bos_direction == "bearish" 
+                and not bos_is_stale  # Only reject if BOS is recent
+                and not (choch_detected and choch_direction == "bullish")
             )
-            if not has_bullish_signal:
+            if has_bearish_conflict:
                 logger.debug(
-                    f"VWAP_RECLAIM SAFETY REJECT: no bullish BOS/CHoCH for long reclaim"
+                    f"VWAP_RECLAIM SAFETY REJECT: recent bearish BOS conflicts with long reclaim"
                 )
                 return ReclaimContextResult(
                     context_valid=False,
-                    reason=f"SAFETY: No bullish BOS/CHoCH for long reclaim "
-                    f"(bos={bos_direction}, choch={choch_direction})",
+                    reason=f"SAFETY: Recent bearish BOS conflicts with long reclaim "
+                    f"(bos={bos_direction}, age={bos_age}, choch={choch_direction})",
                     sweep_detected=sweep_detected,
                     structure_clarity=structure_clarity,
                     quality_flags=quality_flags,
                 )
         elif direction == "short":
-            has_bearish_signal = (bos_direction == "bearish") or (
-                choch_detected and choch_direction == "bearish"
+            # Reject only if BOS is explicitly bullish AND recent AND no bearish CHoCH
+            has_bullish_conflict = (
+                bos_direction == "bullish"
+                and not bos_is_stale  # Only reject if BOS is recent
+                and not (choch_detected and choch_direction == "bearish")
             )
-            if not has_bearish_signal:
+            if has_bullish_conflict:
                 logger.debug(
-                    f"VWAP_RECLAIM SAFETY REJECT: no bearish BOS/CHoCH for short reclaim"
+                    f"VWAP_RECLAIM SAFETY REJECT: recent bullish BOS conflicts with short reclaim"
                 )
                 return ReclaimContextResult(
                     context_valid=False,
-                    reason=f"SAFETY: No bearish BOS/CHoCH for short reclaim "
-                    f"(bos={bos_direction}, choch={choch_direction})",
+                    reason=f"SAFETY: Recent bullish BOS conflicts with short reclaim "
+                    f"(bos={bos_direction}, age={bos_age}, choch={choch_direction})",
                     sweep_detected=sweep_detected,
                     structure_clarity=structure_clarity,
                     quality_flags=quality_flags,
@@ -742,6 +761,8 @@ def validate_reclaim_prerequisites(
     # Enhanced checks if features are provided
     if features is not None:
         # Check 4: BOS or CHoCH alignment with trade direction
+        # Only reject when there's an EXPLICIT directional conflict
+        # Allow through when BOS direction is unknown (None) - matches backtester behavior
         bos_direction = features.get("bos_direction")
         choch_detected = features.get("choch_detected", False)
         choch_direction = features.get("choch_direction")
@@ -753,31 +774,32 @@ def validate_reclaim_prerequisites(
             f"bos_direction={bos_direction}, choch={choch_detected}, choch_dir={choch_direction}"
         )
 
-        # Either BOS or CHoCH should align with trade direction
+        # Only reject if there's an EXPLICIT directional conflict
+        # None/unknown BOS direction is allowed (matches backtester where micro_bos was null)
         if direction == "long":
-            has_bullish_signal = (bos_direction == "bullish") or (
+            has_bearish_conflict = (bos_direction == "bearish") and not (
                 choch_detected and choch_direction == "bullish"
             )
-            if not has_bullish_signal:
+            if has_bearish_conflict:
                 logger.debug(
-                    f"VWAP_RECLAIM rejected: no bullish BOS/CHoCH for long reclaim"
+                    f"VWAP_RECLAIM rejected: bearish BOS conflicts with long reclaim"
                 )
                 return (
                     False,
-                    f"No bullish BOS/CHoCH for long reclaim "
+                    f"Bearish BOS conflicts with long reclaim "
                     f"(bos={bos_direction}, choch={choch_direction})",
                 )
         elif direction == "short":
-            has_bearish_signal = (bos_direction == "bearish") or (
+            has_bullish_conflict = (bos_direction == "bullish") and not (
                 choch_detected and choch_direction == "bearish"
             )
-            if not has_bearish_signal:
+            if has_bullish_conflict:
                 logger.debug(
-                    f"VWAP_RECLAIM rejected: no bearish BOS/CHoCH for short reclaim"
+                    f"VWAP_RECLAIM rejected: bullish BOS conflicts with short reclaim"
                 )
                 return (
                     False,
-                    f"No bearish BOS/CHoCH for short reclaim "
+                    f"Bullish BOS conflicts with short reclaim "
                     f"(bos={bos_direction}, choch={choch_direction})",
                 )
 

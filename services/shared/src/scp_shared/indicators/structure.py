@@ -103,6 +103,14 @@ class StructureContext:
     sweep_direction: str | None = None  # "bullish" or "bearish"
     sweep_price: float | None = None
     sweep_age: int | None = None
+    
+    # SL Priority System (SOP Section 3.2-3.3)
+    swing_hl_low: float | None = None  # Low of most recent HL swing (for long SL Priority A)
+    swing_lh_high: float | None = None  # High of most recent LH swing (for short SL Priority A)
+    
+    # TP Structural Targets (SOP Section 4.3)
+    nearest_swing_high_above: float | None = None  # Nearest swing high above current price (for long TP)
+    nearest_swing_low_below: float | None = None  # Nearest swing low below current price (for short TP)
 
 
 class StructureContextTracker:
@@ -195,6 +203,17 @@ class StructureContextTracker:
         self.vwap_buffer: deque[float] = deque(maxlen=20)  # Track recent VWAP values
         self.close_buffer_vwap: deque[float] = deque(maxlen=20)  # Track recent closes
         self.volume_buffer: deque[float] = deque(maxlen=20)  # Track recent volume
+        
+        # SL Priority System: Track reclaim candle OHLC (SOP Section 3.2-3.3 Priority B)
+        self.reclaim_candle_high: float | None = None
+        self.reclaim_candle_low: float | None = None
+        self.reclaim_candle_open: float | None = None
+        self.reclaim_candle_close: float | None = None
+        
+        # SL Priority System: Persistent tracking of HL/LH swing extremes (SOP Section 3.2-3.3 Priority A)
+        # These persist across subsequent swings to ensure SL Priority A remains available
+        self.swing_hl_low: float | None = None  # Low of most recent HL swing
+        self.swing_lh_high: float | None = None  # High of most recent LH swing
 
         # VWAP reclaim state machine (Sprint 1: Foundation + Visibility)
         self.vwap_reclaim_sm = VWAPReclaimStateMachine(max_confirm_window=10)
@@ -202,13 +221,14 @@ class StructureContextTracker:
         # Bar counter
         self.bar_count = 0
 
-    def update(self, high: float, low: float, close: float) -> StructureContext:
+    def update(self, high: float, low: float, close: float, open: float | None = None) -> StructureContext:
         """Update with new candle and return derived context.
 
         Args:
             high: Candle high price
             low: Candle low price
             close: Candle close price (for future use)
+            open: Candle open price (optional, for reclaim candle tracking)
 
         Returns:
             StructureContext with all derived fields populated
@@ -272,12 +292,18 @@ class StructureContextTracker:
                 # Append to swing high indices list and store value
                 self.swing_high_indices.append(self.last_swing_high_idx)
                 self.swing_high_values[self.last_swing_high_idx] = self.last_swing_high
+                # SL Priority A: Track LH swing high for short SL
+                if new_label == "LH":
+                    self.swing_lh_high = self.last_swing_high
             elif new_label in ["HL", "LL"]:
                 self.last_swing_low_idx = self.bar_count - self.swing_window
                 self.last_swing_low = self.low_buffer[self.swing_window]
                 # Append to swing low indices list and store value
                 self.swing_low_indices.append(self.last_swing_low_idx)
                 self.swing_low_values[self.last_swing_low_idx] = self.last_swing_low
+                # SL Priority A: Track HL swing low for long SL
+                if new_label == "HL":
+                    self.swing_hl_low = self.last_swing_low
 
         # Compute derived metrics (using CURRENT label_history after new swing added)
         trend_direction, trend_confidence = self._compute_trend()
@@ -350,6 +376,31 @@ class StructureContextTracker:
             if self.last_sweep_idx is None
             else (self.bar_count - self.last_sweep_idx)
         )
+        
+        # TP Structural Targets: Find nearest swing extremes (SOP Section 4.3)
+        # Nearest swing high above current price (for long TP)
+        nearest_swing_high_above = None
+        if len(self.swing_high_indices) > 0:
+            # Get all swing highs above current close
+            swing_highs_above = [
+                self.swing_high_values[idx]
+                for idx in self.swing_high_indices
+                if self.swing_high_values.get(idx, 0) > close
+            ]
+            if swing_highs_above:
+                nearest_swing_high_above = min(swing_highs_above)
+        
+        # Nearest swing low below current price (for short TP)
+        nearest_swing_low_below = None
+        if len(self.swing_low_indices) > 0:
+            # Get all swing lows below current close
+            swing_lows_below = [
+                self.swing_low_values[idx]
+                for idx in self.swing_low_indices
+                if self.swing_low_values.get(idx, float('inf')) < close
+            ]
+            if swing_lows_below:
+                nearest_swing_low_below = max(swing_lows_below)
 
         return StructureContext(
             last_structure_label=self.last_structure_label,
@@ -377,6 +428,12 @@ class StructureContextTracker:
             sweep_direction=self.last_sweep_direction if sweep_detected else None,
             sweep_price=self.last_sweep_price if sweep_detected else None,
             sweep_age=sweep_age,
+            # SL Priority System fields (persistent, not reset by subsequent swings)
+            swing_hl_low=self.swing_hl_low,
+            swing_lh_high=self.swing_lh_high,
+            # TP Structural Target fields
+            nearest_swing_high_above=nearest_swing_high_above,
+            nearest_swing_low_below=nearest_swing_low_below,
         )
 
     def detect_expansion(self, bos_recency_threshold: int = 10) -> tuple[bool, list[str]]:
@@ -476,7 +533,7 @@ class StructureContextTracker:
         expansion_detected = len(reasons) > 0
         return expansion_detected, reasons
 
-    def update_vwap_state(self, vwap: float, close: float) -> None:
+    def update_vwap_state(self, vwap: float, close: float, high: float | None = None, low: float | None = None, open: float | None = None) -> None:
         """Update VWAP tracking state and detect VWAP crosses.
 
         Tracks when price crosses above/below VWAP for second confirmation logic.
@@ -485,6 +542,9 @@ class StructureContextTracker:
         Args:
             vwap: Current VWAP value
             close: Current close price
+            high: Current high price (optional, for reclaim candle tracking)
+            low: Current low price (optional, for reclaim candle tracking)
+            open: Current open price (optional, for reclaim candle tracking)
         """
         # Track previous state before updating buffers
         prev_close = self.close_buffer_vwap[-1] if self.close_buffer_vwap else None
@@ -505,6 +565,12 @@ class StructureContextTracker:
             if was_below and is_above:
                 self.vwap_reclaim_bar_idx = self.bar_count - 1  # Current bar index
                 self.vwap_reclaim_direction = "above"
+                # SL Priority System: Store reclaim candle OHLC (SOP Section 3.2-3.3 Priority B)
+                if high is not None and low is not None and open is not None:
+                    self.reclaim_candle_high = high
+                    self.reclaim_candle_low = low
+                    self.reclaim_candle_open = open
+                    self.reclaim_candle_close = close
                 # Trigger state machine: reclaim detected
                 self.vwap_reclaim_sm.on_reclaim_detected(
                     bar_idx=self.bar_count - 1,
@@ -515,6 +581,12 @@ class StructureContextTracker:
             elif was_above and is_below:
                 self.vwap_reclaim_bar_idx = self.bar_count - 1  # Current bar index
                 self.vwap_reclaim_direction = "below"
+                # SL Priority System: Store reclaim candle OHLC (SOP Section 3.2-3.3 Priority B)
+                if high is not None and low is not None and open is not None:
+                    self.reclaim_candle_high = high
+                    self.reclaim_candle_low = low
+                    self.reclaim_candle_open = open
+                    self.reclaim_candle_close = close
                 # Trigger state machine: reclaim detected
                 self.vwap_reclaim_sm.on_reclaim_detected(
                     bar_idx=self.bar_count - 1,

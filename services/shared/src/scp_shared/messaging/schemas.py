@@ -98,6 +98,19 @@ class FeaturesMessage(BaseModel):
     liquidity_sweep: bool | None = Field(default=None, description="Whether liquidity sweep detected")
     sweep_age: int | None = Field(default=None, description="Age of most recent sweep in bars")
     
+    # SL Priority System fields (SOP Section 3.2-3.3)
+    swing_hl_low: float | None = Field(default=None, description="Low of most recent HL swing (for long SL Priority A)")
+    swing_lh_high: float | None = Field(default=None, description="High of most recent LH swing (for short SL Priority A)")
+    reclaim_candle_low: float | None = Field(default=None, description="Low of reclaim candle (for long SL Priority B)")
+    reclaim_candle_high: float | None = Field(default=None, description="High of reclaim candle (for short SL Priority B)")
+    reclaim_candle_idx: int | None = Field(default=None, description="Bar index of reclaim candle")
+    
+    # TP Structural Target fields (SOP Section 4.3)
+    nearest_liquidity_long: float | None = Field(default=None, description="Nearest swing high above (for long TP)")
+    nearest_liquidity_short: float | None = Field(default=None, description="Nearest swing low below (for short TP)")
+    prior_session_high: float | None = Field(default=None, description="Previous session high")
+    prior_session_low: float | None = Field(default=None, description="Previous session low")
+    
     # Expansion gate fields
     expansion_detected: bool = Field(default=False, description="VWAP_RECLAIM expansion detected")
     expansion_reasons: list[str] = Field(default_factory=list, description="Expansion detection reasons")
@@ -177,6 +190,26 @@ class HTFBiasMessage(BaseModel):
     )
     dxy_chop_detected: bool = Field(
         default=False, description="DXY chop detected on 1H"
+    )
+    
+    # DXY correlation and structure fields required for DXY_CONTINUATION detection
+    dxy_corr_1m: float | None = Field(
+        default=None, description="DXY 1M micro correlation (5-bar window)"
+    )
+    dxy_corr_5m: float | None = Field(
+        default=None, description="DXY 5M micro correlation (5-bar window)"
+    )
+    dxy_corr_15m: float | None = Field(
+        default=None, description="DXY 15M correlation"
+    )
+    dxy_corr_1h: float | None = Field(
+        default=None, description="DXY 1H correlation"
+    )
+    dxy_structure: str | None = Field(
+        default=None, description="DXY structure label (HH/HL/LH/LL)"
+    )
+    dxy_chop_5m: bool = Field(
+        default=False, description="DXY chop detected on 5M"
     )
 
     class Config:

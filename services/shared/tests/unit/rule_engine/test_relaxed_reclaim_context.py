@@ -51,7 +51,7 @@ class TestRelaxedReclaimContext:
         
         assert result.context_valid is False
         assert "SAFETY" in result.reason
-        assert "bullish BOS/CHoCH" in result.reason
+        assert "bearish BOS conflicts with long reclaim" in result.reason
 
     def test_safety_gate_structure_conflict_rejects(self):
         """Structure conflict flag should still hard reject (SAFETY)."""
