@@ -108,9 +108,14 @@ class StructureContext:
     swing_hl_low: float | None = None  # Low of most recent HL swing (for long SL Priority A)
     swing_lh_high: float | None = None  # High of most recent LH swing (for short SL Priority A)
     
-    # TP Structural Targets (SOP Section 4.3)
-    nearest_swing_high_above: float | None = None  # Nearest swing high above current price (for long TP)
-    nearest_swing_low_below: float | None = None  # Nearest swing low below current price (for short TP)
+    # TP Structural Targets (SOP Section 4.3 - 1m timeframe fields only)
+    # NOTE: HTF targets (htf_range, untouched_liquidity, FVGs) are computed by HTF Bias Service
+    immediate_resistance: float | None = None  # Immediate 1m resistance level (blocks long TPs)
+    immediate_support: float | None = None  # Immediate 1m support level (blocks short TPs)
+    nearest_swing_high_above: float | None = None  # Nearest 1m swing high above (fallback for long TP)
+    nearest_swing_low_below: float | None = None  # Nearest 1m swing low below (fallback for short TP)
+    prior_session_high: float | None = None  # Previous session high
+    prior_session_low: float | None = None  # Previous session low
 
 
 class StructureContextTracker:
@@ -377,8 +382,12 @@ class StructureContextTracker:
             else (self.bar_count - self.last_sweep_idx)
         )
         
-        # TP Structural Targets: Find nearest swing extremes (SOP Section 4.3)
-        # Nearest swing high above current price (for long TP)
+        # ====================================================================
+        # TP Structural Targets: 1m timeframe only
+        # (HTF targets computed by HTF Bias Service)
+        # ====================================================================
+        
+        # 1m swing targets (fallback, lowest priority in TP hierarchy)
         nearest_swing_high_above = None
         if len(self.swing_high_indices) > 0:
             # Get all swing highs above current close
@@ -390,7 +399,6 @@ class StructureContextTracker:
             if swing_highs_above:
                 nearest_swing_high_above = min(swing_highs_above)
         
-        # Nearest swing low below current price (for short TP)
         nearest_swing_low_below = None
         if len(self.swing_low_indices) > 0:
             # Get all swing lows below current close
@@ -401,6 +409,16 @@ class StructureContextTracker:
             ]
             if swing_lows_below:
                 nearest_swing_low_below = max(swing_lows_below)
+        
+        # Immediate resistance/support (nearest 1m swing as approximation)
+        # TODO: Refine based on actual R distance calculation
+        immediate_resistance = nearest_swing_high_above
+        immediate_support = nearest_swing_low_below
+        
+        # Prior session high/low tracking
+        # TODO: Track actual session boundaries and persist session extremes
+        prior_session_high = None
+        prior_session_low = None
 
         return StructureContext(
             last_structure_label=self.last_structure_label,
@@ -431,9 +449,13 @@ class StructureContextTracker:
             # SL Priority System fields (persistent, not reset by subsequent swings)
             swing_hl_low=self.swing_hl_low,
             swing_lh_high=self.swing_lh_high,
-            # TP Structural Target fields
+            # TP Structural Target fields (SOP Section 4.3 - 1m timeframe only)
+            immediate_resistance=immediate_resistance,
+            immediate_support=immediate_support,
             nearest_swing_high_above=nearest_swing_high_above,
             nearest_swing_low_below=nearest_swing_low_below,
+            prior_session_high=prior_session_high,
+            prior_session_low=prior_session_low,
         )
 
     def detect_expansion(self, bos_recency_threshold: int = 10) -> tuple[bool, list[str]]:
