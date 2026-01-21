@@ -552,3 +552,59 @@ class TestFindOpposingFVGs:
         # Filled FVG shouldn't block
         assert result["opposing_fvg_high"] is None
         assert result["opposing_fvg_low"] is None
+
+    def test_fvg_extending_beyond_tp_still_blocks_long(self) -> None:
+        """Test that FVG starting in path but extending beyond TP still blocks.
+        
+        Setup: Bearish FVG at 2660-2750, entry 2650, TP 2700
+        The FVG starts in the path (2660 > 2650) but extends past TP (2750 > 2700).
+        Expected: Should detect as blocking because fvg_low is in the path.
+        
+        Bug fix: Previously used `fvg_high < tp_price` which required the FVG
+        to be fully contained. Now uses `fvg_low < tp_price` to detect any FVG
+        whose lower boundary is in the path.
+        """
+        fvg_df = pd.DataFrame({
+            "fvg_index": [5],
+            "fvg_type": ["bearish"],
+            "fvg_high": [2750.0],  # Extends beyond TP
+            "fvg_low": [2660.0],   # Starts above entry, below TP
+            "filled": [False],
+        })
+        current_price = 2650.0
+        tp_price = 2700.0
+        direction = "long"
+
+        result = find_opposing_fvgs(fvg_df, current_price, tp_price, direction)
+
+        # FVG starts in path (2660 between 2650 and 2700), should block
+        assert result["opposing_fvg_high"] == 2750.0
+        assert result["opposing_fvg_low"] == 2660.0
+
+    def test_fvg_extending_beyond_tp_still_blocks_short(self) -> None:
+        """Test that FVG starting in path but extending beyond TP still blocks shorts.
+        
+        Setup: Bullish FVG at 2550-2640, entry 2650, TP 2600
+        The FVG's high is in the path (2640 < 2650) but extends past TP (2550 < 2600).
+        Expected: Should detect as blocking because fvg_high is in the path.
+        
+        Bug fix: Previously used `fvg_low > tp_price` which required the FVG
+        to be fully contained. Now uses `fvg_high > tp_price` to detect any FVG
+        whose upper boundary is in the path.
+        """
+        fvg_df = pd.DataFrame({
+            "fvg_index": [5],
+            "fvg_type": ["bullish"],
+            "fvg_high": [2640.0],  # Below entry, above TP - in the path
+            "fvg_low": [2550.0],   # Extends beyond TP
+            "filled": [False],
+        })
+        current_price = 2650.0
+        tp_price = 2600.0
+        direction = "short"
+
+        result = find_opposing_fvgs(fvg_df, current_price, tp_price, direction)
+
+        # FVG high is in path (2640 between 2600 and 2650), should block
+        assert result["opposing_fvg_bullish_high"] == 2640.0
+        assert result["opposing_fvg_bullish_low"] == 2550.0

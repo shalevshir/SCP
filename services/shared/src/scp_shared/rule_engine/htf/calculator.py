@@ -940,36 +940,47 @@ def compute_htf_bias(
 
                 # 8c. Find nearest FVG targets (requires FVG detection from step 4)
                 if fvg_df is not None and len(fvg_df) > 0:
-                    # Use original_direction for FVG targeting
-                    direction = "long" if original_bias == "bullish" else "short"
-                    nearest_fvg_high, nearest_fvg_low = find_nearest_fvg_targets(
-                        fvg_df, current_price, direction
+                    # Find FVG targets for BOTH directions to support TP safety checks
+                    # regardless of final trade direction (especially important for neutral bias)
+                    nearest_fvg_high_long, _ = find_nearest_fvg_targets(
+                        fvg_df, current_price, "long"
                     )
+                    _, nearest_fvg_low_short = find_nearest_fvg_targets(
+                        fvg_df, current_price, "short"
+                    )
+                    # Use direction-appropriate values for the final output
+                    nearest_fvg_high = nearest_fvg_high_long
+                    nearest_fvg_low = nearest_fvg_low_short
 
-                    # 8d. Find opposing FVGs (needs a potential TP to check path)
-                    # Use highest priority target as potential TP for obstacle detection
-                    potential_tp = None
-                    if direction == "long":
-                        potential_tp = (
-                            untouched_liquidity_high
-                            or htf_range_high
-                            or nearest_fvg_high
+                    # 8d. Find opposing FVGs for BOTH directions
+                    # This ensures TP safety checks work regardless of which direction
+                    # a trade ultimately triggers (critical for neutral bias cases)
+                    
+                    # Long direction: find bearish FVGs that would block long TPs
+                    potential_tp_long = (
+                        untouched_liquidity_high
+                        or htf_range_high
+                        or nearest_fvg_high_long
+                    )
+                    if potential_tp_long is not None:
+                        opposing_fvgs_long = find_opposing_fvgs(
+                            fvg_df, current_price, potential_tp_long, "long"
                         )
-                    else:
-                        potential_tp = (
-                            untouched_liquidity_low
-                            or htf_range_low
-                            or nearest_fvg_low
+                        opposing_fvg_high = opposing_fvgs_long.get("opposing_fvg_high")
+                        opposing_fvg_low = opposing_fvgs_long.get("opposing_fvg_low")
+                    
+                    # Short direction: find bullish FVGs that would block short TPs
+                    potential_tp_short = (
+                        untouched_liquidity_low
+                        or htf_range_low
+                        or nearest_fvg_low_short
+                    )
+                    if potential_tp_short is not None:
+                        opposing_fvgs_short = find_opposing_fvgs(
+                            fvg_df, current_price, potential_tp_short, "short"
                         )
-
-                    if potential_tp is not None:
-                        opposing_fvgs = find_opposing_fvgs(
-                            fvg_df, current_price, potential_tp, direction
-                        )
-                        opposing_fvg_high = opposing_fvgs.get("opposing_fvg_high")
-                        opposing_fvg_low = opposing_fvgs.get("opposing_fvg_low")
-                        opposing_fvg_bullish_high = opposing_fvgs.get("opposing_fvg_bullish_high")
-                        opposing_fvg_bullish_low = opposing_fvgs.get("opposing_fvg_bullish_low")
+                        opposing_fvg_bullish_high = opposing_fvgs_short.get("opposing_fvg_bullish_high")
+                        opposing_fvg_bullish_low = opposing_fvgs_short.get("opposing_fvg_bullish_low")
 
                 logger.debug(
                     f"HTF Targets: range_high={htf_range_high}, "

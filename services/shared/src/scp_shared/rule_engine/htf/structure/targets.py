@@ -332,10 +332,12 @@ def find_opposing_fvgs(
 
     Logic:
         For longs (current_price < tp_price):
-        - Find bearish FVGs with fvg_low between current_price and tp_price
+        - Find bearish FVGs where fvg_low is between entry and TP
+        - Even if fvg_high extends beyond TP, the FVG blocks if it starts in path
         
         For shorts (current_price > tp_price):
-        - Find bullish FVGs with fvg_high between tp_price and current_price
+        - Find bullish FVGs where fvg_high is between TP and entry
+        - Even if fvg_low extends beyond TP, the FVG blocks if its top is in path
 
     Example:
         >>> fvg_df = pd.DataFrame({
@@ -375,10 +377,13 @@ def find_opposing_fvgs(
     # For longs: find bearish FVGs in the path
     if direction == "long":
         # Path is from current_price to tp_price (upward)
+        # An FVG blocks if its lower boundary (fvg_low) is in the path:
+        # - fvg_low > current_price: FVG starts above entry
+        # - fvg_low < tp_price: FVG starts before TP (even if it extends beyond)
         blocking_fvgs = unfilled_fvgs[
             (unfilled_fvgs["fvg_type"] == "bearish")
             & (unfilled_fvgs["fvg_low"] > current_price)
-            & (unfilled_fvgs["fvg_high"] < tp_price)
+            & (unfilled_fvgs["fvg_low"] < tp_price)
         ]
 
         if len(blocking_fvgs) > 0:
@@ -390,10 +395,13 @@ def find_opposing_fvgs(
     # For shorts: find bullish FVGs in the path
     elif direction == "short":
         # Path is from current_price to tp_price (downward)
+        # An FVG blocks if its upper boundary (fvg_high) is in the path:
+        # - fvg_high < current_price: FVG's top is below entry
+        # - fvg_high > tp_price: FVG's top is above TP (even if it extends beyond)
         blocking_fvgs = unfilled_fvgs[
             (unfilled_fvgs["fvg_type"] == "bullish")
             & (unfilled_fvgs["fvg_high"] < current_price)
-            & (unfilled_fvgs["fvg_low"] > tp_price)
+            & (unfilled_fvgs["fvg_high"] > tp_price)
         ]
 
         if len(blocking_fvgs) > 0:
