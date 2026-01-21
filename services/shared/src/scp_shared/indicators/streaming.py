@@ -351,6 +351,15 @@ class StreamingFeatureProcessor:
             features["dxy_corr_micro"] = None
 
         # === 6. Structure Context (continuous state with derived fields) ===
+        
+        # CRITICAL: Update session state BEFORE update() to ensure prior_session_high/low
+        # are current in the returned StructureContext at session boundaries
+        self.structure_tracker.update_session_state(
+            timestamp=gc_bar.timestamp,
+            high=gc_bar.high,
+            low=gc_bar.low,
+        )
+        
         # Update GC structure tracker
         gc_structure_ctx = self.structure_tracker.update(
             high=gc_bar.high,

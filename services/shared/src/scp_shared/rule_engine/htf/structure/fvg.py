@@ -40,22 +40,25 @@ def detect_fvg(df: pd.DataFrame) -> pd.DataFrame:
     Logic:
         Bullish FVG (gap up):
         - candle_1.high < candle_3.low (gap exists between 1 and 3)
-        - candle_2.high < candle_3.low (candle 2 doesn't fill from above)
-        - candle_2.low > candle_1.high (candle 2 doesn't fill from below)
+        - FVG range: [candle_1.high, candle_3.low]
 
         Bearish FVG (gap down):
         - candle_1.low > candle_3.high (gap exists between 1 and 3)
-        - candle_2.low > candle_3.high (candle 2 doesn't fill from below)
-        - candle_2.high < candle_1.low (candle 2 doesn't fill from above)
+        - FVG range: [candle_3.high, candle_1.low]
+        
+        Note: Candle 2 position doesn't affect detection - FVG is defined by the
+        imbalance between candle 1 and candle 3 only (standard ICT-style definition).
 
     Example:
         >>> df = pd.DataFrame({
-        ...     'high': [100, 101, 105],
-        ...     'low': [98, 100.5, 103]
+        ...     'high': [100, 102, 105],
+        ...     'low': [98, 99, 103]
         ... })
         >>> fvg_df = detect_fvg(df)
         >>> fvg_df.iloc[0]['fvg_type']
         'bullish'
+        >>> fvg_df.iloc[0]['fvg_low'], fvg_df.iloc[0]['fvg_high']
+        (100.0, 103.0)  # Gap between candle 1 high (100) and candle 3 low (103)
     """
     # Validate required columns
     required_cols = {"high", "low"}
@@ -94,40 +97,32 @@ def detect_fvg(df: pd.DataFrame) -> pd.DataFrame:
         candle_3_low = df["low"].iloc[i]
 
         # Check for Bullish FVG (gap up)
-        # Gap must exist: candle_1.high < candle_3.low
+        # Standard definition: gap exists between candle_1.high and candle_3.low
         if candle_1_high < candle_3_low:
-            # Candle 2 must NOT overlap the gap
-            # - Candle 2 high must be below candle 3 low (stays below the gap)
-            # - Candle 2 low must be above candle 1 high (stays above the gap)
-            if candle_2_high < candle_3_low and candle_2_low > candle_1_high:
-                fvgs.append(
-                    {
-                        "fvg_index": i,
-                        "fvg_type": "bullish",
-                        "fvg_high": candle_3_low,  # Top of gap
-                        "fvg_low": candle_1_high,  # Bottom of gap
-                        "filled": False,
-                        "fill_index": None,
-                    }
-                )
+            fvgs.append(
+                {
+                    "fvg_index": i,
+                    "fvg_type": "bullish",
+                    "fvg_high": candle_3_low,  # Top of gap
+                    "fvg_low": candle_1_high,  # Bottom of gap
+                    "filled": False,
+                    "fill_index": None,
+                }
+            )
 
         # Check for Bearish FVG (gap down)
-        # Gap must exist: candle_1.low > candle_3.high
+        # Standard definition: gap exists between candle_3.high and candle_1.low
         elif candle_1_low > candle_3_high:
-            # Candle 2 must NOT overlap the gap
-            # - Candle 2 low must be above candle 3 high (stays above the gap)
-            # - Candle 2 high must be below candle 1 low (stays below the gap)
-            if candle_2_low > candle_3_high and candle_2_high < candle_1_low:
-                fvgs.append(
-                    {
-                        "fvg_index": i,
-                        "fvg_type": "bearish",
-                        "fvg_high": candle_1_low,  # Top of gap
-                        "fvg_low": candle_3_high,  # Bottom of gap
-                        "filled": False,
-                        "fill_index": None,
-                    }
-                )
+            fvgs.append(
+                {
+                    "fvg_index": i,
+                    "fvg_type": "bearish",
+                    "fvg_high": candle_1_low,  # Top of gap
+                    "fvg_low": candle_3_high,  # Bottom of gap
+                    "filled": False,
+                    "fill_index": None,
+                }
+            )
 
     # Create DataFrame from results
     fvg_df = (
