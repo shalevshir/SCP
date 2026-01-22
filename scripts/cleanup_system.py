@@ -34,6 +34,7 @@ REDIS_URL = "redis://localhost:6379"
 
 # Tables to truncate (in order, respecting foreign keys)
 TABLES_TO_TRUNCATE = [
+    "signal_history",  # References trades, must be truncated first
     "trades",
     "state_machine_snapshots",
     "daily_state",
