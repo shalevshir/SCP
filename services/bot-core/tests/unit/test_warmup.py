@@ -39,6 +39,7 @@ class TestWarmupPeriod:
         signal_engine = Mock(spec=SignalEngine)
         signal_publisher = Mock(spec=SignalPublisher)
         signal_publisher.publish = AsyncMock()
+        signal_repository = AsyncMock()
         guardrails_service = Mock(spec=GuardrailsService)
         session_service = Mock(spec=SessionValidationService)
         active_trade_checker = Mock()
@@ -63,8 +64,11 @@ class TestWarmupPeriod:
         from scp_shared.validation import GuardrailResult
         guardrails_service.evaluate.return_value = GuardrailResult(allowed=True)
         
-        # Mock signal engine to return A+ signal (as tuple: signal, rejection_reason)
-        a_plus_signal = SignalMessage(
+        # Mock signal engine to return A+ signal (as SignalResult)
+        from bot_core_svc.signal_engine import SignalResult
+        from scp_shared.rule_engine.signal import Signal
+        
+        a_plus_signal_msg = SignalMessage(
             id="test-signal-1",
             timestamp=datetime(2025, 11, 6, 8, 0, tzinfo=timezone.utc),
             direction="long",
@@ -76,7 +80,25 @@ class TestWarmupPeriod:
             tp_price=2674.0,
             factors={"test": 1.0},
         )
-        signal_engine.generate.return_value = (a_plus_signal, None)  # Returns tuple
+        raw_signal = Signal(
+            timestamp=datetime(2025, 11, 6, 8, 0, tzinfo=timezone.utc),
+            symbol="GC",
+            timeframe="1m",
+            direction="long",
+            setup_type="VWAP_RECLAIM",
+            htf_bias="bullish",
+            score=8.5,
+            confidence="A+",
+            factors={"test": 1.0},
+            rationale="Test signal",
+            validation_flags={"session_ok": True},
+            enforcer_tier="Conservative",
+        )
+        signal_engine.generate.return_value = SignalResult(
+            signal_msg=a_plus_signal_msg,
+            raw_signal=raw_signal,
+            rejection_reason=None
+        )
         
         # Add HTF bias to cache
         bias_msg = HTFBiasMessage(
@@ -115,6 +137,7 @@ class TestWarmupPeriod:
                 bias_cache,
                 signal_engine,
                 signal_publisher,
+                signal_repository,
                 guardrails_service,
                 session_service,
                 active_trade_checker,
@@ -147,6 +170,7 @@ class TestWarmupPeriod:
         signal_engine = Mock(spec=SignalEngine)
         signal_publisher = Mock(spec=SignalPublisher)
         signal_publisher.publish = AsyncMock()
+        signal_repository = AsyncMock()
         guardrails_service = Mock(spec=GuardrailsService)
         session_service = Mock(spec=SessionValidationService)
         active_trade_checker = Mock()
@@ -168,7 +192,10 @@ class TestWarmupPeriod:
         )
         guardrails_service.evaluate.return_value = GuardrailResult(allowed=True)
         
-        a_plus_signal = SignalMessage(
+        from bot_core_svc.signal_engine import SignalResult
+        from scp_shared.rule_engine.signal import Signal
+        
+        a_plus_signal_msg = SignalMessage(
             id="test-signal-2",
             timestamp=datetime(2025, 11, 6, 9, 0, tzinfo=timezone.utc),
             direction="long",
@@ -180,7 +207,25 @@ class TestWarmupPeriod:
             tp_price=2674.0,
             factors={"test": 1.0},
         )
-        signal_engine.generate.return_value = (a_plus_signal, None)  # Returns tuple
+        raw_signal = Signal(
+            timestamp=datetime(2025, 11, 6, 9, 0, tzinfo=timezone.utc),
+            symbol="GC",
+            timeframe="1m",
+            direction="long",
+            setup_type="VWAP_RECLAIM",
+            htf_bias="bullish",
+            score=8.5,
+            confidence="A+",
+            factors={"test": 1.0},
+            rationale="Test signal",
+            validation_flags={"session_ok": True},
+            enforcer_tier="Conservative",
+        )
+        signal_engine.generate.return_value = SignalResult(
+            signal_msg=a_plus_signal_msg,
+            raw_signal=raw_signal,
+            rejection_reason=None
+        )
         
         bias_msg = HTFBiasMessage(
             timestamp=datetime(2025, 11, 6, 9, 0, tzinfo=timezone.utc),
@@ -219,6 +264,7 @@ class TestWarmupPeriod:
                 bias_cache,
                 signal_engine,
                 signal_publisher,
+                signal_repository,
                 guardrails_service,
                 session_service,
                 active_trade_checker,

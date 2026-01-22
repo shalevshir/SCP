@@ -186,6 +186,7 @@ async def clean_database(db_pool: DatabasePool) -> None:
         "trades",
         "state_machine_snapshots",
         "daily_state",
+        "signal_history",
         "htf_bias_history",
         "features",
         "candles",

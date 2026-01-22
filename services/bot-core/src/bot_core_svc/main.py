@@ -4,7 +4,6 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 from datetime import datetime
-from typing import Optional
 
 import redis.asyncio as redis
 from fastapi import FastAPI
@@ -17,14 +16,15 @@ from scp_shared.messaging import RedisStreamConsumer
 from scp_shared.messaging.schemas import FeaturesMessage, HTFBiasMessage
 from scp_shared.metrics import create_metrics_router
 
+from bot_core_svc import metrics as core_metrics
 from bot_core_svc.active_trade_checker import ActiveTradeChecker
 from bot_core_svc.bias_cache import HTFBiasCache
 from bot_core_svc.config import BotCoreConfig
 from bot_core_svc.guardrails import GuardrailsService
-from bot_core_svc import metrics as core_metrics
 from bot_core_svc.publisher import SignalPublisher
 from bot_core_svc.session import SessionValidationService
 from bot_core_svc.signal_engine import SignalEngine
+from bot_core_svc.signal_repository import SignalRepository
 from bot_core_svc.state_repository import StateRepository
 
 # Configure basic logging before anything else
@@ -43,7 +43,7 @@ config = BotCoreConfig()
 shutdown_event = asyncio.Event()
 
 # Global kill switch state (populated in lifespan)
-_kill_switch_repo: Optional[KillSwitchRepository] = None
+_kill_switch_repo: KillSwitchRepository | None = None
 _is_killed: bool = False
 
 
@@ -60,21 +60,26 @@ async def process_features(
     logger.info("Starting feature processing loop")
     
     # Initialize components
-    # max_history=2000 to cover multi-day replays (6 days @ 15-min intervals = ~576 entries)
-    bias_cache = HTFBiasCache(ttl_seconds=config.bias_cache_ttl_seconds, max_history=2000)
+    # max_history=2000 to cover multi-day replays (6d @ 15min = ~576)
+    bias_cache = HTFBiasCache(
+        ttl_seconds=config.bias_cache_ttl_seconds, max_history=2000
+    )
     signal_engine = SignalEngine(
         service_mode=config.service_mode,
         service_name=config.service_name,
     )
     signal_publisher = SignalPublisher(redis_client)
-    session_service = SessionValidationService(config_path=config.session_config_path)
-    # StateRepository needs the trading timezone to match SessionValidator's date calculation
+    signal_repository = SignalRepository(db_pool)
+    session_service = SessionValidationService(
+        config_path=config.session_config_path
+    )
+    # StateRepository needs trading timezone to match SessionValidator
     state_repo = StateRepository(
         db_pool,
         trading_timezone=session_service.config.timezone,
     )
     guardrails_service = GuardrailsService(state_repo)
-    # Active trade checker - matches backtest behavior of blocking signals when trade is active
+    # Active trade checker - matches backtest blocking when trade active
     active_trade_checker = ActiveTradeChecker(db_pool, max_active_trades=1)
     
     # Load daily state
@@ -82,7 +87,10 @@ async def process_features(
     
     # Warmup period tracking
     warmup_bar_count = 0
-    logger.info(f"Warmup period: {config.warmup_bars} bars (signal generation disabled during warmup)")
+    logger.info(
+        f"Warmup period: {config.warmup_bars} bars "
+        f"(signal generation disabled during warmup)"
+    )
     
     # Create consumers
     features_consumer = RedisStreamConsumer(
@@ -124,6 +132,7 @@ async def process_features(
                     bias_cache,
                     signal_engine,
                     signal_publisher,
+                    signal_repository,
                     guardrails_service,
                     session_service,
                     active_trade_checker,
@@ -155,6 +164,7 @@ async def process_feature_message(
     bias_cache: HTFBiasCache,
     signal_engine: SignalEngine,
     signal_publisher: SignalPublisher,
+    signal_repository: SignalRepository,
     guardrails_service: GuardrailsService,
     session_service: SessionValidationService,
     active_trade_checker: ActiveTradeChecker,
@@ -168,6 +178,7 @@ async def process_feature_message(
         bias_cache: Bias cache
         signal_engine: Signal engine
         signal_publisher: Signal publisher
+        signal_repository: Signal repository for persisting all signals
         guardrails_service: Guardrails service
         session_service: Session validation service
         active_trade_checker: Active trade checker (matches backtest behavior)
@@ -189,7 +200,10 @@ async def process_feature_message(
     
     # KILL SWITCH: Skip signal generation if killed
     if _is_killed:
-        logger.debug(f"🚨 Kill switch active - skipping signal generation at {features.timestamp}")
+        logger.debug(
+            f"🚨 Kill switch active - skipping signal generation "
+            f"at {features.timestamp}"
+        )
         # METRIC: Track rejection
         core_metrics.record_signal_rejection("kill_switch", mode, service)
         return warmup_bar_count
@@ -208,7 +222,9 @@ async def process_feature_message(
     
     # METRIC: Update session validity for trader dashboard
     session_valid_value = 1.0 if session_result.session_ok else 0.0
-    core_metrics.session_valid.labels(mode=mode, service=service).set(session_valid_value)
+    core_metrics.session_valid.labels(mode=mode, service=service).set(
+        session_valid_value
+    )
     
     if not session_result.session_ok:
         logger.debug(
@@ -230,17 +246,21 @@ async def process_feature_message(
     
     # 2.5. Check DXY availability (required for accurate scoring)
     if features.dxy_correlation is None and features.dxy_corr is None:
-        logger.debug(f"DXY data unavailable at {features.timestamp} - skipping signal generation")
+        logger.debug(
+            f"DXY data unavailable at {features.timestamp} "
+            f"- skipping signal generation"
+        )
         # METRIC: Track rejection
         core_metrics.record_signal_rejection("invalid_context", mode, service)
         return warmup_bar_count
     
-    # 2.6. CRITICAL: Check if active trade exists (matches backtest behavior)
-    # Backtest blocks signal generation when len(self._active_trades) >= max_concurrent
+    # 2.6. CRITICAL: Check if active trade exists (matches backtest)
+    # Backtest blocks signal generation when active trades >= max_concurrent
     can_trade, active_count = await active_trade_checker.can_take_new_trade()
     if not can_trade:
         logger.debug(
-            f"Signal blocked at {features.timestamp}: active trade exists ({active_count} active)"
+            f"Signal blocked at {features.timestamp}: "
+            f"active trade exists ({active_count} active)"
         )
         # METRIC: Track rejection
         core_metrics.record_signal_rejection("active_trade", mode, service)
@@ -258,33 +278,58 @@ async def process_feature_message(
     }
     
     # 5. Generate signal (with timing)
-    with core_metrics.signal_generation_seconds.labels(mode=mode, service=service).time():
-        signal_msg, rejection_reason = signal_engine.generate(features, bias, context)
+    timer = core_metrics.signal_generation_seconds.labels(
+        mode=mode, service=service
+    )
+    with timer.time():
+        result = signal_engine.generate(features, bias, context)
     
-    # 6. Publish A+ signals
-    if signal_msg is not None:
-        await signal_publisher.publish(signal_msg)
+    # 6. Save ALL signals (approved and rejected) to signal_history
+    try:
+        await signal_repository.save_signal(
+            signal=result.raw_signal,
+            features=features,
+            htf_bias=bias,
+            was_approved=(result.signal_msg is not None),
+            rejection_stage=result.rejection_reason,
+            signal_message_id=result.signal_msg.id if result.signal_msg else None,
+        )
+    except Exception as e:
+        # Log error but don't block signal publication
+        logger.error(f"Failed to save signal to history: {e}", exc_info=True)
+    
+    # 7. Publish A+ signals
+    if result.signal_msg is not None:
+        await signal_publisher.publish(result.signal_msg)
         
         # METRIC: Track signal generated
         core_metrics.signals_generated_total.labels(
             mode=mode,
             service=service,
-            setup_type=signal_msg.setup_type,
+            setup_type=result.signal_msg.setup_type,
             timeframe=features.timeframe,
         ).inc()
         
         # METRIC: Update current setup type for trader dashboard
-        setup_type_value = core_metrics.SETUP_TYPE_ENCODING.get(signal_msg.setup_type, 0.0)
-        core_metrics.current_setup_type.labels(mode=mode, service=service).set(setup_type_value)
+        setup_type_value = core_metrics.SETUP_TYPE_ENCODING.get(
+            result.signal_msg.setup_type, 0.0
+        )
+        core_metrics.current_setup_type.labels(
+            mode=mode, service=service
+        ).set(setup_type_value)
         
     else:
         # Signal was rejected - record the specific reason
-        # rejection_reason will be one of: "htf_validity", "confidence_filter", "neutral_direction"
-        if rejection_reason:
-            core_metrics.record_signal_rejection(rejection_reason, mode, service)
+        # rejection_reason: htf_validity, confidence_filter, neutral, tp_val
+        if result.rejection_reason:
+            core_metrics.record_signal_rejection(
+                result.rejection_reason, mode, service
+            )
         
         # METRIC: Clear setup type when no signal generated
-        core_metrics.current_setup_type.labels(mode=mode, service=service).set(0.0)
+        core_metrics.current_setup_type.labels(
+            mode=mode, service=service
+        ).set(0.0)
         
     
     return warmup_bar_count
@@ -312,7 +357,8 @@ async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
     if _is_killed:
         logger.warning(
             f"🚨 KILL SWITCH IS ACTIVE - Signal generation halted "
-            f"(killed at {kill_state.killed_at} by {kill_state.killed_by}: {kill_state.reason})"
+            f"(killed at {kill_state.killed_at} by {kill_state.killed_by}: "
+            f"{kill_state.reason})"
         )
     else:
         logger.info("✅ Kill switch inactive - Signal generation enabled")
