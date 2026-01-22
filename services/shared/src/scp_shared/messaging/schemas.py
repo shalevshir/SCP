@@ -285,6 +285,10 @@ class SignalMessage(BaseModel):
     sl_price: float = Field(description="Stop loss price", gt=0)
     tp_price: float = Field(description="Take profit price", gt=0)
     factors: dict[str, Any] = Field(description="Contributing factors")
+    diagnostics: dict[str, Any] | None = Field(
+        default=None,
+        description="Signal diagnostics for debugging (includes rejection_analysis, structure state, etc.)"
+    )
 
     class Config:
         json_schema_extra = {
