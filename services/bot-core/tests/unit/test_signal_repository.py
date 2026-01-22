@@ -298,6 +298,21 @@ class TestSignalRepository:
         )
         
         assert row["trade_id"] == trade_id
+
+    async def test_signal_message_id_index_exists(self, db_pool):
+        """Ensure signal_message_id is indexed for link_trade updates."""
+        row = await db_pool.fetchrow(
+            """
+            SELECT indexname, indexdef
+            FROM pg_indexes
+            WHERE schemaname = 'public'
+              AND tablename = 'signal_history'
+              AND indexname = 'idx_signal_history_signal_message_id'
+            """
+        )
+
+        assert row is not None
+        assert "signal_message_id" in row["indexdef"]
     
     async def test_get_signals_for_period(
         self,

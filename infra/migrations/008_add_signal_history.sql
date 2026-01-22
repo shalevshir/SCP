@@ -62,6 +62,9 @@ CREATE INDEX idx_signal_history_confidence ON signal_history(confidence);
 -- Filter by rejection stage (analyze rejection patterns)
 CREATE INDEX idx_signal_history_rejection_stage ON signal_history(rejection_stage) WHERE rejection_stage IS NOT NULL;
 
+-- Index on signal_message_id for fast trade linkage updates
+CREATE INDEX idx_signal_history_signal_message_id ON signal_history(signal_message_id);
+
 -- Composite index for common query pattern: rejected signals by setup type
 CREATE INDEX idx_signal_history_rejected_setup ON signal_history(setup_type, was_approved) WHERE was_approved = FALSE;
 
