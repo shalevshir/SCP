@@ -1,6 +1,7 @@
 """Unit tests for SignalRepository."""
 
 import json
+import os
 from datetime import UTC, datetime
 from uuid import uuid4
 
@@ -8,6 +9,13 @@ import pytest
 from bot_core_svc.signal_repository import SignalRepository
 from scp_shared.messaging.schemas import FeaturesMessage, HTFBiasMessage
 from scp_shared.rule_engine import Signal
+
+# Skip all tests in this module if DATABASE_URL is not set or PostgreSQL is unavailable
+# These are integration tests that require a live database
+pytestmark = pytest.mark.skipif(
+    os.environ.get("DATABASE_URL") is None,
+    reason="DATABASE_URL not set - integration tests require PostgreSQL"
+)
 
 
 @pytest.fixture
@@ -156,7 +164,7 @@ class TestSignalRepository:
         assert row["setup_type"] == "VWAP_RECLAIM"
         assert row["direction"] == "long"
         
-        # Verify snapshots are valid JSON
+        # Verify snapshots are valid JSON (asyncpg returns JSON strings from JSONB)
         features_snapshot = json.loads(row["features_snapshot"])
         htf_bias_snapshot = json.loads(row["htf_bias_snapshot"])
         factor_scores = json.loads(row["factor_scores"])
@@ -230,7 +238,7 @@ class TestSignalRepository:
         assert row["score"] == 7.2
         assert row["confidence"] == "Watch"
         
-        # Verify rejection analysis
+        # Verify rejection analysis (deserialize JSON string from JSONB)
         diagnostics = json.loads(row["diagnostics"])
         rejection_analysis = diagnostics["rejection_analysis"]
         assert rejection_analysis["passed"] is False
@@ -248,7 +256,7 @@ class TestSignalRepository:
         """Test linking a signal to a trade."""
         repo = SignalRepository(db_pool)
         signal_message_id = str(uuid4())
-        trade_id = str(uuid4())
+        trade_id = uuid4()
         
         # Save approved signal
         signal_id = await repo.save_signal(
@@ -259,8 +267,29 @@ class TestSignalRepository:
             signal_message_id=signal_message_id,
         )
         
+        # CRITICAL: Insert a trade record first to satisfy foreign key constraint
+        # signal_history.trade_id REFERENCES trades(id)
+        await db_pool.execute(
+            """
+            INSERT INTO trades (
+                id, signal_id, direction, setup_type, entry_price, sl_price, tp_price,
+                quantity, opened_at, state
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            """,
+            trade_id,
+            signal_id,  # Link back to the signal
+            "long",
+            "VWAP_RECLAIM",
+            2650.0,
+            2642.0,
+            2674.0,
+            1,
+            sample_signal.timestamp,
+            "OPEN",
+        )
+        
         # Link to trade
-        await repo.link_trade(signal_message_id, trade_id)
+        await repo.link_trade(signal_message_id, str(trade_id))
         
         # Verify link
         row = await db_pool.fetchrow(
@@ -268,7 +297,7 @@ class TestSignalRepository:
             signal_id,
         )
         
-        assert str(row["trade_id"]) == trade_id
+        assert row["trade_id"] == trade_id
     
     async def test_get_signals_for_period(
         self,
@@ -409,7 +438,7 @@ class TestSignalRepository:
             signal_message_id=str(uuid4()),
         )
         
-        # Verify None values are preserved
+        # Verify None values are preserved (deserialize JSON string from JSONB)
         row = await db_pool.fetchrow(
             "SELECT features_snapshot FROM signal_history WHERE id = $1",
             signal_id,

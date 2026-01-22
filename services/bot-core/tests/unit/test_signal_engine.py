@@ -146,11 +146,11 @@ class TestSignalEngine:
         )
         context = {"session_ok": True, "enforcer_tier": "Conservative"}
         
-        # Should return (None, rejection_reason) instead of raising ValidationError
-        result, rejection_reason = engine.generate(features, htf_bias, context)
+        # Should return SignalResult with signal_msg=None instead of raising ValidationError
+        result = engine.generate(features, htf_bias, context)
         
-        assert result is None
-        assert rejection_reason == "neutral_direction"
+        assert result.signal_msg is None
+        assert result.rejection_reason == "neutral_direction"
         mock_score_signal.assert_called_once()
 
 
@@ -614,10 +614,10 @@ class TestSignalEngineGenerate:
             chop_detected=False,
         )
         
-        result, rejection_reason = engine.generate(features, htf_bias, {"session_ok": True})
+        result = engine.generate(features, htf_bias, {"session_ok": True})
         
-        assert result is None
-        assert rejection_reason == "confidence_filter"
+        assert result.signal_msg is None
+        assert result.rejection_reason == "confidence_filter"
     
     @patch("bot_core_svc.signal_engine.score_signal")
     def test_generate_returns_none_for_htf_validity_failure(
@@ -667,10 +667,10 @@ class TestSignalEngineGenerate:
             conflict_reason="15m/1h structure mismatch",
         )
         
-        result, rejection_reason = engine.generate(features, htf_bias, {"session_ok": True})
+        result = engine.generate(features, htf_bias, {"session_ok": True})
         
-        assert result is None
-        assert rejection_reason == "htf_validity"
+        assert result.signal_msg is None
+        assert result.rejection_reason == "htf_validity"
     
     @patch("bot_core_svc.signal_engine.score_signal")
     def test_generate_returns_signal_for_a_plus(
@@ -720,15 +720,15 @@ class TestSignalEngineGenerate:
             chop_detected=False,
         )
         
-        result, rejection_reason = engine.generate(features, htf_bias, {"session_ok": True})
+        result = engine.generate(features, htf_bias, {"session_ok": True})
         
-        assert result is not None
-        assert rejection_reason is None
-        assert isinstance(result, SignalMessage)
-        assert result.direction == "long"
-        assert result.setup_type == "VWAP_RECLAIM"
-        assert result.score == 8.5
-        assert result.confidence == "A+"
+        assert result.signal_msg is not None
+        assert result.rejection_reason is None
+        assert isinstance(result.signal_msg, SignalMessage)
+        assert result.signal_msg.direction == "long"
+        assert result.signal_msg.setup_type == "VWAP_RECLAIM"
+        assert result.signal_msg.score == 8.5
+        assert result.signal_msg.confidence == "A+"
 
 
 class TestHTFBiasConversion:

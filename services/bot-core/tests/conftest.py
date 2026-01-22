@@ -41,15 +41,17 @@ async def db_pool() -> AsyncGenerator[DatabasePool, None]:
 
 @pytest_asyncio.fixture(scope="function")
 async def clean_database(db_pool: DatabasePool) -> None:
-    """Clean signal_history table before each test.
+    """Clean signal_history and trades tables before each test.
     
     Args:
         db_pool: Database pool fixture
     """
     try:
+        # TRUNCATE CASCADE will also clean signal_history due to foreign key
+        await db_pool.execute("TRUNCATE TABLE trades CASCADE")
         await db_pool.execute("TRUNCATE TABLE signal_history CASCADE")
     except Exception:
-        # Table might not exist yet (before migration), that's ok
+        # Tables might not exist yet (before migration), that's ok
         pass
 
 

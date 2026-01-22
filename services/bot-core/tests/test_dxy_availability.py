@@ -54,14 +54,37 @@ class TestDXYAvailabilityCheck:
         # Import here to avoid circular dependencies
         from bot_core_svc.main import process_feature_message
         from bot_core_svc.bias_cache import HTFBiasCache
-        from bot_core_svc.signal_engine import SignalEngine
+        from bot_core_svc.signal_engine import SignalEngine, SignalResult
+        from scp_shared.rule_engine.signal import Signal
         
         # Create mocks
         bias_cache = HTFBiasCache(ttl_seconds=300)
         bias_cache.update(base_bias)
         signal_engine = Mock(spec=SignalEngine)
-        signal_engine.generate = Mock(return_value=(None, "no_signal"))  # Returns tuple
+        # Return SignalResult object, not tuple
+        mock_signal = Signal(
+            timestamp=base_features.timestamp,
+            symbol="GC",
+            timeframe="1m",
+            direction="neutral",
+            setup_type="NONE",
+            htf_bias="neutral",
+            score=0.0,
+            confidence="Watch",
+            factors={},
+            rationale="No signal",
+            validation_flags={},
+            enforcer_tier="Conservative",
+        )
+        signal_engine.generate = Mock(
+            return_value=SignalResult(
+                signal_msg=None,
+                raw_signal=mock_signal,
+                rejection_reason="no_signal"
+            )
+        )
         signal_publisher = AsyncMock()
+        signal_repository = AsyncMock()
         guardrails_service = Mock()
         guardrails_service.evaluate = Mock(return_value=Mock(allowed=True))
         session_service = Mock()
@@ -82,6 +105,7 @@ class TestDXYAvailabilityCheck:
             bias_cache,
             signal_engine,
             signal_publisher,
+            signal_repository,
             guardrails_service,
             session_service,
             active_trade_checker,
@@ -97,14 +121,37 @@ class TestDXYAvailabilityCheck:
         """Signal generation should proceed when DXY correlation is present."""
         from bot_core_svc.main import process_feature_message
         from bot_core_svc.bias_cache import HTFBiasCache
-        from bot_core_svc.signal_engine import SignalEngine
+        from bot_core_svc.signal_engine import SignalEngine, SignalResult
+        from scp_shared.rule_engine.signal import Signal
         
         # Create mocks
         bias_cache = HTFBiasCache(ttl_seconds=300)
         bias_cache.update(base_bias)
         signal_engine = Mock(spec=SignalEngine)
-        signal_engine.generate = Mock(return_value=(None, "no_signal"))  # No signal generated (returns tuple)
+        # Return SignalResult object, not tuple
+        mock_signal = Signal(
+            timestamp=base_features.timestamp,
+            symbol="GC",
+            timeframe="1m",
+            direction="neutral",
+            setup_type="NONE",
+            htf_bias="neutral",
+            score=0.0,
+            confidence="Watch",
+            factors={},
+            rationale="No signal",
+            validation_flags={},
+            enforcer_tier="Conservative",
+        )
+        signal_engine.generate = Mock(
+            return_value=SignalResult(
+                signal_msg=None,
+                raw_signal=mock_signal,
+                rejection_reason="no_signal"
+            )
+        )
         signal_publisher = AsyncMock()
+        signal_repository = AsyncMock()
         guardrails_service = Mock()
         guardrails_service.evaluate = Mock(return_value=Mock(allowed=True))
         session_service = Mock()
@@ -120,6 +167,7 @@ class TestDXYAvailabilityCheck:
             bias_cache,
             signal_engine,
             signal_publisher,
+            signal_repository,
             guardrails_service,
             session_service,
             active_trade_checker,
