@@ -1,6 +1,7 @@
 """Signal engine wrapper for Bot Core service."""
 
 import uuid
+from dataclasses import dataclass
 from typing import Any
 
 import pandas as pd
@@ -8,9 +9,24 @@ from scp_shared.common.logger import get_logger
 from scp_shared.messaging.schemas import FeaturesMessage, HTFBiasMessage, SignalMessage
 from scp_shared.rule_engine import Signal, score_signal
 from scp_shared.rule_engine.htf.types import HTFBias
+
 from bot_core_svc import metrics
 
 logger = get_logger(__name__)
+
+
+@dataclass
+class SignalResult:
+    """Result of signal generation including both approval and diagnostic data.
+    
+    Attributes:
+        signal_msg: SignalMessage if approved (A+), None if rejected
+        raw_signal: Raw Signal object with full diagnostics (always present)
+        rejection_reason: Rejection stage if rejected, None if approved
+    """
+    signal_msg: SignalMessage | None
+    raw_signal: Signal
+    rejection_reason: str | None
 
 
 def htf_bias_message_to_htf_bias(msg: HTFBiasMessage) -> HTFBias:
@@ -578,6 +594,7 @@ def signal_to_message(signal: Signal, features: FeaturesMessage, htf_bias: HTFBi
         sl_price=sl_price,
         tp_price=tp_price,
         factors=factors,
+        diagnostics=signal.diagnostics,  # Include full diagnostics for downstream debugging
     )
 
 
@@ -609,7 +626,7 @@ class SignalEngine:
         features: FeaturesMessage,
         htf_bias: HTFBiasMessage,
         context: dict,
-    ) -> tuple[SignalMessage | None, str | None]:
+    ) -> SignalResult:
         """Generate signal from features and bias.
         
         Args:
@@ -618,9 +635,10 @@ class SignalEngine:
             context: Context dict with session_ok, enforcer_tier
             
         Returns:
-            Tuple of (SignalMessage, rejection_reason):
-                - SignalMessage if A+ signal generated, None otherwise
-                - rejection_reason if signal rejected, None if signal generated
+            SignalResult containing:
+                - signal_msg: SignalMessage if A+ signal generated, None otherwise
+                - raw_signal: Raw Signal object with full diagnostics (always present)
+                - rejection_reason: Rejection stage if rejected, None if approved
         """
         # Convert messages to expected types
         features_series = features_message_to_series(features)
@@ -650,7 +668,11 @@ class SignalEngine:
                 f"Signal rejected (htf_valid=False): {signal.direction} {signal.setup_type} "
                 f"score={signal.score:.1f} - {', '.join(rejection_reasons)}"
             )
-            return None, "htf_validity"
+            return SignalResult(
+                signal_msg=None,
+                raw_signal=signal,
+                rejection_reason="htf_validity"
+            )
         
         # Filter for A+ signals only
         if signal.confidence != "A+":
@@ -658,7 +680,11 @@ class SignalEngine:
                 f"Signal rejected (confidence={signal.confidence}): "
                 f"{signal.direction} {signal.setup_type} score={signal.score:.1f}"
             )
-            return None, "confidence_filter"
+            return SignalResult(
+                signal_msg=None,
+                raw_signal=signal,
+                rejection_reason="confidence_filter"
+            )
         
         # Filter out neutral signals (SignalMessage only accepts "long" or "short")
         # This can occur when close == vwap exactly (very rare edge case)
@@ -668,7 +694,11 @@ class SignalEngine:
                 f"{signal.setup_type} score={signal.score:.1f} "
                 f"(close={features.close}, vwap={features.vwap})"
             )
-            return None, "neutral_direction"
+            return SignalResult(
+                signal_msg=None,
+                raw_signal=signal,
+                rejection_reason="neutral_direction"
+            )
         
         # Convert to message (may raise ValueError if TP validation fails)
         try:
@@ -679,12 +709,20 @@ class SignalEngine:
                 f"Signal rejected (TP validation): {signal.direction} {signal.setup_type} "
                 f"score={signal.score:.1f} - {str(e)}"
             )
-            return None, "tp_validation"
+            return SignalResult(
+                signal_msg=None,
+                raw_signal=signal,
+                rejection_reason="tp_validation"
+            )
         
         logger.info(
             f"A+ signal generated: {signal.direction} {signal.setup_type} "
             f"(score: {signal.score:.1f}, timestamp: {signal.timestamp})"
         )
         
-        return signal_msg, None
+        return SignalResult(
+            signal_msg=signal_msg,
+            raw_signal=signal,
+            rejection_reason=None
+        )
 
