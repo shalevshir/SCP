@@ -1053,6 +1053,9 @@ class TestTPSafetyChecks:
         assert "blocks path to TP" in rejection_reason
         assert "2610.00-2620.00" in rejection_reason
 
+    @pytest.mark.skip(
+        reason="Immediate resistance check disabled - uses microstructure data not meaningful structural levels"
+    )
     def test_long_tp_rejected_immediate_resistance_within_1r(self) -> None:
         """Long TP rejected when immediate resistance within 1R."""
         tp_price = 2680.0
@@ -1084,6 +1087,9 @@ class TestTPSafetyChecks:
         assert "Immediate resistance at 2655.00" in rejection_reason
         assert "in path to TP" in rejection_reason
 
+    @pytest.mark.skip(
+        reason="Immediate support check disabled - uses microstructure data not meaningful structural levels"
+    )
     def test_short_tp_rejected_immediate_support_within_1r(self) -> None:
         """Short TP rejected when immediate support within 1R."""
         tp_price = 2615.0

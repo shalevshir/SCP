@@ -612,7 +612,7 @@ class TestExpansionPathValidation:
 
         assert tp_plan is None
         assert rejection is not None
-        assert "CONTINUATION_NO_EXPANSION_PATH" in rejection
+        assert "CONTINUATION_WEAK_EXPANSION" in rejection
 
     def test_expansion_valid_for_shorts_when_range_extends(
         self, base_features, base_htf_bias

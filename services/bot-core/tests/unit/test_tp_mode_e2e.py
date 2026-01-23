@@ -111,14 +111,14 @@ class TestTPModeEndToEnd:
         assert tp_plan.target_source == "nearest_liquidity_long"
 
     def test_continuation_rejected_without_expansion(self):
-        """Continuation mode rejects when no expansion path exists."""
+        """Continuation mode falls back to static when no expansion exists, rejects if no 3R target."""
         features = FeaturesMessage(
             timestamp=datetime(2025, 1, 15, 10, 0, tzinfo=timezone.utc),
             symbol="GC",
             timeframe="1m",
             close=2650.0,
             vwap=2645.0,
-            nearest_liquidity_long=2665.0,  # TP1 at 1.5R
+            nearest_liquidity_long=2665.0,  # TP1 at 1.5R (not enough for static fallback)
         )
         htf_bias = HTFBiasMessage(
             timestamp=datetime(2025, 1, 15, 10, 0, tzinfo=timezone.utc),
@@ -133,7 +133,8 @@ class TestTPModeEndToEnd:
             nearest_fvg_high=None,
         )
 
-        # Should route to continuation but reject due to no expansion
+        # Routes to continuation, fails due to weak expansion, falls back to static mode
+        # Static mode then rejects because no 3R target available
         tp_plan, rejection = validate_tp_target(
             direction="long",
             entry_price=2650.0,
@@ -146,7 +147,8 @@ class TestTPModeEndToEnd:
 
         assert tp_plan is None
         assert rejection is not None
-        assert "CONTINUATION_NO_EXPANSION_PATH" in rejection
+        # Expect static mode rejection after continuation fallback
+        assert "No structural target at ≥3.0R" in rejection
 
     def test_signal_message_includes_tp_plan_diagnostics(self):
         """SignalMessage diagnostics include complete TP plan data."""

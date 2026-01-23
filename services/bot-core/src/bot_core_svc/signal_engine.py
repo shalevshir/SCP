@@ -167,7 +167,7 @@ def is_continuation_eligible(setup_type: str, htf_bias: HTFBiasMessage) -> bool:
 
     Continuation mode applies when:
     - Setup is VWAP_RECLAIM
-    - HTF bias is A+ or A confidence
+    - HTF bias is A+ confidence (ONLY)
     - No chop detected
     - No conflict detected
 
@@ -180,7 +180,7 @@ def is_continuation_eligible(setup_type: str, htf_bias: HTFBiasMessage) -> bool:
     """
     return (
         setup_type == "VWAP_RECLAIM"
-        and (htf_bias.confidence == "A+" or htf_bias.confidence == "A")
+        and htf_bias.confidence == "A+"
         and not htf_bias.chop_detected
         and not htf_bias.conflict_detected
     )
