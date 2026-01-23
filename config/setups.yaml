@@ -15,7 +15,7 @@ setups:
   # ============================================================================
   VWAP_RECLAIM:
     enabled: true
-    min_score: 8.0
+    min_score: 7.5
 
     # Constraints - ALL must pass for setup to be detected
     # Safety gates (hard rejection) - prevent structurally invalid setups
@@ -33,9 +33,19 @@ setups:
         expression: "structure_label is not None"
         reject_reason: "No structure label available - cannot safely manage trade"
 
-      min_vwap_deviation:
-        expression: "vwap_deviation_normalized is None or abs(vwap_deviation_normalized) >= 0.5"
-        reject_reason: "VWAP deviation insufficient for reclaim (must be >= 0.5 ATR)"
+      vwap_reclaim_distance:
+        expression: "vwap_deviation_normalized is None or (abs(vwap_deviation_normalized) >= 0.5 and abs(vwap_deviation_normalized) <= 3.0)"
+        reject_reason: "VWAP reclaim invalid - price too far from VWAP (late/chase reclaim)"
+
+      no_late_reclaim:
+        expression: "bos_recent is not True or (bos_age is not None and bos_age >= 20)"
+        reject_reason: "Late VWAP reclaim - structure still expanding"
+
+      bos_reclaim_gate:
+        # Stricter BOS direction check for VWAP_RECLAIM (no permissive fallbacks)
+        # Requires: BOS matches direction, OR no BOS exists, OR BOS old enough (>=20) to ignore
+        expression: "bos_direction is None or bos_direction == direction or (bos_age is not None and bos_age >= 20)"
+        reject_reason: "BOS direction conflicts with VWAP reclaim direction"
 
       direction_bos_alignment:
         # Allow through if: no BOS, BOS matches direction, neutral direction, stale BOS (>15 bars), or CHoCH overrides
@@ -46,6 +56,14 @@ setups:
       no_structure_conflict:
         expression: "not conflict_detected"
         reject_reason: "HTF structure conflict detected"
+
+      min_vwap_acceptance:
+        expression: "bars_near_vwap is None or bars_near_vwap >= 3"
+        reject_reason: "No acceptance near VWAP - drive-by reclaim"
+
+      reclaim_timing_gate:
+        expression: "bars_since_last_vwap_touch is None or bars_since_last_vwap_touch <= 10"
+        reject_reason: "VWAP reclaim too delayed - invalid continuation"
 
       structure_label_direction_long:
         expression: "direction != 'long' or structure_label is None or structure_label not in ('LH', 'LL')"
@@ -144,7 +162,7 @@ setups:
   # DXY_CONTINUATION: Gold trade aligned with DXY inverse correlation
   # ============================================================================
   DXY_CONTINUATION:
-    enabled: true
+    enabled: false
     min_score: 8.0
 
     constraints:
