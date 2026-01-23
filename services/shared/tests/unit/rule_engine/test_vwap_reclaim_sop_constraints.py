@@ -27,6 +27,8 @@ class TestVWAPReclaimDistanceConstraint:
             "vwap_deviation_normalized": 1.5,
             "bos_recent": False,
             "bos_age": 25,
+            "bos_direction": "long",
+            "bos_direction": "long",  # BOS matches direction
             "conflict_detected": False,
             "bars_near_vwap": 5,
             "bars_since_last_vwap_touch": 2,
@@ -46,6 +48,7 @@ class TestVWAPReclaimDistanceConstraint:
             "vwap_deviation_normalized": 4.5,  # Too far from VWAP
             "bos_recent": False,
             "bos_age": 25,
+            "bos_direction": "long",
             "conflict_detected": False,
             "bars_near_vwap": 5,
             "bars_since_last_vwap_touch": 2,
@@ -66,6 +69,7 @@ class TestVWAPReclaimDistanceConstraint:
             "vwap_deviation_normalized": 3.0,
             "bos_recent": False,
             "bos_age": 25,
+            "bos_direction": "long",
             "conflict_detected": False,
             "bars_near_vwap": 5,
             "bars_since_last_vwap_touch": 2,
@@ -85,6 +89,7 @@ class TestVWAPReclaimDistanceConstraint:
             "vwap_deviation_normalized": 0.3,  # Too close
             "bos_recent": False,
             "bos_age": 25,
+            "bos_direction": "long",
             "conflict_detected": False,
             "bars_near_vwap": 5,
             "bars_since_last_vwap_touch": 2,
@@ -284,6 +289,7 @@ class TestMinVWAPAcceptanceConstraint:
             "vwap_deviation_normalized": 1.5,
             "bos_recent": False,
             "bos_age": 25,
+            "bos_direction": "long",
             "conflict_detected": False,
             "bars_near_vwap": 5,  # Good acceptance
             "bars_since_last_vwap_touch": 2,
@@ -303,6 +309,7 @@ class TestMinVWAPAcceptanceConstraint:
             "vwap_deviation_normalized": 1.5,
             "bos_recent": False,
             "bos_age": 25,
+            "bos_direction": "long",
             "conflict_detected": False,
             "bars_near_vwap": 1,  # Drive-by
             "bars_since_last_vwap_touch": 2,
@@ -323,6 +330,7 @@ class TestMinVWAPAcceptanceConstraint:
             "vwap_deviation_normalized": 1.5,
             "bos_recent": False,
             "bos_age": 25,
+            "bos_direction": "long",
             "conflict_detected": False,
             "bars_near_vwap": 3,  # Boundary
             "bars_since_last_vwap_touch": 2,
@@ -343,6 +351,7 @@ class TestMinVWAPAcceptanceConstraint:
             "bos_direction": "bullish",
             "bos_recent": False,
             "bos_age": 25,
+            "bos_direction": "long",
             "conflict_detected": False,
             "choch_detected": False,
             "bars_near_vwap": None,  # ATR unavailable
@@ -364,6 +373,7 @@ class TestMinVWAPAcceptanceConstraint:
             "bos_direction": "bullish",
             "bos_recent": False,
             "bos_age": 25,
+            "bos_direction": "long",
             "conflict_detected": False,
             "choch_detected": False,
             "bars_near_vwap": 0,  # ATR available but price not near VWAP
@@ -389,6 +399,7 @@ class TestReclaimTimingGateConstraint:
             "vwap_deviation_normalized": 1.5,
             "bos_recent": False,
             "bos_age": 25,
+            "bos_direction": "long",
             "conflict_detected": False,
             "bars_near_vwap": 5,
             "bars_since_last_vwap_touch": 5,  # Timely
@@ -408,6 +419,7 @@ class TestReclaimTimingGateConstraint:
             "vwap_deviation_normalized": 1.5,
             "bos_recent": False,
             "bos_age": 25,
+            "bos_direction": "long",
             "conflict_detected": False,
             "bars_near_vwap": 5,
             "bars_since_last_vwap_touch": 15,  # Too delayed
@@ -428,6 +440,7 @@ class TestReclaimTimingGateConstraint:
             "vwap_deviation_normalized": 1.5,
             "bos_recent": False,
             "bos_age": 25,
+            "bos_direction": "long",
             "conflict_detected": False,
             "bars_near_vwap": 5,
             "bars_since_last_vwap_touch": 10,  # Boundary
@@ -447,6 +460,7 @@ class TestReclaimTimingGateConstraint:
             "vwap_deviation_normalized": 1.5,
             "bos_recent": False,
             "bos_age": 25,
+            "bos_direction": "long",
             "conflict_detected": False,
             "bars_near_vwap": 5,
             "bars_since_last_vwap_touch": None,
@@ -492,6 +506,7 @@ class TestCombinedConstraints:
             "vwap_deviation_normalized": 5.0,  # FAIL: too far
             "bos_recent": False,
             "bos_age": 30,
+            "bos_direction": "long",
             "conflict_detected": False,
             "bars_near_vwap": 4,
             "bars_since_last_vwap_touch": 3,

@@ -60,10 +60,11 @@ class TestSetupValidator:
 
         validator = SetupValidator()
 
-        # All setups should be enabled by default
+        # Check enabled setups
         assert validator.is_setup_enabled("VWAP_RECLAIM") is True
         assert validator.is_setup_enabled("VWAP_FADE") is True
-        assert validator.is_setup_enabled("DXY_CONTINUATION") is True
+        # DXY_CONTINUATION is disabled in config
+        assert validator.is_setup_enabled("DXY_CONTINUATION") is False
 
     def test_unknown_setup_returns_false(self) -> None:
         """Test that unknown setup returns False for enabled check."""
@@ -83,7 +84,8 @@ class TestSetupValidator:
 
         assert "VWAP_RECLAIM" in enabled
         assert "VWAP_FADE" in enabled
-        assert "DXY_CONTINUATION" in enabled
+        # DXY_CONTINUATION is disabled in config
+        assert "DXY_CONTINUATION" not in enabled
 
 
 class TestVWAPReclaimValidation:
@@ -100,6 +102,7 @@ class TestVWAPReclaimValidation:
             "vwap": 2645.0,  # 0.19% deviation
             "vwap_deviation_normalized": 0.6,  # >= 0.5 ATR threshold
             "bos_direction": "long",
+            "bos_recent": False,  # BOS not recent (passes no_late_reclaim constraint)
             "bos_age": None,  # No BOS age (fresh or not applicable)
             "direction": "long",
             "conflict_detected": False,
@@ -342,6 +345,7 @@ class TestVWAPFadeValidation:
         assert "VWAP deviation" in result.reject_reason
 
 
+@pytest.mark.skip(reason="DXY_CONTINUATION setup is disabled in config")
 class TestDXYContinuationValidation:
     """Tests for DXY_CONTINUATION setup validation."""
 

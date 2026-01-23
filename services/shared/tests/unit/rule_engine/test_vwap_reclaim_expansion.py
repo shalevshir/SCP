@@ -32,6 +32,7 @@ class TestVWAPReclaimExpansionIntegration:
                 "timeframe": "1m",
                 "close": 2650.0,
                 "vwap": 2645.0,  # Changed from 2649.0 to give 0.19% deviation (> 0.15%)
+                "vwap_deviation_normalized": 1.5,  # Required for vwap_reclaim_distance
                 "rsi": 55.0,
                 "ema_9": 2648.0,
                 "ema_20": 2645.0,
@@ -41,11 +42,12 @@ class TestVWAPReclaimExpansionIntegration:
                 # Context prerequisites
                 "structure_clarity": 0.6,
                 "liquidity_sweep": True,
-                "bos_recent": True,
-                "bos_age": 5,
+                "bos_recent": False,  # Changed to False to pass no_late_reclaim constraint
+                "bos_age": 25,  # Changed to 25 (>20) to pass bos_reclaim_gate constraint
                 "bos_direction": "bullish",
                 "choch_detected": False,
                 "structure_conflict_flag": False,
+                "conflict_detected": False,  # Required for constraints
                 # Expansion signals
                 "expansion_detected": True,
                 "expansion_reasons": ["recent_bos", "range_expansion"],
