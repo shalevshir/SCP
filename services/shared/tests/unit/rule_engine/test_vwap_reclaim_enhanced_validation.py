@@ -277,10 +277,12 @@ class TestVWAPReclaimEnhancedValidation:
                 "rsi": 55.0,
                 "dxy_corr": -0.75,
                 "structure_label": "HH",  # Required for validation
-                # BOS direction conflicts but is STALE (>15 bars old)
-                "bos_direction": "bearish",  # Wrong direction for long
+                # BOS direction conflicts but is STALE (>=20 bars old)
+                "bos_direction": "bearish",  # Wrong direction for long (conflict)
                 "bos_recent": False,  # Required for no_late_reclaim constraint
-                "bos_age": 18,  # Stale BOS (>15)
+                "bos_age": 25,  # >=20, stale enough to pass bos_reclaim_gate despite conflict
+                "bars_near_vwap": 5,  # Required for min_vwap_acceptance
+                "bars_since_last_vwap_touch": 2,  # Required for reclaim_timing_gate
                 "choch_detected": False,
                 "structure_conflict_flag": False,
                 "conflict_detected": False,  # Required for constraints
@@ -319,10 +321,12 @@ class TestVWAPReclaimEnhancedValidation:
                 "rsi": 45.0,
                 "dxy_corr": -0.75,
                 "structure_label": "LL",  # Required for validation
-                # BOS direction conflicts but is STALE (>15 bars old)
-                "bos_direction": "bullish",  # Wrong direction for short
+                # BOS direction conflicts but is STALE (>=20 bars old)
+                "bos_direction": "bullish",  # Wrong direction for short (conflict)
                 "bos_recent": False,  # Required for no_late_reclaim constraint
-                "bos_age": 16,  # Stale BOS (>15)
+                "bos_age": 25,  # >=20, stale enough to pass bos_reclaim_gate despite conflict
+                "bars_near_vwap": 5,  # Required for min_vwap_acceptance
+                "bars_since_last_vwap_touch": 2,  # Required for reclaim_timing_gate
                 "choch_detected": False,
                 "structure_conflict_flag": False,
                 "conflict_detected": False,  # Required for constraints

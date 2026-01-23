@@ -6,6 +6,7 @@ to determine if a setup is valid for given market conditions.
 Following TDD approach - these tests are written BEFORE implementation.
 """
 
+import pytest
 from typing import Any
 
 
@@ -104,6 +105,8 @@ class TestVWAPReclaimValidation:
             "bos_direction": "long",
             "bos_recent": False,  # BOS not recent (passes no_late_reclaim constraint)
             "bos_age": None,  # No BOS age (fresh or not applicable)
+            "bars_near_vwap": 5,  # Required for min_vwap_acceptance constraint
+            "bars_since_last_vwap_touch": 2,  # Required for reclaim_timing_gate constraint
             "direction": "long",
             "conflict_detected": False,
             "choch_detected": False,  # Required by direction_bos_alignment constraint

@@ -156,6 +156,7 @@ class TestNoLateReclaimConstraint:
             "vwap_deviation_normalized": 1.5,
             "bos_recent": False,
             "bos_age": 5,  # Age doesn't matter if not recent
+            "bos_direction": "long",  # Required for bos_reclaim_gate constraint
             "conflict_detected": False,
             "bars_near_vwap": 5,
             "bars_since_last_vwap_touch": 2,
@@ -198,7 +199,7 @@ class TestBOSReclaimGateConstraint:
             "structure_label": "HL",
             "direction": "long",
             "vwap_deviation_normalized": 1.5,
-            "bos_direction": "bullish",  # Matches long
+            "bos_direction": "long",  # FIXED: Must match direction exactly
             "bos_recent": False,
             "bos_age": 18,  # Recent but matches direction
             "conflict_detected": False,
@@ -484,6 +485,7 @@ class TestCombinedConstraints:
             "vwap_deviation_normalized": 1.2,  # Ideal distance
             "bos_recent": False,
             "bos_age": 30,  # Well past expansion
+            "bos_direction": "long",  # Required for bos_reclaim_gate constraint
             "conflict_detected": False,
             "bars_near_vwap": 4,  # Good acceptance
             "bars_since_last_vwap_touch": 3,  # Timely
