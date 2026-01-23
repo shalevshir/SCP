@@ -94,9 +94,9 @@ class TestParseSeasonRule:
             "max_losses": 3,
             "dxy_correlation_max": -0.5,
         }
-        
+
         result = _parse_season_rule(rule_data)
-        
+
         assert result.name == "Summer"
         assert result.months == frozenset([6, 7, 8])
         assert result.window_start == time(9, 0)
@@ -110,9 +110,9 @@ class TestParseSeasonRule:
     def test_uses_defaults_for_missing_fields(self) -> None:
         """Uses default values for missing fields."""
         rule_data = {}
-        
+
         result = _parse_season_rule(rule_data)
-        
+
         assert result.name == "Unnamed"
         assert result.months == frozenset()
         assert result.window_start == time(10, 0)
@@ -124,17 +124,17 @@ class TestParseSeasonRule:
     def test_overrides_name(self) -> None:
         """Overrides name with parameter."""
         rule_data = {"name": "Original"}
-        
+
         result = _parse_season_rule(rule_data, name="Override")
-        
+
         assert result.name == "Override"
 
     def test_overrides_months(self) -> None:
         """Overrides months with parameter."""
         rule_data = {"months": [1, 2]}
-        
+
         result = _parse_season_rule(rule_data, months=[3, 4, 5])
-        
+
         assert result.months == frozenset([3, 4, 5])
 
 
@@ -160,13 +160,13 @@ class TestLoadSessionConfig:
             ],
             "holidays": ["2024-12-25", "2024-01-01"],
         }
-        
+
         config_file = tmp_path / "validation.yaml"
         with open(config_file, "w") as f:
             yaml.dump(config_data, f)
-        
+
         result = load_session_config(str(config_file))
-        
+
         assert result.timezone == "America/New_York"
         assert result.default_rule.window_start == time(9, 30)
         assert len(result.seasons) == 1
@@ -181,13 +181,13 @@ class TestLoadSessionConfig:
     def test_uses_default_values(self, tmp_path: Path) -> None:
         """Uses default values when fields are missing."""
         config_data = {}
-        
+
         config_file = tmp_path / "validation.yaml"
         with open(config_file, "w") as f:
             yaml.dump(config_data, f)
-        
+
         result = load_session_config(str(config_file))
-        
+
         assert result.timezone == "Europe/London"
         assert result.default_rule.months == frozenset(range(1, 13))
         assert len(result.seasons) == 0
@@ -207,13 +207,13 @@ class TestLoadDxyHandlingConfig:
                 }
             }
         }
-        
+
         config_file = tmp_path / "validation.yaml"
         with open(config_file, "w") as f:
             yaml.dump(config_data, f)
-        
+
         result = load_dxy_handling_config(str(config_file))
-        
+
         assert result == {
             "VWAP_RECLAIM": "skip",
             "DXY_CONTINUATION": "block",
@@ -222,13 +222,13 @@ class TestLoadDxyHandlingConfig:
     def test_returns_empty_dict_when_missing(self, tmp_path: Path) -> None:
         """Returns empty dict when dxy_handling is missing."""
         config_data = {}
-        
+
         config_file = tmp_path / "validation.yaml"
         with open(config_file, "w") as f:
             yaml.dump(config_data, f)
-        
+
         result = load_dxy_handling_config(str(config_file))
-        
+
         assert result == {}
 
 
@@ -244,13 +244,13 @@ class TestLoadCeoDirectiveConfig:
                 "daily_reset": False,
             }
         }
-        
+
         config_file = tmp_path / "validation.yaml"
         with open(config_file, "w") as f:
             yaml.dump(config_data, f)
-        
+
         result = load_ceo_directive_config(str(config_file))
-        
+
         assert result == {
             "override_file": "./config/custom.json",
             "early_mild_enabled": True,
@@ -260,13 +260,13 @@ class TestLoadCeoDirectiveConfig:
     def test_returns_defaults_when_missing(self, tmp_path: Path) -> None:
         """Returns default values when ceo_directive is missing."""
         config_data = {}
-        
+
         config_file = tmp_path / "validation.yaml"
         with open(config_file, "w") as f:
             yaml.dump(config_data, f)
-        
+
         result = load_ceo_directive_config(str(config_file))
-        
+
         assert result == {
             "override_file": "./config/dev.local.json",
             "early_mild_enabled": False,

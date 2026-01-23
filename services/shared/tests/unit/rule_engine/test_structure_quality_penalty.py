@@ -195,7 +195,9 @@ class TestStructureQualityPenalty:
 
     def test_cumulative_penalties(self):
         """Multiple quality issues should accumulate penalties."""
-        features = pd.Series({"liquidity_sweep": False, "bos_recent": False, "bos_age": 30})
+        features = pd.Series(
+            {"liquidity_sweep": False, "bos_recent": False, "bos_age": 30}
+        )
         htf_bias = HTFBias(
             bias="bullish",
             direction="long",
@@ -222,11 +224,13 @@ class TestStructureQualityPenalty:
 
     def test_quality_flags_auto_extraction(self):
         """Should auto-extract quality flags from features/htf_bias if not provided."""
-        features = pd.Series({
-            "liquidity_sweep": False,
-            "bos_recent": False,
-            "bos_age": 20,
-        })
+        features = pd.Series(
+            {
+                "liquidity_sweep": False,
+                "bos_recent": False,
+                "bos_age": 20,
+            }
+        )
         htf_bias = HTFBias(
             bias="bullish",
             direction="long",
@@ -249,11 +253,13 @@ class TestStructureQualityPenalty:
 
     def test_perfect_quality_no_penalty(self):
         """Perfect quality (all flags False) should result in 0 penalty."""
-        features = pd.Series({
-            "liquidity_sweep": True,
-            "bos_recent": True,
-            "bos_age": 5,
-        })
+        features = pd.Series(
+            {
+                "liquidity_sweep": True,
+                "bos_recent": True,
+                "bos_age": 5,
+            }
+        )
         htf_bias = HTFBias(
             bias="bullish",
             direction="long",
@@ -276,4 +282,3 @@ class TestStructureQualityPenalty:
             features, htf_bias, "VWAP_RECLAIM", quality_flags
         )
         assert penalty == 0.0
-

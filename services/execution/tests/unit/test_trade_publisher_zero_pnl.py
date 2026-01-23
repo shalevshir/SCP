@@ -27,7 +27,7 @@ def mock_publisher() -> MagicMock:
 
 class TestTradePublisherZeroPnL:
     """Test that zero P&L is correctly formatted in logs."""
-    
+
     @pytest.mark.asyncio
     async def test_publish_closed_with_zero_pnl(
         self,
@@ -35,11 +35,11 @@ class TestTradePublisherZeroPnL:
         mock_publisher: MagicMock,
     ) -> None:
         """Test that trades with 0.0 P&L show '0.00 points' not 'N/A'.
-        
+
         Bug: The condition `if trade.pnl_points` is falsy for 0.0,
         causing trades that close at entry price to log 'N/A' instead
         of '0.00 points'.
-        
+
         Expected: Zero P&L should be formatted as '0.00 points'.
         """
         # Create trade message with zero P&L
@@ -57,27 +57,27 @@ class TestTradePublisherZeroPnL:
             pnl_points=0.0,  # Zero P&L (not None!)
             exit_reason="MANUAL_EXIT",
         )
-        
+
         # Create publisher
         publisher = TradePublisher(mock_redis_client)
         publisher._publisher = mock_publisher
-        
+
         # Publish trade with logging captured
         with patch("execution_svc.trade_publisher.logger") as mock_logger:
             await publisher.publish_closed(trade)
-            
+
             # Verify log was called
             assert mock_logger.info.called
-            
+
             # Get the log message
             log_call = mock_logger.info.call_args[0][0]
-            
+
             # BUG VERIFICATION: Currently logs 'pnl=N/A' for zero P&L
             # Should log 'pnl=0.00 points' instead
-            assert "pnl=0.00 points" in log_call, (
-                f"Expected 'pnl=0.00 points' but got: {log_call}"
-            )
-    
+            assert (
+                "pnl=0.00 points" in log_call
+            ), f"Expected 'pnl=0.00 points' but got: {log_call}"
+
     @pytest.mark.asyncio
     async def test_publish_closed_with_positive_pnl(
         self,
@@ -99,16 +99,16 @@ class TestTradePublisherZeroPnL:
             pnl_points=10.0,
             exit_reason="TP_HIT",
         )
-        
+
         publisher = TradePublisher(mock_redis_client)
         publisher._publisher = mock_publisher
-        
+
         with patch("execution_svc.trade_publisher.logger") as mock_logger:
             await publisher.publish_closed(trade)
-            
+
             log_call = mock_logger.info.call_args[0][0]
             assert "pnl=10.00 points" in log_call
-    
+
     @pytest.mark.asyncio
     async def test_publish_closed_with_negative_pnl(
         self,
@@ -130,16 +130,16 @@ class TestTradePublisherZeroPnL:
             pnl_points=-5.0,
             exit_reason="SL_HIT",
         )
-        
+
         publisher = TradePublisher(mock_redis_client)
         publisher._publisher = mock_publisher
-        
+
         with patch("execution_svc.trade_publisher.logger") as mock_logger:
             await publisher.publish_closed(trade)
-            
+
             log_call = mock_logger.info.call_args[0][0]
             assert "pnl=-5.00 points" in log_call
-    
+
     @pytest.mark.asyncio
     async def test_publish_closed_with_none_pnl(
         self,
@@ -161,17 +161,12 @@ class TestTradePublisherZeroPnL:
             pnl_points=None,  # Missing P&L
             exit_reason="ERROR",
         )
-        
+
         publisher = TradePublisher(mock_redis_client)
         publisher._publisher = mock_publisher
-        
+
         with patch("execution_svc.trade_publisher.logger") as mock_logger:
             await publisher.publish_closed(trade)
-            
+
             log_call = mock_logger.info.call_args[0][0]
             assert "pnl=N/A" in log_call
-
-
-
-
-

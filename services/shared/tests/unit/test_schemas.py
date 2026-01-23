@@ -266,4 +266,3 @@ class TestTradeMessage:
         assert trade.closed_at is not None
         assert trade.pnl_points == 12.0
         assert trade.exit_reason == "TP_HIT"
-

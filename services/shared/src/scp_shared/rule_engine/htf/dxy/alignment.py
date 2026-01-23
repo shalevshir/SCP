@@ -86,7 +86,7 @@ def compute_dxy_alignment(
     micro_aligned = False
     effective_corr = None
     corr_source = None
-    
+
     if dxy_corr_5m is not None:
         effective_corr = dxy_corr_5m
         corr_source = "5M"
@@ -96,7 +96,7 @@ def compute_dxy_alignment(
     elif dxy_corr_15m is not None:
         effective_corr = dxy_corr_15m
         corr_source = "15M"
-    
+
     if effective_corr is not None:
         # Require inverse correlation < -0.4
         if effective_corr < -0.4:

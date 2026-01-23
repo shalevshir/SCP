@@ -43,12 +43,12 @@ class TestSetupConfig:
 
         for setup_name, setup_config in config["setups"].items():
             for constraint_name, constraint in setup_config["constraints"].items():
-                assert "expression" in constraint, (
-                    f"{setup_name}.{constraint_name} missing 'expression'"
-                )
-                assert "reject_reason" in constraint, (
-                    f"{setup_name}.{constraint_name} missing 'reject_reason'"
-                )
+                assert (
+                    "expression" in constraint
+                ), f"{setup_name}.{constraint_name} missing 'expression'"
+                assert (
+                    "reject_reason" in constraint
+                ), f"{setup_name}.{constraint_name} missing 'reject_reason'"
 
 
 class TestSetupValidator:
@@ -153,7 +153,7 @@ class TestVWAPReclaimValidation:
 
     def test_low_clarity_allowed_with_penalty(self) -> None:
         """Test that low clarity is allowed (not hard rejection) for VWAP_RECLAIM.
-        
+
         Low clarity results in score penalties via calculate_structure_quality_penalty,
         not hard rejection. This matches the old behavior where clarity was a
         quality flag, not a safety gate.
@@ -465,7 +465,7 @@ class TestDXYContinuationValidation:
 
 class TestSetupValidatorParity:
     """Tests ensuring config-driven validation produces same results as hardcoded logic.
-    
+
     These tests verify that the new config-driven system matches the existing
     hardcoded setup detectors for the same inputs.
     """
@@ -479,17 +479,20 @@ class TestSetupValidatorParity:
         validator = SetupValidator()
 
         # Test fallback: structure_label -> last_structure_label
-        features = pd.Series({
-            "structure_label": None,
-            "last_structure_label": "HH",  # Should fallback to this
-            "structure_clarity": 0.7,
-            "close": 2655.0,
-            "vwap": 2650.0,
-            "bos_direction": "long",
-            "direction": "long",
-        })
+        features = pd.Series(
+            {
+                "structure_label": None,
+                "last_structure_label": "HH",  # Should fallback to this
+                "structure_clarity": 0.7,
+                "close": 2655.0,
+                "vwap": 2650.0,
+                "bos_direction": "long",
+                "direction": "long",
+            }
+        )
 
         from scp_shared.rule_engine.htf.types import HTFBias
+
         htf_bias = HTFBias(
             bias="bullish",
             direction="long",
@@ -501,6 +504,7 @@ class TestSetupValidatorParity:
 
         # Use build_setup_context to get proper fallback logic
         from scp_shared.rule_engine.scoring import build_setup_context
+
         context = build_setup_context(features, htf_bias)
 
         result = validator.validate_setup("VWAP_RECLAIM", context)

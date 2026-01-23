@@ -148,4 +148,3 @@ class BehaviorGuardrails:
             logger.debug("Behavior guardrails passed: all conditions met")
 
         return GuardrailResult(allowed=allowed, reasons=reasons)
-

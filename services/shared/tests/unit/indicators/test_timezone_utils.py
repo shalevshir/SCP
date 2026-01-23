@@ -3,7 +3,10 @@
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from scp_shared.indicators.timezone_utils import get_session_id_series, get_vwap_session_id
+from scp_shared.indicators.timezone_utils import (
+    get_session_id_series,
+    get_vwap_session_id,
+)
 
 
 class TestVWAPSessionID:

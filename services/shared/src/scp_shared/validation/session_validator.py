@@ -152,4 +152,3 @@ class SessionValidator:
             for month in rule.months:
                 lookup.setdefault(month, []).append(rule)
         return {month: tuple(rules) for month, rules in lookup.items()}
-

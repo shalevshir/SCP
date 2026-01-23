@@ -39,14 +39,14 @@ class TestTradePublisher:
         """Publishes opened trade and returns message ID."""
         mock_redis = AsyncMock()
         publisher = TradePublisher(mock_redis)
-        
+
         trade = create_trade_message(direction="long")
-        
+
         with patch.object(publisher, "_publisher") as mock_publisher:
             mock_publisher.publish = AsyncMock(return_value="123-456")
-            
+
             result = await publisher.publish_opened(trade)
-            
+
             assert result == "123-456"
             mock_publisher.publish.assert_called_once_with("trades.opened", trade)
 
@@ -55,14 +55,14 @@ class TestTradePublisher:
         """Publishes closed trade and returns message ID."""
         mock_redis = AsyncMock()
         publisher = TradePublisher(mock_redis)
-        
+
         trade = create_trade_message(direction="long", closed=True)
-        
+
         with patch.object(publisher, "_publisher") as mock_publisher:
             mock_publisher.publish = AsyncMock(return_value="789-012")
-            
+
             result = await publisher.publish_closed(trade)
-            
+
             assert result == "789-012"
             mock_publisher.publish.assert_called_once_with("trades.closed", trade)
 
@@ -71,7 +71,7 @@ class TestTradePublisher:
         """Uses default stream names."""
         mock_redis = AsyncMock()
         publisher = TradePublisher(mock_redis)
-        
+
         assert publisher._opened_stream == "trades.opened"
         assert publisher._closed_stream == "trades.closed"
 
@@ -84,7 +84,7 @@ class TestTradePublisher:
             opened_stream="custom.opened",
             closed_stream="custom.closed",
         )
-        
+
         assert publisher._opened_stream == "custom.opened"
         assert publisher._closed_stream == "custom.closed"
 
@@ -93,14 +93,14 @@ class TestTradePublisher:
         """Publishes short position opened trade."""
         mock_redis = AsyncMock()
         publisher = TradePublisher(mock_redis)
-        
+
         trade = create_trade_message(direction="short")
-        
+
         with patch.object(publisher, "_publisher") as mock_publisher:
             mock_publisher.publish = AsyncMock(return_value="abc-123")
-            
+
             result = await publisher.publish_opened(trade)
-            
+
             assert result == "abc-123"
 
     @pytest.mark.asyncio
@@ -108,7 +108,7 @@ class TestTradePublisher:
         """Handles trade with None pnl_points."""
         mock_redis = AsyncMock()
         publisher = TradePublisher(mock_redis)
-        
+
         trade = TradeMessage(
             id=str(uuid4()),
             signal_id=str(uuid4()),
@@ -123,11 +123,11 @@ class TestTradePublisher:
             exit_reason="MANUAL",
             pnl_points=None,  # No P&L calculated
         )
-        
+
         with patch.object(publisher, "_publisher") as mock_publisher:
             mock_publisher.publish = AsyncMock(return_value="def-456")
-            
+
             # Should not raise even with None pnl
             result = await publisher.publish_closed(trade)
-            
+
             assert result == "def-456"

@@ -31,14 +31,14 @@ class TestBiasPublisher:
         """Publishes bias and returns message ID."""
         mock_redis = AsyncMock()
         publisher = BiasPublisher(mock_redis)
-        
+
         bias = create_bias_message()
-        
+
         with patch.object(publisher, "publisher") as mock_publisher:
             mock_publisher.publish = AsyncMock(return_value="123-456")
-            
+
             result = await publisher.publish(bias)
-            
+
             assert result == "123-456"
             mock_publisher.publish.assert_called_once_with("htf.bias", bias)
 
@@ -47,7 +47,7 @@ class TestBiasPublisher:
         """Publishes bearish bias."""
         mock_redis = AsyncMock()
         publisher = BiasPublisher(mock_redis)
-        
+
         bias = HTFBiasMessage(
             timestamp=datetime.now(timezone.utc),
             bias="bearish",
@@ -58,12 +58,12 @@ class TestBiasPublisher:
             dxy_aligned=True,
             chop_detected=False,
         )
-        
+
         with patch.object(publisher, "publisher") as mock_publisher:
             mock_publisher.publish = AsyncMock(return_value="789-012")
-            
+
             result = await publisher.publish(bias)
-            
+
             assert result == "789-012"
 
     @pytest.mark.asyncio
@@ -71,7 +71,7 @@ class TestBiasPublisher:
         """Publishes neutral bias when chop detected."""
         mock_redis = AsyncMock()
         publisher = BiasPublisher(mock_redis)
-        
+
         bias = HTFBiasMessage(
             timestamp=datetime.now(timezone.utc),
             bias="neutral",
@@ -82,10 +82,10 @@ class TestBiasPublisher:
             dxy_aligned=False,
             chop_detected=True,
         )
-        
+
         with patch.object(publisher, "publisher") as mock_publisher:
             mock_publisher.publish = AsyncMock(return_value="abc-def")
-            
+
             result = await publisher.publish(bias)
-            
+
             assert result == "abc-def"

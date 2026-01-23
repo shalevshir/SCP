@@ -25,30 +25,32 @@ class TestVWAPReclaimExpansionIntegration:
 
     def test_valid_context_with_expansion_produces_high_score(self):
         """Test that valid context + expansion produces high-quality signal."""
-        features = pd.Series({
-            "timestamp": pd.Timestamp("2025-01-01 10:00:00", tz="UTC"),
-            "symbol": "GC",
-            "timeframe": "1m",
-            "close": 2650.0,
-            "vwap": 2645.0,  # Changed from 2649.0 to give 0.19% deviation (> 0.15%)
-            "rsi": 55.0,
-            "ema_9": 2648.0,
-            "ema_20": 2645.0,
-            "ema_50": 2640.0,
-            "dxy_corr": -0.75,
-            "structure_label": "HH",  # Required for validation
-            # Context prerequisites
-            "structure_clarity": 0.6,
-            "liquidity_sweep": True,
-            "bos_recent": True,
-            "bos_age": 5,
-            "bos_direction": "bullish",
-            "choch_detected": False,
-            "structure_conflict_flag": False,
-            # Expansion signals
-            "expansion_detected": True,
-            "expansion_reasons": ["recent_bos", "range_expansion"],
-        })
+        features = pd.Series(
+            {
+                "timestamp": pd.Timestamp("2025-01-01 10:00:00", tz="UTC"),
+                "symbol": "GC",
+                "timeframe": "1m",
+                "close": 2650.0,
+                "vwap": 2645.0,  # Changed from 2649.0 to give 0.19% deviation (> 0.15%)
+                "rsi": 55.0,
+                "ema_9": 2648.0,
+                "ema_20": 2645.0,
+                "ema_50": 2640.0,
+                "dxy_corr": -0.75,
+                "structure_label": "HH",  # Required for validation
+                # Context prerequisites
+                "structure_clarity": 0.6,
+                "liquidity_sweep": True,
+                "bos_recent": True,
+                "bos_age": 5,
+                "bos_direction": "bullish",
+                "choch_detected": False,
+                "structure_conflict_flag": False,
+                # Expansion signals
+                "expansion_detected": True,
+                "expansion_reasons": ["recent_bos", "range_expansion"],
+            }
+        )
 
         htf_bias = HTFBias(
             bias="bullish",
@@ -90,7 +92,10 @@ class TestVWAPReclaimExpansionIntegration:
         signal = score_signal(features, htf_bias, context)
         assert signal.setup_type == "VWAP_RECLAIM"
         assert signal.score >= 7.0  # High score expected
-        assert "late_reclaim_penalty" not in signal.factors or signal.factors.get("late_reclaim_penalty", 0) == 0
+        assert (
+            "late_reclaim_penalty" not in signal.factors
+            or signal.factors.get("late_reclaim_penalty", 0) == 0
+        )
 
     def test_valid_context_without_expansion_produces_penalized_signal(self):
         """Test that valid context without expansion still produces signal but with penalty.
@@ -100,30 +105,32 @@ class TestVWAPReclaimExpansionIntegration:
         With high base confluence, the signal can still score >= 8.0.
         The key assertion is that the penalty IS applied when expansion is missing.
         """
-        features = pd.Series({
-            "timestamp": pd.Timestamp("2025-01-01 10:00:00", tz="UTC"),
-            "symbol": "GC",
-            "timeframe": "1m",
-            "close": 2650.0,
-            "vwap": 2645.0,  # 0.19% deviation (>= 0.15% threshold)
-            "rsi": 55.0,
-            "ema_9": 2648.0,
-            "ema_20": 2645.0,
-            "ema_50": 2640.0,
-            "dxy_corr": -0.75,
-            "structure_label": "HH",  # Required for validation
-            # Context prerequisites (valid)
-            "structure_clarity": 0.6,
-            "liquidity_sweep": True,
-            "bos_recent": False,  # Stale
-            "bos_age": 18,  # Old BOS
-            "bos_direction": "bullish",
-            "choch_detected": False,
-            "structure_conflict_flag": False,
-            # No expansion signals
-            "expansion_detected": False,
-            "expansion_reasons": [],
-        })
+        features = pd.Series(
+            {
+                "timestamp": pd.Timestamp("2025-01-01 10:00:00", tz="UTC"),
+                "symbol": "GC",
+                "timeframe": "1m",
+                "close": 2650.0,
+                "vwap": 2645.0,  # 0.19% deviation (>= 0.15% threshold)
+                "rsi": 55.0,
+                "ema_9": 2648.0,
+                "ema_20": 2645.0,
+                "ema_50": 2640.0,
+                "dxy_corr": -0.75,
+                "structure_label": "HH",  # Required for validation
+                # Context prerequisites (valid)
+                "structure_clarity": 0.6,
+                "liquidity_sweep": True,
+                "bos_recent": False,  # Stale
+                "bos_age": 18,  # Old BOS
+                "bos_direction": "bullish",
+                "choch_detected": False,
+                "structure_conflict_flag": False,
+                # No expansion signals
+                "expansion_detected": False,
+                "expansion_reasons": [],
+            }
+        )
 
         htf_bias = HTFBias(
             bias="bullish",
@@ -173,25 +180,27 @@ class TestVWAPReclaimExpansionIntegration:
 
     def test_invalid_context_rejects_signal(self):
         """Test that invalid context rejects signal entirely."""
-        features = pd.Series({
-            "timestamp": pd.Timestamp("2025-01-01 10:00:00", tz="UTC"),
-            "symbol": "GC",
-            "timeframe": "1m",
-            "close": 2650.0,
-            "vwap": 2645.0,  # 0.19% deviation (>= 0.15% threshold)
-            "rsi": 55.0,
-            "ema_9": 2648.0,
-            "ema_20": 2645.0,
-            "ema_50": 2640.0,
-            "dxy_corr": -0.5,  # Weak correlation - fails DXY_CONTINUATION threshold (-0.6)
-            # Invalid context (no sweep)
-            "structure_clarity": 0.6,
-            "liquidity_sweep": False,  # Missing sweep
-            "bos_recent": True,
-            "bos_age": 5,
-            "expansion_detected": True,
-            "expansion_reasons": ["recent_bos"],
-        })
+        features = pd.Series(
+            {
+                "timestamp": pd.Timestamp("2025-01-01 10:00:00", tz="UTC"),
+                "symbol": "GC",
+                "timeframe": "1m",
+                "close": 2650.0,
+                "vwap": 2645.0,  # 0.19% deviation (>= 0.15% threshold)
+                "rsi": 55.0,
+                "ema_9": 2648.0,
+                "ema_20": 2645.0,
+                "ema_50": 2640.0,
+                "dxy_corr": -0.5,  # Weak correlation - fails DXY_CONTINUATION threshold (-0.6)
+                # Invalid context (no sweep)
+                "structure_clarity": 0.6,
+                "liquidity_sweep": False,  # Missing sweep
+                "bos_recent": True,
+                "bos_age": 5,
+                "expansion_detected": True,
+                "expansion_reasons": ["recent_bos"],
+            }
+        )
 
         htf_bias = HTFBias(
             bias="bullish",
@@ -214,19 +223,21 @@ class TestVWAPReclaimExpansionIntegration:
 
     def test_diagnostics_include_expansion_fields(self):
         """Test that diagnostics include expansion gate information."""
-        features = pd.Series({
-            "timestamp": pd.Timestamp("2025-01-01 10:00:00", tz="UTC"),
-            "symbol": "GC",
-            "timeframe": "1m",
-            "close": 2650.0,
-            "vwap": 2645.0,  # 0.19% deviation (>= 0.15% threshold)
-            "rsi": 55.0,
-            "structure_clarity": 0.6,
-            "liquidity_sweep": True,
-            "bos_age": 5,
-            "expansion_detected": True,
-            "expansion_reasons": ["recent_bos", "displacement_candle"],
-        })
+        features = pd.Series(
+            {
+                "timestamp": pd.Timestamp("2025-01-01 10:00:00", tz="UTC"),
+                "symbol": "GC",
+                "timeframe": "1m",
+                "close": 2650.0,
+                "vwap": 2645.0,  # 0.19% deviation (>= 0.15% threshold)
+                "rsi": 55.0,
+                "structure_clarity": 0.6,
+                "liquidity_sweep": True,
+                "bos_age": 5,
+                "expansion_detected": True,
+                "expansion_reasons": ["recent_bos", "displacement_candle"],
+            }
+        )
 
         htf_bias = HTFBias(
             bias="bullish",
@@ -256,30 +267,32 @@ class TestVWAPReclaimExpansionIntegration:
         1. evaluate_entry_readiness tracks late_bos penalty for its own purposes
         2. score_signal generates valid signal (expansion present = entry ready)
         """
-        features = pd.Series({
-            "timestamp": pd.Timestamp("2025-01-01 10:00:00", tz="UTC"),
-            "symbol": "GC",
-            "timeframe": "1m",
-            "close": 2650.0,
-            "vwap": 2645.0,  # 0.19% deviation (>= 0.15% threshold)
-            "rsi": 55.0,
-            "ema_9": 2648.0,
-            "ema_20": 2645.0,
-            "ema_50": 2640.0,
-            "dxy_corr": -0.75,
-            "structure_label": "HH",  # Required for validation
-            # Valid context
-            "structure_clarity": 0.6,
-            "liquidity_sweep": True,
-            "bos_recent": False,
-            "bos_age": 12,  # Late but not ancient
-            "bos_direction": "bullish",
-            "choch_detected": False,
-            "structure_conflict_flag": False,
-            # Has expansion (so entry is ready)
-            "expansion_detected": True,
-            "expansion_reasons": ["range_expansion", "atr_expansion"],
-        })
+        features = pd.Series(
+            {
+                "timestamp": pd.Timestamp("2025-01-01 10:00:00", tz="UTC"),
+                "symbol": "GC",
+                "timeframe": "1m",
+                "close": 2650.0,
+                "vwap": 2645.0,  # 0.19% deviation (>= 0.15% threshold)
+                "rsi": 55.0,
+                "ema_9": 2648.0,
+                "ema_20": 2645.0,
+                "ema_50": 2640.0,
+                "dxy_corr": -0.75,
+                "structure_label": "HH",  # Required for validation
+                # Valid context
+                "structure_clarity": 0.6,
+                "liquidity_sweep": True,
+                "bos_recent": False,
+                "bos_age": 12,  # Late but not ancient
+                "bos_direction": "bullish",
+                "choch_detected": False,
+                "structure_conflict_flag": False,
+                # Has expansion (so entry is ready)
+                "expansion_detected": True,
+                "expansion_reasons": ["range_expansion", "atr_expansion"],
+            }
+        )
 
         htf_bias = HTFBias(
             bias="bullish",
@@ -333,31 +346,33 @@ class TestVWAPReclaimExpansionIntegration:
         To trigger BOS age penalty, we need BOS to be INVALID (counter-CHoCH or clarity < 0.4).
         We use choch_detected=True with opposite direction to invalidate BOS.
         """
-        features = pd.Series({
-            "timestamp": pd.Timestamp("2025-01-01 10:00:00", tz="UTC"),
-            "symbol": "GC",
-            "timeframe": "1m",
-            "close": 2650.0,
-            "vwap": 2645.0,  # 0.19% deviation (>= 0.15% threshold)
-            "rsi": 55.0,
-            "ema_9": 2648.0,
-            "ema_20": 2645.0,
-            "ema_50": 2640.0,
-            "dxy_corr": -0.75,
-            "structure_label": "HH",  # Required for validation
-            # Valid context but problematic quality
-            "structure_clarity": 0.35,  # LOW clarity to invalidate BOS
-            "liquidity_sweep": True,
-            "bos_age": 18,  # Late BOS + invalid = -1.0 penalty
-            "bos_direction": "bullish",
-            "choch_detected": False,
-            "structure_conflict_flag": False,
-            "is_structural_chop": True,  # Noise (-1.5 penalty for RECLAIM)
-            "atr_compression_ratio": 0.3,  # Severe compression (-0.5 more)
-            # Has expansion (so not blocked entirely)
-            "expansion_detected": True,
-            "expansion_reasons": ["displacement_candle"],
-        })
+        features = pd.Series(
+            {
+                "timestamp": pd.Timestamp("2025-01-01 10:00:00", tz="UTC"),
+                "symbol": "GC",
+                "timeframe": "1m",
+                "close": 2650.0,
+                "vwap": 2645.0,  # 0.19% deviation (>= 0.15% threshold)
+                "rsi": 55.0,
+                "ema_9": 2648.0,
+                "ema_20": 2645.0,
+                "ema_50": 2640.0,
+                "dxy_corr": -0.75,
+                "structure_label": "HH",  # Required for validation
+                # Valid context but problematic quality
+                "structure_clarity": 0.35,  # LOW clarity to invalidate BOS
+                "liquidity_sweep": True,
+                "bos_age": 18,  # Late BOS + invalid = -1.0 penalty
+                "bos_direction": "bullish",
+                "choch_detected": False,
+                "structure_conflict_flag": False,
+                "is_structural_chop": True,  # Noise (-1.5 penalty for RECLAIM)
+                "atr_compression_ratio": 0.3,  # Severe compression (-0.5 more)
+                # Has expansion (so not blocked entirely)
+                "expansion_detected": True,
+                "expansion_reasons": ["displacement_candle"],
+            }
+        )
 
         htf_bias = HTFBias(
             bias="bullish",
@@ -390,5 +405,3 @@ class TestVWAPReclaimExpansionIntegration:
         # Final score should be reduced by penalties
         # With multiple penalties stacking, score should be lower than 8.0
         assert signal.score < 8.0
-
-

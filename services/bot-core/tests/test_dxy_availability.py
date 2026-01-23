@@ -56,7 +56,7 @@ class TestDXYAvailabilityCheck:
         from bot_core_svc.bias_cache import HTFBiasCache
         from bot_core_svc.signal_engine import SignalEngine, SignalResult
         from scp_shared.rule_engine.signal import Signal
-        
+
         # Create mocks
         bias_cache = HTFBiasCache(ttl_seconds=300)
         bias_cache.update(base_bias)
@@ -78,9 +78,7 @@ class TestDXYAvailabilityCheck:
         )
         signal_engine.generate = Mock(
             return_value=SignalResult(
-                signal_msg=None,
-                raw_signal=mock_signal,
-                rejection_reason="no_signal"
+                signal_msg=None, raw_signal=mock_signal, rejection_reason="no_signal"
             )
         )
         signal_publisher = AsyncMock()
@@ -93,12 +91,12 @@ class TestDXYAvailabilityCheck:
         )
         active_trade_checker = Mock()
         active_trade_checker.can_take_new_trade = AsyncMock(return_value=(True, 0))
-        
+
         # Create features with DXY unavailable
         features = FeaturesMessage(
             **{**base_features.__dict__, "dxy_correlation": None, "dxy_corr": None}
         )
-        
+
         # Process feature message (skip warmup by setting counter > warmup_bars)
         await process_feature_message(
             features,
@@ -112,7 +110,7 @@ class TestDXYAvailabilityCheck:
             warmup_bar_count=100,  # Already past warmup
             warmup_bars=60,
         )
-        
+
         # signal_engine.generate should NOT be called
         signal_engine.generate.assert_not_called()
 
@@ -123,7 +121,7 @@ class TestDXYAvailabilityCheck:
         from bot_core_svc.bias_cache import HTFBiasCache
         from bot_core_svc.signal_engine import SignalEngine, SignalResult
         from scp_shared.rule_engine.signal import Signal
-        
+
         # Create mocks
         bias_cache = HTFBiasCache(ttl_seconds=300)
         bias_cache.update(base_bias)
@@ -145,9 +143,7 @@ class TestDXYAvailabilityCheck:
         )
         signal_engine.generate = Mock(
             return_value=SignalResult(
-                signal_msg=None,
-                raw_signal=mock_signal,
-                rejection_reason="no_signal"
+                signal_msg=None, raw_signal=mock_signal, rejection_reason="no_signal"
             )
         )
         signal_publisher = AsyncMock()
@@ -160,7 +156,7 @@ class TestDXYAvailabilityCheck:
         )
         active_trade_checker = Mock()
         active_trade_checker.can_take_new_trade = AsyncMock(return_value=(True, 0))
-        
+
         # Process feature message with DXY available (skip warmup by setting counter > warmup_bars)
         await process_feature_message(
             base_features,
@@ -174,9 +170,6 @@ class TestDXYAvailabilityCheck:
             warmup_bar_count=100,  # Already past warmup
             warmup_bars=60,
         )
-        
+
         # signal_engine.generate SHOULD be called
         signal_engine.generate.assert_called_once()
-
-
-

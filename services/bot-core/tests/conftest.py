@@ -19,19 +19,19 @@ def event_loop():
 @pytest_asyncio.fixture(scope="function")
 async def db_pool() -> AsyncGenerator[DatabasePool, None]:
     """Provide database pool connected to test PostgreSQL.
-    
+
     Connects to PostgreSQL using DATABASE_URL env var or defaults to local dev database.
-    
+
     Yields:
         Database pool for unit tests
     """
     import os
+
     database_url = os.environ.get(
-        "DATABASE_URL",
-        "postgresql://scp:scp_dev_password@localhost:5432/scp"
+        "DATABASE_URL", "postgresql://scp:scp_dev_password@localhost:5432/scp"
     )
     pool = DatabasePool(database_url)
-    
+
     try:
         await pool.connect()
         yield pool
@@ -42,7 +42,7 @@ async def db_pool() -> AsyncGenerator[DatabasePool, None]:
 @pytest_asyncio.fixture(scope="function")
 async def clean_database(db_pool: DatabasePool) -> None:
     """Clean signal_history and trades tables before each test.
-    
+
     Args:
         db_pool: Database pool fixture
     """
@@ -62,4 +62,3 @@ def sample_context() -> dict:
         "session_ok": True,
         "enforcer_tier": "Conservative",
     }
-

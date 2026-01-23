@@ -11,28 +11,30 @@ from scp_shared.common.types import Candle
 
 class HTFBiasProcessor:
     """Wrapper around StreamingHTFBiasCalculator for service use.
-    
+
     Handles conversion between:
     - Input: CandleMessage (from Redis streams)
     - Internal: Candle (for StreamingHTFBiasCalculator)
     - Output: HTFBiasMessage (for Redis streams)
     """
-    
+
     def __init__(self):
         """Initialize HTF bias processor."""
         self.calculator = StreamingHTFBiasCalculator()
-    
-    def _convert_confidence(self, htf_confidence: str, score: float, chop_detected: bool = False) -> str:
+
+    def _convert_confidence(
+        self, htf_confidence: str, score: float, chop_detected: bool = False
+    ) -> str:
         """Convert HTFBias confidence to signal confidence format.
-        
+
         HTFBias uses: "low", "medium", "high"
         HTFBiasMessage uses: "A+", "A", "B", "C"
-        
+
         Args:
             htf_confidence: HTFBias confidence ("low", "medium", "high")
             score: HTFBias score (0-10)
             chop_detected: Whether chop was detected (forces lower confidence)
-            
+
         Returns:
             Signal confidence ("A+", "A", "B", "C")
         """
@@ -43,7 +45,7 @@ class HTFBiasProcessor:
         #         return "B"
         #     else:
         #         return "C"
-        
+
         # Map based on both confidence and score
         if htf_confidence == "high" and score >= 8:
             return "A+"
@@ -53,18 +55,18 @@ class HTFBiasProcessor:
             return "B"
         else:  # low
             return "C"
-    
+
     def process(
         self,
         gc_message: CandleMessage,
         dxy_message: CandleMessage,
     ) -> HTFBiasMessage | None:
         """Process candle pair and return HTF bias message if boundary reached.
-        
+
         Args:
             gc_message: Gold candle message (1m timeframe)
             dxy_message: DXY candle message (1m timeframe)
-            
+
         Returns:
             HTFBiasMessage if HTF boundary reached and bias computed, None otherwise
         """
@@ -91,32 +93,33 @@ class HTFBiasProcessor:
             timeframe=dxy_message.timeframe,
             source="STREAM",
         )
-        
+
         # Process through StreamingHTFBiasCalculator
         htf_bias = self.calculator.update(gc_candle, dxy_candle)
-        
+
         # Return None if no bias computed yet (not at boundary or insufficient data)
         if htf_bias is None:
             return None
-        
+
         # DEBUG: Log HTFBias fields before conversion
         from scp_shared.common.logger import get_logger
+
         logger = get_logger(__name__)
         logger.info(
             f"HTFBias computed: seasonality_adj={htf_bias.seasonality_adjustment}, "
             f"seasonality_period={htf_bias.seasonality_period}, "
             f"vwap_confirmed={htf_bias.vwap_trend_confirmed}"
         )
-        
+
         # Convert HTFBias to HTFBiasMessage
         return HTFBiasMessage(
             timestamp=gc_message.timestamp,
             bias=htf_bias.bias,  # "bullish" | "bearish" | "neutral"
             score=htf_bias.score,
             confidence=self._convert_confidence(
-                htf_bias.confidence, 
-                htf_bias.score, 
-                chop_detected=htf_bias.chop_detected
+                htf_bias.confidence,
+                htf_bias.score,
+                chop_detected=htf_bias.chop_detected,
             ),
             structure_15m=htf_bias.structure_15m,
             structure_1h=htf_bias.structure_1h,
@@ -141,7 +144,9 @@ class HTFBiasProcessor:
             dxy_corr_15m=htf_bias.dxy_corr_15m,
             dxy_corr_1h=htf_bias.dxy_corr_1h,
             dxy_structure=htf_bias.dxy_structure,
-            dxy_chop_5m=htf_bias.dxy_chop_5m if htf_bias.dxy_chop_5m is not None else False,
+            dxy_chop_5m=(
+                htf_bias.dxy_chop_5m if htf_bias.dxy_chop_5m is not None else False
+            ),
             # TP Structural Targets from HTF analysis (SOP Section 4.3)
             htf_range_high=htf_bias.htf_range_high,
             htf_range_low=htf_bias.htf_range_low,

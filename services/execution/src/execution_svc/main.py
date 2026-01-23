@@ -32,7 +32,7 @@ from execution_svc.trade_repository import TradeRepository
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[logging.StreamHandler()]
+    handlers=[logging.StreamHandler()],
 )
 
 logger = get_logger(__name__)
@@ -45,7 +45,9 @@ shutdown_event = asyncio.Event()
 
 # Global references for reset endpoint (populated in process_streams)
 _trade_manager: Optional[TradeManager] = None
-_broker: Optional[BaseBroker] = None  # BaseBroker instance (PaperBroker or IBPaperBroker)
+_broker: Optional[BaseBroker] = (
+    None  # BaseBroker instance (PaperBroker or IBPaperBroker)
+)
 _sm_manager: Optional[StateMachineManager] = None
 _synchronizer: Optional[CandleFeatureSynchronizer] = None
 
@@ -59,15 +61,15 @@ async def process_streams(
     db_pool: DatabasePool,
 ) -> None:
     """Main processing loop: consume signals and candles, manage trades.
-    
+
     Args:
         redis_client: Redis client
         db_pool: Database pool
     """
     global _trade_manager, _broker, _sm_manager, _is_killed, _kill_switch_repo
-    
+
     logger.info("Starting execution processing loop")
-    
+
     # Initialize components
     # Note: Broker will be passed in from lifespan (already created and connected)
     # This function will be refactored to receive broker as parameter
@@ -80,7 +82,7 @@ async def process_streams(
     # HARDCODED: Force max_active_trades=1 for debugging (matching backtest)
     _max_active = 1  # config.max_active_trades
     logger.info(f"TradeManager config: max_active_trades={_max_active}")
-    
+
     trade_manager = TradeManager(
         broker=broker,
         state_machine_manager=sm_manager,
@@ -94,21 +96,23 @@ async def process_streams(
         service_mode=config.service_mode,
         service_name=config.service_name,
     )
-    
+
     # Store global references for reset endpoint
     _trade_manager = trade_manager
     _broker = broker
     _sm_manager = sm_manager
-    
+
     # Restore state from database
     await sm_manager.restore_from_db()
     await trade_manager.restore_active_trades()
-    
+
     # Set trading halt reason metric based on actual restored state
     # Check if trading is blocked due to restored state (PDLL, loss streak, etc.)
     can_trade, halt_reason = trade_manager._daily_tracker.can_trade()
     if can_trade:
-        exec_metrics.set_trading_halt_reason("NONE", config.service_mode, config.service_name)
+        exec_metrics.set_trading_halt_reason(
+            "NONE", config.service_mode, config.service_name
+        )
         logger.info("Trading allowed after state restore - halt reason: NONE")
     else:
         # Trading is blocked - set the actual halt reason
@@ -118,29 +122,29 @@ async def process_streams(
         logger.warning(
             f"Trading blocked after state restore - halt reason: {halt_reason or 'UNSAFE_STATE'}"
         )
-    
+
     # Update metrics based on restored state
     exec_metrics.loss_streak_current.labels(
         mode=config.service_mode, service=config.service_name
     ).set(trade_manager._daily_tracker.state.consecutive_losses)
-    
+
     exec_metrics.daily_pnl.labels(
         mode=config.service_mode, service=config.service_name
     ).set(trade_manager._daily_tracker.state.daily_pnl)
-    
+
     # Calculate daily drawdown (max loss from peak)
     daily_drawdown = min(0, trade_manager._daily_tracker.state.daily_pnl)
     exec_metrics.daily_drawdown.labels(
         mode=config.service_mode, service=config.service_name
     ).set(abs(daily_drawdown))
-    
+
     logger.info(
         f"Restored daily state metrics: "
         f"loss_streak={trade_manager._daily_tracker.state.consecutive_losses}, "
         f"daily_pnl={trade_manager._daily_tracker.state.daily_pnl:.2f}, "
         f"daily_drawdown={abs(daily_drawdown):.2f}"
     )
-    
+
     # Create consumers
     signals_consumer = RedisStreamConsumer(
         redis_client,
@@ -149,7 +153,7 @@ async def process_streams(
         consumer_name="instance-1",
         message_type=SignalMessage,
     )
-    
+
     candles_consumer = RedisStreamConsumer(
         redis_client,
         stream="candles.1m.gc",
@@ -157,7 +161,7 @@ async def process_streams(
         consumer_name="instance-1",
         message_type=CandleMessage,
     )
-    
+
     features_consumer = RedisStreamConsumer(
         redis_client,
         stream="features.1m",
@@ -165,9 +169,9 @@ async def process_streams(
         consumer_name="instance-1",
         message_type=FeaturesMessage,
     )
-    
+
     logger.info("Execution Service ready - consuming signals and candles")
-    
+
     # Synchronizer to pair candles with their matching features by timestamp
     # CRITICAL: Use a VERY large timeout (7 days of data-time) to handle:
     # 1. High-speed replay where candles arrive in batches spanning hours
@@ -179,22 +183,28 @@ async def process_streams(
     global _synchronizer  # noqa: PLW0603 - intentional global for reset endpoint
     synchronizer = CandleFeatureSynchronizer(timeout_seconds=604800)  # 7 days
     _synchronizer = synchronizer  # Store global reference for reset endpoint
-    
+
     # Cleanup counter (run cleanup every N candles to prevent memory leaks)
     cleanup_counter = 0
     cleanup_interval = 50  # Cleanup every 50 candles (~50 minutes)
-    
+
     try:
         while not shutdown_event.is_set():
             # Read from all streams IN PARALLEL to avoid sequential blocking
             # Previously, each read blocked for up to 1000ms, causing ~3 second
             # delays when streams were empty. Now they run concurrently.
             signals_list, candles_list, features_list = await asyncio.gather(
-                signals_consumer.read(count=10, block_ms=100),  # Short timeout for signals
-                candles_consumer.read(count=100, block_ms=100),  # Larger batch for replay
-                features_consumer.read(count=100, block_ms=100),  # Larger batch for replay
+                signals_consumer.read(
+                    count=10, block_ms=100
+                ),  # Short timeout for signals
+                candles_consumer.read(
+                    count=100, block_ms=100
+                ),  # Larger batch for replay
+                features_consumer.read(
+                    count=100, block_ms=100
+                ),  # Larger batch for replay
             )
-            
+
             # Process signals (buffer for next bar execution)
             # KILL SWITCH: Skip signal processing if killed
             if _is_killed:
@@ -205,7 +215,7 @@ async def process_streams(
             else:
                 for signal_msg in signals_list:
                     await trade_manager.on_signal(signal_msg)
-            
+
             # CRITICAL FIX: Interleave candle and feature processing to prevent
             # cleanup from dropping unpaired messages during high-speed replay.
             # Previously, all candles were added first, then all features.
@@ -219,17 +229,17 @@ async def process_streams(
             for f in features_list:
                 all_messages.append(("features", f))
             all_messages.sort(key=lambda x: x[1].timestamp)
-            
+
             for msg_type, msg in all_messages:
                 if msg_type == "candle":
                     pair = synchronizer.add_candle(msg)  # type: ignore[arg-type]
                 else:
                     pair = synchronizer.add_features(msg)  # type: ignore[arg-type]
-                
+
                 if pair:
                     await _process_candle_with_features(pair, trade_manager, sm_manager)
                     cleanup_counter += 1
-            
+
             # Log synchronizer stats periodically for debugging
             stats = synchronizer.get_buffer_stats()
             if stats["total_unpaired"] > 10:
@@ -237,12 +247,12 @@ async def process_streams(
                     f"Synchronizer buffer growing: {stats} - "
                     "candles/features may be out of sync"
                 )
-            
+
             # Periodic cleanup to prevent memory leaks
             if cleanup_counter >= cleanup_interval:
                 sm_manager.cleanup_old_state_machines()
                 cleanup_counter = 0
-    
+
     except asyncio.CancelledError:
         logger.info("Execution processing cancelled")
         raise
@@ -268,10 +278,10 @@ async def _process_candle_with_features(
     sm_manager: StateMachineManager,
 ) -> None:
     """Process a synchronized candle-features pair.
-    
+
     This ensures that when we process a candle, we have the matching
     features with the same timestamp for invalidation checks.
-    
+
     Args:
         pair: Tuple of (candle, features) with matching timestamps
         trade_manager: Trade manager instance
@@ -279,9 +289,9 @@ async def _process_candle_with_features(
     """
     global _is_killed  # noqa: PLW0603 - intentional global for kill switch
     candle_msg, features_msg = pair
-    
+
     logger.info(f"Processing candle: {candle_msg.timestamp} (with matching features)")
-    
+
     # Convert to internal Candle type for validation
     candle_obj = Candle(
         timestamp=candle_msg.timestamp,
@@ -294,7 +304,7 @@ async def _process_candle_with_features(
         timeframe=candle_msg.timeframe,
         source="STREAM",
     )
-    
+
     # Skip invalid candles (NaN/Inf) BEFORE incrementing bar counter
     # This matches legacy backtester behavior where invalid candles don't count as bars
     if not is_valid_candle(candle_obj):
@@ -303,17 +313,17 @@ async def _process_candle_with_features(
             f"- bar counter not incremented"
         )
         return
-    
+
     # CRITICAL: Check session reset BEFORE execute_pending_signals
     # to ensure daily limits (PDLL, max trades) are fresh at day boundaries
     trade_manager.check_session_reset(candle_msg.timestamp)
-    
+
     # Increment bar counter BEFORE execute_pending_signals so that
     # check_confirmation() can confirm signals from the previous bar
     # (confirmation requires bar_idx > detection_bar_idx)
     # Only increment for valid candles (invalid candles already returned above)
     sm_manager.increment_bar_counter()
-    
+
     # KILL SWITCH: Skip executing pending signals if killed
     # This prevents signals that were already in _pending_signals when the
     # kill switch was activated from being executed
@@ -325,8 +335,10 @@ async def _process_candle_with_features(
     else:
         # Execute pending signals at this candle's open
         # Pass candle timestamp so signals only execute at the correct time
-        await trade_manager.execute_pending_signals(candle_msg.open, candle_msg.timestamp)
-    
+        await trade_manager.execute_pending_signals(
+            candle_msg.open, candle_msg.timestamp
+        )
+
     # Monitor active trades for SL/TP and invalidation
     # Now we pass the CORRECT features that match this candle's timestamp
     # Note: Invalid candle validation already handled above, so this is safe
@@ -337,9 +349,9 @@ async def _process_candle_with_features(
 async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
     """Manage application lifecycle."""
     global _kill_switch_repo, _is_killed, _broker
-    
+
     logger.info(f"Starting Execution Service v{config.service_version}")
-    
+
     # Startup
     redis_client = redis.Redis.from_url(config.redis_url)
     logger.info(f"Connected to Redis at {mask_connection_url(config.redis_url)}")
@@ -347,17 +359,17 @@ async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
     infrastructure.redis_connected.labels(
         mode=config.service_mode, service=config.service_name
     ).set(1)
-    
+
     db_pool = DatabasePool(config.database_url)
     await db_pool.connect()
     logger.info(f"Connected to database at {mask_connection_url(config.database_url)}")
-    
+
     # Initialize broker
     broker = create_broker(config.broker_mode, config)
     _broker = broker  # Store global reference for process_streams
-    
+
     # Connect to broker if it has a connect method (e.g., IBPaperBroker)
-    if hasattr(broker, 'connect'):
+    if hasattr(broker, "connect"):
         try:
             await broker.connect()
             logger.info(f"✅ Broker connected (mode: {config.broker_mode})")
@@ -378,12 +390,12 @@ async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
         exec_metrics.broker_connected.labels(
             mode=config.service_mode, service=config.service_name
         ).set(1)
-    
+
     # Initialize kill switch repository and load state
     _kill_switch_repo = KillSwitchRepository(db_pool)
     kill_state = await _kill_switch_repo.get_state("execution")
     _is_killed = kill_state.is_killed
-    
+
     # METRIC: Set trading enabled and unsafe state based on kill switch
     mode = config.service_mode
     service = config.service_name
@@ -398,7 +410,7 @@ async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
         logger.info("✅ Kill switch inactive - Trading enabled")
         exec_metrics.trading_enabled.labels(mode=mode, service=service).set(1)
         exec_metrics.set_unsafe_state(None, mode, service)
-    
+
     # Send service started alert
     send_alert(
         AlertLevel.INFO,
@@ -414,19 +426,17 @@ async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
             "timestamp": datetime.now().isoformat(),
         },
     )
-    
+
     # Start processing task
-    processing_task = asyncio.create_task(
-        process_streams(redis_client, db_pool)
-    )
-    
+    processing_task = asyncio.create_task(process_streams(redis_client, db_pool))
+
     yield
-    
+
     # Shutdown
     logger.info("Shutting down Execution Service")
     shutdown_event.set()
     processing_task.cancel()
-    
+
     try:
         await processing_task
     except asyncio.CancelledError:
@@ -435,23 +445,23 @@ async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
         logger.error(f"Processing task failed: {e}", exc_info=True)
     finally:
         # Disconnect broker if it has a disconnect method
-        if hasattr(_broker, 'disconnect'):
+        if hasattr(_broker, "disconnect"):
             try:
                 await _broker.disconnect()
                 logger.info("Broker disconnected")
             except Exception as e:
                 logger.error(f"Error disconnecting broker: {e}")
-        
+
         # Set broker disconnected metric
         exec_metrics.broker_connected.labels(
             mode=config.service_mode, service=config.service_name
         ).set(0)
-        
+
         # Set redis disconnected metric
         infrastructure.redis_connected.labels(
             mode=config.service_mode, service=config.service_name
         ).set(0)
-        
+
         await redis_client.aclose()
         await db_pool.close()
         logger.info("Execution Service stopped")
@@ -479,27 +489,27 @@ app.include_router(metrics_router)
 @app.post("/admin/kill")
 async def kill_switch(reason: str = "Manual kill via API") -> dict[str, str]:
     """Activate kill switch to halt all trading.
-    
+
     When activated:
     - New signals are rejected
     - Pending signals are cleared (to prevent stale entry prices)
     - Active trades continue to be monitored for SL/TP exits
     - State persists across restarts
-    
+
     Args:
         reason: Reason for activation
-        
+
     Returns:
         Status message with kill state
     """
     global _kill_switch_repo, _is_killed, _trade_manager
-    
+
     if _kill_switch_repo is None:
         return {"status": "error", "message": "Service not fully initialized"}
-    
+
     await _kill_switch_repo.set_killed("execution", "admin", reason)
     _is_killed = True
-    
+
     # CRITICAL: Clear pending signals to prevent stale entry prices
     # If kill switch is active for extended period, signals in _pending_signals
     # will have outdated entry_price values. Clearing them prevents execution
@@ -512,11 +522,15 @@ async def kill_switch(reason: str = "Manual kill via API") -> dict[str, str]:
                 f"🚨 Clearing {pending_count} pending signal(s) due to kill switch activation"
             )
             _trade_manager._pending_signals.clear()  # type: ignore[attr-defined]
-    
+
     # METRIC: Update trading state
-    exec_metrics.trading_enabled.labels(mode=config.service_mode, service=config.service_name).set(0)
-    exec_metrics.set_unsafe_state("manual_kill", config.service_mode, config.service_name)
-    
+    exec_metrics.trading_enabled.labels(
+        mode=config.service_mode, service=config.service_name
+    ).set(0)
+    exec_metrics.set_unsafe_state(
+        "manual_kill", config.service_mode, config.service_name
+    )
+
     logger.warning(f"🚨 KILL SWITCH ACTIVATED: {reason}")
     send_alert(
         AlertLevel.CRITICAL,
@@ -530,7 +544,7 @@ async def kill_switch(reason: str = "Manual kill via API") -> dict[str, str]:
             "timestamp": datetime.now().isoformat(),
         },
     )
-    
+
     return {
         "status": "killed",
         "message": f"Trading halted: {reason}",
@@ -541,23 +555,23 @@ async def kill_switch(reason: str = "Manual kill via API") -> dict[str, str]:
 @app.post("/admin/resume")
 async def resume_trading() -> dict[str, str]:
     """Deactivate kill switch to resume trading.
-    
+
     When resumed:
     - Pending signals are cleared (safety measure - they should already be empty
       if kill switch was activated, but clear anyway to prevent any stale signals)
     - New signals will be accepted and executed normally
-    
+
     Returns:
         Status message
     """
     global _kill_switch_repo, _is_killed, _trade_manager
-    
+
     if _kill_switch_repo is None:
         return {"status": "error", "message": "Service not fully initialized"}
-    
+
     await _kill_switch_repo.set_resumed("execution")
     _is_killed = False
-    
+
     # CRITICAL: Clear any remaining pending signals as a safety measure
     # (They should already be empty if kill switch was activated, but clear anyway
     # to prevent any edge cases where stale signals might execute with outdated prices)
@@ -568,11 +582,13 @@ async def resume_trading() -> dict[str, str]:
                 f"🚨 Clearing {pending_count} stale pending signal(s) on kill switch resume"
             )
             _trade_manager._pending_signals.clear()  # type: ignore[attr-defined]
-    
+
     # METRIC: Update trading state
-    exec_metrics.trading_enabled.labels(mode=config.service_mode, service=config.service_name).set(1)
+    exec_metrics.trading_enabled.labels(
+        mode=config.service_mode, service=config.service_name
+    ).set(1)
     exec_metrics.set_unsafe_state(None, config.service_mode, config.service_name)
-    
+
     logger.info("✅ Kill switch deactivated - Trading resumed")
     send_alert(
         AlertLevel.INFO,
@@ -584,7 +600,7 @@ async def resume_trading() -> dict[str, str]:
             "timestamp": datetime.now().isoformat(),
         },
     )
-    
+
     return {
         "status": "active",
         "message": "Trading resumed",
@@ -595,17 +611,17 @@ async def resume_trading() -> dict[str, str]:
 @app.get("/admin/status")
 async def get_status() -> dict:
     """Get current kill switch status.
-    
+
     Returns:
         Current kill switch state
     """
     global _kill_switch_repo, _is_killed
-    
+
     if _kill_switch_repo is None:
         return {"status": "error", "message": "Service not fully initialized"}
-    
+
     kill_state = await _kill_switch_repo.get_state("execution")
-    
+
     return {
         "service": "execution",
         "is_killed": kill_state.is_killed,
@@ -619,7 +635,7 @@ async def get_status() -> dict:
 @app.post("/admin/reset")
 async def reset_state() -> dict[str, str]:
     """Reset service state for testing.
-    
+
     Clears all in-memory state:
     - Active trades
     - Pending signals
@@ -628,25 +644,27 @@ async def reset_state() -> dict[str, str]:
     - InvalidationChecker daily state (loss streaks, PnL)
     - Broker positions
     - Synchronizer buffers
-    
+
     This endpoint is intended for integration testing only.
-    
+
     Returns:
         Status message
     """
     global _trade_manager, _broker, _sm_manager, _synchronizer, _is_killed
-    
+
     if _trade_manager is None or _broker is None or _sm_manager is None:
         return {"status": "error", "message": "Service not fully initialized"}
 
     # Reset kill switch in-memory flag for test isolation.
     # Note: This does NOT alter the persisted kill switch state in the database.
     _is_killed = False
-    
+
     # METRIC: Update trading state to reflect reset
-    exec_metrics.trading_enabled.labels(mode=config.service_mode, service=config.service_name).set(1)
+    exec_metrics.trading_enabled.labels(
+        mode=config.service_mode, service=config.service_name
+    ).set(1)
     exec_metrics.set_unsafe_state(None, config.service_mode, config.service_name)
-    
+
     # Reset trade manager state
     _trade_manager._active_trades.clear()
     _trade_manager._pending_signals.clear()
@@ -657,23 +675,24 @@ async def reset_state() -> dict[str, str]:
     # CRITICAL: Reset InvalidationChecker daily state to prevent stale loss streaks/PnL
     # from causing incorrect risk breach checks after reset
     _trade_manager._invalidation_checker.reset_daily_state()
-    
+
     # Reset state machine manager
     _sm_manager._state_machines.clear()
     _sm_manager._bar_counter = 0
 
     # Reset broker
     _broker.reset_state()
-    
+
     # Reset synchronizer buffers (critical for test isolation)
     if _synchronizer is not None:
         _synchronizer.clear()
-    
+
     logger.info("Execution service state reset via /admin/reset endpoint")
-    
+
     return {"status": "ok", "message": "State reset successfully"}
 
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="0.0.0.0", port=8005)

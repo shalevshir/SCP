@@ -47,22 +47,22 @@ def signal_message() -> SignalMessage:
 
 class TestSignalTradeCorrelation:
     """Test that signal_id is correctly preserved through trade lifecycle."""
-    
+
     @pytest.mark.asyncio
     async def test_trade_record_includes_signal_id(
         self,
         db_pool: DatabasePool,
     ) -> None:
         """Test that TradeRecord loaded from DB includes signal_id.
-        
+
         This is the core fix: TradeRecord must have a signal_id field
         populated from the database query result.
         """
         repo = TradeRepository(db_pool)
-        
+
         signal_id = str(uuid4())
         trade_id = str(uuid4())
-        
+
         # Mock database response with signal_id
         db_pool.fetchrow.return_value = {
             "id": trade_id,
@@ -81,16 +81,16 @@ class TestSignalTradeCorrelation:
             "entry_bar_idx": 100,
             "reached_1r": False,
         }
-        
+
         # Get trade from repository
         trade = await repo.get_trade(trade_id)
-        
+
         # Critical: signal_id must be populated
         assert trade is not None
         assert trade.signal_id == signal_id
         assert trade.trade_id == trade_id
         assert trade.signal_id != trade.trade_id  # Must be different!
-    
+
     @pytest.mark.asyncio
     async def test_open_trades_include_signal_id(
         self,
@@ -98,12 +98,12 @@ class TestSignalTradeCorrelation:
     ) -> None:
         """Test that get_open_trades() includes signal_id in results."""
         repo = TradeRepository(db_pool)
-        
+
         signal_id_1 = str(uuid4())
         signal_id_2 = str(uuid4())
         trade_id_1 = str(uuid4())
         trade_id_2 = str(uuid4())
-        
+
         # Mock multiple open trades
         db_pool.fetch.return_value = [
             {
@@ -133,24 +133,24 @@ class TestSignalTradeCorrelation:
                 "reached_1r": False,
             },
         ]
-        
+
         # Get open trades
         trades = await repo.get_open_trades()
-        
+
         # Verify both trades have correct signal_ids
         assert len(trades) == 2
         assert trades[0].signal_id == signal_id_1
         assert trades[0].trade_id == trade_id_1
         assert trades[1].signal_id == signal_id_2
         assert trades[1].trade_id == trade_id_2
-    
+
     @pytest.mark.asyncio
     async def test_published_trade_closed_event_has_correct_signal_id(
         self,
         signal_message: SignalMessage,
     ) -> None:
         """Test that trades.closed Redis event contains correct signal_id.
-        
+
         This is the main bug: published events were using trade_id instead
         of signal_id, breaking downstream analytics.
         """
@@ -160,22 +160,24 @@ class TestSignalTradeCorrelation:
         mock_publisher.publish_opened = AsyncMock()
         mock_publisher.publish_closed = AsyncMock()
         mock_broker = MagicMock()
-        mock_broker.close_position = AsyncMock(return_value=MagicMock(
-            status="filled",
-            filled_price=2660.0,
-            filled_at=datetime.now(timezone.utc),
-        ))
+        mock_broker.close_position = AsyncMock(
+            return_value=MagicMock(
+                status="filled",
+                filled_price=2660.0,
+                filled_at=datetime.now(timezone.utc),
+            )
+        )
         mock_sm_manager = MagicMock()
         mock_sm_manager._bar_counter = 100
-        
+
         # Mock successful trade closure
         mock_repo.close_trade = AsyncMock()
-        
+
         # Create manager
         db_pool = MagicMock(spec=DatabasePool)
         db_pool.fetch = AsyncMock(return_value=[])
         db_pool.execute = AsyncMock()
-        
+
         manager = TradeManager(
             broker=mock_broker,
             state_machine_manager=mock_sm_manager,
@@ -184,7 +186,7 @@ class TestSignalTradeCorrelation:
             db_pool=db_pool,
             max_active_trades=1,
         )
-        
+
         # Create a trade with signal_id and add to active trades
         trade_id = str(uuid4())
         trade = TradeRecord(
@@ -201,7 +203,7 @@ class TestSignalTradeCorrelation:
             entry_timestamp=datetime(2025, 1, 15, 10, 0, tzinfo=timezone.utc),
         )
         manager._active_trades[trade_id] = trade
-        
+
         # Close the trade
         await manager._close_trade(
             trade=trade,
@@ -209,15 +211,12 @@ class TestSignalTradeCorrelation:
             exit_reason="TP_HIT",
             closed_at=datetime.now(timezone.utc),
         )
-        
+
         # Verify published event has correct signal_id
         mock_publisher.publish_closed.assert_called_once()
         published_trade: TradeMessage = mock_publisher.publish_closed.call_args[0][0]
-        
+
         # Critical: signal_id must match original signal, not trade_id!
         assert published_trade.signal_id == signal_message.id
         assert published_trade.signal_id != trade_id
         assert published_trade.id == trade_id
-
-
-

@@ -11,34 +11,38 @@ import pytest
 from scp_shared.rule_engine.htf.types import HTFBias
 from scp_shared.rule_engine.htf.vwap.reclaim import validate_reclaim_prerequisites
 from scp_shared.rule_engine.scoring import determine_setup_type
-from scp_shared.rule_engine.setup_detectors.dxy_continuation import detect_dxy_continuation
+from scp_shared.rule_engine.setup_detectors.dxy_continuation import (
+    detect_dxy_continuation,
+)
 from scp_shared.rule_engine.setup_detectors.vwap_fade import detect_vwap_fade
 
 
 class TestStructuralChopHandling:
     """Test that structural chop is handled via score penalty, not hard rejection.
-    
+
     Per Shir Capital SOP: Noise means structural disorder, not low volatility.
     ATR compression is a supporting filter, not a primary gate.
     """
 
     def test_vwap_fade_not_rejected_by_low_atr_alone(self):
         """Test that VWAP_FADE is NOT rejected by low ATR alone."""
-        features = pd.Series({
-            "open": 100.0,
-            "high": 102.0,
-            "low": 96.0,
-            "close": 100.6,
-            "vwap": 100.0,
-            "rsi": 25.0,
-            "structure_clarity": 0.7,
-            "is_chop": False,
-            "is_structural_chop": False,  # No structural chop
-            "atr_compression_ratio": 0.3,  # Low ATR but clean structure
-            "choch_detected": True,
-            "trend_confidence": 0.4,
-            "last_structure_label": "LH",
-        })
+        features = pd.Series(
+            {
+                "open": 100.0,
+                "high": 102.0,
+                "low": 96.0,
+                "close": 100.6,
+                "vwap": 100.0,
+                "rsi": 25.0,
+                "structure_clarity": 0.7,
+                "is_chop": False,
+                "is_structural_chop": False,  # No structural chop
+                "atr_compression_ratio": 0.3,  # Low ATR but clean structure
+                "choch_detected": True,
+                "trend_confidence": 0.4,
+                "last_structure_label": "LH",
+            }
+        )
 
         htf_bias = HTFBias(
             bias="bullish",
@@ -54,18 +58,20 @@ class TestStructuralChopHandling:
 
     def test_dxy_continuation_not_rejected_by_low_atr_alone(self):
         """Test that DXY_CONTINUATION is NOT rejected by low ATR alone."""
-        features = pd.Series({
-            "open": 100.0,
-            "close": 105.0,
-            "high": 105.5,
-            "low": 99.5,
-            "atr": 3.0,
-            "structure_clarity": 0.7,
-            "is_chop": False,
-            "is_structural_chop": False,  # No structural chop
-            "atr_compression_ratio": 0.3,  # Low ATR but clean structure
-            "last_structure_label": "HH",
-        })
+        features = pd.Series(
+            {
+                "open": 100.0,
+                "close": 105.0,
+                "high": 105.5,
+                "low": 99.5,
+                "atr": 3.0,
+                "structure_clarity": 0.7,
+                "is_chop": False,
+                "is_structural_chop": False,  # No structural chop
+                "atr_compression_ratio": 0.3,  # Low ATR but clean structure
+                "last_structure_label": "HH",
+            }
+        )
 
         htf_bias = HTFBias(
             bias="bullish",
@@ -80,10 +86,12 @@ class TestStructuralChopHandling:
             chop_detected=False,
         )
 
-        df = pd.DataFrame({
-            "high": [102, 104, 103],
-            "low": [98, 100, 101],
-        })
+        df = pd.DataFrame(
+            {
+                "high": [102, 104, 103],
+                "low": [98, 100, 101],
+            }
+        )
 
         # Should pass - low ATR alone doesn't block trades
         result = detect_dxy_continuation(features, htf_bias, df)
@@ -91,13 +99,15 @@ class TestStructuralChopHandling:
 
     def test_vwap_reclaim_not_rejected_by_low_atr_alone(self):
         """Test that VWAP_RECLAIM is NOT rejected by low ATR alone."""
-        features = pd.Series({
-            "bos_direction": "bullish",
-            "choch_detected": False,
-            "structure_conflict_flag": False,
-            "is_structural_chop": False,  # No structural chop
-            "atr_compression_ratio": 0.3,  # Low ATR but clean structure
-        })
+        features = pd.Series(
+            {
+                "bos_direction": "bullish",
+                "choch_detected": False,
+                "structure_conflict_flag": False,
+                "is_structural_chop": False,  # No structural chop
+                "atr_compression_ratio": 0.3,  # Low ATR but clean structure
+            }
+        )
 
         htf_bias = HTFBias(
             bias="bullish",
@@ -122,17 +132,19 @@ class TestDXYContinuationStructureLabel:
 
     def create_base_features(self, structure_label="HH"):
         """Create base features for DXY_CONTINUATION tests."""
-        return pd.Series({
-            "open": 100.0,
-            "close": 105.0,
-            "high": 105.5,
-            "low": 99.5,
-            "atr": 3.0,
-            "structure_clarity": 0.7,
-            "is_chop": False,
-            "is_noise_zone": False,
-            "last_structure_label": structure_label,
-        })
+        return pd.Series(
+            {
+                "open": 100.0,
+                "close": 105.0,
+                "high": 105.5,
+                "low": 99.5,
+                "atr": 3.0,
+                "structure_clarity": 0.7,
+                "is_chop": False,
+                "is_noise_zone": False,
+                "last_structure_label": structure_label,
+            }
+        )
 
     def create_base_htf_bias(self, direction="long"):
         """Create base HTF bias for DXY_CONTINUATION tests."""

@@ -28,4 +28,3 @@ def test_close_command_defaults_price_to_2650(monkeypatch):
     module.main()
 
     assert captured["price"] == 2650.0
-

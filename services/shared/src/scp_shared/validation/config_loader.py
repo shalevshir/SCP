@@ -34,7 +34,11 @@ def load_session_config(config_path: str | None = None) -> SessionConfig:
     """
     if config_path is None:
         # Default to config/validation.yaml in project root
-        config_path = Path(__file__).parent.parent.parent.parent.parent.parent / "config" / "validation.yaml"
+        config_path = (
+            Path(__file__).parent.parent.parent.parent.parent.parent
+            / "config"
+            / "validation.yaml"
+        )
     else:
         config_path = Path(config_path)
 
@@ -182,7 +186,11 @@ def load_dxy_handling_config(config_path: str | None = None) -> dict:
         Dict mapping setup types to handling strategy
     """
     if config_path is None:
-        config_path = Path(__file__).parent.parent.parent.parent.parent.parent / "config" / "validation.yaml"
+        config_path = (
+            Path(__file__).parent.parent.parent.parent.parent.parent
+            / "config"
+            / "validation.yaml"
+        )
     else:
         config_path = Path(config_path)
 
@@ -205,7 +213,11 @@ def load_ceo_directive_config(config_path: str | None = None) -> dict:
         Dict with CEO directive settings
     """
     if config_path is None:
-        config_path = Path(__file__).parent.parent.parent.parent.parent.parent / "config" / "validation.yaml"
+        config_path = (
+            Path(__file__).parent.parent.parent.parent.parent.parent
+            / "config"
+            / "validation.yaml"
+        )
     else:
         config_path = Path(config_path)
 
@@ -219,4 +231,3 @@ def load_ceo_directive_config(config_path: str | None = None) -> dict:
         "early_mild_enabled": ceo_directive.get("early_mild_enabled", False),
         "daily_reset": ceo_directive.get("daily_reset", True),
     }
-

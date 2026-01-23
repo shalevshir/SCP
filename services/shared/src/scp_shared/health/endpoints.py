@@ -31,19 +31,19 @@ def create_health_router(
     readiness_checks: dict[str, Callable[[], bool]] | None = None,
 ) -> APIRouter:
     """Create health check router for a microservice.
-    
+
     Args:
         service_name: Name of the service
         version: Service version
         readiness_checks: Dict of check name -> check function
-        
+
     Returns:
         FastAPI router with /health and /ready endpoints
-        
+
     Example:
         >>> def check_redis():
         ...     return redis_client.ping()
-        >>> 
+        >>>
         >>> router = create_health_router(
         ...     service_name="data-adapter",
         ...     version="0.1.0",
@@ -99,4 +99,3 @@ def create_health_router(
         )
 
     return router
-

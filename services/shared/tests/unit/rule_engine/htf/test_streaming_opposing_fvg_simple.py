@@ -24,7 +24,7 @@ class TestOpposingFVGFieldPreservation:
         - opposing_fvg_low
         - opposing_fvg_bullish_high
         - opposing_fvg_bullish_low
-        
+
         These fields then default to None, breaking TP safety checks.
         """
         # Create an initial bias with ALL TP target fields populated
@@ -85,7 +85,9 @@ class TestOpposingFVGFieldPreservation:
         assert (
             new_bias.untouched_liquidity_low == 2625.0
         ), "untouched_liquidity_low should be preserved"
-        assert new_bias.nearest_fvg_high == 2665.0, "nearest_fvg_high should be preserved"
+        assert (
+            new_bias.nearest_fvg_high == 2665.0
+        ), "nearest_fvg_high should be preserved"
         assert new_bias.nearest_fvg_low == 2635.0, "nearest_fvg_low should be preserved"
 
         # CRITICAL: These 4 fields were missing in the bug
@@ -103,7 +105,9 @@ class TestOpposingFVGFieldPreservation:
         ), "opposing_fvg_bullish_low should be preserved (was missing in bug)"
 
         # Also verify DXY chop was overridden
-        assert new_bias.dxy_chop_detected == False, "dxy_chop_detected should be overridden"
+        assert (
+            new_bias.dxy_chop_detected == False
+        ), "dxy_chop_detected should be overridden"
 
     def test_missing_opposing_fvg_fields_default_to_none(self) -> None:
         """Test that omitting opposing FVG fields causes them to default to None.

@@ -16,6 +16,7 @@ logger = get_logger(__name__)
 # Check if ib_insync is available
 try:
     from ib_insync import IB, Contract, Ticker
+
     IB_INSYNC_AVAILABLE = True
 except ImportError:
     IB_INSYNC_AVAILABLE = False
@@ -27,16 +28,16 @@ except ImportError:
 
 class IBDataClient(DataClientBase):
     """Interactive Brokers Gateway client for live market data.
-    
+
     Uses ib_insync for async-native streaming of real-time tick data.
     Subscribes to both GC (Gold) and DXY (Dollar Index) futures.
-    
+
     Example:
         >>> client = IBDataClient("127.0.0.1", 4002, 10)
         >>> async for tick in client.stream_ticks():
         ...     print(f"{tick.symbol}: {tick.price}")
     """
-    
+
     def __init__(
         self,
         host: str,
@@ -47,7 +48,7 @@ class IBDataClient(DataClientBase):
         market_data_type: int = 3,
     ) -> None:
         """Initialize IB data client.
-        
+
         Args:
             host: IB Gateway/TWS host
             port: IB port (4002=Gateway paper, 7497=TWS paper)
@@ -55,7 +56,7 @@ class IBDataClient(DataClientBase):
             gc_symbol: IB symbol for Gold futures (default: "GC")
             dxy_symbol: IB symbol for Dollar Index (default: "DX")
             market_data_type: Market data type (1=Live, 2=Frozen, 3=Delayed, 4=Delayed Frozen, default: 3)
-            
+
         Raises:
             ImportError: If ib_insync is not installed
         """
@@ -63,35 +64,35 @@ class IBDataClient(DataClientBase):
             raise ImportError(
                 "ib_insync is not installed. Install it with: pip install ib-insync"
             )
-        
+
         self.host = host
         self.port = port
         self.client_id = client_id
         self.gc_symbol = gc_symbol
         self.dxy_symbol = dxy_symbol
         self.market_data_type = market_data_type
-        
+
         self._ib: IB | None = None
         self._connected = False
-        
+
         # Queue for tick events (bounded to prevent unbounded growth)
         # Max size of 10000 ticks (~10 seconds at 1000 ticks/sec) prevents memory issues
         # while allowing reasonable buffering during processing spikes
         self._tick_queue: asyncio.Queue[Tick] = asyncio.Queue(maxsize=10000)
-    
+
     def _get_front_month(self, symbol: str) -> str:
         """Get the current front month contract for futures.
-        
+
         Args:
             symbol: Futures symbol (GC or DX)
-            
+
         Returns:
             Contract month string (e.g., "202602" for Feb 2026)
         """
         now = datetime.now(UTC)
         year = now.year
         month = now.month
-        
+
         if symbol == "GC":
             # GC trades in even months: Feb, Apr, Jun, Aug, Oct, Dec
             valid_months = [2, 4, 6, 8, 10, 12]
@@ -100,26 +101,26 @@ class IBDataClient(DataClientBase):
             valid_months = [3, 6, 9, 12]
         else:
             raise ValueError(f"Unsupported symbol: {symbol}")
-        
+
         # Find next valid month (current month + 1 to allow for rollover)
         target_month = month + 1
-        
+
         for vm in valid_months:
             if vm >= target_month:
                 return f"{year}{vm:02d}"
-        
+
         # If no valid month this year, use first month next year
         return f"{year + 1}{valid_months[0]:02d}"
-    
+
     def _create_contract(self, symbol: str) -> Contract:
         """Create IB contract for a symbol.
-        
+
         Args:
             symbol: Internal symbol (GC or DX)
-            
+
         Returns:
             ib_insync Contract object
-            
+
         Raises:
             ValueError: If symbol is not supported
         """
@@ -141,10 +142,10 @@ class IBDataClient(DataClientBase):
             return contract
         else:
             raise ValueError(f"Unsupported symbol: {symbol}. Use GC or DX.")
-    
+
     def _on_tick(self, ticker: Ticker, internal_symbol: str) -> None:
         """Callback for tick updates from IB.
-        
+
         Args:
             ticker: ib_insync Ticker object
             internal_symbol: Internal symbol name (GC or DXY)
@@ -155,7 +156,7 @@ class IBDataClient(DataClientBase):
             # Use ticker.time which is when data was received by the client
             # For delayed data, this is typically close to the actual trade time
             # (within seconds for delayed data feeds)
-            if hasattr(ticker, 'time') and ticker.time is not None:
+            if hasattr(ticker, "time") and ticker.time is not None:
                 tick_timestamp = ticker.time
                 # Ensure timezone-aware and convert to UTC
                 if tick_timestamp.tzinfo is None:
@@ -164,11 +165,9 @@ class IBDataClient(DataClientBase):
                 else:
                     # Timezone-aware - convert to UTC
                     tick_timestamp = tick_timestamp.astimezone(UTC)
-            elif hasattr(ticker, 'lastTimestamp') and ticker.lastTimestamp is not None:
+            elif hasattr(ticker, "lastTimestamp") and ticker.lastTimestamp is not None:
                 # Fallback: if lastTimestamp somehow available (e.g., for stocks), use it
-                tick_timestamp = datetime.fromtimestamp(
-                    ticker.lastTimestamp, tz=UTC
-                )
+                tick_timestamp = datetime.fromtimestamp(ticker.lastTimestamp, tz=UTC)
             else:
                 # Final fallback to current time
                 tick_timestamp = datetime.now(UTC)
@@ -176,28 +175,28 @@ class IBDataClient(DataClientBase):
                     f"No timestamp available for {internal_symbol}, "
                     f"using current time"
                 )
-            
+
             tick = Tick(
                 timestamp=tick_timestamp,
                 price=float(ticker.last),
                 volume=float(ticker.lastSize) if ticker.lastSize else 0.0,
                 symbol=internal_symbol,
             )
-            
+
             # Put tick in queue (non-blocking)
             try:
                 self._tick_queue.put_nowait(tick)
             except asyncio.QueueFull:
                 logger.warning(f"Tick queue full, dropping tick for {internal_symbol}")
-    
+
     async def stream_ticks(self) -> AsyncIterator[Tick]:
         """Stream real-time ticks from IB Gateway.
-        
+
         Subscribes to tick-by-tick trade data for GC and DX futures.
-        
+
         Yields:
             Tick objects as they arrive from IB
-            
+
         Raises:
             Exception: On connection or subscription errors
         """
@@ -211,25 +210,34 @@ class IBDataClient(DataClientBase):
             await self._ib.connectAsync(self.host, self.port, clientId=self.client_id)
             self._connected = True
             logger.info("Connected to IB Gateway successfully")
-            
+
             # Request market data type (configurable via IB_MARKET_DATA_TYPE env var)
             # MarketDataType: 1=Live, 2=Frozen, 3=Delayed, 4=Delayed Frozen
             self._ib.reqMarketDataType(self.market_data_type)
-            data_type_names = {1: "Live", 2: "Frozen", 3: "Delayed", 4: "Delayed Frozen"}
-            data_type_name = data_type_names.get(self.market_data_type, f"Unknown({self.market_data_type})")
-            logger.info(f"Requested market data type: {data_type_name} ({self.market_data_type})")
-            
+            data_type_names = {
+                1: "Live",
+                2: "Frozen",
+                3: "Delayed",
+                4: "Delayed Frozen",
+            }
+            data_type_name = data_type_names.get(
+                self.market_data_type, f"Unknown({self.market_data_type})"
+            )
+            logger.info(
+                f"Requested market data type: {data_type_name} ({self.market_data_type})"
+            )
+
             # Create contracts for GC and DX
             gc_contract = self._create_contract(self.gc_symbol)
             dx_contract = self._create_contract(self.dxy_symbol)
-            
+
             gc_month = gc_contract.lastTradeDateOrContractMonth
             dx_month = dx_contract.lastTradeDateOrContractMonth
             logger.info(
                 f"Subscribing to market data: "
                 f"{gc_contract.symbol} ({gc_month}), {dx_contract.symbol} ({dx_month})"
             )
-            
+
             # Request market data
             gc_ticker = self._ib.reqMktData(
                 gc_contract, genericTickList="", snapshot=False
@@ -237,13 +245,13 @@ class IBDataClient(DataClientBase):
             dx_ticker = self._ib.reqMktData(
                 dx_contract, genericTickList="", snapshot=False
             )
-            
+
             # Set up tick callbacks
             gc_ticker.updateEvent += lambda ticker: self._on_tick(ticker, "GC")
             dx_ticker.updateEvent += lambda ticker: self._on_tick(ticker, "DXY")
-            
+
             logger.info("Market data subscription successful, streaming ticks...")
-            
+
             # Stream ticks from queue
             while self._connected:
                 try:
@@ -256,13 +264,13 @@ class IBDataClient(DataClientBase):
                         logger.warning("IB Gateway disconnected")
                         break
                     continue
-        
+
         except Exception as e:
             logger.error(f"Error in IB data stream: {e}", exc_info=True)
             raise
         finally:
             await self.close()
-    
+
     async def close(self) -> None:
         """Disconnect from IB Gateway and clear tick queue."""
         if self._ib and self._ib.isConnected():
@@ -270,7 +278,7 @@ class IBDataClient(DataClientBase):
             self._ib.disconnect()
             self._connected = False
             self._ib = None
-        
+
         # CRITICAL: Clear tick queue to prevent stale data on reconnection
         # Drain all pending ticks from the previous session
         drained_count = 0
@@ -280,18 +288,18 @@ class IBDataClient(DataClientBase):
                 drained_count += 1
             except asyncio.QueueEmpty:
                 break
-        
+
         if drained_count > 0:
             logger.info(f"Cleared {drained_count} stale ticks from queue on disconnect")
 
 
 class ResilientIBDataClient(DataClientBase):
     """Wraps IBDataClient with automatic reconnection and circuit breaker.
-    
+
     Provides exponential backoff reconnection on connection failures,
     making the client production-ready for 24/7 operation.
     """
-    
+
     def __init__(
         self,
         inner: IBDataClient,
@@ -300,7 +308,7 @@ class ResilientIBDataClient(DataClientBase):
         max_delay: float = 60.0,
     ) -> None:
         """Initialize resilient IB client wrapper.
-        
+
         Args:
             inner: Underlying IBDataClient to wrap
             max_retries: Maximum consecutive failures before giving up (0 = infinite)
@@ -314,18 +322,18 @@ class ResilientIBDataClient(DataClientBase):
         self._state = "disconnected"  # disconnected, connecting, connected
         self._consecutive_failures = 0
         self._last_disconnect: datetime | None = None
-    
+
     @property
     def connection_state(self) -> str:
         """Get current connection state."""
         return self._state
-    
+
     async def stream_ticks(self) -> AsyncIterator[Tick]:
         """Stream ticks with automatic reconnection on failure.
-        
+
         Yields:
             Tick objects from the underlying client
-            
+
         Raises:
             Exception: If max_retries is exceeded
         """
@@ -334,47 +342,47 @@ class ResilientIBDataClient(DataClientBase):
                 self._state = "connecting"
                 failures = self._consecutive_failures
                 logger.info(f"Attempting IB Gateway connection (failures: {failures})")
-                
+
                 async for tick in self.inner.stream_ticks():
                     # Successfully receiving data
                     if self._state != "connected":
                         self._state = "connected"
                         self._consecutive_failures = 0
                         logger.info("IB Gateway connection established successfully")
-                    
+
                     yield tick
-                
+
                 # Stream ended normally - server closed connection cleanly
                 # (gateway restart, maintenance, or graceful shutdown)
                 self._state = "disconnected"
                 self._last_disconnect = datetime.now(UTC)
-                
+
                 # For normal disconnection, apply backoff to avoid tight loops
                 # Cap at 3 for normal disconnects
                 delay = min(
                     self.base_delay * (2 ** min(self._consecutive_failures, 3)),
-                    self.max_delay
+                    self.max_delay,
                 )
-                
+
                 logger.info(
                     f"IB Gateway stream ended normally (connection closed). "
                     f"Reconnecting in {delay:.1f}s"
                 )
-                
+
                 # Wait before reconnecting to avoid overwhelming the gateway
                 await asyncio.sleep(delay)
-                
+
                 # Close and reset inner client for clean reconnection
                 try:
                     await self.inner.close()
                 except Exception:
                     pass  # Ignore close errors
-            
+
             except Exception as e:
                 self._state = "disconnected"
                 self._last_disconnect = datetime.now(UTC)
                 self._consecutive_failures += 1
-                
+
                 # Check if max retries exceeded
                 max_exceeded = (
                     self.max_retries > 0
@@ -385,28 +393,28 @@ class ResilientIBDataClient(DataClientBase):
                         f"Max retries ({self.max_retries}) exceeded. Giving up."
                     )
                     raise
-                
+
                 # Calculate exponential backoff delay
                 delay = min(
                     self.base_delay * (2 ** (self._consecutive_failures - 1)),
-                    self.max_delay
+                    self.max_delay,
                 )
-                
+
                 attempt = self._consecutive_failures
                 logger.warning(
                     f"IB Gateway connection lost: {e}. "
                     f"Reconnecting in {delay:.1f}s (attempt {attempt})"
                 )
-                
+
                 # Wait before reconnecting
                 await asyncio.sleep(delay)
-                
+
                 # Close and reset inner client for clean reconnection
                 try:
                     await self.inner.close()
                 except Exception:
                     pass  # Ignore close errors
-    
+
     async def close(self) -> None:
         """Close the underlying client."""
         await self.inner.close()

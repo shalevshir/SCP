@@ -31,7 +31,7 @@ class TestCandleCreation:
     def test_creates_valid_candle(self) -> None:
         """Creates candle with valid data."""
         candle = create_valid_candle()
-        
+
         assert candle.open == 100.0
         assert candle.high == 105.0
         assert candle.low == 95.0
@@ -42,22 +42,20 @@ class TestCandleCreation:
     def test_candle_is_immutable(self) -> None:
         """Candle is immutable (frozen dataclass)."""
         candle = create_valid_candle()
-        
+
         with pytest.raises(AttributeError):
             candle.close = 110.0  # type: ignore
 
     def test_allows_zero_volume(self) -> None:
         """Allows zero volume."""
         candle = create_valid_candle(volume=0.0)
-        
+
         assert candle.volume == 0.0
 
     def test_allows_equal_high_low(self) -> None:
         """Allows high == low (doji candle)."""
-        candle = create_valid_candle(
-            open=100.0, high=100.0, low=100.0, close=100.0
-        )
-        
+        candle = create_valid_candle(open=100.0, high=100.0, low=100.0, close=100.0)
+
         assert candle.high == candle.low
 
 
@@ -67,7 +65,7 @@ class TestCandleTimestampValidation:
     def test_rejects_naive_timestamp(self) -> None:
         """Rejects timezone-naive timestamp."""
         naive_time = datetime(2024, 1, 1, 12, 0)  # No tzinfo
-        
+
         with pytest.raises(NormalizationError, match="timezone-aware"):
             create_valid_candle(timestamp=naive_time)
 
@@ -106,27 +104,37 @@ class TestCandleOHLCRelationships:
 
     def test_rejects_high_less_than_low(self) -> None:
         """Rejects high < low."""
-        with pytest.raises(NormalizationError, match="High price cannot be less than low"):
+        with pytest.raises(
+            NormalizationError, match="High price cannot be less than low"
+        ):
             create_valid_candle(high=90.0, low=100.0)
 
     def test_rejects_high_less_than_open(self) -> None:
         """Rejects high < open."""
-        with pytest.raises(NormalizationError, match="High price cannot be less than open"):
+        with pytest.raises(
+            NormalizationError, match="High price cannot be less than open"
+        ):
             create_valid_candle(open=100.0, high=95.0, low=90.0, close=95.0)
 
     def test_rejects_high_less_than_close(self) -> None:
         """Rejects high < close."""
-        with pytest.raises(NormalizationError, match="High price cannot be less than close"):
+        with pytest.raises(
+            NormalizationError, match="High price cannot be less than close"
+        ):
             create_valid_candle(high=100.0, close=105.0, low=95.0, open=99.0)
 
     def test_rejects_low_greater_than_open(self) -> None:
         """Rejects low > open."""
-        with pytest.raises(NormalizationError, match="Low price cannot be greater than open"):
+        with pytest.raises(
+            NormalizationError, match="Low price cannot be greater than open"
+        ):
             create_valid_candle(open=95.0, low=100.0, high=105.0, close=102.0)
 
     def test_rejects_low_greater_than_close(self) -> None:
         """Rejects low > close."""
-        with pytest.raises(NormalizationError, match="Low price cannot be greater than close"):
+        with pytest.raises(
+            NormalizationError, match="Low price cannot be greater than close"
+        ):
             create_valid_candle(close=95.0, low=100.0, high=105.0, open=102.0)
 
 

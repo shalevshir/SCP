@@ -24,4 +24,3 @@ async def redis_client() -> AsyncGenerator[redis.Redis, None]:
     yield client
     await client.flushall()
     await client.aclose()
-

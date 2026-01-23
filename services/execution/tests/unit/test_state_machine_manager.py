@@ -35,15 +35,15 @@ class TestStateMachineManagerCreate:
         """Creates state machine from signal."""
         mock_db_pool = AsyncMock()
         mock_db_pool.execute = AsyncMock()
-        
+
         manager = StateMachineManager(mock_db_pool)
         signal = create_signal_message(direction="long")
-        
+
         result = await manager.create_from_signal(signal)
-        
+
         assert result == signal.id
         assert signal.id in manager._state_machines
-        
+
         sm = manager.get_state_machine(signal.id)
         assert sm is not None
         assert sm.current_state == VWAPReclaimState.PENDING_ACCEPTANCE
@@ -54,12 +54,12 @@ class TestStateMachineManagerCreate:
         """Creates state machine for short signal."""
         mock_db_pool = AsyncMock()
         mock_db_pool.execute = AsyncMock()
-        
+
         manager = StateMachineManager(mock_db_pool)
         signal = create_signal_message(direction="short")
-        
+
         await manager.create_from_signal(signal)
-        
+
         sm = manager.get_state_machine(signal.id)
         assert sm is not None
         assert sm.reclaim_direction == "below"
@@ -73,9 +73,9 @@ class TestStateMachineManagerConfirmation:
         """Returns False for unknown signal."""
         mock_db_pool = AsyncMock()
         manager = StateMachineManager(mock_db_pool)
-        
+
         result = manager.check_confirmation("unknown-id")
-        
+
         assert result is False
 
     @pytest.mark.asyncio
@@ -83,17 +83,17 @@ class TestStateMachineManagerConfirmation:
         """Auto-confirms after one bar."""
         mock_db_pool = AsyncMock()
         mock_db_pool.execute = AsyncMock()
-        
+
         manager = StateMachineManager(mock_db_pool)
         manager._bar_counter = 10
-        
+
         signal = create_signal_message()
         await manager.create_from_signal(signal)
-        
+
         # At detection bar, not confirmed
         result = manager.check_confirmation(signal.id, bar_idx=10)
         assert result is False
-        
+
         # After one bar, should auto-confirm
         result = manager.check_confirmation(signal.id, bar_idx=11)
         assert result is True
@@ -107,9 +107,9 @@ class TestStateMachineManagerExpiration:
         """Returns False for unknown signal."""
         mock_db_pool = AsyncMock()
         manager = StateMachineManager(mock_db_pool)
-        
+
         result = manager.check_expiration("unknown-id")
-        
+
         assert result is False
 
     @pytest.mark.asyncio
@@ -117,17 +117,17 @@ class TestStateMachineManagerExpiration:
         """Expires after max confirm window."""
         mock_db_pool = AsyncMock()
         mock_db_pool.execute = AsyncMock()
-        
+
         manager = StateMachineManager(mock_db_pool)
         manager._bar_counter = 0
-        
+
         signal = create_signal_message()
         await manager.create_from_signal(signal)
-        
+
         # Not expired at detection
         result = manager.check_expiration(signal.id, bar_idx=0)
         assert result is False
-        
+
         # Expired after window (10 bars + 1)
         result = manager.check_expiration(signal.id, bar_idx=15)
         assert result is True
@@ -141,17 +141,17 @@ class TestStateMachineManagerExecute:
         """Execute marks state machine as executed."""
         mock_db_pool = AsyncMock()
         mock_db_pool.execute = AsyncMock()
-        
+
         manager = StateMachineManager(mock_db_pool)
         signal = create_signal_message()
         await manager.create_from_signal(signal)
-        
+
         # Confirm first
         manager.check_confirmation(signal.id, bar_idx=1)
-        
+
         # Execute
         await manager.execute(signal.id, bar_idx=2)
-        
+
         sm = manager.get_state_machine(signal.id)
         assert sm is not None
         assert sm.current_state == VWAPReclaimState.EXECUTED
@@ -161,7 +161,7 @@ class TestStateMachineManagerExecute:
         """Execute with unknown signal logs warning."""
         mock_db_pool = AsyncMock()
         manager = StateMachineManager(mock_db_pool)
-        
+
         # Should not raise, just log warning
         await manager.execute("unknown-id", bar_idx=1)
 
@@ -174,13 +174,13 @@ class TestStateMachineManagerInvalidate:
         """Invalidate marks state machine as invalidated."""
         mock_db_pool = AsyncMock()
         mock_db_pool.execute = AsyncMock()
-        
+
         manager = StateMachineManager(mock_db_pool)
         signal = create_signal_message()
         await manager.create_from_signal(signal)
-        
+
         await manager.invalidate(signal.id, bar_idx=1, reason="HTF_BREAK")
-        
+
         sm = manager.get_state_machine(signal.id)
         assert sm is not None
         assert sm.current_state == VWAPReclaimState.INVALIDATED
@@ -190,7 +190,7 @@ class TestStateMachineManagerInvalidate:
         """Invalidate with unknown signal logs warning."""
         mock_db_pool = AsyncMock()
         manager = StateMachineManager(mock_db_pool)
-        
+
         # Should not raise, just log warning
         await manager.invalidate("unknown-id", bar_idx=1, reason="TEST")
 
@@ -202,12 +202,12 @@ class TestStateMachineManagerBarCounter:
         """Increments bar counter."""
         mock_db_pool = MagicMock()
         manager = StateMachineManager(mock_db_pool)
-        
+
         assert manager._bar_counter == 0
-        
+
         manager.increment_bar_counter()
         assert manager._bar_counter == 1
-        
+
         manager.increment_bar_counter()
         assert manager._bar_counter == 2
 
@@ -219,7 +219,7 @@ class TestStateMachineManagerGetStateMachine:
         """Returns None for unknown signal."""
         mock_db_pool = MagicMock()
         manager = StateMachineManager(mock_db_pool)
-        
+
         result = manager.get_state_machine("unknown-id")
-        
+
         assert result is None

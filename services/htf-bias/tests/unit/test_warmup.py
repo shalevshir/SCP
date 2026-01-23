@@ -12,21 +12,21 @@ from htf_bias_svc.repository import BiasRepository
 
 class TestWarmupProcessor:
     """Test warmup_processor function."""
-    
+
     @pytest.fixture
     def mock_repository(self) -> MagicMock:
         """Create mock repository."""
         repo = MagicMock(spec=BiasRepository)
         repo.load_recent_candles = AsyncMock(return_value=[])
         return repo
-    
+
     @pytest.fixture
     def mock_processor(self) -> MagicMock:
         """Create mock processor."""
         processor = MagicMock(spec=HTFBiasProcessor)
         processor.process = MagicMock(return_value=None)
         return processor
-    
+
     @pytest.mark.asyncio
     async def test_warmup_skipped_when_disabled(
         self,
@@ -36,13 +36,13 @@ class TestWarmupProcessor:
         """Warmup is skipped when disabled in config."""
         with patch("htf_bias_svc.main.config") as mock_config:
             mock_config.enable_warmup = False
-            
+
             from htf_bias_svc.main import warmup_processor
-            
+
             await warmup_processor(mock_processor, mock_repository)
-            
+
             mock_repository.load_recent_candles.assert_not_called()
-    
+
     @pytest.mark.asyncio
     async def test_warmup_loads_candles_from_repository(
         self,
@@ -74,21 +74,21 @@ class TestWarmupProcessor:
         mock_repository.load_recent_candles = AsyncMock(
             return_value=[(gc_candle, dxy_candle)]
         )
-        
+
         with patch("htf_bias_svc.main.config") as mock_config:
             mock_config.enable_warmup = True
             mock_config.warmup_candles = 60
-            
+
             from htf_bias_svc.main import warmup_processor
-            
+
             await warmup_processor(mock_processor, mock_repository)
-            
+
             mock_repository.load_recent_candles.assert_called_once_with(
                 count=60,
                 before_timestamp=None,
             )
             mock_processor.process.assert_called_once_with(gc_candle, dxy_candle)
-    
+
     @pytest.mark.asyncio
     async def test_warmup_processes_all_candles(
         self,
@@ -100,27 +100,39 @@ class TestWarmupProcessor:
         for i in range(5):
             ts = datetime(2025, 1, 15, 10, i, tzinfo=timezone.utc)
             gc = CandleMessage(
-                timestamp=ts, symbol="GC", timeframe="1m",
-                open=2650.0+i, high=2655.0+i, low=2648.0+i, close=2654.0+i, volume=1000.0,
+                timestamp=ts,
+                symbol="GC",
+                timeframe="1m",
+                open=2650.0 + i,
+                high=2655.0 + i,
+                low=2648.0 + i,
+                close=2654.0 + i,
+                volume=1000.0,
             )
             dxy = CandleMessage(
-                timestamp=ts, symbol="DXY", timeframe="1m",
-                open=103.5, high=103.7, low=103.4, close=103.6, volume=500.0,
+                timestamp=ts,
+                symbol="DXY",
+                timeframe="1m",
+                open=103.5,
+                high=103.7,
+                low=103.4,
+                close=103.6,
+                volume=500.0,
             )
             candle_pairs.append((gc, dxy))
-        
+
         mock_repository.load_recent_candles = AsyncMock(return_value=candle_pairs)
-        
+
         with patch("htf_bias_svc.main.config") as mock_config:
             mock_config.enable_warmup = True
             mock_config.warmup_candles = 60
-            
+
             from htf_bias_svc.main import warmup_processor
-            
+
             await warmup_processor(mock_processor, mock_repository)
-            
+
             assert mock_processor.process.call_count == 5
-    
+
     @pytest.mark.asyncio
     async def test_warmup_handles_empty_database(
         self,
@@ -129,18 +141,18 @@ class TestWarmupProcessor:
     ) -> None:
         """Warmup handles empty database gracefully."""
         mock_repository.load_recent_candles = AsyncMock(return_value=[])
-        
+
         with patch("htf_bias_svc.main.config") as mock_config:
             mock_config.enable_warmup = True
             mock_config.warmup_candles = 60
-            
+
             from htf_bias_svc.main import warmup_processor
-            
+
             # Should not raise
             await warmup_processor(mock_processor, mock_repository)
-            
+
             mock_processor.process.assert_not_called()
-    
+
     @pytest.mark.asyncio
     async def test_warmup_handles_database_error(
         self,
@@ -151,28 +163,28 @@ class TestWarmupProcessor:
         mock_repository.load_recent_candles = AsyncMock(
             side_effect=Exception("Database connection failed")
         )
-        
+
         with patch("htf_bias_svc.main.config") as mock_config:
             mock_config.enable_warmup = True
             mock_config.warmup_candles = 60
-            
+
             from htf_bias_svc.main import warmup_processor
-            
+
             # Should not raise, continues without warmup
             await warmup_processor(mock_processor, mock_repository)
-            
+
             mock_processor.process.assert_not_called()
 
 
 class TestProcessCandlePair:
     """Test process_candle_pair helper function."""
-    
+
     @pytest.mark.asyncio
     async def test_process_candle_pair_publishes_when_bias_computed(self) -> None:
         """Process candle pair publishes bias when computed."""
         from htf_bias_svc.main import process_candle_pair
         from scp_shared.messaging.schemas import HTFBiasMessage
-        
+
         # Create real HTFBiasMessage instance (cleaner than mocking)
         bias = HTFBiasMessage(
             timestamp=datetime(2025, 1, 15, 10, 0, tzinfo=timezone.utc),
@@ -187,67 +199,85 @@ class TestProcessCandlePair:
             seasonality_period=None,
             vwap_trend_confirmed=False,
         )
-        
+
         mock_processor = MagicMock()
         mock_processor.process = MagicMock(return_value=bias)
-        
+
         mock_publisher = MagicMock()
         mock_publisher.publish = AsyncMock()
-        
+
         mock_repository = MagicMock()
         mock_repository.save_bias = AsyncMock()
-        
+
         gc_candle = CandleMessage(
             timestamp=datetime(2025, 1, 15, 10, 0, tzinfo=timezone.utc),
             symbol="GC",
             timeframe="1m",
-            open=2650.0, high=2655.0, low=2648.0, close=2654.0, volume=1000.0,
+            open=2650.0,
+            high=2655.0,
+            low=2648.0,
+            close=2654.0,
+            volume=1000.0,
         )
         dxy_candle = CandleMessage(
             timestamp=datetime(2025, 1, 15, 10, 0, tzinfo=timezone.utc),
             symbol="DXY",
             timeframe="1m",
-            open=103.5, high=103.7, low=103.4, close=103.6, volume=500.0,
+            open=103.5,
+            high=103.7,
+            low=103.4,
+            close=103.6,
+            volume=500.0,
         )
-        
+
         # Pass pair as tuple as expected by the function
         await process_candle_pair(
             (gc_candle, dxy_candle), mock_processor, mock_publisher, mock_repository
         )
-        
+
         mock_processor.process.assert_called_once_with(gc_candle, dxy_candle)
         mock_publisher.publish.assert_called_once_with(bias)
         mock_repository.save_bias.assert_called_once_with(bias)
-    
+
     @pytest.mark.asyncio
     async def test_process_candle_pair_skips_when_no_bias(self) -> None:
         """Process candle pair skips publishing when no bias computed."""
         from htf_bias_svc.main import process_candle_pair
-        
+
         mock_processor = MagicMock()
         mock_processor.process = MagicMock(return_value=None)  # No bias
-        
+
         mock_publisher = MagicMock()
         mock_publisher.publish = AsyncMock()
-        
+
         mock_repository = MagicMock()
         mock_repository.save_bias = AsyncMock()
-        
+
         gc_candle = CandleMessage(
             timestamp=datetime(2025, 1, 15, 10, 0, tzinfo=timezone.utc),
-            symbol="GC", timeframe="1m",
-            open=2650.0, high=2655.0, low=2648.0, close=2654.0, volume=1000.0,
+            symbol="GC",
+            timeframe="1m",
+            open=2650.0,
+            high=2655.0,
+            low=2648.0,
+            close=2654.0,
+            volume=1000.0,
         )
         dxy_candle = CandleMessage(
             timestamp=datetime(2025, 1, 15, 10, 0, tzinfo=timezone.utc),
-            symbol="DXY", timeframe="1m",
-            open=103.5, high=103.7, low=103.4, close=103.6, volume=500.0,
+            symbol="DXY",
+            timeframe="1m",
+            open=103.5,
+            high=103.7,
+            low=103.4,
+            close=103.6,
+            volume=500.0,
         )
-        
+
         # Pass pair as tuple as expected by the function
         await process_candle_pair(
             (gc_candle, dxy_candle), mock_processor, mock_publisher, mock_repository
         )
-        
+
         mock_publisher.publish.assert_not_called()
         mock_repository.save_bias.assert_not_called()

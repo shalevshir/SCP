@@ -14,7 +14,7 @@ from scp_shared.rule_engine import Signal
 # These are integration tests that require a live database
 pytestmark = pytest.mark.skipif(
     os.environ.get("DATABASE_URL") is None,
-    reason="DATABASE_URL not set - integration tests require PostgreSQL"
+    reason="DATABASE_URL not set - integration tests require PostgreSQL",
 )
 
 
@@ -123,7 +123,7 @@ def sample_signal() -> Signal:
 @pytest.mark.asyncio
 class TestSignalRepository:
     """Test suite for SignalRepository."""
-    
+
     async def test_save_approved_signal(
         self,
         db_pool,
@@ -135,7 +135,7 @@ class TestSignalRepository:
         """Test saving an approved signal to database."""
         repo = SignalRepository(db_pool)
         signal_message_id = str(uuid4())
-        
+
         # Save signal
         signal_id = await repo.save_signal(
             signal=sample_signal,
@@ -145,16 +145,16 @@ class TestSignalRepository:
             rejection_stage=None,
             signal_message_id=signal_message_id,
         )
-        
+
         # Verify signal was saved
         assert signal_id is not None
-        
+
         # Query database to verify
         row = await db_pool.fetchrow(
             "SELECT * FROM signal_history WHERE id = $1",
             signal_id,
         )
-        
+
         assert row is not None
         assert row["was_approved"] is True
         assert row["rejection_stage"] is None
@@ -163,18 +163,18 @@ class TestSignalRepository:
         assert row["confidence"] == "A+"
         assert row["setup_type"] == "VWAP_RECLAIM"
         assert row["direction"] == "long"
-        
+
         # Verify snapshots are valid JSON (asyncpg returns JSON strings from JSONB)
         features_snapshot = json.loads(row["features_snapshot"])
         htf_bias_snapshot = json.loads(row["htf_bias_snapshot"])
         factor_scores = json.loads(row["factor_scores"])
         diagnostics = json.loads(row["diagnostics"])
-        
+
         assert features_snapshot["close"] == 2650.0
         assert htf_bias_snapshot["bias"] == "bullish"
         assert factor_scores["structure_alignment"] == 2.0
         assert diagnostics["rejection_analysis"]["passed"] is True
-    
+
     async def test_save_rejected_signal(
         self,
         db_pool,
@@ -209,9 +209,9 @@ class TestSignalRepository:
                 },
             },
         )
-        
+
         repo = SignalRepository(db_pool)
-        
+
         # Save rejected signal
         signal_id = await repo.save_signal(
             signal=rejected_signal,
@@ -221,30 +221,30 @@ class TestSignalRepository:
             rejection_stage="confidence_filter",
             signal_message_id=None,
         )
-        
+
         # Verify signal was saved
         assert signal_id is not None
-        
+
         # Query database to verify
         row = await db_pool.fetchrow(
             "SELECT * FROM signal_history WHERE id = $1",
             signal_id,
         )
-        
+
         assert row is not None
         assert row["was_approved"] is False
         assert row["rejection_stage"] == "confidence_filter"
         assert row["signal_message_id"] is None
         assert row["score"] == 7.2
         assert row["confidence"] == "Watch"
-        
+
         # Verify rejection analysis (deserialize JSON string from JSONB)
         diagnostics = json.loads(row["diagnostics"])
         rejection_analysis = diagnostics["rejection_analysis"]
         assert rejection_analysis["passed"] is False
         assert rejection_analysis["primary_rejection_reason"] == "late_reclaim_penalty"
         assert rejection_analysis["score_gap"] == 0.8
-    
+
     async def test_link_trade(
         self,
         db_pool,
@@ -257,7 +257,7 @@ class TestSignalRepository:
         repo = SignalRepository(db_pool)
         signal_message_id = str(uuid4())
         trade_id = uuid4()
-        
+
         # Save approved signal
         signal_id = await repo.save_signal(
             signal=sample_signal,
@@ -266,7 +266,7 @@ class TestSignalRepository:
             was_approved=True,
             signal_message_id=signal_message_id,
         )
-        
+
         # CRITICAL: Insert a trade record first to satisfy foreign key constraint
         # signal_history.trade_id REFERENCES trades(id)
         await db_pool.execute(
@@ -287,16 +287,16 @@ class TestSignalRepository:
             sample_signal.timestamp,
             "OPEN",
         )
-        
+
         # Link to trade
         await repo.link_trade(signal_message_id, str(trade_id))
-        
+
         # Verify link
         row = await db_pool.fetchrow(
             "SELECT trade_id FROM signal_history WHERE id = $1",
             signal_id,
         )
-        
+
         assert row["trade_id"] == trade_id
 
     async def test_signal_message_id_index_exists(self, db_pool):
@@ -313,7 +313,7 @@ class TestSignalRepository:
 
         assert row is not None
         assert "signal_message_id" in row["indexdef"]
-    
+
     async def test_get_signals_for_period(
         self,
         db_pool,
@@ -324,10 +324,10 @@ class TestSignalRepository:
     ):
         """Test querying signals for a time period."""
         repo = SignalRepository(db_pool)
-        
+
         # Save multiple signals
         start = datetime(2025, 11, 3, 10, 0, tzinfo=UTC)
-        
+
         for i in range(5):
             signal = Signal(
                 timestamp=datetime(2025, 11, 3, 10, i, tzinfo=UTC),
@@ -344,7 +344,7 @@ class TestSignalRepository:
                 enforcer_tier=sample_signal.enforcer_tier,
                 diagnostics=sample_signal.diagnostics,
             )
-            
+
             await repo.save_signal(
                 signal=signal,
                 features=sample_features,
@@ -353,21 +353,21 @@ class TestSignalRepository:
                 rejection_stage="confidence_filter" if i < 2 else None,
                 signal_message_id=str(uuid4()) if i >= 2 else None,
             )
-        
+
         # Query all signals
         end = datetime(2025, 11, 3, 11, 0, tzinfo=UTC)
         signals = await repo.get_signals_for_period(start, end)
-        
+
         assert len(signals) == 5
-        
+
         # Query only approved
         approved = await repo.get_signals_for_period(start, end, was_approved=True)
         assert len(approved) == 3
-        
+
         # Query only rejected
         rejected = await repo.get_signals_for_period(start, end, was_approved=False)
         assert len(rejected) == 2
-    
+
     async def test_get_rejection_summary(
         self,
         db_pool,
@@ -379,7 +379,7 @@ class TestSignalRepository:
         """Test rejection summary aggregation."""
         repo = SignalRepository(db_pool)
         start = datetime(2025, 11, 3, 10, 0, tzinfo=UTC)
-        
+
         # Save signals with different rejection stages
         rejection_stages = [
             "confidence_filter",
@@ -388,7 +388,7 @@ class TestSignalRepository:
             "tp_validation",
             "neutral_direction",
         ]
-        
+
         for i, stage in enumerate(rejection_stages):
             signal = Signal(
                 timestamp=datetime(2025, 11, 3, 10, i, tzinfo=UTC),
@@ -405,7 +405,7 @@ class TestSignalRepository:
                 enforcer_tier=sample_signal.enforcer_tier,
                 diagnostics=sample_signal.diagnostics,
             )
-            
+
             await repo.save_signal(
                 signal=signal,
                 features=sample_features,
@@ -413,16 +413,16 @@ class TestSignalRepository:
                 was_approved=False,
                 rejection_stage=stage,
             )
-        
+
         # Get rejection summary
         end = datetime(2025, 11, 3, 11, 0, tzinfo=UTC)
         summary = await repo.get_rejection_summary(start, end)
-        
+
         assert summary["confidence_filter"] == 2
         assert summary["htf_validity"] == 1
         assert summary["tp_validation"] == 1
         assert summary["neutral_direction"] == 1
-    
+
     async def test_features_snapshot_preserves_none_values(
         self,
         db_pool,
@@ -442,9 +442,9 @@ class TestSignalRepository:
             rsi=None,
             ema_9=None,
         )
-        
+
         repo = SignalRepository(db_pool)
-        
+
         signal_id = await repo.save_signal(
             signal=sample_signal,
             features=features,
@@ -452,13 +452,13 @@ class TestSignalRepository:
             was_approved=True,
             signal_message_id=str(uuid4()),
         )
-        
+
         # Verify None values are preserved (deserialize JSON string from JSONB)
         row = await db_pool.fetchrow(
             "SELECT features_snapshot FROM signal_history WHERE id = $1",
             signal_id,
         )
-        
+
         features_snapshot = json.loads(row["features_snapshot"])
         assert features_snapshot["vwap"] is None
         assert features_snapshot["rsi"] is None

@@ -160,9 +160,7 @@ class TestRedisStreamConsumer:
         assert messages == []
 
     @pytest.mark.asyncio
-    async def test_multiple_consumers_in_group(
-        self, redis_client: redis.Redis
-    ) -> None:
+    async def test_multiple_consumers_in_group(self, redis_client: redis.Redis) -> None:
         """Multiple consumers in same group share messages."""
         publisher = RedisStreamPublisher(redis_client)
 
@@ -329,9 +327,9 @@ class TestDeadLetterQueue:
 
         # Check that payload is preserved
         decoded_data = {
-            k.decode() if isinstance(k, bytes) else k: v.decode()
-            if isinstance(v, bytes)
-            else v
+            k.decode() if isinstance(k, bytes) else k: (
+                v.decode() if isinstance(v, bytes) else v
+            )
             for k, v in data.items()
         }
         import json
@@ -376,9 +374,9 @@ class TestDeadLetterQueue:
         _, data = dlq_messages[0]
 
         decoded_data = {
-            k.decode() if isinstance(k, bytes) else k: v.decode()
-            if isinstance(v, bytes)
-            else v
+            k.decode() if isinstance(k, bytes) else k: (
+                v.decode() if isinstance(v, bytes) else v
+            )
             for k, v in data.items()
         }
 
@@ -431,7 +429,7 @@ class TestRetryBehavior:
         self, redis_client: redis.Redis
     ) -> None:
         """Regression test: ack failures don't cause data loss.
-        
+
         This test verifies that if acknowledgment fails, messages are still
         returned to the caller and remain in the pending list for recovery.
         The bug was that retrying the entire read+ack operation would fetch
@@ -463,7 +461,7 @@ class TestRetryBehavior:
         # Read messages - all should be returned even if ack fails
         messages = await consumer.read(count=10, block_ms=100)
         assert len(messages) == 3
-        
+
         # Verify all messages have correct data (no data loss)
         assert messages[0].close == 2651.0
         assert messages[1].close == 2652.0
@@ -478,13 +476,13 @@ class TestRetryBehavior:
         self, redis_client: redis.Redis
     ) -> None:
         """Regression test: read_pending doesn't lose data on ack failure.
-        
+
         Similar to the read() test but for read_pending(). Ensures that
         retrying the read operation doesn't cause already-acknowledged
         messages to be lost.
         """
         publisher = RedisStreamPublisher(redis_client)
-        
+
         # Create consumer but don't use ensure_group to manually control pending state
         consumer = RedisStreamConsumer(
             redis_client,
@@ -516,4 +514,3 @@ class TestRetryBehavior:
         # Verify pending list is empty after successful ack
         pending = await consumer.read_pending(count=10)
         assert len(pending) == 0
-

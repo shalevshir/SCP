@@ -44,7 +44,7 @@ def reclaim_sentinel(
     """
     # Get trade direction from HTF bias
     direction = htf_bias.direction  # "long" or "short"
-    
+
     # Check 1: Price crossed VWAP in correct direction
     if len(price_history) < lookback or len(vwap_history) < lookback:
         return False, "Insufficient price/VWAP history"
@@ -70,7 +70,7 @@ def reclaim_sentinel(
         else:  # short
             # Crossed from above to below
             crossed = curr_close > curr_vwap and next_close < next_vwap
-        
+
         if crossed:
             crossed_correctly = True
             reclaim_bar_idx = i + 1

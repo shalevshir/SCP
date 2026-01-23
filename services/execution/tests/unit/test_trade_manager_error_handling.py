@@ -92,7 +92,7 @@ def sample_candle() -> Candle:
 
 class TestTradeManagerHandlesTradeNotFound:
     """Test TradeManager error handling when trade not found in database."""
-    
+
     @pytest.mark.asyncio
     async def test_close_trade_handles_not_found_error(
         self,
@@ -105,7 +105,7 @@ class TestTradeManagerHandlesTradeNotFound:
         sample_candle: Candle,
     ) -> None:
         """Test that TradeManager handles ValueError from close_trade gracefully.
-        
+
         This test verifies the fix: when TradeRepository.close_trade() raises
         ValueError (trade not found), TradeManager should:
         1. Catch the exception
@@ -114,7 +114,7 @@ class TestTradeManagerHandlesTradeNotFound:
         """
         # Configure repository to raise ValueError (trade not found)
         mock_repo.close_trade.side_effect = ValueError("Trade test-trade-1 not found")
-        
+
         # Create TradeManager
         manager = TradeManager(
             broker=mock_broker,
@@ -124,11 +124,11 @@ class TestTradeManagerHandlesTradeNotFound:
             db_pool=mock_db_pool,
             max_active_trades=1,
         )
-        
+
         # Add trade to active tracking
         manager._active_trades[sample_trade.trade_id] = sample_trade
         manager._trade_entry_bars[sample_trade.trade_id] = 100
-        
+
         # Call _close_trade (simulates SL/TP hit)
         await manager._close_trade(
             trade=sample_trade,
@@ -136,17 +136,17 @@ class TestTradeManagerHandlesTradeNotFound:
             exit_reason="SL_HIT",
             closed_at=datetime.now(timezone.utc),
         )
-        
+
         # Verify repository was called
         assert mock_repo.close_trade.call_count == 1
-        
+
         # Critical: Verify NO event was published (since DB update failed)
         mock_publisher.publish_closed.assert_not_called()
-        
+
         # Verify local state was cleaned up (prevent memory leak)
         assert sample_trade.trade_id not in manager._active_trades
         assert sample_trade.trade_id not in manager._trade_entry_bars
-    
+
     @pytest.mark.asyncio
     async def test_close_trade_publishes_event_on_success(
         self,
@@ -158,12 +158,12 @@ class TestTradeManagerHandlesTradeNotFound:
         sample_trade: TradeRecord,
     ) -> None:
         """Test that TradeManager publishes event when close succeeds.
-        
+
         This ensures the fix doesn't break the happy path.
         """
         # Configure repository to succeed
         mock_repo.close_trade.return_value = None  # Success
-        
+
         # Create TradeManager
         manager = TradeManager(
             broker=mock_broker,
@@ -173,10 +173,10 @@ class TestTradeManagerHandlesTradeNotFound:
             db_pool=mock_db_pool,
             max_active_trades=1,
         )
-        
+
         # Add trade to active tracking
         manager._active_trades[sample_trade.trade_id] = sample_trade
-        
+
         # Call _close_trade
         await manager._close_trade(
             trade=sample_trade,
@@ -184,10 +184,9 @@ class TestTradeManagerHandlesTradeNotFound:
             exit_reason="TP_HIT",
             closed_at=datetime.now(timezone.utc),
         )
-        
+
         # Verify event WAS published on success
         assert mock_publisher.publish_closed.call_count == 1
-        
+
         # Verify local state was cleaned up
         assert sample_trade.trade_id not in manager._active_trades
-

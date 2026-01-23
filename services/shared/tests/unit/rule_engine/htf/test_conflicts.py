@@ -17,11 +17,11 @@ from scp_shared.rule_engine.htf.conflicts import (
 
 class TestStructureConflictDetection:
     """Test structure conflict detection between 1H and 15M.
-    
+
     Only STRONG momentum opposition triggers conflict:
     - HH + LL = conflict (strong bullish vs strong bearish)
     - LL + HH = conflict (strong bearish vs strong bullish)
-    
+
     Retracements are allowed (not conflicts):
     - HL + LL = normal bullish retracement
     - LH + HH = normal bearish retracement

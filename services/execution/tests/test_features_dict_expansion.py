@@ -165,24 +165,26 @@ class TestFeaturesDictExpansion:
         # Add active trade
         trade_manager._active_trades[active_trade.trade_id] = active_trade
         trade_manager._trade_entry_bars[active_trade.trade_id] = 90
-        
+
         # Capture the features_dict passed to invalidation checker
         original_check_all = trade_manager._invalidation_checker.check_all
         captured_features = None
-        
+
         def capture_features(trade, candle, bars_elapsed, features=None):
             nonlocal captured_features
             captured_features = features
             return False, None  # Don't actually exit
-        
+
         trade_manager._invalidation_checker.check_all = capture_features
-        
+
         # Process candle with features
         await trade_manager.on_candle(candle_msg, features_msg)
-        
+
         # Verify vwap_slope was included
         assert captured_features is not None, "features_dict was not passed"
-        assert "vwap_slope" in captured_features, "vwap_slope missing from features_dict"
+        assert (
+            "vwap_slope" in captured_features
+        ), "vwap_slope missing from features_dict"
         assert captured_features["vwap_slope"] == 0.05
 
     @pytest.mark.asyncio
@@ -197,20 +199,20 @@ class TestFeaturesDictExpansion:
         # Add active trade
         trade_manager._active_trades[active_trade.trade_id] = active_trade
         trade_manager._trade_entry_bars[active_trade.trade_id] = 90
-        
+
         # Capture the features_dict
         captured_features = None
-        
+
         def capture_features(trade, candle, bars_elapsed, features=None):
             nonlocal captured_features
             captured_features = features
             return False, None
-        
+
         trade_manager._invalidation_checker.check_all = capture_features
-        
+
         # Process candle with features
         await trade_manager.on_candle(candle_msg, features_msg)
-        
+
         # Verify dxy_corr was included
         assert captured_features is not None
         assert "dxy_corr" in captured_features, "dxy_corr missing from features_dict"
@@ -229,24 +231,28 @@ class TestFeaturesDictExpansion:
         active_trade.setup_type = "DXY_CONTINUATION"
         trade_manager._active_trades[active_trade.trade_id] = active_trade
         trade_manager._trade_entry_bars[active_trade.trade_id] = 90
-        
+
         # Capture the features_dict
         captured_features = None
-        
+
         def capture_features(trade, candle, bars_elapsed, features=None):
             nonlocal captured_features
             captured_features = features
             return False, None
-        
+
         trade_manager._invalidation_checker.check_all = capture_features
-        
+
         # Process candle with features
         await trade_manager.on_candle(candle_msg, features_msg)
-        
+
         # Verify DXY micro correlations were included
         assert captured_features is not None
-        assert "dxy_corr_1m" in captured_features, "dxy_corr_1m missing from features_dict"
-        assert "dxy_corr_5m" in captured_features, "dxy_corr_5m missing from features_dict"
+        assert (
+            "dxy_corr_1m" in captured_features
+        ), "dxy_corr_1m missing from features_dict"
+        assert (
+            "dxy_corr_5m" in captured_features
+        ), "dxy_corr_5m missing from features_dict"
         # Should use dxy_5m_corr as proxy for both
         assert captured_features["dxy_corr_1m"] == -0.35
         assert captured_features["dxy_corr_5m"] == -0.35
@@ -263,23 +269,25 @@ class TestFeaturesDictExpansion:
         # Add active trade
         trade_manager._active_trades[active_trade.trade_id] = active_trade
         trade_manager._trade_entry_bars[active_trade.trade_id] = 90
-        
+
         # Capture the features_dict
         captured_features = None
-        
+
         def capture_features(trade, candle, bars_elapsed, features=None):
             nonlocal captured_features
             captured_features = features
             return False, None
-        
+
         trade_manager._invalidation_checker.check_all = capture_features
-        
+
         # Process candle with features
         await trade_manager.on_candle(candle_msg, features_msg)
-        
+
         # Verify dxy_structure was included
         assert captured_features is not None
-        assert "dxy_structure" in captured_features, "dxy_structure missing from features_dict"
+        assert (
+            "dxy_structure" in captured_features
+        ), "dxy_structure missing from features_dict"
         assert captured_features["dxy_structure"] == "HL"
 
     @pytest.mark.asyncio
@@ -295,23 +303,25 @@ class TestFeaturesDictExpansion:
         active_trade.setup_type = "VWAP_RECLAIM"
         trade_manager._active_trades[active_trade.trade_id] = active_trade
         trade_manager._trade_entry_bars[active_trade.trade_id] = 90
-        
+
         # Capture the features_dict
         captured_features = None
-        
+
         def capture_features(trade, candle, bars_elapsed, features=None):
             nonlocal captured_features
             captured_features = features
             return False, None
-        
+
         trade_manager._invalidation_checker.check_all = capture_features
-        
+
         # Process candle with features
         await trade_manager.on_candle(candle_msg, features_msg)
-        
+
         # Verify htf_structure_label was included
         assert captured_features is not None
-        assert "htf_structure_label" in captured_features, "htf_structure_label missing from features_dict"
+        assert (
+            "htf_structure_label" in captured_features
+        ), "htf_structure_label missing from features_dict"
         assert captured_features["htf_structure_label"] == "HH"
 
     @pytest.mark.asyncio
@@ -326,20 +336,20 @@ class TestFeaturesDictExpansion:
         # Add active trade
         trade_manager._active_trades[active_trade.trade_id] = active_trade
         trade_manager._trade_entry_bars[active_trade.trade_id] = 90
-        
+
         # Capture the features_dict
         captured_features = None
-        
+
         def capture_features(trade, candle, bars_elapsed, features=None):
             nonlocal captured_features
             captured_features = features
             return False, None
-        
+
         trade_manager._invalidation_checker.check_all = capture_features
-        
+
         # Process candle with features
         await trade_manager.on_candle(candle_msg, features_msg)
-        
+
         # Verify original fields are still included
         assert captured_features is not None
         assert "vwap" in captured_features
@@ -348,4 +358,3 @@ class TestFeaturesDictExpansion:
         assert captured_features["rsi"] == 55.0
         assert "structure_label" in captured_features
         assert captured_features["structure_label"] == "HH"
-

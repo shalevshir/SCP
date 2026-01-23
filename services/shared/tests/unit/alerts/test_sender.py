@@ -77,7 +77,9 @@ class TestSendAlert:
         assert payload["context"]["daily_pnl"] == -650.0
         assert payload["context"]["pdll_limit"] == 600.0
 
-    def test_send_alert_logs_at_correct_level(self, caplog: pytest.LogCaptureFixture) -> None:
+    def test_send_alert_logs_at_correct_level(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
         """send_alert should log at the correct level."""
         with caplog.at_level(logging.INFO, logger="ALERT"):
             send_alert(

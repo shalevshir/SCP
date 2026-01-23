@@ -24,23 +24,24 @@ def event_loop():
 @pytest_asyncio.fixture(scope="function")
 async def redis_client() -> AsyncGenerator[redis.Redis, None]:
     """Provide Redis client connected to test instance.
-    
+
     Connects to Redis on port specified by REDIS_PORT env var:
     - Local development (default): 6379 (same as services via launch.json)
     - CI/Docker: 6380 (test Redis via docker-compose.test.yml)
-    
+
     Yields:
         Redis client for integration tests
     """
     import os
+
     redis_port = int(os.environ.get("REDIS_PORT", "6379"))
-    
+
     client = redis.Redis(
         host="localhost",
         port=redis_port,
         decode_responses=False,  # Keep binary for stream handling
     )
-    
+
     try:
         # Verify connection
         await client.ping()
@@ -52,21 +53,22 @@ async def redis_client() -> AsyncGenerator[redis.Redis, None]:
 @pytest_asyncio.fixture(scope="function")
 async def db_pool() -> AsyncGenerator[DatabasePool, None]:
     """Provide database pool connected to test PostgreSQL.
-    
+
     Connects to PostgreSQL using DATABASE_URL env var or defaults:
     - Local development (default): port 5432 with scp/scp_dev_password
     - CI/Docker: port 5433 with scp_test/scp_test_password
-    
+
     Yields:
         Database pool for integration tests
     """
     import os
+
     database_url = os.environ.get(
         "DATABASE_URL",
-        "postgresql://scp:scp_dev_password@localhost:5432/scp"  # Match launch.json
+        "postgresql://scp:scp_dev_password@localhost:5432/scp",  # Match launch.json
     )
     pool = DatabasePool(database_url)
-    
+
     try:
         await pool.connect()
         yield pool
@@ -77,11 +79,11 @@ async def db_pool() -> AsyncGenerator[DatabasePool, None]:
 @pytest_asyncio.fixture(scope="function")
 async def clean_streams(redis_client: redis.Redis) -> None:
     """Clean Redis streams before each test.
-    
+
     Uses XTRIM to clear messages while preserving consumer groups.
     This is critical because messages published BEFORE a consumer group
     is created are NOT delivered to that group.
-    
+
     Args:
         redis_client: Redis client fixture
     """
@@ -98,7 +100,7 @@ async def clean_streams(redis_client: redis.Redis) -> None:
         "trades.opened",
         "trades.closed",
     ]
-    
+
     for stream in streams_to_clean:
         try:
             # Use XTRIM to remove all messages but keep consumer groups intact
@@ -107,7 +109,7 @@ async def clean_streams(redis_client: redis.Redis) -> None:
         except Exception:
             # Stream might not exist, that's ok
             pass
-    
+
     # Also acknowledge any pending messages in consumer groups
     # to prevent them from being redelivered
     # Include both service consumer groups and test consumer groups
@@ -138,7 +140,7 @@ async def clean_streams(redis_client: redis.Redis) -> None:
         ("features.1m", "integration-test-corr"),
         ("features.1m", "integration-test-ts"),
     ]
-    
+
     for stream, group in consumer_groups:
         try:
             # Get pending messages and acknowledge them
@@ -151,7 +153,7 @@ async def clean_streams(redis_client: redis.Redis) -> None:
             elif isinstance(pending, (list, tuple)) and len(pending) > 0:
                 # Some versions return [count, first_id, last_id, consumers]
                 pending_count = pending[0] if isinstance(pending[0], int) else 0
-            
+
             if pending_count > 0:
                 # Read and ack all pending
                 messages = await redis_client.xreadgroup(
@@ -167,7 +169,7 @@ async def clean_streams(redis_client: redis.Redis) -> None:
         except Exception:
             # Group might not exist, that's ok
             pass
-    
+
     # Wait briefly for services to complete any in-flight reads
     # This ensures services are in a clean state before test proceeds
     await asyncio.sleep(0.5)
@@ -176,9 +178,9 @@ async def clean_streams(redis_client: redis.Redis) -> None:
 @pytest_asyncio.fixture(scope="function")
 async def clean_database(db_pool: DatabasePool) -> None:
     """Clean database tables before each test.
-    
+
     Truncates all tables used by services to ensure clean test state.
-    
+
     Args:
         db_pool: Database pool fixture
     """
@@ -191,7 +193,7 @@ async def clean_database(db_pool: DatabasePool) -> None:
         "features",
         "candles",
     ]
-    
+
     for table in tables_to_clean:
         try:
             await db_pool.execute(f"TRUNCATE TABLE {table} CASCADE")
@@ -203,10 +205,10 @@ async def clean_database(db_pool: DatabasePool) -> None:
 @pytest_asyncio.fixture(scope="function")
 async def redis_publisher(redis_client: redis.Redis) -> RedisStreamPublisher:
     """Provide Redis stream publisher for test data injection.
-    
+
     Args:
         redis_client: Redis client fixture
-        
+
     Returns:
         RedisStreamPublisher instance
     """
@@ -217,17 +219,17 @@ def wait_for_service_health(
     service_url: str, max_retries: int = 30, retry_delay: float = 1.0
 ) -> bool:
     """Wait for a service to become healthy.
-    
+
     Args:
         service_url: URL to health endpoint (e.g., "http://localhost:8001/health")
         max_retries: Maximum number of retry attempts
         retry_delay: Delay between retries in seconds
-        
+
     Returns:
         True if service became healthy, False if timed out
     """
     import requests
-    
+
     for i in range(max_retries):
         try:
             response = requests.get(service_url, timeout=2)
@@ -235,17 +237,17 @@ def wait_for_service_health(
                 return True
         except requests.exceptions.RequestException:
             pass
-        
+
         if i < max_retries - 1:
             time.sleep(retry_delay)
-    
+
     return False
 
 
 @pytest.fixture(scope="session")
 def docker_services() -> dict[str, str]:
     """Provide service URLs for health checks.
-    
+
     Returns:
         Dictionary mapping service names to health endpoint URLs
     """
@@ -261,17 +263,17 @@ def docker_services() -> dict[str, str]:
 @pytest.fixture(scope="function")
 def ensure_services_healthy(docker_services: dict[str, str]) -> None:
     """Ensure all services are healthy before running tests.
-    
+
     Also resets execution service state to ensure clean test isolation.
-    
+
     Args:
         docker_services: Dictionary of service health URLs
-        
+
     Raises:
         RuntimeError: If any service fails to become healthy
     """
     import requests
-    
+
     for service_name, health_url in docker_services.items():
         if not wait_for_service_health(health_url):
             raise RuntimeError(
@@ -279,7 +281,7 @@ def ensure_services_healthy(docker_services: dict[str, str]) -> None:
                 f"Ensure services are running: docker-compose -f infra/docker-compose.yml "
                 f"-f infra/docker-compose.services.yml -f infra/docker-compose.test.yml up -d"
             )
-    
+
     # Reset execution service state to ensure clean test isolation
     # This clears in-memory state (active trades, pending signals, etc.)
     try:
@@ -289,9 +291,7 @@ def ensure_services_healthy(docker_services: dict[str, str]) -> None:
                 f"Failed to reset execution service: {reset_response.text}"
             )
     except requests.exceptions.RequestException as e:
-        raise RuntimeError(
-            f"Failed to reset execution service state: {e}"
-        )
+        raise RuntimeError(f"Failed to reset execution service state: {e}")
 
 
 def make_candle(
@@ -305,7 +305,7 @@ def make_candle(
     volume: float = 1000.0,
 ) -> CandleMessage:
     """Helper to create test candles.
-    
+
     Args:
         timestamp: Candle timestamp
         symbol: Asset symbol
@@ -315,7 +315,7 @@ def make_candle(
         low_price: Low price
         close_price: Close price
         volume: Volume
-        
+
     Returns:
         CandleMessage instance
     """
@@ -334,9 +334,8 @@ def make_candle(
 @pytest.fixture
 def candle_factory():
     """Provide candle factory function for tests.
-    
+
     Returns:
         Function that creates candles with sensible defaults
     """
     return make_candle
-

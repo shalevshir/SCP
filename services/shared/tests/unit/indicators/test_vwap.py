@@ -253,4 +253,3 @@ class TestVWAPDeviation:
         assert pd.isna(deviation.iloc[0])
         assert pd.isna(deviation.iloc[1])
         assert pd.isna(deviation.iloc[2])
-

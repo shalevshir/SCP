@@ -84,7 +84,7 @@ REJECTION_REASONS = {
 
 def record_signal_rejection(reason: str, mode: str, service: str) -> None:
     """Record a signal rejection with validation of reason label.
-    
+
     Args:
         reason: Rejection reason (must be from REJECTION_REASONS set)
         mode: Service mode (dev/test/replay/paper/live)
@@ -93,5 +93,5 @@ def record_signal_rejection(reason: str, mode: str, service: str) -> None:
     # Validate reason is from known set to prevent cardinality explosion
     if reason not in REJECTION_REASONS:
         reason = "invalid_context"  # Default for unknown reasons
-    
+
     signals_rejected_total.labels(mode=mode, service=service, reason=reason).inc()

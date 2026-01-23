@@ -16,7 +16,7 @@ class TestOrderResult:
             side="long",
             quantity=1,
         )
-        
+
         assert result.order_id == "test-123"
         assert result.symbol == "GC"
         assert result.side == "long"
@@ -37,7 +37,7 @@ class TestOrderResult:
             filled_at=now,
             status="filled",
         )
-        
+
         assert result.filled_price == 30.5
         assert result.filled_at == now
         assert result.status == "filled"
@@ -54,7 +54,7 @@ class TestPosition:
             quantity=1,
             entry_price=2650.0,
         )
-        
+
         assert position.symbol == "GC"
         assert position.side == "long"
         assert position.quantity == 1
@@ -70,7 +70,7 @@ class TestPosition:
             entry_price=2650.0,
             unrealized_pnl=15.0,
         )
-        
+
         assert position.unrealized_pnl == 15.0
 
     def test_short_position(self) -> None:
@@ -81,6 +81,6 @@ class TestPosition:
             quantity=2,
             entry_price=2660.0,
         )
-        
+
         assert position.side == "short"
         assert position.quantity == 2

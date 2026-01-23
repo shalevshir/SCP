@@ -9,7 +9,7 @@ from typing import Literal
 @dataclass
 class OrderResult:
     """Result of an order placement.
-    
+
     Attributes:
         order_id: Unique order identifier
         symbol: Asset symbol
@@ -20,7 +20,7 @@ class OrderResult:
         status: Order status ("filled", "rejected", "pending")
         limit_price: Limit price for limit orders (used for tracking)
     """
-    
+
     order_id: str
     symbol: str
     side: Literal["long", "short"]
@@ -34,7 +34,7 @@ class OrderResult:
 @dataclass
 class Position:
     """Current position state.
-    
+
     Attributes:
         symbol: Asset symbol
         side: Position side ("long" or "short")
@@ -42,7 +42,7 @@ class Position:
         entry_price: Average entry price
         unrealized_pnl: Unrealized P&L in points
     """
-    
+
     symbol: str
     side: Literal["long", "short"]
     quantity: int
@@ -52,16 +52,16 @@ class Position:
 
 class BaseBroker(ABC):
     """Abstract broker interface for order execution.
-    
+
     Defines the contract that all broker implementations must follow,
     whether paper trading or live execution.
-    
+
     Example:
         >>> broker = PaperBroker()
         >>> result = await broker.place_order("GC", "long", 1)
         >>> position = await broker.get_position("GC")
     """
-    
+
     @abstractmethod
     async def place_order(
         self,
@@ -71,45 +71,45 @@ class BaseBroker(ABC):
         price: float | None = None,
     ) -> OrderResult:
         """Place an order.
-        
+
         Args:
             symbol: Asset symbol (e.g., "GC")
             side: Order side ("long" or "short")
             quantity: Number of contracts
             price: Limit price (None for market order)
-            
+
         Returns:
             OrderResult with execution details
-            
+
         Raises:
             ValueError: If order parameters are invalid
         """
         pass
-    
+
     @abstractmethod
     async def cancel_order(self, order_id: str) -> bool:
         """Cancel a pending order.
-        
+
         Args:
             order_id: Order identifier
-            
+
         Returns:
             True if cancelled successfully, False otherwise
         """
         pass
-    
+
     @abstractmethod
     async def get_position(self, symbol: str) -> Position | None:
         """Get current position for a symbol.
-        
+
         Args:
             symbol: Asset symbol
-            
+
         Returns:
             Position if exists, None otherwise
         """
         pass
-    
+
     @abstractmethod
     async def close_position(
         self,
@@ -117,31 +117,29 @@ class BaseBroker(ABC):
         price: float | None = None,
     ) -> OrderResult:
         """Close an existing position.
-        
+
         Args:
             symbol: Asset symbol
             price: Limit price (None for market order)
-            
+
         Returns:
             OrderResult with execution details
-            
+
         Raises:
             ValueError: If no position exists
         """
         pass
-    
+
     async def reconcile_positions(
         self,
         trades: list[tuple[str, str, float, int]],
     ) -> None:
         """Reconcile broker positions with restored trades on startup.
-        
+
         Optional method for brokers that need to restore position state
         after service restart. Default implementation does nothing.
-        
+
         Args:
             trades: List of (symbol, side, entry_price, quantity) tuples
         """
         pass  # Optional: brokers can override if they need reconciliation
-
-

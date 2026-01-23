@@ -17,11 +17,12 @@ if TYPE_CHECKING:
 
 class ChopSeverity(Enum):
     """Chop severity classification for setup-aware filtering.
-    
+
     NONE: Clean trending market - all setups allowed
     SOFT_CHOP: Indecision/compression (3-4 consecutive chop candles) - allows fades
     HARD_CHOP: True range-bound chaos (5+ consecutive chop candles) - blocks most setups
     """
+
     NONE = "none"
     SOFT_CHOP = "soft"
     HARD_CHOP = "hard"
@@ -135,8 +136,12 @@ class HTFBias:
     structure_clarity: float = 0.0  # 0-1 score measuring swing sequence purity
     bars_since_bos: int | None = None  # Bars since last BOS (staleness metric)
     bars_since_choch: int | None = None  # Bars since last CHoCH
-    chop_detected: bool = False  # True if recent labels are mixed (HH+LL within window) - backward compat
-    chop_severity: ChopSeverity = ChopSeverity.NONE  # Setup-aware chop severity classification
+    chop_detected: bool = (
+        False  # True if recent labels are mixed (HH+LL within window) - backward compat
+    )
+    chop_severity: ChopSeverity = (
+        ChopSeverity.NONE
+    )  # Setup-aware chop severity classification
     chop_consecutive_count: int = 0  # Number of consecutive chop candles
     atr_15m: float | None = None  # 15M ATR for noise filtering in structure detection
 
@@ -148,13 +153,21 @@ class HTFBias:
     # Priority hierarchy for long TPs: htf_range_high > untouched_liquidity_high > nearest_fvg_high
     htf_range_high: float | None = None  # Upper boundary of HTF range
     htf_range_low: float | None = None  # Lower boundary of HTF range
-    untouched_liquidity_high: float | None = None  # Unswept buy-side liquidity (clean HH)
-    untouched_liquidity_low: float | None = None  # Unswept sell-side liquidity (clean LL)
+    untouched_liquidity_high: float | None = (
+        None  # Unswept buy-side liquidity (clean HH)
+    )
+    untouched_liquidity_low: float | None = (
+        None  # Unswept sell-side liquidity (clean LL)
+    )
     nearest_fvg_high: float | None = None  # Nearest bullish FVG above (for long TP)
     nearest_fvg_low: float | None = None  # Nearest bearish FVG below (for short TP)
-    opposing_fvg_high: float | None = None  # Bearish FVG blocking longs (upper boundary)
+    opposing_fvg_high: float | None = (
+        None  # Bearish FVG blocking longs (upper boundary)
+    )
     opposing_fvg_low: float | None = None  # Bearish FVG blocking longs (lower boundary)
-    opposing_fvg_bullish_high: float | None = None  # Bullish FVG blocking shorts (upper)
+    opposing_fvg_bullish_high: float | None = (
+        None  # Bullish FVG blocking shorts (upper)
+    )
     opposing_fvg_bullish_low: float | None = None  # Bullish FVG blocking shorts (lower)
 
     def to_dict(self) -> dict:

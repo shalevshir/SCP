@@ -180,7 +180,9 @@ class TestValidateScoringConfig:
             "confidence": {"a_plus": 8.0, "watch": 6.0, "reject": 0.0},
         }
 
-        with pytest.raises(ConfigError, match="Missing required key: 'setups' or 'setup_types'"):
+        with pytest.raises(
+            ConfigError, match="Missing required key: 'setups' or 'setup_types'"
+        ):
             validate_scoring_config(config_data)
 
     def test_validate_missing_confidence_raises_error(self) -> None:

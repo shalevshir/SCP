@@ -169,8 +169,3 @@ def calculate_bars_since_pullback(df: pd.DataFrame, direction: str) -> Optional[
 
     logger.debug(f"No pullback found in last {lookback} bars for {direction} trade")
     return None
-
-
-
-
-

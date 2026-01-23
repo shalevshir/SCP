@@ -95,4 +95,3 @@ class DataAdapterConfig(BaseServiceConfig):
         default=True,
         description="Enable automatic gap backfill from historical data",
     )
-

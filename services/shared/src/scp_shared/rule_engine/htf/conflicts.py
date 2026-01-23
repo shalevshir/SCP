@@ -58,7 +58,7 @@ def detect_structure_conflict(
     # Only TRUE conflict when BOTH timeframes show STRONG opposing momentum
     # HH = strong bullish, LL = strong bearish
     # HL = bullish with pullback (retracement), LH = bearish with pullback
-    
+
     # Strong bullish 1H (HH only) + Strong bearish 15M (LL only) = conflict
     if structure_1h == "HH" and structure_15m == "LL":
         reason = (
@@ -221,10 +221,10 @@ def classify_chop_severity(
     extreme_wick_ratio: float = 2.0,
 ) -> tuple[ChopSeverity, int]:
     """Classify chop severity based on consecutive count and wick extremity.
-    
+
     This function extends detect_price_chop_15m() by adding severity classification
     to enable setup-aware chop handling. Detection logic remains unchanged.
-    
+
     Args:
         df_15m: DataFrame with 15M OHLC data
         atr: Average True Range for noise filtering (optional)
@@ -233,20 +233,20 @@ def classify_chop_severity(
         soft_threshold: Consecutive candles for SOFT_CHOP (default: 3)
         hard_threshold: Consecutive candles for HARD_CHOP (default: 5)
         extreme_wick_ratio: Wick ratio that escalates severity (default: 2.0)
-    
+
     Returns:
         Tuple of (ChopSeverity, consecutive_count):
         - ChopSeverity.NONE: 0-2 consecutive chop candles
         - ChopSeverity.SOFT_CHOP: 3-4 consecutive chop candles
         - ChopSeverity.HARD_CHOP: 5+ consecutive chop candles
         - Extreme wick ratios (>2.0) escalate to next severity level
-    
+
     Logic:
         1. Use existing chop detection logic (wick-to-body ratio)
         2. Count consecutive chop candles from most recent
         3. Classify severity based on count and wick extremity
         4. Escalate severity if wicks are extremely large (>2.0 ratio)
-    
+
     Example:
         >>> severity, count = classify_chop_severity(df_15m, atr=5.0)
         >>> if severity == ChopSeverity.SOFT_CHOP:
@@ -313,7 +313,7 @@ def classify_chop_severity(
     # Count consecutive chop candles from the end
     consecutive_count = 0
     has_extreme_in_sequence = False
-    
+
     for i in range(len(df_15m) - 1, -1, -1):
         if is_chop_candle.iloc[i]:
             consecutive_count += 1

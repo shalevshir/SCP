@@ -48,12 +48,12 @@ async def collect_trades(
     end: datetime | None = None,
 ) -> list[dict]:
     """Collect trades from PostgreSQL database.
-    
+
     Args:
         database_url: PostgreSQL connection URL
         start: Optional start datetime for filtering
         end: Optional end datetime for filtering
-        
+
     Returns:
         List of trade dictionaries in backtester-compatible format
     """
@@ -61,23 +61,23 @@ async def collect_trades(
     logger.info("Collecting Microservices Trades")
     logger.info("=" * 80)
     logger.info(f"Database URL: {database_url}")
-    
+
     if start:
         logger.info(f"Start filter: {start}")
     if end:
         logger.info(f"End filter: {end}")
-    
+
     # Connect to database
     logger.info("\nConnecting to database...")
     pool = DatabasePool(database_url)
-    
+
     try:
         await pool.connect()
         logger.info("Connected to database successfully")
     except Exception as e:
         logger.error(f"Failed to connect to database: {e}")
         raise
-    
+
     # Build query
     query = """
         SELECT
@@ -102,20 +102,20 @@ async def collect_trades(
         FROM trades
         WHERE 1=1
     """
-    
+
     params = []
     if start:
         query += " AND opened_at >= $" + str(len(params) + 1)
         params.append(start)
-    
+
     if end:
         query += " AND opened_at < $" + str(len(params) + 1)
         params.append(end)
-    
+
     query += " ORDER BY opened_at"
-    
+
     logger.info(f"\nExecuting query with {len(params)} parameters...")
-    
+
     try:
         rows = await pool.fetch(query, *params)
         logger.info(f"Retrieved {len(rows)} trades from database")
@@ -123,13 +123,13 @@ async def collect_trades(
         logger.error(f"Failed to query trades: {e}")
         await pool.close()
         raise
-    
+
     await pool.close()
-    
+
     # Convert to backtester-compatible format
     logger.info("\nConverting trades to backtester format...")
     trades = []
-    
+
     for row in rows:
         # Convert database row to dict
         trade_dict = {
@@ -138,12 +138,16 @@ async def collect_trades(
             "timeframe": "1m",
             "direction": row["direction"],
             "setup_type": row["setup_type"],
-            "entry_timestamp": row["opened_at"].isoformat() if row["opened_at"] else None,
+            "entry_timestamp": (
+                row["opened_at"].isoformat() if row["opened_at"] else None
+            ),
             "entry_price": float(row["entry_price"]) if row["entry_price"] else None,
             "stop_loss": float(row["sl_price"]) if row["sl_price"] else None,
             "take_profit": float(row["tp_price"]) if row["tp_price"] else None,
             "contracts": int(row["quantity"]) if row["quantity"] else 1,
-            "exit_timestamp": row["closed_at"].isoformat() if row["closed_at"] else None,
+            "exit_timestamp": (
+                row["closed_at"].isoformat() if row["closed_at"] else None
+            ),
             "exit_price": float(row["exit_price"]) if row["exit_price"] else None,
             "exit_reason": row["exit_reason"],
             "pnl": float(row["pnl_points"]) if row["pnl_points"] else None,
@@ -153,51 +157,51 @@ async def collect_trades(
             "confirmations": row["confirmations"],
             "transition_history": row["transition_history"],
         }
-        
+
         trades.append(trade_dict)
-    
+
     logger.info(f"Converted {len(trades)} trades")
-    
+
     # Summary statistics
     if trades:
         open_trades = sum(1 for t in trades if t["status"] == "OPEN")
         closed_trades = sum(1 for t in trades if t["status"] == "CLOSED")
-        
+
         logger.info("\nTrade Summary:")
         logger.info(f"  Total: {len(trades)}")
         logger.info(f"  Open: {open_trades}")
         logger.info(f"  Closed: {closed_trades}")
-        
+
         # Direction breakdown
         long_trades = sum(1 for t in trades if t["direction"] == "long")
         short_trades = sum(1 for t in trades if t["direction"] == "short")
         logger.info(f"  Long: {long_trades}")
         logger.info(f"  Short: {short_trades}")
-        
+
         # Setup type breakdown
         setup_types = {}
         for t in trades:
             setup = t.get("setup_type", "UNKNOWN")
             setup_types[setup] = setup_types.get(setup, 0) + 1
-        
+
         logger.info("\nSetup Types:")
         for setup, count in sorted(setup_types.items()):
             logger.info(f"  {setup}: {count}")
-    
+
     return trades
 
 
 def save_trades(trades: list[dict], output_file: Path) -> None:
     """Save trades to JSON file.
-    
+
     Args:
         trades: List of trade dictionaries
         output_file: Output file path
     """
     logger.info(f"\nSaving trades to {output_file}...")
-    
+
     output_file.parent.mkdir(parents=True, exist_ok=True)
-    
+
     output_data = {
         "metadata": {
             "collected_at": datetime.now(UTC).isoformat(),
@@ -205,10 +209,10 @@ def save_trades(trades: list[dict], output_file: Path) -> None:
         },
         "trades": trades,
     }
-    
+
     with open(output_file, "w") as f:
         json.dump(output_data, f, indent=2)
-    
+
     logger.info(f"Saved {len(trades)} trades to {output_file}")
 
 
@@ -217,7 +221,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Collect trades from microservices PostgreSQL database"
     )
-    
+
     # Database connection
     parser.add_argument(
         "--database-url",
@@ -225,7 +229,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default="postgresql://scp:scp_dev_password@localhost:5432/scp",
         help="PostgreSQL connection URL (default: postgresql://scp:scp_dev_password@localhost:5432/scp)",
     )
-    
+
     # Date range filters
     parser.add_argument(
         "--start",
@@ -237,7 +241,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
         type=parse_iso_datetime,
         help="End datetime filter (ISO-8601, e.g., 2024-11-30T23:59:59Z)",
     )
-    
+
     # Output
     parser.add_argument(
         "--output",
@@ -245,7 +249,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default=Path("output/microservices_trades.json"),
         help="Output file path (default: output/microservices_trades.json)",
     )
-    
+
     return parser
 
 
@@ -255,10 +259,10 @@ async def main() -> None:
     project_root = Path(__file__).parent.parent
     config = load_config(project_root / "config" / "core.yaml")
     setup_logging(config.system)
-    
+
     parser = build_arg_parser()
     args = parser.parse_args()
-    
+
     try:
         # Collect trades
         trades = await collect_trades(
@@ -266,15 +270,15 @@ async def main() -> None:
             start=args.start,
             end=args.end,
         )
-        
+
         # Save to file
         save_trades(trades, args.output)
-        
+
         logger.info("\n" + "=" * 80)
         logger.info("Collection Complete!")
         logger.info("=" * 80)
         sys.exit(0)
-    
+
     except Exception as e:
         logger.error(f"\nCollection failed: {e}", exc_info=True)
         sys.exit(1)
@@ -282,5 +286,5 @@ async def main() -> None:
 
 if __name__ == "__main__":
     import asyncio
-    asyncio.run(main())
 
+    asyncio.run(main())

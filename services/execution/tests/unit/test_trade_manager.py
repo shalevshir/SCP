@@ -137,7 +137,7 @@ def sample_candle() -> CandleMessage:
 
 class TestTradeManagerOnSignal:
     """Test on_signal method."""
-    
+
     @pytest.mark.asyncio
     async def test_on_signal_buffers_signal(
         self,
@@ -147,11 +147,11 @@ class TestTradeManagerOnSignal:
     ) -> None:
         """Signal is buffered for next bar execution."""
         await trade_manager.on_signal(sample_signal)
-        
+
         assert len(trade_manager._pending_signals) == 1
         assert trade_manager._pending_signals[0] == sample_signal
         mock_sm_manager.create_from_signal.assert_called_once_with(sample_signal)
-    
+
     @pytest.mark.asyncio
     async def test_on_signal_rejects_when_max_trades_reached(
         self,
@@ -161,16 +161,16 @@ class TestTradeManagerOnSignal:
         """Signal is rejected when max active trades reached."""
         # Simulate existing active trade
         trade_manager._active_trades["trade-1"] = MagicMock()
-        
+
         await trade_manager.on_signal(sample_signal)
-        
+
         # Signal should not be buffered
         assert len(trade_manager._pending_signals) == 0
 
 
 class TestTradeManagerExecutePendingSignals:
     """Test execute_pending_signals method."""
-    
+
     @pytest.mark.asyncio
     async def test_execute_pending_signals_executes_entry(
         self,
@@ -182,16 +182,18 @@ class TestTradeManagerExecutePendingSignals:
     ) -> None:
         """Pending signals are executed at next bar open."""
         trade_manager._pending_signals.append(sample_signal)
-        
+
         candle_timestamp = sample_signal.timestamp + timedelta(minutes=1)
-        await trade_manager.execute_pending_signals(next_bar_open=2651.0, candle_timestamp=candle_timestamp)
-        
+        await trade_manager.execute_pending_signals(
+            next_bar_open=2651.0, candle_timestamp=candle_timestamp
+        )
+
         mock_broker.place_order.assert_called_once()
         mock_trade_repo.insert_trade.assert_called_once()
         mock_publisher.publish_opened.assert_called_once()
         assert len(trade_manager._active_trades) == 1
         assert len(trade_manager._pending_signals) == 0
-    
+
     @pytest.mark.asyncio
     async def test_execute_pending_signals_clears_buffer(
         self,
@@ -200,12 +202,14 @@ class TestTradeManagerExecutePendingSignals:
     ) -> None:
         """Pending signals buffer is cleared after execution."""
         trade_manager._pending_signals.append(sample_signal)
-        
+
         candle_timestamp = sample_signal.timestamp + timedelta(minutes=1)
-        await trade_manager.execute_pending_signals(next_bar_open=2651.0, candle_timestamp=candle_timestamp)
-        
+        await trade_manager.execute_pending_signals(
+            next_bar_open=2651.0, candle_timestamp=candle_timestamp
+        )
+
         assert len(trade_manager._pending_signals) == 0
-    
+
     @pytest.mark.asyncio
     async def test_execute_pending_signals_respects_concurrent_limit(
         self,
@@ -216,13 +220,15 @@ class TestTradeManagerExecutePendingSignals:
         # Simulate existing active trade
         trade_manager._active_trades["trade-1"] = MagicMock()
         trade_manager._pending_signals.append(sample_signal)
-        
+
         candle_timestamp = sample_signal.timestamp + timedelta(minutes=1)
-        await trade_manager.execute_pending_signals(next_bar_open=2651.0, candle_timestamp=candle_timestamp)
-        
+        await trade_manager.execute_pending_signals(
+            next_bar_open=2651.0, candle_timestamp=candle_timestamp
+        )
+
         # Signal should not be executed
         assert len(trade_manager._active_trades) == 1  # Still just the original
-    
+
     @pytest.mark.asyncio
     async def test_execute_pending_signals_respects_pdll_limit(
         self,
@@ -233,17 +239,19 @@ class TestTradeManagerExecutePendingSignals:
         # Simulate PDLL hit by setting state.pdll_hit
         trade_manager._daily_tracker._state.pdll_hit = True
         trade_manager._pending_signals.append(sample_signal)
-        
+
         candle_timestamp = sample_signal.timestamp + timedelta(minutes=1)
-        await trade_manager.execute_pending_signals(next_bar_open=2651.0, candle_timestamp=candle_timestamp)
-        
+        await trade_manager.execute_pending_signals(
+            next_bar_open=2651.0, candle_timestamp=candle_timestamp
+        )
+
         # Signal should not be executed
         assert len(trade_manager._active_trades) == 0
 
 
 class TestTradeManagerOnCandle:
     """Test on_candle method."""
-    
+
     @pytest.mark.asyncio
     async def test_on_candle_checks_active_trades(
         self,
@@ -266,16 +274,16 @@ class TestTradeManagerOnCandle:
             entry_timestamp=datetime(2025, 1, 15, 10, 0, tzinfo=timezone.utc),
         )
         trade_manager._active_trades["trade-123"] = trade
-        
+
         await trade_manager.on_candle(sample_candle)
-        
+
         # Trade should still be active (no exit triggered)
         assert "trade-123" in trade_manager._active_trades
 
 
 class TestTradeManagerCheckSessionReset:
     """Test check_session_reset method."""
-    
+
     def test_check_session_reset_resets_daily_tracker(
         self,
         trade_manager: TradeManager,
@@ -284,11 +292,11 @@ class TestTradeManagerCheckSessionReset:
         # Record some trades
         trade_manager._daily_tracker.record_trade_opened()
         trade_manager._daily_tracker.record_trade_closed(pnl=-100.0)
-        
+
         # Reset for new day
         new_day = datetime(2025, 1, 16, 10, 0, tzinfo=timezone.utc)
         trade_manager.check_session_reset(new_day)
-        
+
         # State should be reset
         can_trade, _ = trade_manager._daily_tracker.can_trade()
         assert can_trade is True
@@ -296,7 +304,7 @@ class TestTradeManagerCheckSessionReset:
 
 class TestTradeManagerExecuteEntry:
     """Test execute_entry method."""
-    
+
     @pytest.mark.asyncio
     async def test_execute_entry_creates_trade(
         self,
@@ -309,7 +317,7 @@ class TestTradeManagerExecuteEntry:
     ) -> None:
         """Execute entry creates trade and publishes event."""
         result = await trade_manager.execute_entry(sample_signal, entry_price=2651.0)
-        
+
         assert result is not None
         assert result.entry_price == 2651.0
         assert result.direction == "long"
@@ -317,7 +325,7 @@ class TestTradeManagerExecuteEntry:
         mock_trade_repo.insert_trade.assert_called_once()
         mock_publisher.publish_opened.assert_called_once()
         mock_sm_manager.execute.assert_called_once()
-    
+
     @pytest.mark.asyncio
     async def test_execute_entry_calculates_risk_reward_long(
         self,
@@ -326,11 +334,11 @@ class TestTradeManagerExecuteEntry:
     ) -> None:
         """Execute entry calculates risk/reward correctly for long."""
         result = await trade_manager.execute_entry(sample_signal, entry_price=2651.0)
-        
+
         assert result is not None
         assert result.risk_amount == 2651.0 - 2645.0  # entry - sl
         assert result.reward_amount == 2662.0 - 2651.0  # tp - entry
-    
+
     @pytest.mark.asyncio
     async def test_execute_entry_handles_order_failure(
         self,
@@ -346,12 +354,12 @@ class TestTradeManagerExecuteEntry:
             quantity=1,
             status="rejected",
         )
-        
+
         result = await trade_manager.execute_entry(sample_signal, entry_price=2651.0)
-        
+
         assert result is None
         assert len(trade_manager._active_trades) == 0
-    
+
     @pytest.mark.asyncio
     async def test_execute_entry_blocks_max_executions(
         self,
@@ -362,21 +370,21 @@ class TestTradeManagerExecuteEntry:
         """Execute entry blocks when state machine has max executions."""
         # Mock check_confirmation to return False (signal not ready for execution)
         mock_sm_manager.check_confirmation.return_value = False
-        
+
         # Mock state machine for logging purposes
         sm = MagicMock()
         sm.execution_count = 1
         mock_sm_manager.get_state_machine.return_value = sm
-        
+
         result = await trade_manager.execute_entry(sample_signal, entry_price=2651.0)
-        
+
         assert result is None
         mock_sm_manager.check_confirmation.assert_called_once_with(sample_signal.id)
 
 
 class TestTradeManagerRestoreActiveTrades:
     """Test restore_active_trades method."""
-    
+
     @pytest.mark.asyncio
     async def test_restore_active_trades_loads_from_database(
         self,
@@ -402,13 +410,13 @@ class TestTradeManagerRestoreActiveTrades:
                 reached_1r=False,
             ),
         ]
-        
+
         await trade_manager.restore_active_trades()
-        
+
         assert len(trade_manager._active_trades) == 1
         assert "trade-123" in trade_manager._active_trades
         mock_broker.reconcile_positions.assert_called_once()
-    
+
     @pytest.mark.asyncio
     async def test_restore_active_trades_restores_daily_state(
         self,
@@ -435,12 +443,12 @@ class TestTradeManagerRestoreActiveTrades:
             ),
         ]
         mock_trade_repo.get_open_trades.return_value = []
-        
+
         await trade_manager.restore_active_trades()
-        
+
         # Daily state should be restored
         mock_trade_repo.get_trades_for_date.assert_called_once()
-    
+
     @pytest.mark.asyncio
     async def test_restore_active_trades_updates_open_positions_metric(
         self,
@@ -483,16 +491,16 @@ class TestTradeManagerRestoreActiveTrades:
             ),
         ]
         mock_trade_repo.get_trades_for_date.return_value = []
-        
+
         # Act: Restore trades
         await trade_manager.restore_active_trades()
-        
+
         # Assert: Metric should be set to 2
         from execution_svc import metrics
-        
+
         # Get the metric value (this will be the last set() call)
         assert len(trade_manager._active_trades) == 2
-        
+
         # Verify metric was set (we can't easily assert the exact value in unit tests
         # without mocking the metric, but we verify the trades are in memory)
         assert "trade-1" in trade_manager._active_trades
@@ -501,7 +509,7 @@ class TestTradeManagerRestoreActiveTrades:
 
 class TestTradeManagerCloseTrade:
     """Test _close_trade method."""
-    
+
     @pytest.mark.asyncio
     async def test_close_trade_publishes_event(
         self,
@@ -525,19 +533,19 @@ class TestTradeManagerCloseTrade:
             entry_timestamp=datetime(2025, 1, 15, 10, 0, tzinfo=timezone.utc),
         )
         trade_manager._active_trades["trade-123"] = trade
-        
+
         await trade_manager._close_trade(
             trade=trade,
             exit_price=2660.0,
             exit_reason="TP_HIT",
             closed_at=datetime(2025, 1, 15, 11, 0, tzinfo=timezone.utc),
         )
-        
+
         mock_broker.close_position.assert_called_once()
         mock_trade_repo.close_trade.assert_called_once()
         mock_publisher.publish_closed.assert_called_once()
         assert "trade-123" not in trade_manager._active_trades
-    
+
     @pytest.mark.asyncio
     async def test_close_trade_handles_orphaned_position(
         self,
@@ -549,7 +557,7 @@ class TestTradeManagerCloseTrade:
         """Close trade handles orphaned position gracefully."""
         # Broker doesn't have the position
         mock_broker.close_position.side_effect = ValueError("Position not found")
-        
+
         trade = TradeRecord(
             trade_id="trade-123",
             signal_id="signal-123",
@@ -564,19 +572,19 @@ class TestTradeManagerCloseTrade:
             entry_timestamp=datetime(2025, 1, 15, 10, 0, tzinfo=timezone.utc),
         )
         trade_manager._active_trades["trade-123"] = trade
-        
+
         await trade_manager._close_trade(
             trade=trade,
             exit_price=2660.0,
             exit_reason="TP_HIT",
             closed_at=datetime(2025, 1, 15, 11, 0, tzinfo=timezone.utc),
         )
-        
+
         # Should still close trade in database and publish event
         mock_trade_repo.close_trade.assert_called_once()
         mock_publisher.publish_closed.assert_called_once()
         assert "trade-123" not in trade_manager._active_trades
-    
+
     @pytest.mark.asyncio
     async def test_close_trade_updates_daily_tracker(
         self,
@@ -599,21 +607,21 @@ class TestTradeManagerCloseTrade:
             entry_timestamp=datetime(2025, 1, 15, 10, 0, tzinfo=timezone.utc),
         )
         trade_manager._active_trades["trade-123"] = trade
-        
+
         await trade_manager._close_trade(
             trade=trade,
             exit_price=2660.0,  # Profit of 10 points
             exit_reason="TP_HIT",
             closed_at=datetime(2025, 1, 15, 11, 0, tzinfo=timezone.utc),
         )
-        
+
         # Daily tracker should have recorded the P&L
         assert trade_manager._daily_tracker.state.daily_pnl == 10.0
 
 
 class TestTradeManagerShortPositions:
     """Test trade manager with short positions."""
-    
+
     @pytest.fixture
     def short_signal(self) -> SignalMessage:
         """Create short signal."""
@@ -629,7 +637,7 @@ class TestTradeManagerShortPositions:
             tp_price=2638.0,  # TP below entry for short
             factors={"rejection_candle": 2.0},
         )
-    
+
     @pytest.mark.asyncio
     async def test_execute_entry_short_position(
         self,
@@ -638,7 +646,7 @@ class TestTradeManagerShortPositions:
     ) -> None:
         """Execute entry for short position calculates correctly."""
         result = await trade_manager.execute_entry(short_signal, entry_price=2649.0)
-        
+
         assert result is not None
         assert result.direction == "short"
         assert result.risk_amount == 2655.0 - 2649.0  # sl - entry

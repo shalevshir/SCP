@@ -20,29 +20,31 @@ from scp_shared.common.logger import get_logger
 logger = get_logger(__name__)
 
 
-def _calculate_atr(high: pd.Series, low: pd.Series, close: pd.Series, length: int = 14) -> pd.Series:
+def _calculate_atr(
+    high: pd.Series, low: pd.Series, close: pd.Series, length: int = 14
+) -> pd.Series:
     """Calculate Average True Range (ATR).
-    
+
     Args:
         high: High prices
         low: Low prices
         close: Close prices
         length: ATR period (default 14)
-    
+
     Returns:
         ATR series
     """
     prev_close = close.shift(1)
-    
+
     tr1 = high - low
     tr2 = (high - prev_close).abs()
     tr3 = (low - prev_close).abs()
-    
+
     true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-    
+
     # Use EMA for smoother ATR (Wilder's smoothing)
     atr = true_range.ewm(span=length, adjust=False).mean()
-    
+
     return atr
 
 
@@ -50,47 +52,59 @@ def _detect_directional_progress(
     high: pd.Series, low: pd.Series, lookback: int = 3
 ) -> pd.Series:
     """Detect if price is making directional progress (HH/HL or LL/LH).
-    
+
     Args:
         high: High prices
         low: Low prices
         lookback: Number of candles to check for progression
-    
+
     Returns:
         Series with True if making directional progress (NOT chop)
     """
     n = len(high)
     has_progress = pd.Series(False, index=high.index)
-    
+
     if n < lookback:
         return has_progress
-    
+
     for i in range(lookback - 1, n):
         # Get recent highs and lows
-        recent_highs = high.iloc[max(0, i - lookback + 1):i + 1].values
-        recent_lows = low.iloc[max(0, i - lookback + 1):i + 1].values
-        
+        recent_highs = high.iloc[max(0, i - lookback + 1) : i + 1].values
+        recent_lows = low.iloc[max(0, i - lookback + 1) : i + 1].values
+
         if len(recent_highs) < 2:
             continue
-        
+
         # Check for HH/HL pattern (bullish progression)
-        hh_count = sum(1 for j in range(1, len(recent_highs)) if recent_highs[j] > recent_highs[j-1])
-        hl_count = sum(1 for j in range(1, len(recent_lows)) if recent_lows[j] > recent_lows[j-1])
-        
+        hh_count = sum(
+            1
+            for j in range(1, len(recent_highs))
+            if recent_highs[j] > recent_highs[j - 1]
+        )
+        hl_count = sum(
+            1 for j in range(1, len(recent_lows)) if recent_lows[j] > recent_lows[j - 1]
+        )
+
         # Check for LL/LH pattern (bearish progression)
-        ll_count = sum(1 for j in range(1, len(recent_lows)) if recent_lows[j] < recent_lows[j-1])
-        lh_count = sum(1 for j in range(1, len(recent_highs)) if recent_highs[j] < recent_highs[j-1])
-        
+        ll_count = sum(
+            1 for j in range(1, len(recent_lows)) if recent_lows[j] < recent_lows[j - 1]
+        )
+        lh_count = sum(
+            1
+            for j in range(1, len(recent_highs))
+            if recent_highs[j] < recent_highs[j - 1]
+        )
+
         comparisons = len(recent_highs) - 1
-        
+
         # Bullish progression: majority HH AND majority HL
         is_bullish = (hh_count >= comparisons * 0.5) and (hl_count >= comparisons * 0.5)
-        
+
         # Bearish progression: majority LL AND majority LH
         is_bearish = (ll_count >= comparisons * 0.5) and (lh_count >= comparisons * 0.5)
-        
+
         has_progress.iloc[i] = is_bullish or is_bearish
-    
+
     return has_progress
 
 
@@ -155,17 +169,17 @@ def detect_dxy_chop(
     body_size = (close - open_price).abs()
 
     wick_ratio = pd.Series(index=dxy_df.index, dtype=float)
-    
+
     # Doji candles (zero body) → infinite ratio → always indecision
     zero_body_mask = body_size == 0
     wick_ratio[zero_body_mask] = float("inf")
-    
+
     # Normal ratio for non-zero bodies
     non_zero_mask = ~zero_body_mask
     wick_ratio[non_zero_mask] = (
         upper_wick[non_zero_mask] + lower_wick[non_zero_mask]
     ) / body_size[non_zero_mask]
-    
+
     has_large_wicks = wick_ratio >= wick_threshold
     has_large_wicks = has_large_wicks.fillna(False)
 
@@ -177,10 +191,10 @@ def detect_dxy_chop(
     rolling_high = high.rolling(window=window, min_periods=1).max()
     rolling_low = low.rolling(window=window, min_periods=1).min()
     rolling_range = rolling_high - rolling_low
-    
+
     # Calculate ATR for range comparison
     atr = _calculate_atr(high, low, close, length=atr_length)
-    
+
     # Range-bound = rolling range < ATR * multiplier
     # This means price is contained, not expanding
     is_range_bound = rolling_range < (atr * range_multiplier)
@@ -190,8 +204,10 @@ def detect_dxy_chop(
     # CONDITION 3: Directional failure
     # ========================================
     # Check if price is making directional progress
-    has_directional_progress = _detect_directional_progress(high, low, lookback=min_chop_candles)
-    
+    has_directional_progress = _detect_directional_progress(
+        high, low, lookback=min_chop_candles
+    )
+
     # Chop = NO directional progress
     no_directional_progress = ~has_directional_progress
 

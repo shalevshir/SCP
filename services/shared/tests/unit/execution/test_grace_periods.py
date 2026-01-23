@@ -47,7 +47,7 @@ class TestSLTPGracePeriods:
             entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
             entry_bar_idx=100,
         )
-        
+
         # Candle that would hit SL (low at SL price)
         candle = Candle(
             timestamp=utc_datetime(2024, 10, 15, 10, 5),
@@ -60,10 +60,10 @@ class TestSLTPGracePeriods:
             timeframe="1m",
             source="TEST",
         )
-        
+
         # Check at bar 5 (within grace period)
         should_exit, reason = checker.check_sl_tp(trade, candle, bars_elapsed=5)
-        
+
         assert should_exit is False  # Grace period active
         assert reason is None
 
@@ -83,7 +83,7 @@ class TestSLTPGracePeriods:
             entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
             entry_bar_idx=100,
         )
-        
+
         # Candle that hits SL
         candle = Candle(
             timestamp=utc_datetime(2024, 10, 15, 10, 15),
@@ -96,10 +96,10 @@ class TestSLTPGracePeriods:
             timeframe="1m",
             source="TEST",
         )
-        
+
         # Check at bar 9 (grace period expired)
         should_exit, reason = checker.check_sl_tp(trade, candle, bars_elapsed=9)
-        
+
         assert should_exit is True  # SL check active
         assert "SL_HIT" in reason
 
@@ -119,7 +119,7 @@ class TestSLTPGracePeriods:
             entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
             entry_bar_idx=100,
         )
-        
+
         # Candle that would hit SL
         candle = Candle(
             timestamp=utc_datetime(2024, 10, 15, 10, 5),
@@ -132,10 +132,10 @@ class TestSLTPGracePeriods:
             timeframe="1m",
             source="TEST",
         )
-        
+
         # Check at bar 5 (within grace period)
         should_exit, reason = checker.check_sl_tp(trade, candle, bars_elapsed=5)
-        
+
         assert should_exit is False
         assert reason is None
 
@@ -155,7 +155,7 @@ class TestSLTPGracePeriods:
             entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
             entry_bar_idx=100,
         )
-        
+
         # Candle that hits SL
         candle = Candle(
             timestamp=utc_datetime(2024, 10, 15, 10, 1),
@@ -168,10 +168,10 @@ class TestSLTPGracePeriods:
             timeframe="1m",
             source="TEST",
         )
-        
+
         # Check at bar 1 (no grace period)
         should_exit, reason = checker.check_sl_tp(trade, candle, bars_elapsed=1)
-        
+
         assert should_exit is True  # No grace period
         assert "SL_HIT" in reason
 
@@ -191,10 +191,10 @@ class TestSLTPGracePeriods:
             entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
             entry_bar_idx=100,
         )
-        
+
         # VWAP_FADE has 0 bars for SL/TP, but 3 bars for invalidation
         # Test that micro structure check is skipped during invalidation grace
-        
+
         features = {"structure_label": "LL"}  # Would trigger micro invalidation
         candle = Candle(
             timestamp=utc_datetime(2024, 10, 15, 10, 2),
@@ -207,12 +207,12 @@ class TestSLTPGracePeriods:
             timeframe="1m",
             source="TEST",
         )
-        
+
         # Check at bar 2 (within 3-bar invalidation grace)
         is_invalid, reason = checker.check_all(
             trade, candle, bars_elapsed=2, features=features
         )
-        
+
         assert is_invalid is False  # Invalidation grace active
         assert reason is None
 
@@ -232,7 +232,7 @@ class TestSLTPGracePeriods:
             entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
             entry_bar_idx=100,
         )
-        
+
         # Candle that hits SL
         candle = Candle(
             timestamp=utc_datetime(2024, 10, 15, 10, 1),
@@ -245,12 +245,9 @@ class TestSLTPGracePeriods:
             timeframe="1m",
             source="TEST",
         )
-        
+
         # Check at bar 1 (within default grace)
         should_exit, reason = checker.check_sl_tp(trade, candle, bars_elapsed=1)
-        
+
         assert should_exit is False  # Default grace active
         assert reason is None
-
-
-

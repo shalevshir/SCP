@@ -261,7 +261,7 @@ class TestVWAPReclaimEnhancedValidation:
 
         This tests the fix for the inconsistency between validate_reclaim_prerequisites
         and validate_reclaim_context. Stale BOS should be allowed through in both functions.
-        
+
         BOS > 15 bars old is considered "stale" and not relevant to the current setup,
         so a directional conflict with stale BOS should not cause rejection.
         """
@@ -373,4 +373,3 @@ class TestVWAPReclaimEnhancedValidation:
 
         # Should REJECT because BOS is recent and conflicts with direction
         assert setup_type == "REJECTED"
-

@@ -24,7 +24,7 @@ class TestDetectFVG:
 
         Bullish FVG occurs when:
         - candle_1.high < candle_3.low (gap exists between 1 and 3)
-        
+
         Standard definition: candle 2 position doesn't affect detection.
         """
         df = pd.DataFrame(
@@ -38,7 +38,7 @@ class TestDetectFVG:
 
         # With standard definition, multiple FVGs detected (at indices 2 and 3)
         assert len(fvg_df) >= 1
-        
+
         # Check the first FVG
         first_fvg = fvg_df.iloc[0]
         assert first_fvg["fvg_index"] == 2
@@ -53,7 +53,7 @@ class TestDetectFVG:
 
         Bearish FVG occurs when:
         - candle_1.low > candle_3.high (gap exists between 1 and 3)
-        
+
         Standard definition: candle 2 position doesn't affect detection.
         """
         df = pd.DataFrame(
@@ -67,7 +67,7 @@ class TestDetectFVG:
 
         # With standard definition, multiple FVGs detected (at indices 2 and 3)
         assert len(fvg_df) >= 1
-        
+
         # Check the first FVG
         first_fvg = fvg_df.iloc[0]
         assert first_fvg["fvg_index"] == 2
@@ -79,7 +79,7 @@ class TestDetectFVG:
 
     def test_fvg_detected_even_when_candle_2_overlaps(self):
         """Test that FVG is detected even when candle 2 overlaps the gap.
-        
+
         Standard definition: FVG exists if c1.high < c3.low (or c1.low > c3.high),
         regardless of candle 2 position.
         """
@@ -203,13 +203,19 @@ class TestDetectFVG:
 
     def test_all_increasing_no_gaps(self):
         """Test continuous uptrend with no gaps produces no FVGs.
-        
+
         For no FVG with standard definition: c1.high >= c3.low for all 3-candle windows.
         """
         df = pd.DataFrame(
             {
                 "high": [100, 101, 102, 103, 104],
-                "low": [98, 99, 100, 101, 102],  # Each overlaps: 100>=100, 101>=100, etc.
+                "low": [
+                    98,
+                    99,
+                    100,
+                    101,
+                    102,
+                ],  # Each overlaps: 100>=100, 101>=100, etc.
             }
         )
 
@@ -218,13 +224,19 @@ class TestDetectFVG:
 
     def test_all_decreasing_no_gaps(self):
         """Test continuous downtrend with no gaps produces no FVGs.
-        
+
         For no FVG with standard definition: c1.low <= c3.high for all 3-candle windows.
         """
         df = pd.DataFrame(
             {
                 "high": [104, 103, 102, 101, 100],
-                "low": [102, 101, 100, 99, 98],  # Each overlaps: 102<=102, 101<=102, etc.
+                "low": [
+                    102,
+                    101,
+                    100,
+                    99,
+                    98,
+                ],  # Each overlaps: 102<=102, 101<=102, etc.
             }
         )
 
@@ -237,7 +249,7 @@ class TestDetectFVG:
 
     def test_bullish_fvg_candle_2_low_touches_candle_1_high(self):
         """Test that FVG is detected even when candle 2 low touches candle 1 high.
-        
+
         Standard definition: Only checks if c1.high < c3.low, candle 2 doesn't matter.
         """
         df = pd.DataFrame(
@@ -254,7 +266,7 @@ class TestDetectFVG:
 
     def test_bullish_fvg_candle_2_high_touches_candle_3_low(self):
         """Test that FVG is detected even when candle 2 high touches candle 3 low.
-        
+
         Standard definition: Only checks if c1.high < c3.low, candle 2 doesn't matter.
         """
         df = pd.DataFrame(
@@ -275,7 +287,7 @@ class TestDetectFVG:
 
     def test_bearish_fvg_candle_2_high_touches_candle_1_low(self):
         """Test that FVG is detected even when candle 2 high touches candle 1 low.
-        
+
         Standard definition: Only checks if c1.low > c3.high, candle 2 doesn't matter.
         """
         df = pd.DataFrame(
@@ -292,7 +304,7 @@ class TestDetectFVG:
 
     def test_bearish_fvg_candle_2_low_touches_candle_3_high(self):
         """Test that FVG is detected even when candle 2 low touches candle 3 high.
-        
+
         Standard definition: Only checks if c1.low > c3.high, candle 2 doesn't matter.
         """
         df = pd.DataFrame(
@@ -489,7 +501,10 @@ class TestCheckFVGFilled:
     def test_empty_fvg_dataframe(self):
         """Test handling of empty FVG DataFrame."""
         df = pd.DataFrame(
-            {"high": [100, 101, 100], "low": [99, 100, 99]}  # True overlap: 100>=99, 101>=100
+            {
+                "high": [100, 101, 100],
+                "low": [99, 100, 99],
+            }  # True overlap: 100>=99, 101>=100
         )
 
         fvg_df = detect_fvg(df)  # No FVGs with true overlap

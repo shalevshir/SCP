@@ -7,11 +7,11 @@ from datetime import datetime
 @dataclass
 class TradeRecord:
     """Minimal trade record for invalidation checking.
-    
+
     This is a lightweight version of the full Trade dataclass from backtester,
     containing only fields needed for invalidation logic in streaming mode.
     """
-    
+
     trade_id: str
     signal_id: str  # Source signal ID for correlation
     symbol: str
@@ -27,9 +27,7 @@ class TradeRecord:
     exit_price: float | None = None
     exit_reason: str | None = None
     pnl: float | None = None
-    
+
     # State fields for service restart recovery
     entry_bar_idx: int | None = None  # Bar index when trade was entered
     reached_1r: bool = False  # Whether trade achieved +1R protection
-
-

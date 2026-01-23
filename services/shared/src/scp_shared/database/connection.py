@@ -7,7 +7,7 @@ import asyncpg
 
 class DatabasePool:
     """Async PostgreSQL connection pool wrapper.
-    
+
     Example:
         >>> db_pool = DatabasePool("postgresql://user:pass@localhost/db")
         >>> await db_pool.connect()
@@ -18,7 +18,7 @@ class DatabasePool:
 
     def __init__(self, dsn: str, min_size: int = 5, max_size: int = 20) -> None:
         """Initialize database pool.
-        
+
         Args:
             dsn: Database connection string
             min_size: Minimum pool connections
@@ -46,10 +46,10 @@ class DatabasePool:
 
     def acquire(self) -> Any:
         """Acquire a connection from the pool.
-        
+
         Returns:
             Async context manager for connection
-            
+
         Raises:
             RuntimeError: If pool not connected
         """
@@ -59,11 +59,11 @@ class DatabasePool:
 
     async def execute(self, query: str, *args: Any) -> str:
         """Execute a query and return status.
-        
+
         Args:
             query: SQL query
             *args: Query parameters
-            
+
         Returns:
             Query execution status string
         """
@@ -73,11 +73,11 @@ class DatabasePool:
 
     async def fetch(self, query: str, *args: Any) -> list[asyncpg.Record]:
         """Fetch all rows from a query.
-        
+
         Args:
             query: SQL query
             *args: Query parameters
-            
+
         Returns:
             List of records
         """
@@ -87,11 +87,11 @@ class DatabasePool:
 
     async def fetchrow(self, query: str, *args: Any) -> asyncpg.Record | None:
         """Fetch a single row from a query.
-        
+
         Args:
             query: SQL query
             *args: Query parameters
-            
+
         Returns:
             Single record or None
         """
@@ -101,11 +101,11 @@ class DatabasePool:
 
     async def fetchval(self, query: str, *args: Any) -> Any:
         """Fetch a single value from a query.
-        
+
         Args:
             query: SQL query
             *args: Query parameters
-            
+
         Returns:
             Single value
         """
@@ -120,10 +120,10 @@ _global_pool: DatabasePool | None = None
 
 async def get_db_pool(dsn: str) -> DatabasePool:
     """Get or create global database pool.
-    
+
     Args:
         dsn: Database connection string
-        
+
     Returns:
         Connected database pool
     """
@@ -132,4 +132,3 @@ async def get_db_pool(dsn: str) -> DatabasePool:
         _global_pool = DatabasePool(dsn)
         await _global_pool.connect()
     return _global_pool
-

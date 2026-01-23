@@ -11,7 +11,7 @@ class TestTradeRecord:
     def test_creates_with_required_fields(self) -> None:
         """Creates TradeRecord with required fields."""
         now = datetime.now(timezone.utc)
-        
+
         trade = TradeRecord(
             trade_id="trade-123",
             signal_id="signal-456",
@@ -25,7 +25,7 @@ class TestTradeRecord:
             reward_amount=10.0,
             entry_timestamp=now,
         )
-        
+
         assert trade.trade_id == "trade-123"
         assert trade.signal_id == "signal-456"
         assert trade.symbol == "GC"
@@ -40,7 +40,7 @@ class TestTradeRecord:
     def test_default_values(self) -> None:
         """Default optional fields are None/False."""
         now = datetime.now(timezone.utc)
-        
+
         trade = TradeRecord(
             trade_id="trade-123",
             signal_id="signal-456",
@@ -54,7 +54,7 @@ class TestTradeRecord:
             reward_amount=10.0,
             entry_timestamp=now,
         )
-        
+
         assert trade.exit_timestamp is None
         assert trade.exit_price is None
         assert trade.exit_reason is None
@@ -66,7 +66,7 @@ class TestTradeRecord:
         """Creates TradeRecord with optional fields."""
         entry_time = datetime(2024, 1, 1, 10, 0, tzinfo=timezone.utc)
         exit_time = datetime(2024, 1, 1, 11, 0, tzinfo=timezone.utc)
-        
+
         trade = TradeRecord(
             trade_id="trade-123",
             signal_id="signal-456",
@@ -86,7 +86,7 @@ class TestTradeRecord:
             entry_bar_idx=100,
             reached_1r=True,
         )
-        
+
         assert trade.exit_timestamp == exit_time
         assert trade.exit_price == 2640.0
         assert trade.exit_reason == "TP_HIT"
@@ -97,7 +97,7 @@ class TestTradeRecord:
     def test_supports_dxy_continuation_setup(self) -> None:
         """Supports DXY_CONTINUATION setup type."""
         now = datetime.now(timezone.utc)
-        
+
         trade = TradeRecord(
             trade_id="trade-789",
             signal_id="signal-012",
@@ -111,5 +111,5 @@ class TestTradeRecord:
             reward_amount=10.0,
             entry_timestamp=now,
         )
-        
+
         assert trade.setup_type == "DXY_CONTINUATION"

@@ -257,4 +257,3 @@ class TestRSICalculation:
         # Missing 'close' column should raise ValueError
         with pytest.raises(ValueError, match="Column 'close' not found"):
             calculate_rsi(prices, period=14)
-

@@ -113,7 +113,7 @@ loss_streak_current = create_gauge(
 
 def record_order_rejection(reason: str, mode: str, service: str) -> None:
     """Record an order rejection with validation of reason label.
-    
+
     Args:
         reason: Rejection reason (must be from ORDER_REJECTION_REASONS set)
         mode: Service mode (dev/test/replay/paper/live)
@@ -122,13 +122,13 @@ def record_order_rejection(reason: str, mode: str, service: str) -> None:
     # Validate reason is from known set to prevent cardinality explosion
     if reason not in ORDER_REJECTION_REASONS:
         reason = "invalid_state"  # Default for unknown reasons
-    
+
     orders_rejected_total.labels(mode=mode, service=service, reason=reason).inc()
 
 
 def set_unsafe_state(reason: str | None, mode: str, service: str) -> None:
     """Set unsafe state metrics.
-    
+
     Args:
         reason: Unsafe state reason (None if safe)
         mode: Service mode (dev/test/replay/paper/live)
@@ -142,14 +142,14 @@ def set_unsafe_state(reason: str | None, mode: str, service: str) -> None:
         # Validate reason
         if reason not in UNSAFE_STATE_REASONS:
             reason = "invalid_state"
-        
+
         # Set this specific unsafe state
         unsafe_state.labels(mode=mode, service=service, reason=reason).set(1)
 
 
 def set_trading_halt_reason(reason: str, mode: str, service: str) -> None:
     """Set trading halt reason metrics.
-    
+
     Args:
         reason: Halt reason (must be from HALT_REASONS set)
         mode: Service mode (dev/test/replay/paper/live)
@@ -158,10 +158,12 @@ def set_trading_halt_reason(reason: str, mode: str, service: str) -> None:
     # Validate reason
     if reason not in HALT_REASONS:
         reason = "UNSAFE_STATE"  # Default for unknown reasons
-    
+
     # Clear all halt reasons first
     for halt_reason in HALT_REASONS:
-        trading_halt_reason.labels(mode=mode, service=service, reason=halt_reason).set(0)
-    
+        trading_halt_reason.labels(mode=mode, service=service, reason=halt_reason).set(
+            0
+        )
+
     # Set the active halt reason
     trading_halt_reason.labels(mode=mode, service=service, reason=reason).set(1)

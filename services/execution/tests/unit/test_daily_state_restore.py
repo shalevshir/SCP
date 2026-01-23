@@ -32,7 +32,9 @@ def mock_db_pool():
 def mock_broker():
     """Mock broker client."""
     broker = AsyncMock()
-    broker.place_order = AsyncMock(return_value=AsyncMock(status="filled", fill_price=2660.0))
+    broker.place_order = AsyncMock(
+        return_value=AsyncMock(status="filled", fill_price=2660.0)
+    )
     broker.close_position = AsyncMock(return_value=True)
     broker.reconcile_positions = AsyncMock()
     return broker
@@ -70,7 +72,7 @@ async def test_daily_state_restored_on_startup(
     mock_db_pool,
 ):
     """Test that daily state (P&L and trade count) is restored from database on startup.
-    
+
     Scenario:
         1. Service starts at 9am, executes 1 trade (loss of 50 points)
         2. Service restarts at 10am (same trading day)
@@ -81,7 +83,7 @@ async def test_daily_state_restored_on_startup(
     # SETUP: Mock today's historical trades in database
     today = date.today()
     now = datetime.combine(today, datetime.now().time())
-    
+
     # Trade 1: Closed with -50 point loss (opened at 9am, closed at 9:05am)
     trade1 = TradeRecord(
         trade_id="11111111-1111-1111-1111-111111111111",
@@ -102,7 +104,7 @@ async def test_daily_state_restored_on_startup(
         entry_bar_idx=50,
         reached_1r=False,
     )
-    
+
     # Trade 2: Still open (opened at 9:30am)
     trade2 = TradeRecord(
         trade_id="33333333-3333-3333-3333-333333333333",
@@ -119,11 +121,11 @@ async def test_daily_state_restored_on_startup(
         entry_bar_idx=75,
         reached_1r=False,
     )
-    
+
     # Mock repository to return today's trades
     mock_trade_repository.get_open_trades.return_value = [trade2]
     mock_trade_repository.get_trades_for_date.return_value = [trade1, trade2]
-    
+
     # ACT: Create TradeManager and restore state (simulates service restart)
     trade_manager = TradeManager(
         broker=mock_broker,
@@ -135,34 +137,34 @@ async def test_daily_state_restored_on_startup(
         pdll_limit=600.0,
         max_trades_per_day=2,
     )
-    
+
     # This should restore both active trades AND daily state
     await trade_manager.restore_active_trades()
-    
+
     # ASSERT: Daily state should be restored correctly
     daily_state = trade_manager._daily_tracker.state
-    
+
     # Should have 2 trades today (1 closed, 1 open)
-    assert daily_state.trades_count == 2, (
-        f"Expected trades_count=2 (1 closed + 1 open), got {daily_state.trades_count}"
-    )
-    
+    assert (
+        daily_state.trades_count == 2
+    ), f"Expected trades_count=2 (1 closed + 1 open), got {daily_state.trades_count}"
+
     # Should have -50 points P&L (from closed trade)
-    assert daily_state.daily_pnl == -50.0, (
-        f"Expected daily_pnl=-50.0 (from closed trade), got {daily_state.daily_pnl}"
-    )
-    
+    assert (
+        daily_state.daily_pnl == -50.0
+    ), f"Expected daily_pnl=-50.0 (from closed trade), got {daily_state.daily_pnl}"
+
     # Should have correct date
-    assert daily_state.date == today, (
-        f"Expected date={today}, got {daily_state.date}"
-    )
-    
+    assert daily_state.date == today, f"Expected date={today}, got {daily_state.date}"
+
     # Should NOT hit PDLL (600 - 50 = 550 remaining)
     assert not daily_state.pdll_hit, "PDLL should not be hit with -50 points loss"
-    
+
     # ASSERT: Should block new trades (already at max_trades_per_day=2)
     can_trade, reason = trade_manager._daily_tracker.can_trade()
-    assert not can_trade, "Should not be able to trade after reaching max_trades_per_day"
+    assert (
+        not can_trade
+    ), "Should not be able to trade after reaching max_trades_per_day"
     assert reason == "MAX_TRADES", f"Expected MAX_TRADES halt code, got: {reason}"
 
 
@@ -177,7 +179,7 @@ async def test_daily_state_allows_trading_below_pdll(
     """Test that trading is allowed when below PDLL limit after restoration."""
     today = date.today()
     now = datetime.combine(today, datetime.now().time())
-    
+
     # Trade 1: Closed with -100 point loss (well below PDLL of 600)
     trade1 = TradeRecord(
         trade_id="11111111-1111-1111-1111-111111111111",
@@ -198,11 +200,11 @@ async def test_daily_state_allows_trading_below_pdll(
         entry_bar_idx=50,
         reached_1r=False,
     )
-    
+
     # Mock repository
     mock_trade_repository.get_open_trades.return_value = []
     mock_trade_repository.get_trades_for_date.return_value = [trade1]
-    
+
     # Create and restore
     trade_manager = TradeManager(
         broker=mock_broker,
@@ -214,13 +216,13 @@ async def test_daily_state_allows_trading_below_pdll(
         pdll_limit=600.0,
         max_trades_per_day=2,
     )
-    
+
     await trade_manager.restore_active_trades()
-    
+
     # Should allow trading (1 trade today, -100 points, both below limits)
     can_trade, reason = trade_manager._daily_tracker.can_trade()
     assert can_trade, f"Should allow trading below PDLL, but blocked: {reason}"
-    
+
     # Check daily state
     daily_state = trade_manager._daily_tracker.state
     assert daily_state.trades_count == 1
@@ -239,7 +241,7 @@ async def test_daily_state_blocks_trading_at_pdll(
     """Test that trading is blocked when PDLL is hit after restoration."""
     today = date.today()
     now = datetime.combine(today, datetime.now().time())
-    
+
     # Trade 1: Closed with -600 point loss (exactly at PDLL limit)
     trade1 = TradeRecord(
         trade_id="11111111-1111-1111-1111-111111111111",
@@ -260,11 +262,11 @@ async def test_daily_state_blocks_trading_at_pdll(
         entry_bar_idx=50,
         reached_1r=False,
     )
-    
+
     # Mock repository
     mock_trade_repository.get_open_trades.return_value = []
     mock_trade_repository.get_trades_for_date.return_value = [trade1]
-    
+
     # Create and restore
     trade_manager = TradeManager(
         broker=mock_broker,
@@ -276,14 +278,14 @@ async def test_daily_state_blocks_trading_at_pdll(
         pdll_limit=600.0,
         max_trades_per_day=2,
     )
-    
+
     await trade_manager.restore_active_trades()
-    
+
     # Should block trading (PDLL hit)
     can_trade, reason = trade_manager._daily_tracker.can_trade()
     assert not can_trade, "Should block trading when PDLL is hit"
     assert "PDLL" in reason, f"Expected PDLL reason, got: {reason}"
-    
+
     # Check daily state
     daily_state = trade_manager._daily_tracker.state
     assert daily_state.trades_count == 1
@@ -300,7 +302,7 @@ async def test_metrics_updated_after_restore(
     mock_db_pool,
 ):
     """Test that daily_pnl and daily_drawdown metrics are updated after restore.
-    
+
     Scenario:
         1. Service executes trades resulting in -250 points P&L
         2. Service restarts
@@ -309,13 +311,13 @@ async def test_metrics_updated_after_restore(
            - daily_drawdown = 250 (absolute value of negative P&L)
            - loss_streak_current = 2
         4. Grafana dashboard should immediately show correct values
-    
+
     This test verifies the fix for the issue where daily_pnl and daily_drawdown
     remained at zero after service restart until a trade closed.
     """
     today = date.today()
     now = datetime.combine(today, datetime.now().time())
-    
+
     # Trade 1: Closed with -150 point loss
     trade1 = TradeRecord(
         trade_id="11111111-1111-1111-1111-111111111111",
@@ -336,7 +338,7 @@ async def test_metrics_updated_after_restore(
         entry_bar_idx=50,
         reached_1r=False,
     )
-    
+
     # Trade 2: Closed with -100 point loss (consecutive loss)
     trade2 = TradeRecord(
         trade_id="33333333-3333-3333-3333-333333333333",
@@ -357,11 +359,11 @@ async def test_metrics_updated_after_restore(
         entry_bar_idx=75,
         reached_1r=False,
     )
-    
+
     # Mock repository to return today's closed trades
     mock_trade_repository.get_open_trades.return_value = []
     mock_trade_repository.get_trades_for_date.return_value = [trade1, trade2]
-    
+
     # Create TradeManager and restore state
     trade_manager = TradeManager(
         broker=mock_broker,
@@ -375,47 +377,43 @@ async def test_metrics_updated_after_restore(
         service_mode="test",
         service_name="execution",
     )
-    
+
     # This should restore daily state
     await trade_manager.restore_active_trades()
-    
+
     # ASSERT: Daily state should be restored
     daily_state = trade_manager._daily_tracker.state
     assert daily_state.trades_count == 2
     assert daily_state.daily_pnl == -250.0
     assert daily_state.consecutive_losses == 2
-    
+
     # SIMULATE: What main.py does after restore_active_trades()
     # Update metrics based on restored state
-    exec_metrics.loss_streak_current.labels(
-        mode="test", service="execution"
-    ).set(trade_manager._daily_tracker.state.consecutive_losses)
-    
-    exec_metrics.daily_pnl.labels(
-        mode="test", service="execution"
-    ).set(trade_manager._daily_tracker.state.daily_pnl)
-    
+    exec_metrics.loss_streak_current.labels(mode="test", service="execution").set(
+        trade_manager._daily_tracker.state.consecutive_losses
+    )
+
+    exec_metrics.daily_pnl.labels(mode="test", service="execution").set(
+        trade_manager._daily_tracker.state.daily_pnl
+    )
+
     # Calculate daily drawdown (max loss from peak)
     daily_drawdown = min(0, trade_manager._daily_tracker.state.daily_pnl)
-    exec_metrics.daily_drawdown.labels(
-        mode="test", service="execution"
-    ).set(abs(daily_drawdown))
-    
+    exec_metrics.daily_drawdown.labels(mode="test", service="execution").set(
+        abs(daily_drawdown)
+    )
+
     # VERIFY: Metrics should reflect restored state
     # Note: In actual test, we can't easily read metric values without mocking,
     # but this test documents the expected behavior and serves as a regression test
     # that the code runs without error.
-    
+
     # The real verification is that:
     # 1. restore_active_trades() populated daily state correctly (verified above)
     # 2. Metrics are set using .set() with correct values (verified by no errors)
     # 3. Grafana will query these metrics and get correct values
-    
+
     # Additional verification: State values are correct
     assert trade_manager._daily_tracker.state.daily_pnl == -250.0
     assert abs(daily_drawdown) == 250.0
     assert trade_manager._daily_tracker.state.consecutive_losses == 2
-
-
-
-
