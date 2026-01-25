@@ -2,7 +2,6 @@
 
 import asyncio
 import json
-import logging
 from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Optional
@@ -27,13 +26,6 @@ from execution_svc.state_machine_manager import StateMachineManager
 from execution_svc.trade_manager import TradeManager, is_valid_candle
 from execution_svc.trade_publisher import TradePublisher
 from execution_svc.trade_repository import TradeRepository
-
-# Configure basic logging before anything else
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[logging.StreamHandler()],
-)
 
 logger = get_logger(__name__)
 

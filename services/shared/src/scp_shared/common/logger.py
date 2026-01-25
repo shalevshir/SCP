@@ -70,6 +70,42 @@ def setup_logging(config: "SystemConfig") -> None:
     _logging_initialized = True
 
 
+def _ensure_basic_logging() -> None:
+    """Ensure basic console logging is configured.
+
+    This is called automatically by get_logger() to ensure logs are visible
+    even if setup_logging() was never called. Uses LOG_LEVEL env var.
+    """
+    global _logging_initialized
+
+    if _logging_initialized:
+        return
+
+    # Check if root logger already has handlers (e.g., from basicConfig elsewhere)
+    root_logger = logging.getLogger()
+    if root_logger.handlers:
+        _logging_initialized = True
+        return
+
+    # Configure basic console logging
+    log_level_str = os.environ.get("LOG_LEVEL", "INFO").upper()
+    log_level = getattr(logging, log_level_str, logging.INFO)
+
+    root_logger.setLevel(log_level)
+
+    formatter = logging.Formatter(
+        "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(log_level)
+    console_handler.setFormatter(formatter)
+    root_logger.addHandler(console_handler)
+
+    _logging_initialized = True
+
+
 def get_logger(name: str) -> logging.Logger:
     """Get or create a logger instance for the given module name.
 
@@ -77,12 +113,11 @@ def get_logger(name: str) -> logging.Logger:
         name: Logger name (typically __name__ of the calling module)
 
     Returns:
-        Logger instance configured with file and console handlers
+        Logger instance configured with console handler (auto-configured if needed)
 
     Note:
-        If logging hasn't been initialized via setup_logging(), this will
-        return a logger that inherits from the root logger (which may not
-        have handlers configured). It's recommended to call setup_logging()
-        before using get_logger().
+        Automatically configures basic console logging if not already initialized.
+        Uses LOG_LEVEL environment variable (default: INFO).
     """
+    _ensure_basic_logging()
     return logging.getLogger(name)

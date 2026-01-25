@@ -1,7 +1,6 @@
 """Bot Core Service main entry point."""
 
 import asyncio
-import logging
 from contextlib import asynccontextmanager
 from datetime import datetime
 
@@ -26,13 +25,6 @@ from bot_core_svc.session import SessionValidationService
 from bot_core_svc.signal_engine import SignalEngine
 from bot_core_svc.signal_repository import SignalRepository
 from bot_core_svc.state_repository import StateRepository
-
-# Configure basic logging before anything else
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[logging.StreamHandler()],
-)
 
 logger = get_logger(__name__)
 

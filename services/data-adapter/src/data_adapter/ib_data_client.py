@@ -80,6 +80,9 @@ class IBDataClient(DataClientBase):
         # while allowing reasonable buffering during processing spikes
         self._tick_queue: asyncio.Queue[Tick] = asyncio.Queue(maxsize=10000)
 
+        # Track tick counts for logging first data receipt
+        self._tick_counts: dict[str, int] = {"GC": 0, "DXY": 0}
+
     def _get_front_month(self, symbol: str) -> str:
         """Get the current front month contract for futures.
 
@@ -150,44 +153,69 @@ class IBDataClient(DataClientBase):
             ticker: ib_insync Ticker object
             internal_symbol: Internal symbol name (GC or DXY)
         """
-        # Get last trade price and size
-        if ticker.last is not None and ticker.last > 0:
-            # For futures, IB doesn't provide tick type 45 (Last Timestamp)
-            # Use ticker.time which is when data was received by the client
-            # For delayed data, this is typically close to the actual trade time
-            # (within seconds for delayed data feeds)
-            if hasattr(ticker, "time") and ticker.time is not None:
-                tick_timestamp = ticker.time
-                # Ensure timezone-aware and convert to UTC
-                if tick_timestamp.tzinfo is None:
-                    # Naive datetime - assume UTC (common for IB delayed data)
-                    tick_timestamp = tick_timestamp.replace(tzinfo=UTC)
-                else:
-                    # Timezone-aware - convert to UTC
-                    tick_timestamp = tick_timestamp.astimezone(UTC)
-            elif hasattr(ticker, "lastTimestamp") and ticker.lastTimestamp is not None:
-                # Fallback: if lastTimestamp somehow available (e.g., for stocks), use it
-                tick_timestamp = datetime.fromtimestamp(ticker.lastTimestamp, tz=UTC)
-            else:
-                # Final fallback to current time
-                tick_timestamp = datetime.now(UTC)
-                logger.warning(
-                    f"No timestamp available for {internal_symbol}, "
-                    f"using current time"
-                )
+        # Get price - prefer last trade, fall back to bid/ask midpoint
+        # Delayed data often only provides bid/ask, not trade ticks
+        price: float | None = None
+        volume: float = 0.0
 
-            tick = Tick(
-                timestamp=tick_timestamp,
-                price=float(ticker.last),
-                volume=float(ticker.lastSize) if ticker.lastSize else 0.0,
-                symbol=internal_symbol,
+        if ticker.last is not None and ticker.last > 0:
+            price = float(ticker.last)
+            volume = float(ticker.lastSize) if ticker.lastSize else 0.0
+        elif ticker.bid is not None and ticker.ask is not None:
+            # Use bid/ask midpoint for delayed data
+            if ticker.bid > 0 and ticker.ask > 0:
+                price = (float(ticker.bid) + float(ticker.ask)) / 2
+                volume = 1.0  # Synthetic volume for quote updates
+
+        if price is None or price <= 0:
+            # Log occasionally for debugging (every ~100 updates with no price)
+            logger.debug(
+                f"No valid price for {internal_symbol}: "
+                f"last={ticker.last}, bid={ticker.bid}, ask={ticker.ask}"
+            )
+            return  # No valid price data
+
+        # Get timestamp
+        # For futures, IB doesn't provide tick type 45 (Last Timestamp)
+        # Use ticker.time which is when data was received by the client
+        # For delayed data, this is typically close to the actual trade time
+        # (within seconds for delayed data feeds)
+        if hasattr(ticker, "time") and ticker.time is not None:
+            tick_timestamp = ticker.time
+            # Ensure timezone-aware and convert to UTC
+            if tick_timestamp.tzinfo is None:
+                # Naive datetime - assume UTC (common for IB delayed data)
+                tick_timestamp = tick_timestamp.replace(tzinfo=UTC)
+            else:
+                # Timezone-aware - convert to UTC
+                tick_timestamp = tick_timestamp.astimezone(UTC)
+        elif hasattr(ticker, "lastTimestamp") and ticker.lastTimestamp is not None:
+            # Fallback: if lastTimestamp somehow available (e.g., for stocks), use it
+            tick_timestamp = datetime.fromtimestamp(ticker.lastTimestamp, tz=UTC)
+        else:
+            # Final fallback to current time
+            tick_timestamp = datetime.now(UTC)
+
+        tick = Tick(
+            timestamp=tick_timestamp,
+            price=price,
+            volume=volume,
+            symbol=internal_symbol,
+        )
+
+        # Log first tick received for each symbol
+        self._tick_counts[internal_symbol] += 1
+        if self._tick_counts[internal_symbol] == 1:
+            logger.info(
+                f"First tick received for {internal_symbol}: "
+                f"price={price:.2f}, timestamp={tick_timestamp}"
             )
 
-            # Put tick in queue (non-blocking)
-            try:
-                self._tick_queue.put_nowait(tick)
-            except asyncio.QueueFull:
-                logger.warning(f"Tick queue full, dropping tick for {internal_symbol}")
+        # Put tick in queue (non-blocking)
+        try:
+            self._tick_queue.put_nowait(tick)
+        except asyncio.QueueFull:
+            logger.warning(f"Tick queue full, dropping tick for {internal_symbol}")
 
     async def stream_ticks(self) -> AsyncIterator[Tick]:
         """Stream real-time ticks from IB Gateway.
