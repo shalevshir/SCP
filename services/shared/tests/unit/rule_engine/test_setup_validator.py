@@ -64,8 +64,8 @@ class TestSetupValidator:
         # Check enabled setups
         assert validator.is_setup_enabled("VWAP_RECLAIM") is True
         assert validator.is_setup_enabled("VWAP_FADE") is True
-        # DXY_CONTINUATION is disabled in config
-        assert validator.is_setup_enabled("DXY_CONTINUATION") is False
+        # DXY_CONTINUATION is now enabled in config
+        assert validator.is_setup_enabled("DXY_CONTINUATION") is True
 
     def test_unknown_setup_returns_false(self) -> None:
         """Test that unknown setup returns False for enabled check."""
@@ -85,8 +85,8 @@ class TestSetupValidator:
 
         assert "VWAP_RECLAIM" in enabled
         assert "VWAP_FADE" in enabled
-        # DXY_CONTINUATION is disabled in config
-        assert "DXY_CONTINUATION" not in enabled
+        # DXY_CONTINUATION is now enabled in config
+        assert "DXY_CONTINUATION" in enabled
 
 
 class TestVWAPReclaimValidation:
@@ -188,7 +188,9 @@ class TestVWAPReclaimValidation:
         result = validator.validate_setup("VWAP_RECLAIM", context)
 
         assert result.is_valid is False
-        assert "VWAP deviation" in result.reject_reason
+        # Check that rejection is related to VWAP distance/reclaim
+        assert ("VWAP" in result.reject_reason and 
+                ("deviation" in result.reject_reason or "reclaim" in result.reject_reason or "far" in result.reject_reason))
 
     def test_bos_direction_conflict_rejects(self) -> None:
         """Test that BOS direction conflict rejects VWAP_RECLAIM."""

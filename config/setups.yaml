@@ -15,7 +15,7 @@ setups:
   # ============================================================================
   VWAP_RECLAIM:
     enabled: true
-    min_score: 7.5
+    min_score: 8.0
 
     # Constraints - ALL must pass for setup to be detected
     # Safety gates (hard rejection) - prevent structurally invalid setups
@@ -162,7 +162,7 @@ setups:
   # DXY_CONTINUATION: Gold trade aligned with DXY inverse correlation
   # ============================================================================
   DXY_CONTINUATION:
-    enabled: false
+    enabled: true
     min_score: 8.0
 
     constraints:

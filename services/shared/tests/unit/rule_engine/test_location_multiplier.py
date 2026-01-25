@@ -31,9 +31,10 @@ class TestLocationMultiplier:
         )
 
         htf_bias = HTFBias(
-            direction="bullish",
+            bias="bullish",
+            direction="long",
             score=8.0,
-            confidence="A+",
+            confidence="high",
             bars_since_bos=5,
             structure_clarity=0.7,
         )
@@ -59,9 +60,10 @@ class TestLocationMultiplier:
         )
 
         htf_bias = HTFBias(
-            direction="bullish",
+            bias="bullish",
+            direction="long",
             score=8.0,
-            confidence="A+",
+            confidence="high",
             bars_since_bos=5,
             structure_clarity=0.7,
         )
@@ -87,9 +89,10 @@ class TestLocationMultiplier:
         )
 
         htf_bias = HTFBias(
-            direction="bullish",
+            bias="bullish",
+            direction="long",
             score=8.0,
-            confidence="A+",
+            confidence="high",
             bars_since_bos=5,
             structure_clarity=0.7,
         )
@@ -116,9 +119,10 @@ class TestLocationMultiplier:
         )
 
         htf_bias = HTFBias(
-            direction="bullish",
+            bias="bullish",
+            direction="long",
             score=8.0,
-            confidence="A+",
+            confidence="high",
             bars_since_bos=25,
             structure_clarity=0.3,
         )
@@ -144,9 +148,10 @@ class TestLocationMultiplier:
         )
 
         htf_bias = HTFBias(
-            direction="bullish",
+            bias="bullish",
+            direction="long",
             score=8.0,
-            confidence="A+",
+            confidence="high",
             bars_since_bos=5,
             structure_clarity=0.7,
         )
@@ -173,9 +178,10 @@ class TestLocationMultiplier:
         )
 
         htf_bias = HTFBias(
-            direction="bullish",
+            bias="bullish",
+            direction="long",
             score=8.0,
-            confidence="A+",
+            confidence="high",
             bars_since_bos=25,
             structure_clarity=0.3,
         )
@@ -202,9 +208,10 @@ class TestLocationMultiplier:
         )
 
         htf_bias = HTFBias(
-            direction="bullish",
+            bias="bullish",
+            direction="long",
             score=8.0,
-            confidence="A+",
+            confidence="high",
             bars_since_bos=25,
             structure_clarity=0.2,
         )
@@ -229,9 +236,10 @@ class TestLocationMultiplier:
         )
 
         htf_bias = HTFBias(
-            direction="bullish",
+            bias="bullish",
+            direction="long",
             score=8.0,
-            confidence="A+",
+            confidence="high",
         )
 
         # Should always be 1.0 for other setups
@@ -277,12 +285,13 @@ class TestScoreSignalIntegration:
         )
 
         htf_bias = HTFBias(
-            direction="bullish",
+            bias="bullish",
+            direction="long",
             score=8.5,
-            confidence="A+",
+            confidence="high",
             structure_15m="HH",
             structure_1h="HL",
-            dxy_aligned=True,
+            dxy_alignment=True,
             chop_detected=False,
             bars_since_bos=5,
             structure_clarity=0.7,
@@ -292,7 +301,7 @@ class TestScoreSignalIntegration:
         context = {
             "enforcer_tier": "Balanced",
             "structure_1h": "HL",
-            "htf_direction": "bullish",
+            "htf_direction": "long",
         }
 
         signal = score_signal(features, htf_bias, context)
@@ -337,12 +346,13 @@ class TestScoreSignalIntegration:
         )
 
         htf_bias = HTFBias(
-            direction="bullish",
+            bias="bullish",
+            direction="long",
             score=8.5,
-            confidence="A+",
+            confidence="high",
             structure_15m="HH",
             structure_1h="HL",
-            dxy_aligned=True,
+            dxy_alignment=True,
             chop_detected=False,
             bars_since_bos=5,
             structure_clarity=0.7,
@@ -352,7 +362,7 @@ class TestScoreSignalIntegration:
         context = {
             "enforcer_tier": "Balanced",
             "structure_1h": "HL",
-            "htf_direction": "bullish",
+            "htf_direction": "long",
         }
 
         signal = score_signal(features, htf_bias, context)
@@ -398,12 +408,13 @@ class TestScoreSignalIntegration:
         )
 
         htf_bias = HTFBias(
-            direction="bullish",
+            bias="bullish",
+            direction="long",
             score=7.5,
-            confidence="A",
+            confidence="medium",
             structure_15m="HH",
             structure_1h="HL",
-            dxy_aligned=True,
+            dxy_alignment=True,
             chop_detected=False,
             bars_since_bos=8,
             structure_clarity=0.6,
@@ -413,7 +424,7 @@ class TestScoreSignalIntegration:
         context = {
             "enforcer_tier": "Balanced",
             "structure_1h": "HL",
-            "htf_direction": "bullish",
+            "htf_direction": "long",
         }
 
         signal = score_signal(features, htf_bias, context)

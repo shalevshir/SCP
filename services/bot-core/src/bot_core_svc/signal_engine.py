@@ -158,6 +158,9 @@ def features_message_to_series(msg: FeaturesMessage) -> pd.Series:
             # Expansion fields for late_reclaim_penalty calculation
             "expansion_detected": msg.expansion_detected,
             "expansion_reasons": msg.expansion_reasons,
+            # VWAP acceptance fields for min_vwap_acceptance and reclaim_timing_gate constraints
+            "bars_near_vwap": msg.bars_near_vwap,
+            "bars_since_last_vwap_touch": msg.bars_since_last_vwap_touch,
         }
     )
 
