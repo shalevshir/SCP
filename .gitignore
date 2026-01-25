@@ -32,3 +32,10 @@ docs/Critical-Issues-Analysis.md
 output/
 .cursor/debug.log
 
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example.terraform.lock.hcl
