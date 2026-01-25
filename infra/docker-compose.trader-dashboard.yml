@@ -35,8 +35,9 @@ services:
       IB_HOST: ${IB_HOST:-host.docker.internal}
       IB_PORT: ${IB_PORT:-4002}  # Paper trading port
       IB_CLIENT_ID: ${IB_CLIENT_ID:-1}
-      IB_GC_CONTRACT: ${IB_GC_CONTRACT:-GC}
-      IB_DXY_CONTRACT: ${IB_DXY_CONTRACT:-DX}
+      IB_GC_SYMBOL: ${IB_GC_SYMBOL:-GC}
+      IB_DXY_SYMBOL: ${IB_DXY_SYMBOL:-DX}
+      IB_MARKET_DATA_TYPE: ${IB_MARKET_DATA_TYPE:-3}  # 1=Live, 3=Delayed (15-min)
       SESSION_FILTER_ENABLED: "true"
       GAP_BACKFILL_ENABLED: "true"
       RECONNECT_MAX_RETRIES: 10
