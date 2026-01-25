@@ -8,4 +8,3 @@ This package provides shared functionality for all SCP microservices:
 """
 
 __version__ = "0.1.0"
-

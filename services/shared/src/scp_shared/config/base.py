@@ -6,13 +6,13 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class BaseServiceConfig(BaseSettings):
     """Base configuration for all SCP microservices.
-    
+
     All service-specific configs should inherit from this.
-    
+
     Example:
         >>> class DataAdapterConfig(BaseServiceConfig):
         ...     databento_api_key: str = Field(...)
-        ...     
+        ...
         >>> config = DataAdapterConfig()
         >>> print(config.redis_url)
     """
@@ -63,4 +63,3 @@ class BaseServiceConfig(BaseSettings):
         default=False,
         description="Enable debug mode",
     )
-

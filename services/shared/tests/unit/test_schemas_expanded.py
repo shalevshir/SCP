@@ -39,7 +39,7 @@ class TestFeaturesMessageExpansion:
             low=2648.0,
             volume=1000.0,
         )
-        
+
         assert msg.open == 2649.0
         assert msg.high == 2652.0
         assert msg.low == 2648.0
@@ -55,7 +55,7 @@ class TestFeaturesMessageExpansion:
             vwap=2649.5,
             vwap_slope=0.5,
         )
-        
+
         assert msg.vwap_slope == 0.5
 
     def test_features_message_with_dxy_fields(self):
@@ -69,7 +69,7 @@ class TestFeaturesMessageExpansion:
             dxy_5m_corr=-0.70,
             dxy_structure="HH",
         )
-        
+
         assert msg.dxy_corr == -0.75
         assert msg.dxy_5m_corr == -0.70
         assert msg.dxy_structure == "HH"
@@ -84,7 +84,7 @@ class TestFeaturesMessageExpansion:
             expansion_detected=True,
             expansion_reasons=["vwap_range", "atr_expansion"],
         )
-        
+
         assert msg.expansion_detected is True
         assert "vwap_range" in msg.expansion_reasons
         assert len(msg.expansion_reasons) == 2
@@ -99,7 +99,7 @@ class TestFeaturesMessageExpansion:
             second_confirmation_long=True,
             second_confirmation_short=False,
         )
-        
+
         assert msg.second_confirmation_long is True
         assert msg.second_confirmation_short is False
 
@@ -112,7 +112,7 @@ class TestFeaturesMessageExpansion:
             close=2650.0,
             htf_structure_label="HH",
         )
-        
+
         assert msg.htf_structure_label == "HH"
 
     def test_features_message_all_new_fields_together(self):
@@ -145,7 +145,7 @@ class TestFeaturesMessageExpansion:
             second_confirmation_long=True,
             second_confirmation_short=False,
         )
-        
+
         # Verify all fields are present
         assert msg.open == 2649.0
         assert msg.vwap_slope == 0.5
@@ -161,7 +161,7 @@ class TestFeaturesMessageExpansion:
             timeframe="1m",
             close=2650.0,
         )
-        
+
         # All new fields should be None or have sensible defaults
         assert msg.open is None
         assert msg.high is None
@@ -189,17 +189,14 @@ class TestFeaturesMessageExpansion:
             expansion_detected=True,
             expansion_reasons=["test"],
         )
-        
+
         # Serialize to JSON
         json_str = msg.model_dump_json()
-        
+
         # Deserialize back
         msg2 = FeaturesMessage.model_validate_json(json_str)
-        
+
         assert msg2.vwap_slope == 0.5
         assert msg2.dxy_corr == -0.75
         assert msg2.expansion_detected is True
         assert msg2.expansion_reasons == ["test"]
-
-
-

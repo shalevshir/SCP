@@ -51,7 +51,7 @@ def detect_dxy_continuation(
     corr_1m = htf_bias.dxy_corr_1m
     corr_5m = htf_bias.dxy_corr_5m
     features_dxy_corr = features.get("dxy_corr")
-    
+
     # If both 1m and 5m available, require both to show inverse correlation
     if corr_1m is not None and corr_5m is not None:
         if not (corr_1m < -0.3 and corr_5m < -0.3):
@@ -61,15 +61,17 @@ def detect_dxy_continuation(
             )
             return False
         effective_corr = min(corr_1m, corr_5m)  # Use the weaker one for logging
-        logger.debug(f"DXY continuation: correlation OK (1m={corr_1m:.2f}, 5m={corr_5m:.2f})")
+        logger.debug(
+            f"DXY continuation: correlation OK (1m={corr_1m:.2f}, 5m={corr_5m:.2f})"
+        )
     else:
         # Fallback: use 1m or features.dxy_corr with stricter threshold
         effective_corr = corr_1m if corr_1m is not None else features_dxy_corr
-        
+
         if effective_corr is None:
             logger.debug("DXY continuation rejected: no correlation data available")
             return False
-        
+
         # Stricter threshold when only one correlation source: require < -0.6
         if effective_corr >= -0.6:
             logger.debug(
@@ -106,19 +108,21 @@ def detect_dxy_continuation(
                 return False
     else:
         # DXY structure not available - rely on strong correlation
-        logger.debug("DXY continuation: skipping DXY structure check (relying on correlation)")
+        logger.debug(
+            "DXY continuation: skipping DXY structure check (relying on correlation)"
+        )
 
     # 3. Gold BOS recency check
     bars_since_bos = htf_bias.bars_since_bos
     bos_threshold = 15  # Relaxed threshold for streaming
-    
+
     if bars_since_bos is not None and bars_since_bos > bos_threshold:
         logger.debug(
             f"DXY continuation rejected: BOS too old "
             f"(bars_since_bos={bars_since_bos}, threshold={bos_threshold})"
         )
         return False
-    
+
     # If bars_since_bos is None, check if BOS was detected at all
     if bars_since_bos is None:
         if htf_bias.bos_detected:
@@ -126,9 +130,13 @@ def detect_dxy_continuation(
         else:
             # Allow continuation if correlation is very strong (< -0.7)
             if effective_corr < -0.7:
-                logger.debug("DXY continuation: BOS unavailable but very strong correlation, proceeding")
+                logger.debug(
+                    "DXY continuation: BOS unavailable but very strong correlation, proceeding"
+                )
             else:
-                logger.debug("DXY continuation rejected: no BOS detected and correlation not strong enough")
+                logger.debug(
+                    "DXY continuation rejected: no BOS detected and correlation not strong enough"
+                )
                 return False
 
     # 4. Structure clarity check
@@ -232,7 +240,9 @@ def detect_dxy_continuation(
             )
             return False
     else:
-        logger.debug("DXY continuation: skipping pullback recency check (insufficient data)")
+        logger.debug(
+            "DXY continuation: skipping pullback recency check (insufficient data)"
+        )
 
     # All checks passed
     if corr_5m is not None:

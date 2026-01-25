@@ -48,12 +48,12 @@ async def query_all_trades(
     end_date: datetime | None = None,
 ) -> list[dict]:
     """Query all trades from database.
-    
+
     Args:
         conn: Database connection
         start_date: Optional start date filter
         end_date: Optional end date filter
-        
+
     Returns:
         List of trade dictionaries
     """
@@ -84,24 +84,24 @@ async def query_all_trades(
         FROM trades
         WHERE 1=1
     """
-    
+
     params: list[Any] = []
     param_idx = 1
-    
+
     if start_date:
         query += f" AND opened_at >= ${param_idx}"
         params.append(start_date)
         param_idx += 1
-    
+
     if end_date:
         query += f" AND opened_at <= ${param_idx}"
         params.append(end_date)
         param_idx += 1
-    
+
     query += " ORDER BY opened_at ASC"
-    
+
     rows = await conn.fetch(query, *params)
-    
+
     trades = []
     for row in rows:
         trade = {
@@ -122,14 +122,16 @@ async def query_all_trades(
             "r_multiple": float(row["r_multiple"]) if row["r_multiple"] else None,
             "state": row["state"],
             "confirmations": row["confirmations"] if row["confirmations"] else {},
-            "transition_history": row["transition_history"] if row["transition_history"] else {},
+            "transition_history": (
+                row["transition_history"] if row["transition_history"] else {}
+            ),
             "entry_bar_idx": row["entry_bar_idx"],
             "reached_1r": row["reached_1r"] if row["reached_1r"] is not None else False,
             "created_at": row["created_at"].isoformat() if row["created_at"] else None,
             "updated_at": row["updated_at"].isoformat() if row["updated_at"] else None,
         }
         trades.append(trade)
-    
+
     return trades
 
 
@@ -140,13 +142,13 @@ async def query_features_at_timestamp(
     timeframe: str = "1m",
 ) -> dict | None:
     """Query features from database at specific timestamp.
-    
+
     Args:
         conn: Database connection
         timestamp: Timestamp to query
         symbol: Symbol to query (default: "GC")
         timeframe: Timeframe to query (default: "1m")
-        
+
     Returns:
         Features dictionary or None if not found
     """
@@ -171,12 +173,12 @@ async def query_features_at_timestamp(
         ORDER BY timestamp DESC
         LIMIT 1
     """
-    
+
     row = await conn.fetchrow(query, timestamp, symbol, timeframe)
-    
+
     if row is None:
         return None
-    
+
     return {
         "timestamp": row["timestamp"].isoformat() if row["timestamp"] else None,
         "symbol": row["symbol"],
@@ -187,9 +189,13 @@ async def query_features_at_timestamp(
         "ema_9": float(row["ema_9"]) if row["ema_9"] else None,
         "ema_20": float(row["ema_20"]) if row["ema_20"] else None,
         "ema_50": float(row["ema_50"]) if row["ema_50"] else None,
-        "dxy_correlation": float(row["dxy_correlation"]) if row["dxy_correlation"] else None,
+        "dxy_correlation": (
+            float(row["dxy_correlation"]) if row["dxy_correlation"] else None
+        ),
         "structure_label": row["structure_label"],
-        "vwap_deviation": float(row["vwap_deviation"]) if row["vwap_deviation"] else None,
+        "vwap_deviation": (
+            float(row["vwap_deviation"]) if row["vwap_deviation"] else None
+        ),
     }
 
 
@@ -198,11 +204,11 @@ async def query_htf_bias_at_timestamp(
     timestamp: datetime,
 ) -> dict | None:
     """Query HTF bias from database at specific timestamp.
-    
+
     Args:
         conn: Database connection
         timestamp: Timestamp to query
-        
+
     Returns:
         HTF bias dictionary or None if not found
     """
@@ -224,12 +230,12 @@ async def query_htf_bias_at_timestamp(
         ORDER BY timestamp DESC
         LIMIT 1
     """
-    
+
     row = await conn.fetchrow(query, timestamp)
-    
+
     if row is None:
         return None
-    
+
     return {
         "timestamp": row["timestamp"].isoformat() if row["timestamp"] else None,
         "bias": row["bias"],
@@ -239,9 +245,17 @@ async def query_htf_bias_at_timestamp(
         "structure_1h": row["structure_1h"],
         "dxy_aligned": row["dxy_aligned"],
         "chop_detected": row["chop_detected"],
-        "seasonality_adjustment": float(row["seasonality_adjustment"]) if row["seasonality_adjustment"] else None,
+        "seasonality_adjustment": (
+            float(row["seasonality_adjustment"])
+            if row["seasonality_adjustment"]
+            else None
+        ),
         "seasonality_period": row["seasonality_period"],
-        "vwap_trend_confirmed": row["vwap_trend_confirmed"] if row["vwap_trend_confirmed"] is not None else False,
+        "vwap_trend_confirmed": (
+            row["vwap_trend_confirmed"]
+            if row["vwap_trend_confirmed"] is not None
+            else False
+        ),
     }
 
 
@@ -250,11 +264,11 @@ async def enrich_trade_with_data(
     trade: dict,
 ) -> dict:
     """Enrich a trade with features and HTF bias data.
-    
+
     Args:
         conn: Database connection
         trade: Trade dictionary
-        
+
     Returns:
         Enriched trade dictionary
     """
@@ -263,15 +277,17 @@ async def enrich_trade_with_data(
     if not opened_at_str:
         logger.warning(f"Trade {trade['id']} has no opened_at timestamp")
         return trade
-    
+
     opened_at = datetime.fromisoformat(opened_at_str.replace("Z", "+00:00"))
-    
+
     # Query features at entry time
-    features = await query_features_at_timestamp(conn, opened_at, symbol="GC", timeframe="1m")
-    
+    features = await query_features_at_timestamp(
+        conn, opened_at, symbol="GC", timeframe="1m"
+    )
+
     # Query HTF bias at entry time
     htf_bias = await query_htf_bias_at_timestamp(conn, opened_at)
-    
+
     # Build enriched trade structure similar to backtest output
     enriched_trade = {
         "trade_id": trade["id"],
@@ -297,7 +313,7 @@ async def enrich_trade_with_data(
         "features": features,
         "htf_bias": htf_bias,
     }
-    
+
     return enriched_trade
 
 
@@ -308,7 +324,7 @@ async def generate_report(
     end_date: datetime | None = None,
 ) -> None:
     """Generate trade report from database.
-    
+
     Args:
         db_url: Database connection URL
         output_file: Output file path
@@ -317,42 +333,58 @@ async def generate_report(
     """
     logger.info(f"Connecting to database...")
     conn = await asyncpg.connect(db_url)
-    
+
     try:
         logger.info("Querying trades from database...")
         trades = await query_all_trades(conn, start_date, end_date)
         logger.info(f"Found {len(trades)} trades")
-        
+
         if len(trades) == 0:
             logger.warning("No trades found in database")
             return
-        
+
         # Enrich each trade with features and HTF bias
         enriched_trades = []
         for i, trade in enumerate(trades, 1):
-            logger.info(f"Processing trade {i}/{len(trades)}: {trade['id']} ({trade['opened_at']})")
+            logger.info(
+                f"Processing trade {i}/{len(trades)}: {trade['id']} ({trade['opened_at']})"
+            )
             enriched_trade = await enrich_trade_with_data(conn, trade)
             enriched_trades.append(enriched_trade)
-        
+
         # Calculate summary metrics
         closed_trades = [t for t in enriched_trades if t["state"] == "CLOSED"]
-        winning_trades = [t for t in closed_trades if t["pnl_points"] and t["pnl_points"] > 0]
-        losing_trades = [t for t in closed_trades if t["pnl_points"] and t["pnl_points"] <= 0]
-        
+        winning_trades = [
+            t for t in closed_trades if t["pnl_points"] and t["pnl_points"] > 0
+        ]
+        losing_trades = [
+            t for t in closed_trades if t["pnl_points"] and t["pnl_points"] <= 0
+        ]
+
         total_pnl_points = sum(t["pnl_points"] or 0 for t in closed_trades)
         total_pnl_dollars = sum(t["pnl_dollars"] or 0 for t in closed_trades)
-        win_rate = (len(winning_trades) / len(closed_trades) * 100) if closed_trades else 0.0
-        
-        avg_r = sum(t["r_multiple"] or 0 for t in closed_trades) / len(closed_trades) if closed_trades else 0.0
-        
+        win_rate = (
+            (len(winning_trades) / len(closed_trades) * 100) if closed_trades else 0.0
+        )
+
+        avg_r = (
+            sum(t["r_multiple"] or 0 for t in closed_trades) / len(closed_trades)
+            if closed_trades
+            else 0.0
+        )
+
         # Build report structure similar to backtest output
         report = {
             "metadata": {
                 "generated_at": datetime.now().isoformat(),
                 "total_trades": len(enriched_trades),
                 "closed_trades": len(closed_trades),
-                "open_trades": len([t for t in enriched_trades if t["state"] == "OPEN"]),
-                "invalidated_trades": len([t for t in enriched_trades if t["state"] == "INVALIDATED"]),
+                "open_trades": len(
+                    [t for t in enriched_trades if t["state"] == "OPEN"]
+                ),
+                "invalidated_trades": len(
+                    [t for t in enriched_trades if t["state"] == "INVALIDATED"]
+                ),
             },
             "metrics": {
                 "total_pnl_points": total_pnl_points,
@@ -365,12 +397,12 @@ async def generate_report(
             },
             "trades": enriched_trades,
         }
-        
+
         # Write to file
         output_file.parent.mkdir(parents=True, exist_ok=True)
         with open(output_file, "w") as f:
             json.dump(report, f, indent=2)
-        
+
         logger.info(f"Report saved to {output_file}")
         logger.info(
             f"Summary: {len(enriched_trades)} trades, "
@@ -378,7 +410,7 @@ async def generate_report(
             f"Win rate: {win_rate:.1f}%, "
             f"Total PnL: ${total_pnl_dollars:.2f}"
         )
-        
+
     finally:
         await conn.close()
 
@@ -412,9 +444,9 @@ def main() -> int:
         default=None,
         help="End date filter (YYYY-MM-DD)",
     )
-    
+
     args = parser.parse_args()
-    
+
     # Get database URL
     db_url = args.db_url or os.environ.get("DATABASE_URL")
     if not db_url:
@@ -422,7 +454,7 @@ def main() -> int:
         logger.warning(f"Using default database URL: {mask_connection_url(db_url)}")
     else:
         logger.info(f"Using database URL: {mask_connection_url(db_url)}")
-    
+
     # Parse date filters
     start_date = None
     if args.start:
@@ -431,7 +463,7 @@ def main() -> int:
         except ValueError:
             logger.error(f"Invalid start date format: {args.start}. Use YYYY-MM-DD")
             return 1
-    
+
     end_date = None
     if args.end:
         try:
@@ -441,14 +473,14 @@ def main() -> int:
         except ValueError:
             logger.error(f"Invalid end date format: {args.end}. Use YYYY-MM-DD")
             return 1
-    
+
     # Determine output file
     if args.output:
         output_file = args.output
     else:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         output_file = Path(f"output/trade_report_{timestamp}.json")
-    
+
     # Run async function
     try:
         asyncio.run(generate_report(db_url, output_file, start_date, end_date))
@@ -462,6 +494,7 @@ def mask_connection_url(url: str) -> str:
     """Mask password in connection URL for logging."""
     try:
         from scp_shared.common.security import mask_connection_url as mask_url
+
         return mask_url(url)
     except ImportError:
         # Fallback if shared library not available

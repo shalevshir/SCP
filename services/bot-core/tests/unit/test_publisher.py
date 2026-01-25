@@ -34,14 +34,14 @@ class TestSignalPublisher:
         """Publishes signal and returns message ID."""
         mock_redis = AsyncMock()
         publisher = SignalPublisher(mock_redis, stream="test.signals")
-        
+
         signal = create_signal_message()
-        
+
         with patch.object(publisher, "_publisher") as mock_publisher:
             mock_publisher.publish = AsyncMock(return_value="123-456")
-            
+
             result = await publisher.publish(signal)
-            
+
             assert result == "123-456"
             mock_publisher.publish.assert_called_once_with("test.signals", signal)
 
@@ -50,7 +50,7 @@ class TestSignalPublisher:
         """Uses default signals.pending stream."""
         mock_redis = AsyncMock()
         publisher = SignalPublisher(mock_redis)
-        
+
         assert publisher._stream == "signals.pending"
 
     @pytest.mark.asyncio
@@ -58,12 +58,12 @@ class TestSignalPublisher:
         """Logs signal details when publishing."""
         mock_redis = AsyncMock()
         publisher = SignalPublisher(mock_redis)
-        
+
         signal = create_signal_message()
-        
+
         with patch.object(publisher, "_publisher") as mock_publisher:
             mock_publisher.publish = AsyncMock(return_value="123-456")
-            
+
             # This should not raise
             await publisher.publish(signal)
 
@@ -72,7 +72,7 @@ class TestSignalPublisher:
         """Publishes short direction signals."""
         mock_redis = AsyncMock()
         publisher = SignalPublisher(mock_redis)
-        
+
         signal = SignalMessage(
             id=str(uuid4()),
             timestamp=datetime.now(timezone.utc),
@@ -85,10 +85,10 @@ class TestSignalPublisher:
             tp_price=1990.0,
             factors={},
         )
-        
+
         with patch.object(publisher, "_publisher") as mock_publisher:
             mock_publisher.publish = AsyncMock(return_value="789-012")
-            
+
             result = await publisher.publish(signal)
-            
+
             assert result == "789-012"

@@ -20,16 +20,18 @@ class TestContextValidation:
 
     def test_valid_context_with_all_prerequisites(self):
         """Test that valid context passes with sweep + clarity + BOS direction."""
-        features = pd.Series({
-            "structure_clarity": 0.6,
-            "structure_label": "HH",  # Required for validation
-            "liquidity_sweep": True,
-            "bos_recent": True,
-            "bos_age": 5,
-            "bos_direction": "bullish",  # Must match HTF direction
-            "choch_detected": False,
-            "structure_conflict_flag": False,
-        })
+        features = pd.Series(
+            {
+                "structure_clarity": 0.6,
+                "structure_label": "HH",  # Required for validation
+                "liquidity_sweep": True,
+                "bos_recent": True,
+                "bos_age": 5,
+                "bos_direction": "bullish",  # Must match HTF direction
+                "choch_detected": False,
+                "structure_conflict_flag": False,
+            }
+        )
 
         htf_bias = HTFBias(
             bias="bullish",
@@ -57,15 +59,17 @@ class TestContextValidation:
         (BOS/CHoCH direction mismatch, structure conflict). Missing sweep is tracked
         as a quality flag for penalty calculation, not a hard rejection.
         """
-        features = pd.Series({
-            "structure_clarity": 0.6,
-            "structure_label": "HH",  # Required for validation
-            "liquidity_sweep": False,
-            "bos_recent": True,
-            "bos_direction": "bullish",  # Required for long direction
-            "choch_detected": False,
-            "structure_conflict_flag": False,
-        })
+        features = pd.Series(
+            {
+                "structure_clarity": 0.6,
+                "structure_label": "HH",  # Required for validation
+                "liquidity_sweep": False,
+                "bos_recent": True,
+                "bos_direction": "bullish",  # Required for long direction
+                "choch_detected": False,
+                "structure_conflict_flag": False,
+            }
+        )
 
         htf_bias = HTFBias(
             bias="bullish",
@@ -90,15 +94,17 @@ class TestContextValidation:
         (BOS/CHoCH direction mismatch, structure conflict). Low clarity is tracked
         as a quality flag for penalty calculation, not a hard rejection.
         """
-        features = pd.Series({
-            "structure_clarity": 0.3,
-            "structure_label": "HH",  # Required for validation
-            "liquidity_sweep": True,
-            "bos_recent": True,
-            "bos_direction": "bullish",  # Required for long direction
-            "choch_detected": False,
-            "structure_conflict_flag": False,
-        })
+        features = pd.Series(
+            {
+                "structure_clarity": 0.3,
+                "structure_label": "HH",  # Required for validation
+                "liquidity_sweep": True,
+                "bos_recent": True,
+                "bos_direction": "bullish",  # Required for long direction
+                "choch_detected": False,
+                "structure_conflict_flag": False,
+            }
+        )
 
         htf_bias = HTFBias(
             bias="bullish",
@@ -122,12 +128,14 @@ class TestEntryReadiness:
 
     def test_entry_ready_with_recent_bos_and_expansion(self):
         """Test that entry is ready with recent BOS and expansion."""
-        features = pd.Series({
-            "bos_age": 5,
-            "bos_recent": True,
-            "expansion_detected": True,
-            "expansion_reasons": ["recent_bos", "range_expansion"],
-        })
+        features = pd.Series(
+            {
+                "bos_age": 5,
+                "bos_recent": True,
+                "expansion_detected": True,
+                "expansion_reasons": ["recent_bos", "range_expansion"],
+            }
+        )
 
         htf_bias = HTFBias(
             bias="bullish",
@@ -153,12 +161,14 @@ class TestEntryReadiness:
 
     def test_entry_not_ready_stale_bos_no_expansion(self):
         """Test that entry is not ready with stale BOS and no expansion."""
-        features = pd.Series({
-            "bos_age": 20,
-            "bos_recent": False,
-            "expansion_detected": False,
-            "expansion_reasons": [],
-        })
+        features = pd.Series(
+            {
+                "bos_age": 20,
+                "bos_recent": False,
+                "expansion_detected": False,
+                "expansion_reasons": [],
+            }
+        )
 
         htf_bias = HTFBias(
             bias="bullish",
@@ -183,12 +193,14 @@ class TestEntryReadiness:
 
     def test_entry_ready_with_expansion_despite_stale_bos(self):
         """Test that entry can be ready with expansion even if BOS is old."""
-        features = pd.Series({
-            "bos_age": 15,
-            "bos_recent": False,
-            "expansion_detected": True,
-            "expansion_reasons": ["range_expansion", "displacement_candle"],
-        })
+        features = pd.Series(
+            {
+                "bos_age": 15,
+                "bos_recent": False,
+                "expansion_detected": True,
+                "expansion_reasons": ["range_expansion", "displacement_candle"],
+            }
+        )
 
         htf_bias = HTFBias(
             bias="bullish",
@@ -214,12 +226,14 @@ class TestEntryReadiness:
 
     def test_penalties_applied_for_stale_bos(self):
         """Test that penalties are tracked for late entries."""
-        features = pd.Series({
-            "bos_age": 18,
-            "bos_recent": False,
-            "expansion_detected": True,
-            "expansion_reasons": ["atr_expansion"],
-        })
+        features = pd.Series(
+            {
+                "bos_age": 18,
+                "bos_recent": False,
+                "expansion_detected": True,
+                "expansion_reasons": ["atr_expansion"],
+            }
+        )
 
         htf_bias = HTFBias(
             bias="bullish",
@@ -242,4 +256,3 @@ class TestEntryReadiness:
         assert result.entry_ready is True  # Still ready due to expansion
         assert "late_bos" in result.penalties  # But penalized
         assert result.penalties["late_bos"] < 0  # Negative penalty
-

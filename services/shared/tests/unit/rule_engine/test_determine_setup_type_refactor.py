@@ -139,7 +139,7 @@ class TestDetermineSetupTypeRefactor:
 
     def test_missing_structure_1h_fallback_to_dxy(self):
         """Test that missing structure_1h falls back to DXY_CONTINUATION.
-        
+
         With config-driven system, each setup has independent constraints.
         Missing structure_1h only blocks VWAP_RECLAIM, not DXY_CONTINUATION.
         """
@@ -169,7 +169,8 @@ class TestDetermineSetupTypeRefactor:
 
         # Create a config with VWAP_RECLAIM disabled
         config_file = tmp_path / "setups.yaml"
-        config_file.write_text("""
+        config_file.write_text(
+            """
 setups:
   VWAP_RECLAIM:
     enabled: false
@@ -202,10 +203,11 @@ setups:
 
 confidence:
   a_plus: 8.0
-""")
+"""
+        )
 
         # Temporarily replace validator
-        old_validator = getattr(scoring, '_validator', None)
+        old_validator = getattr(scoring, "_validator", None)
         try:
             scoring._validator = SetupValidator(config_path=str(config_file))
 
@@ -228,15 +230,17 @@ class TestBuildSetupContext:
         """Test that build_setup_context includes all required fields."""
         from scp_shared.rule_engine.scoring import build_setup_context
 
-        features = pd.Series({
-            "close": 2650.0,
-            "vwap": 2645.0,
-            "rsi": 55.0,
-            "structure_clarity": 0.7,
-            "last_structure_label": "HH",
-            "direction": "long",
-            "bos_direction": "long",
-        })
+        features = pd.Series(
+            {
+                "close": 2650.0,
+                "vwap": 2645.0,
+                "rsi": 55.0,
+                "structure_clarity": 0.7,
+                "last_structure_label": "HH",
+                "direction": "long",
+                "bos_direction": "long",
+            }
+        )
 
         htf_bias = HTFBias(
             bias="bullish",
@@ -262,10 +266,12 @@ class TestBuildSetupContext:
         """Test that build_setup_context handles missing optional fields."""
         from scp_shared.rule_engine.scoring import build_setup_context
 
-        features = pd.Series({
-            "close": 2650.0,
-            "vwap": 2645.0,
-        })
+        features = pd.Series(
+            {
+                "close": 2650.0,
+                "vwap": 2645.0,
+            }
+        )
 
         htf_bias = HTFBias(
             bias="bullish",

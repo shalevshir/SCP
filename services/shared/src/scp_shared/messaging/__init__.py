@@ -30,4 +30,3 @@ __all__ = [
     "CandleSynchronizer",
     "CandleFeatureSynchronizer",
 ]
-

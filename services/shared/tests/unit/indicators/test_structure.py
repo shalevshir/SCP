@@ -379,4 +379,3 @@ class TestStructureLabels:
                 f"Position {i} should be None with swing_window={swing_window}, "
                 f"but got {labels.iloc[i]}"
             )
-

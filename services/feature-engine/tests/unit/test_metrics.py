@@ -36,34 +36,110 @@ def test_update_feature_metrics_all_fields():
         second_confirmation_long=True,
         second_confirmation_short=False,
     )
-    
+
     metrics.update_feature_metrics(features_msg, "test", "feature-engine")
-    
+
     # Verify VWAP indicators
-    assert metrics.feature_vwap.labels(mode="test", service="feature-engine")._value._value == 2650.5
-    assert metrics.feature_vwap_slope.labels(mode="test", service="feature-engine", symbol="GC")._value._value == 0.05
-    assert metrics.feature_vwap_deviation.labels(mode="test", service="feature-engine")._value._value == 0.02
-    
+    assert (
+        metrics.feature_vwap.labels(mode="test", service="feature-engine")._value._value
+        == 2650.5
+    )
+    assert (
+        metrics.feature_vwap_slope.labels(
+            mode="test", service="feature-engine", symbol="GC"
+        )._value._value
+        == 0.05
+    )
+    assert (
+        metrics.feature_vwap_deviation.labels(
+            mode="test", service="feature-engine"
+        )._value._value
+        == 0.02
+    )
+
     # Verify trend indicators
-    assert metrics.feature_rsi.labels(mode="test", service="feature-engine")._value._value == 55.2
-    assert metrics.feature_ema_9.labels(mode="test", service="feature-engine")._value._value == 2649.8
-    assert metrics.feature_ema_20.labels(mode="test", service="feature-engine")._value._value == 2648.5
-    assert metrics.feature_ema_50.labels(mode="test", service="feature-engine")._value._value == 2647.0
-    
+    assert (
+        metrics.feature_rsi.labels(mode="test", service="feature-engine")._value._value
+        == 55.2
+    )
+    assert (
+        metrics.feature_ema_9.labels(
+            mode="test", service="feature-engine"
+        )._value._value
+        == 2649.8
+    )
+    assert (
+        metrics.feature_ema_20.labels(
+            mode="test", service="feature-engine"
+        )._value._value
+        == 2648.5
+    )
+    assert (
+        metrics.feature_ema_50.labels(
+            mode="test", service="feature-engine"
+        )._value._value
+        == 2647.0
+    )
+
     # Verify DXY correlation
-    assert metrics.feature_dxy_corr.labels(mode="test", service="feature-engine")._value._value == -0.75
-    assert metrics.feature_dxy_5m_corr.labels(mode="test", service="feature-engine")._value._value == -0.72
-    
+    assert (
+        metrics.feature_dxy_corr.labels(
+            mode="test", service="feature-engine"
+        )._value._value
+        == -0.75
+    )
+    assert (
+        metrics.feature_dxy_5m_corr.labels(
+            mode="test", service="feature-engine"
+        )._value._value
+        == -0.72
+    )
+
     # Verify structure fields
-    assert metrics.feature_bos_recent.labels(mode="test", service="feature-engine")._value._value == 1.0
-    assert metrics.feature_bos_age.labels(mode="test", service="feature-engine")._value._value == 3.0
-    assert metrics.feature_choch_detected.labels(mode="test", service="feature-engine")._value._value == 0.0
-    assert metrics.feature_structure_clarity.labels(mode="test", service="feature-engine")._value._value == 0.85
-    
+    assert (
+        metrics.feature_bos_recent.labels(
+            mode="test", service="feature-engine"
+        )._value._value
+        == 1.0
+    )
+    assert (
+        metrics.feature_bos_age.labels(
+            mode="test", service="feature-engine"
+        )._value._value
+        == 3.0
+    )
+    assert (
+        metrics.feature_choch_detected.labels(
+            mode="test", service="feature-engine"
+        )._value._value
+        == 0.0
+    )
+    assert (
+        metrics.feature_structure_clarity.labels(
+            mode="test", service="feature-engine"
+        )._value._value
+        == 0.85
+    )
+
     # Verify expansion and confirmation
-    assert metrics.feature_expansion_detected.labels(mode="test", service="feature-engine")._value._value == 1.0
-    assert metrics.feature_second_confirmation_long.labels(mode="test", service="feature-engine")._value._value == 1.0
-    assert metrics.feature_second_confirmation_short.labels(mode="test", service="feature-engine")._value._value == 0.0
+    assert (
+        metrics.feature_expansion_detected.labels(
+            mode="test", service="feature-engine"
+        )._value._value
+        == 1.0
+    )
+    assert (
+        metrics.feature_second_confirmation_long.labels(
+            mode="test", service="feature-engine"
+        )._value._value
+        == 1.0
+    )
+    assert (
+        metrics.feature_second_confirmation_short.labels(
+            mode="test", service="feature-engine"
+        )._value._value
+        == 0.0
+    )
 
 
 def test_update_feature_metrics_handles_none_values():
@@ -91,16 +167,41 @@ def test_update_feature_metrics_handles_none_values():
         second_confirmation_long=False,
         second_confirmation_short=False,
     )
-    
+
     # Should not raise any exceptions
     metrics.update_feature_metrics(features_msg, "test", "feature-engine")
-    
+
     # Boolean fields should still be set (as 0.0)
-    assert metrics.feature_bos_recent.labels(mode="test", service="feature-engine")._value._value == 0.0
-    assert metrics.feature_choch_detected.labels(mode="test", service="feature-engine")._value._value == 0.0
-    assert metrics.feature_expansion_detected.labels(mode="test", service="feature-engine")._value._value == 0.0
-    assert metrics.feature_second_confirmation_long.labels(mode="test", service="feature-engine")._value._value == 0.0
-    assert metrics.feature_second_confirmation_short.labels(mode="test", service="feature-engine")._value._value == 0.0
+    assert (
+        metrics.feature_bos_recent.labels(
+            mode="test", service="feature-engine"
+        )._value._value
+        == 0.0
+    )
+    assert (
+        metrics.feature_choch_detected.labels(
+            mode="test", service="feature-engine"
+        )._value._value
+        == 0.0
+    )
+    assert (
+        metrics.feature_expansion_detected.labels(
+            mode="test", service="feature-engine"
+        )._value._value
+        == 0.0
+    )
+    assert (
+        metrics.feature_second_confirmation_long.labels(
+            mode="test", service="feature-engine"
+        )._value._value
+        == 0.0
+    )
+    assert (
+        metrics.feature_second_confirmation_short.labels(
+            mode="test", service="feature-engine"
+        )._value._value
+        == 0.0
+    )
 
 
 def test_update_feature_metrics_dxy_correlation_fallback():
@@ -114,11 +215,16 @@ def test_update_feature_metrics_dxy_correlation_fallback():
         dxy_correlation=-0.80,  # Legacy field
         dxy_corr=None,  # New field is None
     )
-    
+
     metrics.update_feature_metrics(features_msg, "test", "feature-engine")
-    
+
     # Should use dxy_correlation as fallback
-    assert metrics.feature_dxy_corr.labels(mode="test", service="feature-engine")._value._value == -0.80
+    assert (
+        metrics.feature_dxy_corr.labels(
+            mode="test", service="feature-engine"
+        )._value._value
+        == -0.80
+    )
 
 
 def test_update_feature_metrics_dxy_corr_prefers_new_field():
@@ -131,11 +237,16 @@ def test_update_feature_metrics_dxy_corr_prefers_new_field():
         dxy_correlation=-0.80,  # Legacy field
         dxy_corr=-0.75,  # New field (should be preferred)
     )
-    
+
     metrics.update_feature_metrics(features_msg, "test", "feature-engine")
-    
+
     # Should prefer dxy_corr
-    assert metrics.feature_dxy_corr.labels(mode="test", service="feature-engine")._value._value == -0.75
+    assert (
+        metrics.feature_dxy_corr.labels(
+            mode="test", service="feature-engine"
+        )._value._value
+        == -0.75
+    )
 
 
 def test_update_feature_metrics_boolean_conversions():
@@ -145,7 +256,7 @@ def test_update_feature_metrics_boolean_conversions():
         (False, 0.0),
         (None, 0.0),
     ]
-    
+
     for bool_value, expected_metric in test_cases:
         features_msg = FeaturesMessage(
             timestamp=datetime(2025, 1, 17, 10, 0, 0),
@@ -158,12 +269,27 @@ def test_update_feature_metrics_boolean_conversions():
             second_confirmation_long=bool_value if bool_value is not None else False,
             second_confirmation_short=bool_value if bool_value is not None else False,
         )
-        
+
         metrics.update_feature_metrics(features_msg, "test", "feature-engine")
-        
-        assert metrics.feature_bos_recent.labels(mode="test", service="feature-engine")._value._value == expected_metric
-        assert metrics.feature_choch_detected.labels(mode="test", service="feature-engine")._value._value == expected_metric
-        assert metrics.feature_expansion_detected.labels(mode="test", service="feature-engine")._value._value == expected_metric
+
+        assert (
+            metrics.feature_bos_recent.labels(
+                mode="test", service="feature-engine"
+            )._value._value
+            == expected_metric
+        )
+        assert (
+            metrics.feature_choch_detected.labels(
+                mode="test", service="feature-engine"
+            )._value._value
+            == expected_metric
+        )
+        assert (
+            metrics.feature_expansion_detected.labels(
+                mode="test", service="feature-engine"
+            )._value._value
+            == expected_metric
+        )
 
 
 def test_update_feature_metrics_partial_fields():
@@ -180,14 +306,30 @@ def test_update_feature_metrics_partial_fields():
         bos_recent=True,
         expansion_detected=False,
     )
-    
+
     metrics.update_feature_metrics(features_msg, "test", "feature-engine")
-    
+
     # Verify populated fields
-    assert metrics.feature_vwap.labels(mode="test", service="feature-engine")._value._value == 2650.5
-    assert metrics.feature_rsi.labels(mode="test", service="feature-engine")._value._value == 55.0
-    assert metrics.feature_bos_recent.labels(mode="test", service="feature-engine")._value._value == 1.0
-    assert metrics.feature_expansion_detected.labels(mode="test", service="feature-engine")._value._value == 0.0
+    assert (
+        metrics.feature_vwap.labels(mode="test", service="feature-engine")._value._value
+        == 2650.5
+    )
+    assert (
+        metrics.feature_rsi.labels(mode="test", service="feature-engine")._value._value
+        == 55.0
+    )
+    assert (
+        metrics.feature_bos_recent.labels(
+            mode="test", service="feature-engine"
+        )._value._value
+        == 1.0
+    )
+    assert (
+        metrics.feature_expansion_detected.labels(
+            mode="test", service="feature-engine"
+        )._value._value
+        == 0.0
+    )
 
 
 def test_update_feature_metrics_dxy_structure_encoding():
@@ -199,7 +341,7 @@ def test_update_feature_metrics_dxy_structure_encoding():
         ("LL", 1.0),  # Lower Low
         (None, 0.0),  # N/A
     ]
-    
+
     for structure_label, expected_value in test_cases:
         features_msg = FeaturesMessage(
             timestamp=datetime(2025, 1, 17, 10, 0, 0),
@@ -208,11 +350,13 @@ def test_update_feature_metrics_dxy_structure_encoding():
             close=2650.0,
             dxy_structure=structure_label,
         )
-        
+
         metrics.update_feature_metrics(features_msg, "test", "feature-engine")
-        
+
         assert (
-            metrics.feature_dxy_structure.labels(mode="test", service="feature-engine")._value._value
+            metrics.feature_dxy_structure.labels(
+                mode="test", service="feature-engine"
+            )._value._value
             == expected_value
         ), f"Expected {structure_label} to encode to {expected_value}"
 
@@ -226,11 +370,16 @@ def test_update_feature_metrics_dxy_structure_unknown():
         close=2650.0,
         dxy_structure="UNKNOWN",  # Not in encoding map
     )
-    
+
     metrics.update_feature_metrics(features_msg, "test", "feature-engine")
-    
+
     # Unknown structure should map to 0.0 (N/A)
-    assert metrics.feature_dxy_structure.labels(mode="test", service="feature-engine")._value._value == 0.0
+    assert (
+        metrics.feature_dxy_structure.labels(
+            mode="test", service="feature-engine"
+        )._value._value
+        == 0.0
+    )
 
 
 def test_update_feature_metrics_dxy_structure_in_full_message():
@@ -245,13 +394,29 @@ def test_update_feature_metrics_dxy_structure_in_full_message():
         dxy_corr=-0.75,
         dxy_structure="HH",  # DXY structure
     )
-    
+
     metrics.update_feature_metrics(features_msg, "test", "feature-engine")
-    
+
     # Verify DXY structure is encoded correctly
-    assert metrics.feature_dxy_structure.labels(mode="test", service="feature-engine")._value._value == 4.0
-    
+    assert (
+        metrics.feature_dxy_structure.labels(
+            mode="test", service="feature-engine"
+        )._value._value
+        == 4.0
+    )
+
     # Verify other metrics are also set
-    assert metrics.feature_vwap.labels(mode="test", service="feature-engine")._value._value == 2650.5
-    assert metrics.feature_rsi.labels(mode="test", service="feature-engine")._value._value == 55.2
-    assert metrics.feature_dxy_corr.labels(mode="test", service="feature-engine")._value._value == -0.75
+    assert (
+        metrics.feature_vwap.labels(mode="test", service="feature-engine")._value._value
+        == 2650.5
+    )
+    assert (
+        metrics.feature_rsi.labels(mode="test", service="feature-engine")._value._value
+        == 55.2
+    )
+    assert (
+        metrics.feature_dxy_corr.labels(
+            mode="test", service="feature-engine"
+        )._value._value
+        == -0.75
+    )

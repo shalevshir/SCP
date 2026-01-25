@@ -110,33 +110,33 @@ CONFIDENCE_ENCODING = {
 
 def update_bias_metrics(current_bias: str, mode: str, service: str) -> None:
     """Update bias metrics including current state and transitions.
-    
+
     Args:
         current_bias: Current bias (bullish/bearish/neutral)
         mode: Service mode (dev/test/replay/paper/live)
         service: Service name (htf-bias)
     """
     global _last_bias
-    
+
     # Update current bias gauge
     # Map bias to numeric value for monitoring
     bias_value = {"bullish": 1.0, "neutral": 0.0, "bearish": -1.0}.get(
         current_bias.lower(), 0.0
     )
     htf_bias_current.labels(mode=mode, service=service).set(bias_value)
-    
+
     # Track bias changes
     if _last_bias is not None and _last_bias != current_bias:
         htf_bias_changes_total.labels(
             mode=mode, service=service, from_bias=_last_bias, to_bias=current_bias
         ).inc()
-    
+
     _last_bias = current_bias
 
 
 def update_htf_detail_metrics(bias_msg, mode: str, service: str) -> None:
     """Update detailed HTF bias metrics for trader decision dashboard.
-    
+
     Args:
         bias_msg: HTFBiasMessage containing all bias details
         mode: Service mode (dev/test/replay/paper/live)
@@ -146,33 +146,37 @@ def update_htf_detail_metrics(bias_msg, mode: str, service: str) -> None:
     htf_bias_score.labels(mode=mode, service=service).set(bias_msg.score)
     confidence_value = CONFIDENCE_ENCODING.get(bias_msg.confidence, 0.0)
     htf_bias_confidence.labels(mode=mode, service=service).set(confidence_value)
-    
+
     # DXY and chop
-    htf_dxy_aligned.labels(mode=mode, service=service).set(1.0 if bias_msg.dxy_aligned else 0.0)
-    htf_chop_detected.labels(mode=mode, service=service).set(1.0 if bias_msg.chop_detected else 0.0)
-    
+    htf_dxy_aligned.labels(mode=mode, service=service).set(
+        1.0 if bias_msg.dxy_aligned else 0.0
+    )
+    htf_chop_detected.labels(mode=mode, service=service).set(
+        1.0 if bias_msg.chop_detected else 0.0
+    )
+
     # Conflict detection
     conflict_value = 1.0 if getattr(bias_msg, "conflict_detected", False) else 0.0
     htf_conflict_detected.labels(mode=mode, service=service).set(conflict_value)
-    
+
     # VWAP trend confirmation
     vwap_confirmed = 1.0 if getattr(bias_msg, "vwap_trend_confirmed", False) else 0.0
     htf_vwap_trend_confirmed.labels(mode=mode, service=service).set(vwap_confirmed)
-    
+
     # Structure events
     bos_value = 1.0 if getattr(bias_msg, "bos_detected", False) else 0.0
     htf_bos_detected.labels(mode=mode, service=service).set(bos_value)
-    
+
     sweep_value = 1.0 if getattr(bias_msg, "liquidity_sweep_detected", False) else 0.0
     htf_liquidity_sweep_detected.labels(mode=mode, service=service).set(sweep_value)
-    
+
     # Structure labels (encode as numbers for Grafana)
     structure_15m_value = STRUCTURE_ENCODING.get(bias_msg.structure_15m, 0.0)
     htf_structure_15m.labels(mode=mode, service=service).set(structure_15m_value)
-    
+
     structure_1h_value = STRUCTURE_ENCODING.get(bias_msg.structure_1h, 0.0)
     htf_structure_1h.labels(mode=mode, service=service).set(structure_1h_value)
-    
+
     # Seasonality adjustment
     seasonality_adj = getattr(bias_msg, "seasonality_adjustment", 0.0)
     htf_seasonality_adjustment.labels(mode=mode, service=service).set(seasonality_adj)

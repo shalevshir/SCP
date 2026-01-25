@@ -20,13 +20,13 @@ class TestCreateConsumerGroup:
         """Successfully creates a consumer group."""
         mock_client = AsyncMock(spec=redis.Redis)
         mock_client.xgroup_create = AsyncMock(return_value=True)
-        
+
         result = await create_consumer_group(
             redis_client=mock_client,
             stream="test-stream",
             group="test-group",
         )
-        
+
         assert result is True
         mock_client.xgroup_create.assert_called_once_with(
             "test-stream",
@@ -40,14 +40,14 @@ class TestCreateConsumerGroup:
         """Creates group with custom start ID."""
         mock_client = AsyncMock(spec=redis.Redis)
         mock_client.xgroup_create = AsyncMock(return_value=True)
-        
+
         result = await create_consumer_group(
             redis_client=mock_client,
             stream="test-stream",
             group="test-group",
             start_id="$",
         )
-        
+
         assert result is True
         mock_client.xgroup_create.assert_called_once_with(
             "test-stream",
@@ -61,15 +61,17 @@ class TestCreateConsumerGroup:
         """Returns False when group already exists."""
         mock_client = AsyncMock(spec=redis.Redis)
         mock_client.xgroup_create = AsyncMock(
-            side_effect=redis.ResponseError("BUSYGROUP Consumer group name already exists")
+            side_effect=redis.ResponseError(
+                "BUSYGROUP Consumer group name already exists"
+            )
         )
-        
+
         result = await create_consumer_group(
             redis_client=mock_client,
             stream="test-stream",
             group="test-group",
         )
-        
+
         assert result is False
 
     @pytest.mark.asyncio
@@ -77,9 +79,11 @@ class TestCreateConsumerGroup:
         """Raises exception for non-BUSYGROUP errors."""
         mock_client = AsyncMock(spec=redis.Redis)
         mock_client.xgroup_create = AsyncMock(
-            side_effect=redis.ResponseError("WRONGTYPE Operation against a key holding wrong kind of value")
+            side_effect=redis.ResponseError(
+                "WRONGTYPE Operation against a key holding wrong kind of value"
+            )
         )
-        
+
         with pytest.raises(redis.ResponseError, match="WRONGTYPE"):
             await create_consumer_group(
                 redis_client=mock_client,
@@ -96,13 +100,13 @@ class TestDeleteConsumerGroup:
         """Successfully deletes a consumer group."""
         mock_client = AsyncMock(spec=redis.Redis)
         mock_client.xgroup_destroy = AsyncMock(return_value=1)
-        
+
         result = await delete_consumer_group(
             redis_client=mock_client,
             stream="test-stream",
             group="test-group",
         )
-        
+
         assert result is True
         mock_client.xgroup_destroy.assert_called_once_with("test-stream", "test-group")
 
@@ -111,13 +115,13 @@ class TestDeleteConsumerGroup:
         """Returns False when group doesn't exist."""
         mock_client = AsyncMock(spec=redis.Redis)
         mock_client.xgroup_destroy = AsyncMock(return_value=0)
-        
+
         result = await delete_consumer_group(
             redis_client=mock_client,
             stream="test-stream",
             group="test-group",
         )
-        
+
         assert result is False
 
     @pytest.mark.asyncio
@@ -127,13 +131,13 @@ class TestDeleteConsumerGroup:
         mock_client.xgroup_destroy = AsyncMock(
             side_effect=redis.ResponseError("Some error")
         )
-        
+
         result = await delete_consumer_group(
             redis_client=mock_client,
             stream="test-stream",
             group="test-group",
         )
-        
+
         assert result is False
 
 
@@ -149,12 +153,12 @@ class TestGetConsumerGroupInfo:
             {"name": "group2", "consumers": 1, "pending": 5},
         ]
         mock_client.xinfo_groups = AsyncMock(return_value=mock_info)
-        
+
         result = await get_consumer_group_info(
             redis_client=mock_client,
             stream="test-stream",
         )
-        
+
         assert result == mock_info
         mock_client.xinfo_groups.assert_called_once_with("test-stream")
 
@@ -165,12 +169,12 @@ class TestGetConsumerGroupInfo:
         mock_client.xinfo_groups = AsyncMock(
             side_effect=redis.ResponseError("ERR no such key")
         )
-        
+
         result = await get_consumer_group_info(
             redis_client=mock_client,
             stream="test-stream",
         )
-        
+
         assert result == []
 
     @pytest.mark.asyncio
@@ -180,12 +184,12 @@ class TestGetConsumerGroupInfo:
         mock_client.xinfo_groups = AsyncMock(
             side_effect=redis.ResponseError("Some other error")
         )
-        
+
         result = await get_consumer_group_info(
             redis_client=mock_client,
             stream="test-stream",
         )
-        
+
         assert result == []
 
 
@@ -197,12 +201,12 @@ class TestGetStreamLength:
         """Returns the number of messages in stream."""
         mock_client = AsyncMock(spec=redis.Redis)
         mock_client.xlen = AsyncMock(return_value=42)
-        
+
         result = await get_stream_length(
             redis_client=mock_client,
             stream="test-stream",
         )
-        
+
         assert result == 42
         mock_client.xlen.assert_called_once_with("test-stream")
 
@@ -211,12 +215,12 @@ class TestGetStreamLength:
         """Returns 0 when stream is empty."""
         mock_client = AsyncMock(spec=redis.Redis)
         mock_client.xlen = AsyncMock(return_value=0)
-        
+
         result = await get_stream_length(
             redis_client=mock_client,
             stream="test-stream",
         )
-        
+
         assert result == 0
 
     @pytest.mark.asyncio
@@ -224,10 +228,10 @@ class TestGetStreamLength:
         """Returns 0 when stream doesn't exist (xlen returns None)."""
         mock_client = AsyncMock(spec=redis.Redis)
         mock_client.xlen = AsyncMock(return_value=None)
-        
+
         result = await get_stream_length(
             redis_client=mock_client,
             stream="test-stream",
         )
-        
+
         assert result == 0

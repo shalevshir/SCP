@@ -59,7 +59,7 @@ _last_tick_timestamps: dict[str, datetime] = {}
 
 def update_tick_timestamp(symbol: str, timestamp: datetime) -> None:
     """Update last tick timestamp for lag calculation.
-    
+
     Args:
         symbol: Symbol (GC, DXY)
         timestamp: Tick timestamp
@@ -69,7 +69,7 @@ def update_tick_timestamp(symbol: str, timestamp: datetime) -> None:
 
 def update_lag_metrics(current_time: datetime, mode: str, service: str) -> None:
     """Update market data lag metrics based on last tick timestamps.
-    
+
     Args:
         current_time: Current time for lag calculation
         mode: Service mode (dev/test/replay/paper/live)
@@ -78,4 +78,6 @@ def update_lag_metrics(current_time: datetime, mode: str, service: str) -> None:
     for symbol, last_tick_time in _last_tick_timestamps.items():
         lag = (current_time - last_tick_time).total_seconds()
         # Update lag gauge for this symbol
-        market_data_lag_seconds.labels(mode=mode, service=service, symbol=symbol).set(lag)
+        market_data_lag_seconds.labels(mode=mode, service=service, symbol=symbol).set(
+            lag
+        )

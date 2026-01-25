@@ -33,11 +33,11 @@ class TestSessionTrackingOrderBug:
 
         # Session 1: Jan 15 - build up extremes
         ts1 = datetime(2024, 1, 15, 10, 0, tzinfo=ZoneInfo("America/New_York"))
-        
+
         # CORRECT ORDER: update_session_state BEFORE update
         tracker.update_session_state(ts1, high=2650.0, low=2645.0)
         context1 = tracker.update(high=2650.0, low=2645.0, close=2648.0)
-        
+
         ts2 = datetime(2024, 1, 15, 14, 0, tzinfo=ZoneInfo("America/New_York"))
         tracker.update_session_state(ts2, high=2660.0, low=2642.0)
         context2 = tracker.update(high=2660.0, low=2642.0, close=2658.0)
@@ -48,7 +48,7 @@ class TestSessionTrackingOrderBug:
 
         # Session boundary - Jan 16 at 08:20 ET
         ts3 = datetime(2024, 1, 16, 8, 20, tzinfo=ZoneInfo("America/New_York"))
-        
+
         # CORRECT ORDER: update_session_state BEFORE update
         # This allows the session boundary detection to happen first,
         # rolling over prior values, so that update() sees the new prior values
@@ -56,10 +56,12 @@ class TestSessionTrackingOrderBug:
         context3 = tracker.update(high=2655.0, low=2650.0, close=2653.0)
 
         # CRITICAL: Prior should have Session 1 extremes IN THE RETURNED CONTEXT
-        assert context3.prior_session_high == 2660.0, \
-            f"Expected prior_session_high=2660.0 at boundary, got {context3.prior_session_high}"
-        assert context3.prior_session_low == 2642.0, \
-            f"Expected prior_session_low=2642.0 at boundary, got {context3.prior_session_low}"
+        assert (
+            context3.prior_session_high == 2660.0
+        ), f"Expected prior_session_high=2660.0 at boundary, got {context3.prior_session_high}"
+        assert (
+            context3.prior_session_low == 2642.0
+        ), f"Expected prior_session_low=2642.0 at boundary, got {context3.prior_session_low}"
 
     def test_wrong_order_causes_stale_values_at_boundary(self) -> None:
         """Demonstrate the bug: calling update() before update_session_state().
@@ -73,31 +75,33 @@ class TestSessionTrackingOrderBug:
         ts1 = datetime(2024, 1, 15, 10, 0, tzinfo=ZoneInfo("America/New_York"))
         tracker.update_session_state(ts1, high=2650.0, low=2645.0)
         tracker.update(high=2650.0, low=2645.0, close=2648.0)
-        
+
         ts2 = datetime(2024, 1, 15, 14, 0, tzinfo=ZoneInfo("America/New_York"))
         tracker.update_session_state(ts2, high=2660.0, low=2642.0)
         tracker.update(high=2660.0, low=2642.0, close=2658.0)
 
         # Session boundary - Jan 16 at 08:20 ET
         ts3 = datetime(2024, 1, 16, 8, 20, tzinfo=ZoneInfo("America/New_York"))
-        
+
         # WRONG ORDER: update() called BEFORE update_session_state()
         # This is the bug - update() creates context with stale prior values
         context3_wrong = tracker.update(high=2655.0, low=2650.0, close=2653.0)
-        
+
         # BUG: Context still has None because session boundary hasn't been detected yet
-        assert context3_wrong.prior_session_high is None, \
-            "Bug reproduced: prior_session_high is None when update() called before update_session_state()"
-        assert context3_wrong.prior_session_low is None, \
-            "Bug reproduced: prior_session_low is None when update() called before update_session_state()"
-        
+        assert (
+            context3_wrong.prior_session_high is None
+        ), "Bug reproduced: prior_session_high is None when update() called before update_session_state()"
+        assert (
+            context3_wrong.prior_session_low is None
+        ), "Bug reproduced: prior_session_low is None when update() called before update_session_state()"
+
         # Now call update_session_state() - this detects boundary and rolls over
         tracker.update_session_state(ts3, high=2655.0, low=2650.0)
-        
+
         # The internal state is NOW correct
         assert tracker.prior_session_high == 2660.0
         assert tracker.prior_session_low == 2642.0
-        
+
         # But the context that was already returned to the caller has stale values!
         # This is the bug: the context is already published with None values
 
@@ -113,14 +117,14 @@ class TestSessionTrackingOrderBug:
         # Correct order: session state first
         tracker.update_session_state(ts1, high=2650.0, low=2645.0)
         context1 = tracker.update(high=2650.0, low=2645.0, close=2648.0)
-        
+
         ts2 = datetime(2024, 1, 15, 14, 0, tzinfo=ZoneInfo("America/New_York"))
         tracker.update_session_state(ts2, high=2660.0, low=2642.0)
         context2 = tracker.update(high=2660.0, low=2642.0, close=2658.0)
 
         # At session boundary (08:20 ET next day)
         ts3 = datetime(2024, 1, 16, 8, 20, tzinfo=ZoneInfo("America/New_York"))
-        
+
         # MUST call session state first to detect boundary
         tracker.update_session_state(ts3, high=2655.0, low=2650.0)
         # Then update() will see the rolled-over prior values

@@ -44,9 +44,7 @@ feature_vwap = create_gauge(
 )
 
 feature_vwap_slope = create_gauge(
-    "feature_vwap_slope",
-    "VWAP slope (for FADE invalidation)",
-    labels=["symbol"]
+    "feature_vwap_slope", "VWAP slope (for FADE invalidation)", labels=["symbol"]
 )
 
 feature_vwap_deviation = create_gauge(
@@ -131,7 +129,7 @@ feature_second_confirmation_short = create_gauge(
 
 def update_feature_metrics(features_msg, mode: str, service: str) -> None:
     """Update detailed feature metrics for trader decision dashboard.
-    
+
     Args:
         features_msg: FeaturesMessage containing all feature details
         mode: Service mode (dev/test/replay/paper/live)
@@ -140,34 +138,44 @@ def update_feature_metrics(features_msg, mode: str, service: str) -> None:
     # VWAP indicators
     if features_msg.vwap is not None:
         feature_vwap.labels(mode=mode, service=service).set(features_msg.vwap)
-    
+
     if features_msg.vwap_slope is not None:
-        feature_vwap_slope.labels(mode=mode, service=service, symbol=features_msg.symbol).set(features_msg.vwap_slope)
-    
+        feature_vwap_slope.labels(
+            mode=mode, service=service, symbol=features_msg.symbol
+        ).set(features_msg.vwap_slope)
+
     if features_msg.vwap_deviation is not None:
-        feature_vwap_deviation.labels(mode=mode, service=service).set(features_msg.vwap_deviation)
-    
+        feature_vwap_deviation.labels(mode=mode, service=service).set(
+            features_msg.vwap_deviation
+        )
+
     # Trend indicators
     if features_msg.rsi is not None:
         feature_rsi.labels(mode=mode, service=service).set(features_msg.rsi)
-    
+
     if features_msg.ema_9 is not None:
         feature_ema_9.labels(mode=mode, service=service).set(features_msg.ema_9)
-    
+
     if features_msg.ema_20 is not None:
         feature_ema_20.labels(mode=mode, service=service).set(features_msg.ema_20)
-    
+
     if features_msg.ema_50 is not None:
         feature_ema_50.labels(mode=mode, service=service).set(features_msg.ema_50)
-    
+
     # DXY correlation (check both field names for backward compatibility)
-    dxy_corr = features_msg.dxy_corr if features_msg.dxy_corr is not None else features_msg.dxy_correlation
+    dxy_corr = (
+        features_msg.dxy_corr
+        if features_msg.dxy_corr is not None
+        else features_msg.dxy_correlation
+    )
     if dxy_corr is not None:
         feature_dxy_corr.labels(mode=mode, service=service).set(dxy_corr)
-    
+
     if features_msg.dxy_5m_corr is not None:
-        feature_dxy_5m_corr.labels(mode=mode, service=service).set(features_msg.dxy_5m_corr)
-    
+        feature_dxy_5m_corr.labels(mode=mode, service=service).set(
+            features_msg.dxy_5m_corr
+        )
+
     # DXY structure (encode as numeric for Prometheus)
     dxy_structure_map = {"HH": 4.0, "HL": 3.0, "LH": 2.0, "LL": 1.0}
     if features_msg.dxy_structure is not None:
@@ -175,26 +183,32 @@ def update_feature_metrics(features_msg, mode: str, service: str) -> None:
         feature_dxy_structure.labels(mode=mode, service=service).set(encoded_value)
     else:
         feature_dxy_structure.labels(mode=mode, service=service).set(0.0)
-    
+
     # Structure fields
     bos_recent_value = 1.0 if features_msg.bos_recent else 0.0
     feature_bos_recent.labels(mode=mode, service=service).set(bos_recent_value)
-    
+
     if features_msg.bos_age is not None:
         feature_bos_age.labels(mode=mode, service=service).set(features_msg.bos_age)
-    
+
     choch_value = 1.0 if features_msg.choch_detected else 0.0
     feature_choch_detected.labels(mode=mode, service=service).set(choch_value)
-    
+
     if features_msg.structure_clarity is not None:
-        feature_structure_clarity.labels(mode=mode, service=service).set(features_msg.structure_clarity)
-    
+        feature_structure_clarity.labels(mode=mode, service=service).set(
+            features_msg.structure_clarity
+        )
+
     # Expansion and confirmation
     expansion_value = 1.0 if features_msg.expansion_detected else 0.0
     feature_expansion_detected.labels(mode=mode, service=service).set(expansion_value)
-    
+
     second_conf_long = 1.0 if features_msg.second_confirmation_long else 0.0
-    feature_second_confirmation_long.labels(mode=mode, service=service).set(second_conf_long)
-    
+    feature_second_confirmation_long.labels(mode=mode, service=service).set(
+        second_conf_long
+    )
+
     second_conf_short = 1.0 if features_msg.second_confirmation_short else 0.0
-    feature_second_confirmation_short.labels(mode=mode, service=service).set(second_conf_short)
+    feature_second_confirmation_short.labels(mode=mode, service=service).set(
+        second_conf_short
+    )

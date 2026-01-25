@@ -14,7 +14,7 @@ T = TypeVar("T", bound=BaseModel)
 
 class RedisStreamPublisher:
     """Publish Pydantic models to Redis Streams.
-    
+
     Example:
         >>> publisher = RedisStreamPublisher(redis_client)
         >>> message = CandleMessage(...)
@@ -27,7 +27,7 @@ class RedisStreamPublisher:
         retry_config: RetryConfig | None = None,
     ) -> None:
         """Initialize publisher.
-        
+
         Args:
             redis_client: Async Redis client instance
             retry_config: Retry configuration (uses defaults if None)
@@ -45,6 +45,7 @@ class RedisStreamPublisher:
         Returns:
             Message ID from Redis (e.g., "1234567890-0")
         """
+
         @with_retry(self.retry_config)
         async def _publish() -> str:
             data = {
@@ -61,9 +62,9 @@ class RedisStreamPublisher:
 
 class RedisStreamConsumer(Generic[T]):
     """Consume and deserialize messages from Redis Streams.
-    
+
     Uses consumer groups for reliable delivery and horizontal scaling.
-    
+
     Example:
         >>> consumer = RedisStreamConsumer(
         ...     redis_client,
@@ -87,7 +88,7 @@ class RedisStreamConsumer(Generic[T]):
         retry_config: RetryConfig | None = None,
     ) -> None:
         """Initialize consumer.
-        
+
         Args:
             redis_client: Async Redis client instance
             stream: Stream name to consume from
@@ -96,7 +97,7 @@ class RedisStreamConsumer(Generic[T]):
             message_type: Pydantic model class to deserialize into
             retry_config: Retry configuration for Redis operations
                 (uses defaults if None)
-        
+
         Note:
             Messages are NOT automatically moved to DLQ. Application code must
             call move_to_dlq() explicitly when a message fails processing.
@@ -112,7 +113,7 @@ class RedisStreamConsumer(Generic[T]):
 
     async def ensure_group(self) -> None:
         """Create consumer group if it doesn't exist.
-        
+
         This is idempotent - safe to call multiple times.
         """
         if self._initialized:
@@ -148,7 +149,7 @@ class RedisStreamConsumer(Generic[T]):
 
         Returns:
             List of deserialized Pydantic models
-        
+
         Note:
             Only the xreadgroup operation is retried. Acknowledgments are NOT retried
             to prevent data loss. If acknowledgment fails, the message remains in the
@@ -200,9 +201,9 @@ class RedisStreamConsumer(Generic[T]):
         for message_id, data in raw_messages:
             # Decode bytes to strings
             decoded_data: dict[str, Any] = {
-                k.decode() if isinstance(k, bytes) else k: v.decode()
-                if isinstance(v, bytes)
-                else v
+                k.decode() if isinstance(k, bytes) else k: (
+                    v.decode() if isinstance(v, bytes) else v
+                )
                 for k, v in data.items()
             }
 
@@ -218,15 +219,15 @@ class RedisStreamConsumer(Generic[T]):
 
     async def read_pending(self, count: int = 10) -> list[T]:
         """Read pending (unacknowledged) messages with automatic retry.
-        
+
         Useful for recovery after crashes.
-        
+
         Args:
             count: Maximum messages to read
-            
+
         Returns:
             List of deserialized Pydantic models
-        
+
         Note:
             Only the xreadgroup operation is retried. Acknowledgments are NOT retried
             to prevent data loss. If acknowledgment fails, the message remains in the
@@ -258,9 +259,9 @@ class RedisStreamConsumer(Generic[T]):
         for message_id, data in raw_messages:
             # Decode and deserialize (same as read())
             decoded_data: dict[str, Any] = {
-                k.decode() if isinstance(k, bytes) else k: v.decode()
-                if isinstance(v, bytes)
-                else v
+                k.decode() if isinstance(k, bytes) else k: (
+                    v.decode() if isinstance(v, bytes) else v
+                )
                 for k, v in data.items()
             }
 
@@ -279,19 +280,20 @@ class RedisStreamConsumer(Generic[T]):
         failure_reason: str,
     ) -> str:
         """Move a failed message to the dead-letter queue with automatic retry.
-        
+
         This is a MANUAL operation - application code must call this method
         when a message fails processing. Messages are NOT automatically moved
         to DLQ; the application is responsible for tracking failure counts
         and deciding when to call this method.
-        
+
         Args:
             message: The Pydantic model that failed processing
             failure_reason: Reason for failure (for debugging)
-            
+
         Returns:
             Message ID in the DLQ stream
         """
+
         @with_retry(self.retry_config)
         async def _move_to_dlq() -> str:
             dlq_data = {
@@ -311,15 +313,16 @@ class RedisStreamConsumer(Generic[T]):
 
     async def read_from_dlq(self, count: int = 10) -> list[T]:
         """Read messages from the dead-letter queue with automatic retry.
-        
+
         Useful for investigating failures and manual reprocessing.
-        
+
         Args:
             count: Maximum messages to read
-            
+
         Returns:
             List of deserialized Pydantic models
         """
+
         @with_retry(self.retry_config)
         async def _read_from_dlq() -> list[T]:
             # Read from DLQ stream
@@ -334,9 +337,9 @@ class RedisStreamConsumer(Generic[T]):
             for _message_id, data in results:
                 # Decode bytes to strings
                 decoded_data: dict[str, Any] = {
-                    k.decode() if isinstance(k, bytes) else k: v.decode()
-                    if isinstance(v, bytes)
-                    else v
+                    k.decode() if isinstance(k, bytes) else k: (
+                        v.decode() if isinstance(v, bytes) else v
+                    )
                     for k, v in data.items()
                 }
 
@@ -348,4 +351,3 @@ class RedisStreamConsumer(Generic[T]):
             return messages
 
         return await _read_from_dlq()
-

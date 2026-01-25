@@ -620,7 +620,9 @@ class TestIntegration:
         # This will hit 4 15M boundaries (14, 29, 44, 59) and 1 1H boundary (59)
         start_ts = datetime(2025, 1, 1, 10, 0, tzinfo=UTC)
 
-        with patch("scp_shared.rule_engine.htf.streaming.compute_htf_bias") as mock_compute:
+        with patch(
+            "scp_shared.rule_engine.htf.streaming.compute_htf_bias"
+        ) as mock_compute:
             mock_bias = HTFBias(
                 bias="bullish", direction="long", score=8.0, confidence="high"
             )
@@ -665,8 +667,3 @@ class TestIntegration:
             # Buffers should contain data
             assert len(calculator.df_1h_buffer) >= 1
             assert len(calculator.df_15m_buffer) >= 4
-
-
-
-
-

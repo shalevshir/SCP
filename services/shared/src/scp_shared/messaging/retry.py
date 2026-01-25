@@ -14,7 +14,7 @@ T = TypeVar("T")
 
 class RetryConfig(BaseModel):
     """Configuration for retry logic with exponential backoff.
-    
+
     Example:
         >>> config = RetryConfig(
         ...     initial_delay_ms=100,
@@ -52,16 +52,16 @@ class RetryConfig(BaseModel):
 
     def calculate_delay(self, attempt: int) -> float:
         """Calculate delay for given attempt with exponential backoff and jitter.
-        
+
         Args:
             attempt: Retry attempt number (0-indexed)
-            
+
         Returns:
             Delay in seconds
         """
         # Calculate exponential delay
         delay_ms = min(
-            self.initial_delay_ms * (self.multiplier ** attempt),
+            self.initial_delay_ms * (self.multiplier**attempt),
             self.max_delay_ms,
         )
 
@@ -78,12 +78,12 @@ def with_retry(
     config: RetryConfig | None = None,
 ) -> Callable[[Callable[..., Awaitable[T]]], Callable[..., Awaitable[T]]]:
     """Decorator to add retry logic with exponential backoff to async functions.
-    
+
     Retries on Redis connection errors. Other exceptions are raised immediately.
-    
+
     Args:
         config: Retry configuration (uses defaults if None)
-        
+
     Example:
         >>> @with_retry(RetryConfig(max_retries=3))
         ... async def publish_message(stream: str, data: dict) -> str:
@@ -124,4 +124,3 @@ def with_retry(
         return wrapper
 
     return decorator
-

@@ -504,14 +504,18 @@ def compute_htf_bias(
 
         seasonality_period = get_seasonality_period(dt)
         dxy_corr = features_1h.get("dxy_corr")
-        
+
         # Fallback: if 1H dxy_corr is not available, use 15M or 1M correlation
         # This handles warmup period where 1H doesn't have enough bars for DXY correlation
         if dxy_corr is None or pd.isna(dxy_corr):
-            dxy_corr = features_15m.get("dxy_corr") if features_15m is not None else None
+            dxy_corr = (
+                features_15m.get("dxy_corr") if features_15m is not None else None
+            )
         if dxy_corr is None or pd.isna(dxy_corr):
             # Last resort: use micro correlation from any available features
-            dxy_corr = features_1h.get("dxy_corr_micro") if features_1h is not None else None
+            dxy_corr = (
+                features_1h.get("dxy_corr_micro") if features_1h is not None else None
+            )
 
         # Fallback: if 1H dxy_corr is not available, use 15M or 1M correlation
         # This handles warmup period where 1H doesn't have enough bars for DXY correlation
@@ -938,9 +942,13 @@ def compute_htf_bias(
 
                 # 8b. Compute untouched liquidity
                 # Use swept_levels from streaming calculator if available, otherwise empty set
-                swept_levels_combined = swept_levels if swept_levels is not None else set()
-                untouched_liquidity_high, untouched_liquidity_low = compute_untouched_liquidity(
-                    df_1h, current_price, swept_levels_combined
+                swept_levels_combined = (
+                    swept_levels if swept_levels is not None else set()
+                )
+                untouched_liquidity_high, untouched_liquidity_low = (
+                    compute_untouched_liquidity(
+                        df_1h, current_price, swept_levels_combined
+                    )
                 )
 
                 # 8c. Find nearest FVG targets (requires FVG detection from step 4)
@@ -960,7 +968,7 @@ def compute_htf_bias(
                     # 8d. Find opposing FVGs for BOTH directions
                     # This ensures TP safety checks work regardless of which direction
                     # a trade ultimately triggers (critical for neutral bias cases)
-                    
+
                     # Long direction: find bearish FVGs that would block long TPs
                     potential_tp_long = (
                         untouched_liquidity_high
@@ -973,7 +981,7 @@ def compute_htf_bias(
                         )
                         opposing_fvg_high = opposing_fvgs_long.get("opposing_fvg_high")
                         opposing_fvg_low = opposing_fvgs_long.get("opposing_fvg_low")
-                    
+
                     # Short direction: find bullish FVGs that would block short TPs
                     potential_tp_short = (
                         untouched_liquidity_low
@@ -984,8 +992,12 @@ def compute_htf_bias(
                         opposing_fvgs_short = find_opposing_fvgs(
                             fvg_df, current_price, potential_tp_short, "short"
                         )
-                        opposing_fvg_bullish_high = opposing_fvgs_short.get("opposing_fvg_bullish_high")
-                        opposing_fvg_bullish_low = opposing_fvgs_short.get("opposing_fvg_bullish_low")
+                        opposing_fvg_bullish_high = opposing_fvgs_short.get(
+                            "opposing_fvg_bullish_high"
+                        )
+                        opposing_fvg_bullish_low = opposing_fvgs_short.get(
+                            "opposing_fvg_bullish_low"
+                        )
 
                 logger.debug(
                     f"HTF Targets: range_high={htf_range_high}, "

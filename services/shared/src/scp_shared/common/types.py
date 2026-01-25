@@ -169,4 +169,3 @@ class Candle:
                 source=self.source,
                 symbol=self.symbol,
             )
-

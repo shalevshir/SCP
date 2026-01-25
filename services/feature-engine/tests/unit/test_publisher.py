@@ -35,14 +35,14 @@ class TestFeaturePublisher:
         """Publishes 1m features to correct stream."""
         mock_redis = AsyncMock()
         publisher = FeaturePublisher(mock_redis)
-        
+
         features = create_features_message(timeframe="1m")
-        
+
         with patch.object(publisher, "publisher") as mock_publisher:
             mock_publisher.publish = AsyncMock(return_value="123-456")
-            
+
             result = await publisher.publish(features)
-            
+
             assert result == "123-456"
             mock_publisher.publish.assert_called_once_with("features.1m", features)
 
@@ -51,14 +51,14 @@ class TestFeaturePublisher:
         """Publishes 15m features to correct stream."""
         mock_redis = AsyncMock()
         publisher = FeaturePublisher(mock_redis)
-        
+
         features = create_features_message(timeframe="15m")
-        
+
         with patch.object(publisher, "publisher") as mock_publisher:
             mock_publisher.publish = AsyncMock(return_value="789-012")
-            
+
             result = await publisher.publish(features)
-            
+
             assert result == "789-012"
             mock_publisher.publish.assert_called_once_with("features.15m", features)
 
@@ -67,13 +67,13 @@ class TestFeaturePublisher:
         """Publishes 1h features to correct stream."""
         mock_redis = AsyncMock()
         publisher = FeaturePublisher(mock_redis)
-        
+
         features = create_features_message(timeframe="1h")
-        
+
         with patch.object(publisher, "publisher") as mock_publisher:
             mock_publisher.publish = AsyncMock(return_value="abc-def")
-            
+
             result = await publisher.publish(features)
-            
+
             assert result == "abc-def"
             mock_publisher.publish.assert_called_once_with("features.1h", features)

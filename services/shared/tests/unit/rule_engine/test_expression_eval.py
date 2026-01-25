@@ -265,7 +265,9 @@ class TestExpressionEvaluator:
         assert evaluate_expression("dxy_structure not in ('LL', 'LH')", context) is True
 
         context = {"dxy_structure": "LL"}
-        assert evaluate_expression("dxy_structure not in ('LL', 'LH')", context) is False
+        assert (
+            evaluate_expression("dxy_structure not in ('LL', 'LH')", context) is False
+        )
 
     def test_in_with_none_value(self) -> None:
         """Test 'in' operator when value is None."""
@@ -346,11 +348,21 @@ class TestExpressionEvaluator:
         assert evaluate_expression(expr, context) is True
 
         # Short fade with upper wick rejection
-        context = {"direction": "short", "upper_wick": 3.0, "body": 2.0, "lower_wick": 1.0}
+        context = {
+            "direction": "short",
+            "upper_wick": 3.0,
+            "body": 2.0,
+            "lower_wick": 1.0,
+        }
         assert evaluate_expression(expr, context) is True
 
         # Long fade without rejection (fails)
-        context = {"direction": "long", "lower_wick": 1.0, "body": 2.0, "upper_wick": 1.0}
+        context = {
+            "direction": "long",
+            "lower_wick": 1.0,
+            "body": 2.0,
+            "upper_wick": 1.0,
+        }
         assert evaluate_expression(expr, context) is False
 
     def test_dxy_continuation_correlation_constraint(self) -> None:
@@ -436,13 +448,22 @@ class TestExpressionEvaluator:
         from scp_shared.rule_engine.expression_eval import evaluate_expression
 
         context = {"choch_detected": True, "trend_confidence": 0.7}
-        assert evaluate_expression("choch_detected or trend_confidence < 0.65", context) is True
+        assert (
+            evaluate_expression("choch_detected or trend_confidence < 0.65", context)
+            is True
+        )
 
         context = {"choch_detected": False, "trend_confidence": 0.5}
-        assert evaluate_expression("choch_detected or trend_confidence < 0.65", context) is True
+        assert (
+            evaluate_expression("choch_detected or trend_confidence < 0.65", context)
+            is True
+        )
 
         context = {"choch_detected": False, "trend_confidence": 0.7}
-        assert evaluate_expression("choch_detected or trend_confidence < 0.65", context) is False
+        assert (
+            evaluate_expression("choch_detected or trend_confidence < 0.65", context)
+            is False
+        )
 
     def test_float_precision(self) -> None:
         """Test that float precision doesn't cause issues."""
@@ -466,12 +487,12 @@ class TestExpressionEvaluator:
         from scp_shared.rule_engine.expression_eval import evaluate_expression
 
         context = {"a": True, "b": False, "c": True}
-        
+
         # Without parentheses: a or b and c = a or (b and c) = True or False = True
         # With parentheses: (a or b) and c = True and True = True
         assert evaluate_expression("a or b and c", context) is True
         assert evaluate_expression("(a or b) and c", context) is True
-        
+
         # Different case
         context = {"a": False, "b": True, "c": False}
         # a or b and c = False or (True and False) = False or False = False

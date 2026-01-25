@@ -59,7 +59,7 @@ def load_scoring_config(config_path: str | None = None) -> ScoringConfig:
         >>> config = load_scoring_config()
         >>> min_score = config.setup_types["VWAP_RECLAIM"]["min_score"]
         >>> print(f"VWAP_RECLAIM min score: {min_score}")
-    
+
     Note:
         Now loads from config/setups.yaml (unified config) instead of
         scoring_config.yaml. Maps 'setups' key to 'setup_types' for
@@ -106,7 +106,7 @@ def load_scoring_config(config_path: str | None = None) -> ScoringConfig:
 
     # Validate configuration structure
     validate_scoring_config(config_data)
-    
+
     # Map 'setups' to 'setup_types' for backward compatibility
     if "setups" in config_data and "setup_types" not in config_data:
         config_data["setup_types"] = config_data["setups"]
@@ -129,7 +129,7 @@ def validate_scoring_config(config_data: dict[str, Any]) -> None:
         - min_score values are numeric and non-negative
         - weights are dictionaries
         - confidence thresholds are numeric
-    
+
     Note:
         Accepts both 'setups' (new format) and 'setup_types' (legacy format).
         'validation' key is optional (not used by setups.yaml).
@@ -140,7 +140,7 @@ def validate_scoring_config(config_data: dict[str, Any]) -> None:
             "Missing required key: 'setups' or 'setup_types'",
             found_keys=list(config_data.keys()),
         )
-    
+
     # Check confidence key
     if "confidence" not in config_data:
         raise ConfigError(
@@ -213,4 +213,3 @@ def validate_scoring_config(config_data: dict[str, Any]) -> None:
                 "validation must be a dictionary",
                 found_type=type(validation).__name__,
             )
-

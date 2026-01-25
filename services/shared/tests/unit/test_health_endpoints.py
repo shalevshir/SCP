@@ -149,4 +149,3 @@ class TestReadinessEndpoint:
         data = response.json()
         assert data["ready"] is True
         assert all(v is True for v in data["checks"].values())
-

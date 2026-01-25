@@ -243,4 +243,3 @@ def load_config(config_path: Path | str) -> Config:
 
     # Validate and return
     return Config.model_validate(config_dict)
-

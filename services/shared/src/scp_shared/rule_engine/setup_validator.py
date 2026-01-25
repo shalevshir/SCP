@@ -314,9 +314,7 @@ class SetupValidator:
                 )
 
         # All constraints passed
-        logger.debug(
-            f"Setup {setup_name} passed all {len(constraints)} constraints"
-        )
+        logger.debug(f"Setup {setup_name} passed all {len(constraints)} constraints")
         return ValidationResult(
             is_valid=True,
             evaluated_constraints=evaluated,

@@ -45,7 +45,7 @@ def detect_fvg(df: pd.DataFrame) -> pd.DataFrame:
         Bearish FVG (gap down):
         - candle_1.low > candle_3.high (gap exists between 1 and 3)
         - FVG range: [candle_3.high, candle_1.low]
-        
+
         Note: Candle 2 position doesn't affect detection - FVG is defined by the
         imbalance between candle 1 and candle 3 only (standard ICT-style definition).
 

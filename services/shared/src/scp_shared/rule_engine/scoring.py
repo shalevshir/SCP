@@ -26,31 +26,31 @@ def build_rejection_analysis(
     min_score: float,
 ) -> dict[str, Any]:
     """Analyze rejection causes and what would make signal pass.
-    
+
     Args:
         factor_scores: Dict of factor names to scores (including penalties)
         adjusted_score: Final adjusted score
         min_score: Minimum score required to pass (typically 8.0)
-    
+
     Returns:
         Dict with rejection analysis fields
     """
     if adjusted_score >= min_score:
         return {"passed": True}
-    
+
     # Sort penalties by magnitude (most negative first)
     penalties = {k: v for k, v in factor_scores.items() if v < 0}
     sorted_penalties = sorted(penalties.items(), key=lambda x: x[1])
-    
+
     primary = sorted_penalties[0] if sorted_penalties else None
     secondary = sorted_penalties[1:3] if len(sorted_penalties) > 1 else []
-    
+
     # Calculate what would pass
     gap = min_score - adjusted_score
     would_pass_if = []
     if primary and abs(primary[1]) >= gap:
         would_pass_if.append(f"{primary[0]}_relaxed")
-    
+
     return {
         "passed": False,
         "primary_rejection_reason": primary[0] if primary else "score_too_low",
@@ -85,8 +85,12 @@ def build_diagnostics(
         # Structure fields
         "structure_label": features.get("last_structure_label"),
         "structure_clarity": _safe_round(features.get("structure_clarity"), 3),
-        "is_structural_chop": _to_python_bool(features.get("is_structural_chop", False)),
-        "atr_compression_ratio": _safe_round(features.get("atr_compression_ratio", 1.0), 3),
+        "is_structural_chop": _to_python_bool(
+            features.get("is_structural_chop", False)
+        ),
+        "atr_compression_ratio": _safe_round(
+            features.get("atr_compression_ratio", 1.0), 3
+        ),
         # BOS fields
         "bos_detected": _to_python_bool(features.get("bos_recent", False)),
         "bos_direction": features.get("bos_direction"),
@@ -124,15 +128,21 @@ def build_diagnostics(
             if htf_bias.chop_severity
             else False
         ),
-        "chop_severity": htf_bias.chop_severity.value
-        if htf_bias.chop_severity
-        else "none",
+        "chop_severity": (
+            htf_bias.chop_severity.value if htf_bias.chop_severity else "none"
+        ),
         # Structure 1H/15M from HTF
         "structure_1h": htf_bias.structure_1h,
         "structure_15m": htf_bias.structure_15m,
         # Expansion gate diagnostics (for VWAP_RECLAIM entry quality)
-        "expansion_detected": _to_python_bool(features.get("expansion_detected", False)),
-        "expansion_reasons": features.get("expansion_reasons", []) if features.get("expansion_reasons") else [],
+        "expansion_detected": _to_python_bool(
+            features.get("expansion_detected", False)
+        ),
+        "expansion_reasons": (
+            features.get("expansion_reasons", [])
+            if features.get("expansion_reasons")
+            else []
+        ),
     }
 
     # Map direction-specific second confirmation fields to generic keys
@@ -144,16 +154,22 @@ def build_diagnostics(
         )
         diag["second_confirmation_type"] = features.get("second_confirmation_long_type")
         # Sprint 2 Task 4: Add full list of confirmations
-        diag["second_confirmation_types"] = features.get("second_confirmation_long_types", [])
+        diag["second_confirmation_types"] = features.get(
+            "second_confirmation_long_types", []
+        )
         reasons = features.get("second_confirmation_long_reasons", [])
         diag["second_confirmation_reasons"] = list(reasons) if reasons else []
     elif effective_direction == "short":
         diag["second_confirmation_satisfied"] = _to_python_bool(
             features.get("second_confirmation_short", False)
         )
-        diag["second_confirmation_type"] = features.get("second_confirmation_short_type")
+        diag["second_confirmation_type"] = features.get(
+            "second_confirmation_short_type"
+        )
         # Sprint 2 Task 4: Add full list of confirmations
-        diag["second_confirmation_types"] = features.get("second_confirmation_short_types", [])
+        diag["second_confirmation_types"] = features.get(
+            "second_confirmation_short_types", []
+        )
         reasons = features.get("second_confirmation_short_reasons", [])
         diag["second_confirmation_reasons"] = list(reasons) if reasons else []
     else:
@@ -165,7 +181,9 @@ def build_diagnostics(
 
     # Map bars_since_vwap_reclaim to bars_since_reclaim
     bars_since = features.get("bars_since_vwap_reclaim")
-    diag["bars_since_reclaim"] = _to_python_int(bars_since) if bars_since is not None else 0
+    diag["bars_since_reclaim"] = (
+        _to_python_int(bars_since) if bars_since is not None else 0
+    )
 
     return diag
 
@@ -209,22 +227,22 @@ def _calc_vwap_deviation(close: Any, vwap: Any) -> float | None:
 
 def calculate_chop_penalty(htf_bias: HTFBias, setup_type: str) -> float:
     """Calculate score penalty based on chop severity and setup type.
-    
+
     This function implements setup-aware chop handling via score modification
     rather than hard rejection, per the SOP principle: "Chop is information, not prohibition."
-    
+
     Args:
         htf_bias: HTFBias object containing chop severity classification
         setup_type: Setup type name ("VWAP_FADE", "VWAP_RECLAIM", "DXY_CONTINUATION")
-    
+
     Returns:
         Score penalty (negative value) to apply to base score
-    
+
     Logic:
         VWAP_FADE: No penalty (chop is preferred environment for fades)
         VWAP_RECLAIM: -1.5 penalty in SOFT_CHOP (reduces max attainable score)
         DXY_CONTINUATION: No penalty (hard-blocked in validation, never reaches scoring)
-    
+
     Example:
         >>> penalty = calculate_chop_penalty(htf_bias, "VWAP_RECLAIM")
         >>> adjusted_score = base_score + penalty
@@ -232,27 +250,27 @@ def calculate_chop_penalty(htf_bias: HTFBias, setup_type: str) -> float:
     if setup_type == "VWAP_FADE":
         # No penalty - chop is preferred environment for fade setups
         return 0.0
-    
+
     if setup_type == "VWAP_RECLAIM":
         # NOTE: VWAP_RECLAIM chop penalty DISABLED for parity testing
         # Chop is informational, not a penalty for VWAP_RECLAIM
         return 0.0
-    
+
     # DXY_CONTINUATION blocked in validation for any chop, so no penalty here
     return 0.0
 
 
 def _is_bos_still_valid(features: pd.Series, htf_bias: HTFBias) -> bool:
     """Check if BOS is still valid despite age.
-    
+
     BOS remains valid if:
     1. No counter-CHoCH detected (no reversal signal), AND
     2. Structure clarity maintained (>= 0.4)
-    
+
     Args:
         features: Feature series with CHoCH and clarity data
         htf_bias: HTFBias object with structure information
-    
+
     Returns:
         True if BOS still valid
     """
@@ -260,17 +278,17 @@ def _is_bos_still_valid(features: pd.Series, htf_bias: HTFBias) -> bool:
     choch_detected = features.get("choch_detected", False)
     choch_direction = features.get("choch_direction")
     bos_direction = features.get("bos_direction")
-    
+
     # Counter-CHoCH invalidates BOS
     if choch_detected and choch_direction is not None and bos_direction is not None:
         if choch_direction != bos_direction:
             return False  # Counter-CHoCH detected
-    
+
     # Check structure clarity
     clarity = features.get("structure_clarity", 0)
     if clarity < 0.4:
         return False  # Structure degraded
-    
+
     return True  # BOS still valid
 
 
@@ -320,7 +338,7 @@ def calculate_late_reclaim_penalty(
     if bos_age is not None and bos_age > 10:
         # Check if BOS is still valid
         bos_valid = _is_bos_still_valid(features, htf_bias)
-        
+
         if not bos_valid:
             # BOS invalidated - apply age-based penalty
             if 11 <= bos_age <= 15:
@@ -363,28 +381,117 @@ def calculate_late_reclaim_penalty(
 
     if total_penalty < 0:
         logger.info(f"Late reclaim penalty total: {total_penalty:.2f}")
-    
 
     return total_penalty
 
 
+def calculate_location_multiplier(
+    features: pd.Series,
+    htf_bias: HTFBias,
+    setup_type: str,
+) -> float:
+    """Calculate location integrity multiplier for VWAP_RECLAIM.
+
+    Returns a multiplier between 0.5 and 1.0 based on reclaim location quality:
+    - VWAP distance (normalized)
+    - BOS age
+    - Reclaim timing (bars_since_last_vwap_touch)
+
+    Clean reclaims (all factors ideal) get multiplier = 1.0.
+    Late/degraded reclaims get multiplier <= 0.7.
+
+    Args:
+        features: Feature series containing VWAP, BOS, and timing data
+        htf_bias: HTFBias object with structure information
+        setup_type: Setup type name
+
+    Returns:
+        Multiplier between 0.5 and 1.0
+
+    Example:
+        >>> multiplier = calculate_location_multiplier(features, htf_bias, "VWAP_RECLAIM")
+        >>> final_score = base_score * multiplier
+    """
+    # Only apply to VWAP_RECLAIM setups
+    if setup_type != "VWAP_RECLAIM":
+        return 1.0
+
+    multiplier = 1.0
+
+    # Factor 1: VWAP distance (normalized)
+    vwap_deviation_normalized = features.get("vwap_deviation_normalized")
+    if vwap_deviation_normalized is not None:
+        abs_deviation = abs(vwap_deviation_normalized)
+
+        # Ideal: 0.5 - 1.5 ATR (multiplier = 1.0)
+        # Moderate: 1.5 - 2.5 ATR (multiplier = 0.9)
+        # Late: 2.5 - 3.0 ATR (multiplier = 0.7)
+        if abs_deviation > 2.5:
+            multiplier *= 0.7
+            logger.debug(
+                f"Location multiplier: VWAP distance {abs_deviation:.2f} ATR (×0.7)"
+            )
+        elif abs_deviation > 1.5:
+            multiplier *= 0.9
+            logger.debug(
+                f"Location multiplier: VWAP distance {abs_deviation:.2f} ATR (×0.9)"
+            )
+
+    # Factor 2: BOS age (check validity first)
+    bos_age = features.get("bos_age")
+    if bos_age is None or pd.isna(bos_age):
+        bos_age = htf_bias.bars_since_bos
+
+    if bos_age is not None and bos_age > 10:
+        bos_valid = _is_bos_still_valid(features, htf_bias)
+
+        if not bos_valid:
+            # BOS invalidated - apply age-based reduction
+            if bos_age > 20:
+                multiplier *= 0.7
+                logger.debug(f"Location multiplier: Invalid BOS age {bos_age} (×0.7)")
+            elif bos_age > 15:
+                multiplier *= 0.85
+                logger.debug(f"Location multiplier: Invalid BOS age {bos_age} (×0.85)")
+
+    # Factor 3: Reclaim timing
+    bars_since_vwap_touch = features.get("bars_since_last_vwap_touch")
+    if bars_since_vwap_touch is not None:
+        # Ideal: <= 5 bars (multiplier = 1.0)
+        # Moderate: 6-10 bars (multiplier = 0.9)
+        # Late: > 10 bars would be rejected by constraint
+        if bars_since_vwap_touch > 5:
+            multiplier *= 0.9
+            logger.debug(
+                f"Location multiplier: Delayed reclaim {bars_since_vwap_touch} bars (×0.9)"
+            )
+
+    # Cap minimum at 0.5
+    multiplier = max(multiplier, 0.5)
+
+    if multiplier < 1.0:
+        logger.info(f"Location integrity multiplier: {multiplier:.2f}")
+
+    return multiplier
+
+
 def calculate_noise_penalty(features: pd.Series, setup_type: str) -> float:
     """Calculate score penalty for structural chop with ATR as modifier.
-    
+
     Args:
         features: Feature series containing is_structural_chop and atr_compression_ratio
         setup_type: Setup type name ("VWAP_FADE", "VWAP_RECLAIM", "DXY_CONTINUATION")
-    
+
     Returns:
         Score penalty (negative value) for noise/chop conditions
-        
+
     Penalties:
         - VWAP_RECLAIM: -1.5 for structural chop, -0.5 for ATR compression
-        - VWAP_FADE: -1.0 for structural chop, -0.5 for ATR compression  
+        - VWAP_FADE: -1.0 for structural chop, -0.5 for ATR compression
         - DXY_CONTINUATION: No penalty (relies on trend continuation)
     """
     total_penalty = 0.0
-    
+
     # Structural chop penalty (setup-aware)
     if features.get("is_structural_chop", False):
         if setup_type == "VWAP_RECLAIM":
@@ -392,13 +499,13 @@ def calculate_noise_penalty(features: pd.Series, setup_type: str) -> float:
         elif setup_type == "VWAP_FADE":
             total_penalty -= 1.0  # More tolerant of sideways consolidation
         # DXY_CONTINUATION: No penalty (trend continuation tolerates some chop)
-    
+
     # ATR compression penalty (all setups except DXY_CONTINUATION)
     atr_compression = features.get("atr_compression_ratio")
     if atr_compression is not None and setup_type != "DXY_CONTINUATION":
         if atr_compression < 0.5:  # Severe compression
             total_penalty -= 0.5
-    
+
     return total_penalty
 
 
@@ -448,11 +555,11 @@ def calculate_structure_quality_penalty(
     bos_age = features.get("bos_age")
     if bos_age is None or pd.isna(bos_age):
         bos_age = htf_bias.bars_since_bos
-    
+
     # BOS exists if: bos_recent=True, htf_bias.bos_detected=True, OR bos_age is valid
     bos_exists = (
-        features.get("bos_recent", False) 
-        or htf_bias.bos_detected 
+        features.get("bos_recent", False)
+        or htf_bias.bos_detected
         or (bos_age is not None and not pd.isna(bos_age))
     )
 
@@ -472,7 +579,6 @@ def calculate_structure_quality_penalty(
             quality_flags["bos_stale"] = True
 
     total_penalty = 0.0
-    
 
     # Penalty 1: No liquidity sweep (-1.5)
     if quality_flags.get("no_sweep", False):
@@ -508,22 +614,28 @@ def calculate_structure_quality_penalty(
         bos_age = features.get("bos_age")
         if bos_age is None or pd.isna(bos_age):
             bos_age = htf_bias.bars_since_bos
-        
+
         if bos_age is not None:
             # Check if BOS is still valid
             bos_valid = _is_bos_still_valid(features, htf_bias)
-            
+
             if not bos_valid:
                 # BOS invalidated - apply age-based penalty
                 if bos_age > 25:
                     total_penalty += -1.5
-                    logger.debug(f"Structure quality penalty: -1.5 (very stale BOS, age={bos_age}, invalid)")
+                    logger.debug(
+                        f"Structure quality penalty: -1.5 (very stale BOS, age={bos_age}, invalid)"
+                    )
                 elif bos_age > 20:
                     total_penalty += -1.0
-                    logger.debug(f"Structure quality penalty: -1.0 (stale BOS, age={bos_age}, invalid)")
+                    logger.debug(
+                        f"Structure quality penalty: -1.0 (stale BOS, age={bos_age}, invalid)"
+                    )
                 elif bos_age > 15:
                     total_penalty += -0.5
-                    logger.debug(f"Structure quality penalty: -0.5 (aging BOS, age={bos_age}, invalid)")
+                    logger.debug(
+                        f"Structure quality penalty: -0.5 (aging BOS, age={bos_age}, invalid)"
+                    )
             else:
                 # BOS still valid - minimal penalty
                 logger.debug(f"BOS age {bos_age} but still valid (minimal penalty)")
@@ -535,7 +647,6 @@ def calculate_structure_quality_penalty(
             f"clarity={structure_clarity:.2f}, "
             f"bos={not quality_flags.get('no_bos', False)})"
         )
-    
 
     return total_penalty
 
@@ -648,7 +759,6 @@ def score_signal(features: pd.Series, htf_bias: HTFBias, context: dict) -> Signa
 
     # Calculate base score (sum of all factors, capped at 10)
     base_score = min(sum(factor_scores.values()), 10.0)
-    
 
     # Apply chop penalty (setup-aware score modification)
     chop_penalty = calculate_chop_penalty(htf_bias, setup_type)
@@ -656,7 +766,7 @@ def score_signal(features: pd.Series, htf_bias: HTFBias, context: dict) -> Signa
         factor_scores["chop_penalty"] = chop_penalty
         base_score += chop_penalty
         logger.debug(f"Applied chop penalty: {chop_penalty:.2f}")
-    
+
     # Apply noise zone penalty (setup-aware score modification for volatility compression)
     noise_penalty = calculate_noise_penalty(features, setup_type)
     if noise_penalty != 0.0:
@@ -665,7 +775,9 @@ def score_signal(features: pd.Series, htf_bias: HTFBias, context: dict) -> Signa
         logger.debug(f"Applied noise penalty: {noise_penalty:.2f}")
 
     # Apply late reclaim penalty (VWAP_RECLAIM-specific penalties for timing)
-    late_reclaim_penalty = calculate_late_reclaim_penalty(features, htf_bias, setup_type)
+    late_reclaim_penalty = calculate_late_reclaim_penalty(
+        features, htf_bias, setup_type
+    )
     if late_reclaim_penalty != 0.0:
         factor_scores["late_reclaim_penalty"] = late_reclaim_penalty
         base_score += late_reclaim_penalty
@@ -684,12 +796,13 @@ def score_signal(features: pd.Series, htf_bias: HTFBias, context: dict) -> Signa
     structure_quality_penalty = calculate_structure_quality_penalty(
         features, htf_bias, setup_type, quality_flags
     )
-    
-    
+
     if structure_quality_penalty != 0.0:
         factor_scores["structure_quality_penalty"] = structure_quality_penalty
         base_score += structure_quality_penalty
-        logger.debug(f"Applied structure quality penalty: {structure_quality_penalty:.2f}")
+        logger.debug(
+            f"Applied structure quality penalty: {structure_quality_penalty:.2f}"
+        )
 
     # Apply penalty capping to prevent runaway negative scores
     # Cap individual penalty domains
@@ -699,7 +812,7 @@ def score_signal(features: pd.Series, htf_bias: HTFBias, context: dict) -> Signa
         + factor_scores.get("structure_quality_penalty", 0)
     )
     timing_penalties = factor_scores.get("late_reclaim_penalty", 0)
-    
+
     # Apply domain caps
     if structure_penalties < -2.5:
         # Redistribute penalties proportionally
@@ -715,26 +828,24 @@ def score_signal(features: pd.Series, htf_bias: HTFBias, context: dict) -> Signa
             f"(scale={scale_factor:.2f})"
         )
         structure_penalties = -2.5
-    
+
     if timing_penalties < -1.5:
         factor_scores["late_reclaim_penalty"] = -1.5
         logger.debug(f"Timing penalties capped: {timing_penalties:.2f} -> -1.5")
         timing_penalties = -1.5
-    
+
     # Recalculate base score with capped penalties
     positive_sum = sum(v for v in factor_scores.values() if not v < 0)
     base_score = min(positive_sum, 10.0) + structure_penalties + timing_penalties
-    
 
     # Apply HTF-based score adjustments (pass context for tier-aware adjustments)
     adjusted_score, htf_adjustments = adjust_score_with_htf(
         base_score, htf_bias, signal_direction, context
     )
-    
 
     # Add HTF adjustments to factor scores for transparency
     factor_scores.update(htf_adjustments)
-    
+
     # Cap HTF penalties
     htf_penalties = htf_adjustments.get("htf_weak_bias", 0)
     if htf_penalties < -1.0:
@@ -742,7 +853,7 @@ def score_signal(features: pd.Series, htf_bias: HTFBias, context: dict) -> Signa
         adjusted_score = adjusted_score - htf_penalties - 1.0  # Adjust score
         htf_penalties = -1.0  # Update variable for use in total penalty calculation
         logger.debug(f"HTF penalties capped: {htf_penalties:.2f} -> -1.0")
-    
+
     # Apply total penalty cap
     # Use max() to cap negative penalties at -1.0 (no more negative than -1.0)
     # When htf_penalties = 0, max(0, -1.0) = 0 (correct: no penalty)
@@ -751,7 +862,7 @@ def score_signal(features: pd.Series, htf_bias: HTFBias, context: dict) -> Signa
     if all_penalties < -4.0:
         # Scale all penalties proportionally to reach -4.0 total
         scale_factor = -4.0 / all_penalties
-        
+
         # Rescale structure penalties
         if structure_penalties < 0:
             if "chop_penalty" in factor_scores:
@@ -760,23 +871,32 @@ def score_signal(features: pd.Series, htf_bias: HTFBias, context: dict) -> Signa
                 factor_scores["noise_penalty"] *= scale_factor
             if "structure_quality_penalty" in factor_scores:
                 factor_scores["structure_quality_penalty"] *= scale_factor
-        
+
         # Rescale timing penalties
         if "late_reclaim_penalty" in factor_scores and timing_penalties < 0:
             factor_scores["late_reclaim_penalty"] *= scale_factor
-        
+
         # Rescale HTF penalties
         if "htf_weak_bias" in factor_scores and htf_penalties < 0:
             factor_scores["htf_weak_bias"] *= scale_factor
-        
+
         # Recalculate adjusted score
         adjusted_score = min(
             sum(v for v in factor_scores.values() if v > 0), 10.0
         ) + sum(v for v in factor_scores.values() if v < 0)
-        
+
         logger.debug(
             f"Total penalties capped: {all_penalties:.2f} -> -4.0 "
             f"(scale={scale_factor:.2f})"
+        )
+
+    # Apply location integrity multiplier (VWAP_RECLAIM only)
+    location_multiplier = calculate_location_multiplier(features, htf_bias, setup_type)
+    if location_multiplier < 1.0:
+        factor_scores["location_multiplier"] = location_multiplier
+        adjusted_score *= location_multiplier
+        logger.info(
+            f"Applied location multiplier: {location_multiplier:.2f} (final score: {adjusted_score:.2f})"
         )
 
     # Enhanced logging: Complete confluence breakdown
@@ -801,10 +921,12 @@ def score_signal(features: pd.Series, htf_bias: HTFBias, context: dict) -> Signa
 
     # Generate human-readable rationale
     rationale = build_rationale(features, htf_bias, factor_scores, setup_type)
-    
+
     # Add rejection analysis to diagnostics
     min_score = config.confidence["a_plus"]
-    rejection_analysis = build_rejection_analysis(factor_scores, adjusted_score, min_score)
+    rejection_analysis = build_rejection_analysis(
+        factor_scores, adjusted_score, min_score
+    )
     diagnostics["rejection_analysis"] = rejection_analysis
 
     # Create validation flags
@@ -843,6 +965,7 @@ def get_validator():
     global _validator
     if _validator is None:
         from scp_shared.rule_engine.setup_validator import SetupValidator
+
         _validator = SetupValidator()
     return _validator
 
@@ -903,17 +1026,21 @@ def build_setup_context(features: pd.Series, htf_bias: HTFBias) -> dict:
     # Handle structure_label with fallback logic (matches old validate_reclaim_context)
     # Try structure_label first, fallback to last_structure_label
     structure_label = features.get("structure_label")
-    if structure_label is None or (isinstance(structure_label, float) and pd.isna(structure_label)):
+    if structure_label is None or (
+        isinstance(structure_label, float) and pd.isna(structure_label)
+    ):
         fallback = features.get("last_structure_label")
         if fallback is not None:
-            logger.debug(f"Using last_structure_label={fallback} as fallback for structure_label")
+            logger.debug(
+                f"Using last_structure_label={fallback} as fallback for structure_label"
+            )
             structure_label = fallback
 
     # Normalize directions from bullish/bearish to long/short for consistency
     bos_direction = _normalize_direction(features.get("bos_direction"))
     choch_direction = _normalize_direction(features.get("choch_direction"))
     direction = _normalize_direction(features.get("direction"))
-    
+
     # If direction not provided, infer from htf_bias
     if direction is None:
         direction = htf_bias.direction
@@ -964,6 +1091,9 @@ def build_setup_context(features: pd.Series, htf_bias: HTFBias) -> dict:
         "dxy_corr_5m": htf_bias.dxy_corr_5m,
         "vwap_deviation_normalized": features.get("vwap_deviation_normalized"),
         "vwap_deviation": features.get("vwap_deviation"),
+        # VWAP acceptance tracking fields (SOP alignment)
+        "bars_near_vwap": features.get("bars_near_vwap"),
+        "bars_since_last_vwap_touch": features.get("bars_since_last_vwap_touch"),
     }
 
     return context
@@ -991,13 +1121,13 @@ def determine_setup_type(features: pd.Series, htf_bias: HTFBias) -> str:
     """
     # Build context from features and HTF bias
     context = build_setup_context(features, htf_bias)
-    
+
     # Get validator instance
     validator = get_validator()
 
     # Check setups in priority order (most specific first)
     # Priority ensures correct setup selection when multiple setups could match
-    
+
     # 1. VWAP_FADE: Most specific (fade at extremes)
     if validator.is_setup_enabled("VWAP_FADE"):
         result = validator.validate_setup("VWAP_FADE", context)
@@ -1192,7 +1322,9 @@ def calculate_structure_alignment(
 
         # Calculate base score for VWAP_RECLAIM (tolerant scoring)
         # Start with minimum base and add bonuses for quality factors
-        score = max_points * 0.4  # Base score (40%) - allows scoring even without perfect conditions
+        score = (
+            max_points * 0.4
+        )  # Base score (40%) - allows scoring even without perfect conditions
 
         # Bonus for liquidity sweep detected
         if htf_bias.liquidity_sweep_detected:
@@ -1200,7 +1332,9 @@ def calculate_structure_alignment(
             logger.debug("VWAP_RECLAIM structure: +20% for liquidity sweep")
         else:
             # Check 1M features for sweep indication
-            sweep_direction = features.get("sweep_direction") if features is not None else None
+            sweep_direction = (
+                features.get("sweep_direction") if features is not None else None
+            )
             if sweep_direction is not None:
                 score += max_points * 0.1  # Partial bonus for 1M sweep
                 logger.debug("VWAP_RECLAIM structure: +10% for 1M sweep direction")
@@ -1341,7 +1475,7 @@ def calculate_ema_stack(
     ema_9 = features.get("ema_9")
     ema_20 = features.get("ema_20")
     ema_50 = features.get("ema_50")
-    
+
     # Handle None values (EMAs may not be available yet)
     if ema_9 is None:
         ema_9 = 0
@@ -1349,7 +1483,7 @@ def calculate_ema_stack(
         ema_20 = 0
     if ema_50 is None:
         ema_50 = 0
-    
+
     # If EMAs aren't available (all zero or invalid), return 0
     if ema_9 <= 0 or ema_20 <= 0 or ema_50 <= 0:
         return 0.0
@@ -1712,7 +1846,7 @@ def determine_direction(features: pd.Series, htf_bias: HTFBias) -> str:
     vwap = features.get("vwap") or 0
     ema_9 = features.get("ema_9")
     ema_20 = features.get("ema_20")
-    
+
     # Handle None values for EMAs (may not be available yet)
     if ema_9 is None:
         ema_9 = 0

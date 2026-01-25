@@ -89,10 +89,10 @@ class TestVWAPFadeDXYMessageAccuracy:
         is_invalid, reason = checker.check_dxy_flip(
             base_trade_long, base_candle, features
         )
-        
+
         # At exact threshold, should not invalidate (need > -0.3)
         assert is_invalid is False
-        
+
     def test_long_fade_message_matches_threshold_just_above(
         self, checker, base_trade_long, base_candle
     ):
@@ -102,20 +102,20 @@ class TestVWAPFadeDXYMessageAccuracy:
         is_invalid, reason = checker.check_dxy_flip(
             base_trade_long, base_candle, features
         )
-        
+
         assert is_invalid is True
         assert reason is not None
-        
+
         # Message should mention the ACTUAL threshold (-0.3), not the old -0.6
         # CRITICAL: This test should FAIL until message is fixed
-        assert "-0.3" in reason, (
-            f"Expected message to reference actual threshold -0.3, got: {reason}"
-        )
+        assert (
+            "-0.3" in reason
+        ), f"Expected message to reference actual threshold -0.3, got: {reason}"
         # Message should NOT mention -0.6 (old/incorrect threshold)
-        assert "-0.6" not in reason, (
-            f"Message should not reference incorrect threshold -0.6, got: {reason}"
-        )
-        
+        assert (
+            "-0.6" not in reason
+        ), f"Message should not reference incorrect threshold -0.6, got: {reason}"
+
     def test_long_fade_correlation_value_in_message(
         self, checker, base_trade_long, base_candle
     ):
@@ -124,12 +124,12 @@ class TestVWAPFadeDXYMessageAccuracy:
         is_invalid, reason = checker.check_dxy_flip(
             base_trade_long, base_candle, features
         )
-        
+
         assert is_invalid is True
         assert reason is not None
         # Message should include actual correlation value
         assert "-0.200" in reason or "-0.2" in reason
-        
+
     def test_short_fade_message_matches_threshold_at_boundary(
         self, checker, base_trade_short, base_candle
     ):
@@ -139,10 +139,10 @@ class TestVWAPFadeDXYMessageAccuracy:
         is_invalid, reason = checker.check_dxy_flip(
             base_trade_short, base_candle, features
         )
-        
+
         # At exact threshold, should not invalidate (need < -0.6)
         assert is_invalid is False
-        
+
     def test_short_fade_message_matches_threshold_just_below(
         self, checker, base_trade_short, base_candle
     ):
@@ -152,15 +152,15 @@ class TestVWAPFadeDXYMessageAccuracy:
         is_invalid, reason = checker.check_dxy_flip(
             base_trade_short, base_candle, features
         )
-        
+
         assert is_invalid is True
         assert reason is not None
-        
+
         # Message should mention the ACTUAL threshold (-0.6)
-        assert "-0.6" in reason, (
-            f"Expected message to reference actual threshold -0.6, got: {reason}"
-        )
-        
+        assert (
+            "-0.6" in reason
+        ), f"Expected message to reference actual threshold -0.6, got: {reason}"
+
     def test_long_fade_threshold_logic_symmetry(
         self, checker, base_trade_long, base_candle
     ):
@@ -173,7 +173,7 @@ class TestVWAPFadeDXYMessageAccuracy:
             (0.0, True, "Zero correlation should invalidate"),
             (0.3, True, "Positive correlation should invalidate"),
         ]
-        
+
         for dxy_corr, should_invalidate, description in test_cases:
             features = {"dxy_corr": dxy_corr}
             is_invalid, _ = checker.check_dxy_flip(
@@ -183,7 +183,7 @@ class TestVWAPFadeDXYMessageAccuracy:
                 f"{description}: dxy_corr={dxy_corr}, "
                 f"expected invalidate={should_invalidate}, got {is_invalid}"
             )
-            
+
     def test_short_fade_threshold_logic_symmetry(
         self, checker, base_trade_short, base_candle
     ):
@@ -195,7 +195,7 @@ class TestVWAPFadeDXYMessageAccuracy:
             (-0.61, True, "Just below boundary should invalidate"),
             (-0.8, True, "Strong negative correlation should invalidate"),
         ]
-        
+
         for dxy_corr, should_invalidate, description in test_cases:
             features = {"dxy_corr": dxy_corr}
             is_invalid, _ = checker.check_dxy_flip(
@@ -205,4 +205,3 @@ class TestVWAPFadeDXYMessageAccuracy:
                 f"{description}: dxy_corr={dxy_corr}, "
                 f"expected invalidate={should_invalidate}, got {is_invalid}"
             )
-

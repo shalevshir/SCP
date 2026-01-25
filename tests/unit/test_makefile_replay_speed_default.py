@@ -39,4 +39,3 @@ def test_replay_speed_message_matches_default_speed_flag() -> None:
     # TURBO message must exist, but must not be triggered by empty SPEED.
     assert 'echo "  Speed: TURBO (no delays, maximum speed)"' in replay_block
     assert '[ -z "$(SPEED)" ] || [ "$(SPEED)" = "0" ]' not in replay_block
-

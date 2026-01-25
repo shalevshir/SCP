@@ -105,7 +105,7 @@ def adjust_score_with_htf(
     """
     adjusted_score = base_score
     adjustments = {}
-    
+
     # Default context if not provided
     if context is None:
         context = {}
@@ -172,7 +172,7 @@ def adjust_score_with_htf(
     if htf_bias.bias == "neutral" or htf_bias.confidence == "low":
         # Tier-aware penalty for neutral HTF
         enforcer_tier = context.get("enforcer_tier", "Conservative")
-        
+
         if htf_bias.bias == "neutral" and enforcer_tier == "EarlyMild":
             # Softer penalty for EarlyMild tier
             penalty = -0.25
@@ -187,7 +187,7 @@ def adjust_score_with_htf(
                 f"(bias={htf_bias.bias}, confidence={htf_bias.confidence}, "
                 f"tier={enforcer_tier})"
             )
-        
+
         adjusted_score += penalty
         adjustments["htf_weak_bias"] = penalty
 
@@ -231,7 +231,6 @@ def adjust_score_with_htf(
     # Cap final score at 10.0
     adjusted_score = min(adjusted_score, 10.0)
 
-
     # Log final adjustment
     total_adjustment = adjusted_score - base_score
     logger.info(
@@ -240,4 +239,3 @@ def adjust_score_with_htf(
     )
 
     return adjusted_score, adjustments
-

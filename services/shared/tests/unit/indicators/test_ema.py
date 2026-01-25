@@ -280,4 +280,3 @@ class TestEMACalculation:
 
         # Most should be aligned in strong trend
         assert bullish_alignment.sum() > 7
-

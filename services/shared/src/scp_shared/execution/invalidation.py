@@ -62,9 +62,11 @@ class InvalidationChecker:
         ...         break
     """
 
-    def __init__(self, pdll_limit: float | None = None, vwap_hold_confirm_bars: int = 2) -> None:
+    def __init__(
+        self, pdll_limit: float | None = None, vwap_hold_confirm_bars: int = 2
+    ) -> None:
         """Initialize invalidation checker with empty state.
-        
+
         Args:
             pdll_limit: Permitted Daily Loss Limit in points (optional).
                 If provided, enables PDLL breach detection in check_daily_risk_breach.
@@ -171,11 +173,11 @@ class InvalidationChecker:
         """
         # Get grace period for this setup type
         grace = GRACE_PERIODS.get(trade.setup_type, {}).get("sl_tp", 2)
-        
+
         # Skip SL/TP check during grace period
         if bars_elapsed < grace:
             return False, None
-        
+
         # Check stop-loss
         if trade.direction == "long":
             if candle.low <= trade.sl_price:
@@ -203,7 +205,11 @@ class InvalidationChecker:
         return False, None
 
     def check_no_1r_reached(
-        self, trade: TradeRecord, bars_elapsed: int, candle: Candle | None = None, month: int | None = None
+        self,
+        trade: TradeRecord,
+        bars_elapsed: int,
+        candle: Candle | None = None,
+        month: int | None = None,
     ) -> tuple[bool, str | None]:
         """Check if +1R not reached within time limits (with optional protection).
 
@@ -220,7 +226,7 @@ class InvalidationChecker:
             - VWAP_RECLAIM: Must reach +1R within 60 bars
             - DXY_CONTINUATION: Must reach +1R within 20 bars
             - VWAP_FADE: Must reach +1R within 10 bars
-            
+
         Time-Stop Protection (narrowly scoped per CEO directive):
             - VWAP_RECLAIM only
             - September defensive mode only
@@ -243,7 +249,7 @@ class InvalidationChecker:
             else:
                 current_pnl = trade.entry_price - candle.close
             current_r = current_pnl / trade.risk_amount if trade.risk_amount > 0 else 0
-            
+
             # Early exit if deep red (< -0.2R)
             if current_r < -0.2:
                 reason = f"time_stop_protection: {current_r:.2f}R at bar {bars_elapsed} (September mode)"
@@ -300,7 +306,7 @@ class InvalidationChecker:
             # Implements SOP Section 3.6 "Hold" definition
             trade_id = trade.trade_id
             condition_met = False
-            
+
             if trade.direction == "long":
                 # Long reclaim: invalid if price closes below VWAP
                 if candle.close < vwap:
@@ -309,15 +315,18 @@ class InvalidationChecker:
                 # Short reclaim: invalid if price closes above VWAP
                 if candle.close > vwap:
                     condition_met = True
-            
+
             # Track consecutive bars meeting condition
             if condition_met:
                 # Increment counter
                 current_count = self._vwap_reclaim_invalidation_count.get(trade_id, 0)
                 self._vwap_reclaim_invalidation_count[trade_id] = current_count + 1
-                
+
                 # Require N consecutive bars (configurable, default 2)
-                if self._vwap_reclaim_invalidation_count[trade_id] >= self._vwap_hold_confirm_bars:
+                if (
+                    self._vwap_reclaim_invalidation_count[trade_id]
+                    >= self._vwap_hold_confirm_bars
+                ):
                     reason = (
                         f"VWAP invalidation ({self._vwap_hold_confirm_bars}-bar confirmed): "
                         f"close {candle.close:.2f} {'<' if trade.direction == 'long' else '>'} "
@@ -331,7 +340,7 @@ class InvalidationChecker:
                 # Condition NOT met - reset counter
                 if trade_id in self._vwap_reclaim_invalidation_count:
                     self._vwap_reclaim_invalidation_count[trade_id] = 0
-        
+
         elif trade.setup_type == "VWAP_FADE":
             # FADE setups require 2 CONSECUTIVE bars meeting invalidation criteria
             # AND require VWAP slope confirmation to prevent noise-based exits
@@ -360,7 +369,9 @@ class InvalidationChecker:
 
                 # Require 2 consecutive bars
                 if self._fade_invalidation_count[trade_id] >= 2:
-                    slope_str = f", slope {vwap_slope:.4f}" if vwap_slope is not None else ""
+                    slope_str = (
+                        f", slope {vwap_slope:.4f}" if vwap_slope is not None else ""
+                    )
                     reason = (
                         f"VWAP invalidation (2-bar confirmed): "
                         f"close {candle.close:.2f} {'>' if trade.direction == 'long' else '<'} "
@@ -436,7 +447,7 @@ class InvalidationChecker:
         # Requires confirmation from VWAP loss/regain OR HTF structure break
         if trade.setup_type == "VWAP_RECLAIM":
             confirmation_reason = None
-            
+
             # Confirmation A: VWAP invalidation
             current_vwap = _sanitize_float(features.get("vwap"))
             if current_vwap is not None:
@@ -450,10 +461,12 @@ class InvalidationChecker:
                         f"Micro break {structure_label} + VWAP regain: "
                         f"close {candle.close:.2f} > VWAP {current_vwap:.2f}"
                     )
-            
+
             # Confirmation B: HTF structure break (15m)
             if confirmation_reason is None:
-                htf_structure = features.get("htf_structure_label") or features.get("structure_15m")
+                htf_structure = features.get("htf_structure_label") or features.get(
+                    "structure_15m"
+                )
                 if htf_structure is not None:
                     if trade.direction == "long" and htf_structure in ("LH", "LL"):
                         confirmation_reason = (
@@ -465,7 +478,7 @@ class InvalidationChecker:
                             f"Micro break {structure_label} + HTF break: "
                             f"HTF structure={htf_structure}"
                         )
-            
+
             # No confirmation - VWAP_RECLAIM micro break alone is NOT enough to exit
             if confirmation_reason is None:
                 logger.debug(
@@ -473,7 +486,7 @@ class InvalidationChecker:
                     f"NOT confirmed (VWAP/HTF intact) - HOLDING"
                 )
                 return False, None
-            
+
             # Confirmed micro break for VWAP_RECLAIM
             logger.info(f"Trade {trade.trade_id} invalidated: {confirmation_reason}")
             return True, confirmation_reason
@@ -677,7 +690,10 @@ class InvalidationChecker:
         return False, None
 
     def check_daily_risk_breach(
-        self, trade: TradeRecord, candle: Candle, daily_pnl_state: dict[str, Any] | None = None
+        self,
+        trade: TradeRecord,
+        candle: Candle,
+        daily_pnl_state: dict[str, Any] | None = None,
     ) -> tuple[bool, str | None]:
         """Check if daily risk limits are breached (PDLL/PDRR or loss streak).
 
@@ -731,14 +747,14 @@ class InvalidationChecker:
         return False, None
 
     def record_trade_outcome(
-        self, 
-        trade: TradeRecord, 
-        won: bool | None, 
+        self,
+        trade: TradeRecord,
+        won: bool | None,
         pnl_points: float | None = None,
-        close_timestamp: datetime | None = None
+        close_timestamp: datetime | None = None,
     ) -> None:
         """Record trade outcome to update daily state for loss streak and PnL tracking.
-        
+
         Args:
             trade: Closed trade
             won: True if profitable (pnl > 0), False if loss (pnl < 0), None if breakeven
@@ -747,13 +763,13 @@ class InvalidationChecker:
             close_timestamp: Timestamp when trade closed (optional). If provided, uses this
                 for session date determination. Otherwise falls back to trade.exit_timestamp
                 if available, or trade.entry_timestamp for backward compatibility.
-        
+
         Note:
             Breakeven trades (won=None) do not affect the loss streak.
             Only actual losses (won=False) increment the streak.
             Wins (won=True) reset the streak to 0.
             If pnl_points is provided, daily_pnl is updated with the actual PnL value.
-            
+
             Session date is determined by the close timestamp (when the trade closed),
             not the entry timestamp. This ensures trades that span multiple days are
             attributed to the correct session (the day they closed).
@@ -782,7 +798,7 @@ class InvalidationChecker:
                 f"Expected close date: unknown (exit_timestamp=None). "
                 f"Please pass close_timestamp parameter to fix this issue."
             )
-        
+
         # Reset daily state if new session
         if trade_date != self._daily_state.get("last_session_date"):
             self._daily_state["consecutive_losses"] = 0
@@ -849,12 +865,16 @@ class InvalidationChecker:
             return should_exit, reason
 
         # Check invalidation grace period
-        invalidation_grace = GRACE_PERIODS.get(trade.setup_type, {}).get("invalidation", 0)
+        invalidation_grace = GRACE_PERIODS.get(trade.setup_type, {}).get(
+            "invalidation", 0
+        )
         skip_invalidations = bars_elapsed < invalidation_grace
 
         # Priority 2: +1R time limit (with September time-stop protection)
-        month = candle.timestamp.month if hasattr(candle.timestamp, 'month') else None
-        is_invalid, reason = self.check_no_1r_reached(trade, bars_elapsed, candle, month)
+        month = candle.timestamp.month if hasattr(candle.timestamp, "month") else None
+        is_invalid, reason = self.check_no_1r_reached(
+            trade, bars_elapsed, candle, month
+        )
         if is_invalid:
             return is_invalid, reason
 
@@ -868,7 +888,9 @@ class InvalidationChecker:
             return is_invalid, reason
 
         # Priority 4: Micro structure invalidation (1m structure break)
-        is_invalid, reason = self.check_micro_structure_invalidation(trade, candle, features)
+        is_invalid, reason = self.check_micro_structure_invalidation(
+            trade, candle, features
+        )
         if is_invalid:
             return is_invalid, reason
 
@@ -929,16 +951,16 @@ class InvalidationChecker:
         self._fade_invalidation_count.clear()
         self._dxy_flip_count.clear()
         self._vwap_reclaim_invalidation_count.clear()
-    
+
     def reset_daily_state(self) -> None:
         """Reset daily state to initial values while preserving PDLL limit.
-        
+
         Used for testing/admin reset to clear daily tracking state:
         - consecutive_losses: reset to 0
         - daily_pnl: reset to 0.0
         - last_session_date: reset to None
         - pdll: preserved (not reset, as it's a configuration value)
-        
+
         This ensures that after a reset, the InvalidationChecker doesn't
         use stale loss streaks or PnL values from before the reset.
         """
@@ -950,5 +972,3 @@ class InvalidationChecker:
             "pdll": pdll_limit,  # Preserve configuration
         }
         logger.info("InvalidationChecker daily state reset (preserved pdll_limit)")
-
-

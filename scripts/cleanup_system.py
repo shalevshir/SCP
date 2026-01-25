@@ -60,20 +60,20 @@ REDIS_STREAMS = [
 async def cleanup_postgres() -> None:
     """Clear all data from PostgreSQL tables."""
     print("\n🗑️  Cleaning PostgreSQL database...")
-    
+
     conn = await asyncpg.connect(**POSTGRES_CONFIG)
-    
+
     try:
         for table in TABLES_TO_TRUNCATE:
             print(f"  • Truncating {table}...")
             await conn.execute(f"TRUNCATE TABLE {table} CASCADE;")
-        
+
         print("✅ PostgreSQL cleanup complete")
-    
+
     except Exception as e:
         print(f"❌ PostgreSQL cleanup failed: {e}")
         raise
-    
+
     finally:
         await conn.close()
 
@@ -81,9 +81,9 @@ async def cleanup_postgres() -> None:
 async def cleanup_redis() -> None:
     """Delete all Redis streams and consumer groups."""
     print("\n🗑️  Cleaning Redis streams...")
-    
+
     redis_client: Redis = await redis.from_url(REDIS_URL, decode_responses=True)
-    
+
     try:
         for stream in REDIS_STREAMS:
             # Check if stream exists
@@ -94,13 +94,13 @@ async def cleanup_redis() -> None:
                 print(f"  • Deleted stream: {stream}")
             else:
                 print(f"  • Stream not found (skipping): {stream}")
-        
+
         print("✅ Redis cleanup complete")
-    
+
     except Exception as e:
         print(f"❌ Redis cleanup failed: {e}")
         raise
-    
+
     finally:
         await redis_client.close()
 
@@ -111,7 +111,7 @@ async def get_data_counts() -> dict[str, Any]:
         "postgres": {},
         "redis": {},
     }
-    
+
     # Use nested try/finally blocks to ensure proper cleanup
     conn = await asyncpg.connect(**POSTGRES_CONFIG)
     try:
@@ -122,7 +122,7 @@ async def get_data_counts() -> dict[str, Any]:
                 counts["postgres"][table] = result
             except Exception:
                 counts["postgres"][table] = "N/A"
-        
+
         # Create Redis connection only after postgres queries succeed
         redis_client: Redis = await redis.from_url(REDIS_URL, decode_responses=True)
         try:
@@ -135,21 +135,21 @@ async def get_data_counts() -> dict[str, Any]:
                     counts["redis"][stream] = 0
         finally:
             await redis_client.close()
-    
+
     finally:
         await conn.close()
-    
+
     return counts
 
 
 def print_data_summary(counts: dict[str, Any]) -> None:
     """Print summary of current data."""
     print("\n📊 Current Data Summary:")
-    
+
     print("\n  PostgreSQL:")
     for table, count in counts["postgres"].items():
         print(f"    • {table}: {count} rows")
-    
+
     print("\n  Redis Streams:")
     for stream, length in counts["redis"].items():
         if length > 0:
@@ -158,9 +158,7 @@ def print_data_summary(counts: dict[str, Any]) -> None:
 
 async def main() -> None:
     """Main cleanup function."""
-    parser = argparse.ArgumentParser(
-        description="Clean up database and Redis queues"
-    )
+    parser = argparse.ArgumentParser(description="Clean up database and Redis queues")
     parser.add_argument(
         "--confirm",
         action="store_true",
@@ -176,13 +174,13 @@ async def main() -> None:
         action="store_true",
         help="Only clean Redis streams",
     )
-    
+
     args = parser.parse_args()
-    
+
     print("=" * 70)
     print("🧹 SYSTEM CLEANUP SCRIPT")
     print("=" * 70)
-    
+
     # Get current data counts
     try:
         counts = await get_data_counts()
@@ -190,22 +188,18 @@ async def main() -> None:
     except Exception as e:
         print(f"\n⚠️  Could not retrieve data counts: {e}")
         counts = None
-    
+
     # Check if there's any data to clean
     if counts:
         has_postgres_data = any(
-            count != 0 and count != "N/A" 
-            for count in counts["postgres"].values()
+            count != 0 and count != "N/A" for count in counts["postgres"].values()
         )
-        has_redis_data = any(
-            length > 0 
-            for length in counts["redis"].values()
-        )
-        
+        has_redis_data = any(length > 0 for length in counts["redis"].values())
+
         if not has_postgres_data and not has_redis_data:
             print("\n✨ System is already clean. Nothing to do!")
             return
-    
+
     # Confirmation prompt
     if not args.confirm:
         print("\n⚠️  WARNING: This will DELETE ALL DATA from:")
@@ -213,20 +207,20 @@ async def main() -> None:
             print("  • PostgreSQL database (all tables)")
         if not args.postgres_only:
             print("  • Redis streams (all queues)")
-        
+
         response = input("\nAre you sure you want to continue? (yes/no): ")
         if response.lower() != "yes":
             print("❌ Cleanup cancelled")
             sys.exit(0)
-    
+
     # Perform cleanup
     try:
         if not args.redis_only:
             await cleanup_postgres()
-        
+
         if not args.postgres_only:
             await cleanup_redis()
-        
+
         print("\n" + "=" * 70)
         print("✅ CLEANUP COMPLETE!")
         print("=" * 70)
@@ -234,7 +228,7 @@ async def main() -> None:
         print("  1. Run replay script to load fresh data")
         print("  2. Start live data ingestion")
         print("  3. Begin testing with clean state")
-        
+
     except Exception as e:
         print(f"\n❌ Cleanup failed: {e}")
         sys.exit(1)

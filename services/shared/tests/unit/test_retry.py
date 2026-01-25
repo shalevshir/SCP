@@ -114,7 +114,7 @@ class TestWithRetryDecorator:
 
         # Check that delays increase
         assert len(call_times) == 3
-        
+
         # First retry delay: ~100ms
         delay1 = (call_times[1] - call_times[0]) * 1000
         assert 90 <= delay1 <= 110  # Allow some tolerance
@@ -211,4 +211,3 @@ class TestWithRetryDecorator:
 
         assert result == "sum: 8"
         assert call_count == 2
-

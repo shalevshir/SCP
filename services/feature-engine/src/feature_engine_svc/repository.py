@@ -8,21 +8,21 @@ from scp_shared.messaging.schemas import FeaturesMessage, CandleMessage
 
 class FeatureRepository:
     """Persists and loads features from PostgreSQL.
-    
+
     Handles feature persistence for warmup recovery and historical analysis.
     """
-    
+
     def __init__(self, db_pool: DatabasePool):
         """Initialize feature repository.
-        
+
         Args:
             db_pool: Database connection pool
         """
         self.db = db_pool
-    
+
     async def save_candle(self, candle: CandleMessage) -> None:
         """Save candle to database.
-        
+
         Args:
             candle: Candle message to persist
         """
@@ -37,7 +37,7 @@ class FeatureRepository:
                 close = EXCLUDED.close,
                 volume = EXCLUDED.volume
         """
-        
+
         await self.db.execute(
             query,
             candle.timestamp,
@@ -49,10 +49,10 @@ class FeatureRepository:
             candle.close,
             candle.volume,
         )
-    
+
     async def save_features(self, features: FeaturesMessage) -> None:
         """Save features to database.
-        
+
         Args:
             features: Features message to persist
         """
@@ -76,7 +76,7 @@ class FeatureRepository:
                 atr = EXCLUDED.atr,
                 vwap_deviation_normalized = EXCLUDED.vwap_deviation_normalized
         """
-        
+
         await self.db.execute(
             query,
             features.timestamp,
@@ -84,7 +84,7 @@ class FeatureRepository:
             features.timeframe,
             features.close,
             features.vwap,
-            features.vwap_slope if hasattr(features, 'vwap_slope') else None,
+            features.vwap_slope if hasattr(features, "vwap_slope") else None,
             features.rsi,
             features.ema_9,
             features.ema_20,
@@ -92,10 +92,14 @@ class FeatureRepository:
             features.dxy_correlation,
             features.structure_label,
             features.vwap_deviation,
-            features.atr if hasattr(features, 'atr') else None,
-            features.vwap_deviation_normalized if hasattr(features, 'vwap_deviation_normalized') else None,
+            features.atr if hasattr(features, "atr") else None,
+            (
+                features.vwap_deviation_normalized
+                if hasattr(features, "vwap_deviation_normalized")
+                else None
+            ),
         )
-    
+
     async def load_recent_candles(
         self,
         symbol: str,
@@ -103,12 +107,12 @@ class FeatureRepository:
         count: int,
     ) -> list[tuple[CandleMessage, CandleMessage]]:
         """Load recent candles for warmup.
-        
+
         Args:
             symbol: Symbol to load (GC)
             timeframe: Timeframe to load
             count: Number of recent candles to load
-            
+
         Returns:
             List of (gc_candle, dxy_candle) tuples
         """
@@ -121,7 +125,7 @@ class FeatureRepository:
             LIMIT $3
         """
         gc_rows = await self.db.fetch(gc_query, "GC", timeframe, count)
-        
+
         # Load DXY candles
         dxy_query = """
             SELECT timestamp, open, high, low, close, volume
@@ -131,20 +135,20 @@ class FeatureRepository:
             LIMIT $3
         """
         dxy_rows = await self.db.fetch(dxy_query, "DXY", timeframe, count)
-        
+
         # Pair by timestamp
         gc_dict = {row["timestamp"]: row for row in gc_rows}
         dxy_dict = {row["timestamp"]: row for row in dxy_rows}
-        
+
         # Get common timestamps
         common_timestamps = sorted(set(gc_dict.keys()) & set(dxy_dict.keys()))
-        
+
         # Create candle pairs
         pairs = []
         for ts in common_timestamps:
             gc_row = gc_dict[ts]
             dxy_row = dxy_dict[ts]
-            
+
             gc_candle = CandleMessage(
                 timestamp=gc_row["timestamp"],
                 symbol="GC",
@@ -165,8 +169,7 @@ class FeatureRepository:
                 close=float(dxy_row["close"]),
                 volume=float(dxy_row["volume"]),
             )
-            
-            pairs.append((gc_candle, dxy_candle))
-        
-        return pairs
 
+            pairs.append((gc_candle, dxy_candle))
+
+        return pairs

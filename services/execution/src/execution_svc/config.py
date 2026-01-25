@@ -9,42 +9,42 @@ class ExecutionConfig(BaseServiceConfig):
 
     service_name: str = Field(default="execution")
     service_version: str = Field(default="0.1.0")
-    
+
     broker_mode: str = Field(
         default="paper",
         description="Broker mode: paper or live",
     )
-    
+
     default_quantity: int = Field(
         default=1,
         description="Default number of contracts per trade",
     )
-    
+
     sl_buffer_ticks: int = Field(
         default=5,
         description="Buffer ticks for stop-loss placement",
     )
-    
+
     max_active_trades: int = Field(
         default=1,
         description="Maximum concurrent trades",
     )
-    
+
     pdll_limit: float = Field(
         default=600.0,
         description="Per day loss limit in points",
     )
-    
+
     max_trades_per_day: int = Field(
         default=2,
         description="Maximum trades per day",
     )
-    
+
     max_consecutive_losses: int = Field(
         default=2,
         description="Maximum consecutive losses before halt",
     )
-    
+
     # Slippage configuration (disabled by default for production)
     enable_slippage: bool = Field(
         default=False,
@@ -54,7 +54,7 @@ class ExecutionConfig(BaseServiceConfig):
         default=0.5,
         description="Slippage in points when enabled",
     )
-    
+
     # Commission configuration (disabled by default for production)
     enable_commission: bool = Field(
         default=False,
@@ -64,7 +64,7 @@ class ExecutionConfig(BaseServiceConfig):
         default=5.0,
         description="Commission per trade in dollars when enabled",
     )
-    
+
     # Position sizing configuration
     sizing_mode: str = Field(
         default="fixed",
@@ -78,7 +78,7 @@ class ExecutionConfig(BaseServiceConfig):
         default=1.0,
         description="Risk per trade as percent of account when sizing_mode='risk_ladder'",
     )
-    
+
     # Interactive Brokers connection settings
     ib_host: str = Field(
         default="127.0.0.1",
@@ -96,4 +96,3 @@ class ExecutionConfig(BaseServiceConfig):
         default="",
         description="IB account ID (leave empty for default account)",
     )
-

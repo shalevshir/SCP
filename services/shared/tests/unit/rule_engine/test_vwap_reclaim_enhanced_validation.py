@@ -227,14 +227,18 @@ class TestVWAPReclaimEnhancedValidation:
             {
                 "close": 2650.0,
                 "vwap": 2645.0,
+                "vwap_deviation_normalized": 1.5,  # Required for vwap_reclaim_distance
                 "rsi": 55.0,
                 "dxy_corr": -0.75,
                 "structure_label": "HH",  # Required for validation
                 # Structure fields - BOS conflicts but CHoCH is correct
                 "bos_direction": "bearish",  # Wrong direction
+                "bos_recent": False,  # Required for no_late_reclaim constraint
+                "bos_age": 30,  # Old enough to pass constraints
                 "choch_detected": True,
                 "choch_direction": "bullish",  # Correct direction - should override BOS
                 "structure_conflict_flag": False,
+                "conflict_detected": False,  # Required for constraints
             }
         )
 
@@ -261,7 +265,7 @@ class TestVWAPReclaimEnhancedValidation:
 
         This tests the fix for the inconsistency between validate_reclaim_prerequisites
         and validate_reclaim_context. Stale BOS should be allowed through in both functions.
-        
+
         BOS > 15 bars old is considered "stale" and not relevant to the current setup,
         so a directional conflict with stale BOS should not cause rejection.
         """
@@ -269,14 +273,19 @@ class TestVWAPReclaimEnhancedValidation:
             {
                 "close": 2650.0,
                 "vwap": 2645.0,
+                "vwap_deviation_normalized": 1.5,  # Required for vwap_reclaim_distance
                 "rsi": 55.0,
                 "dxy_corr": -0.75,
                 "structure_label": "HH",  # Required for validation
-                # BOS direction conflicts but is STALE (>15 bars old)
-                "bos_direction": "bearish",  # Wrong direction for long
-                "bos_age": 18,  # Stale BOS (>15)
+                # BOS direction conflicts but is STALE (>=20 bars old)
+                "bos_direction": "bearish",  # Wrong direction for long (conflict)
+                "bos_recent": False,  # Required for no_late_reclaim constraint
+                "bos_age": 25,  # >=20, stale enough to pass bos_reclaim_gate despite conflict
+                "bars_near_vwap": 5,  # Required for min_vwap_acceptance
+                "bars_since_last_vwap_touch": 2,  # Required for reclaim_timing_gate
                 "choch_detected": False,
                 "structure_conflict_flag": False,
+                "conflict_detected": False,  # Required for constraints
             }
         )
 
@@ -308,14 +317,19 @@ class TestVWAPReclaimEnhancedValidation:
             {
                 "close": 2640.0,
                 "vwap": 2645.0,
+                "vwap_deviation_normalized": 1.5,  # Required for vwap_reclaim_distance
                 "rsi": 45.0,
                 "dxy_corr": -0.75,
                 "structure_label": "LL",  # Required for validation
-                # BOS direction conflicts but is STALE (>15 bars old)
-                "bos_direction": "bullish",  # Wrong direction for short
-                "bos_age": 16,  # Stale BOS (>15)
+                # BOS direction conflicts but is STALE (>=20 bars old)
+                "bos_direction": "bullish",  # Wrong direction for short (conflict)
+                "bos_recent": False,  # Required for no_late_reclaim constraint
+                "bos_age": 25,  # >=20, stale enough to pass bos_reclaim_gate despite conflict
+                "bars_near_vwap": 5,  # Required for min_vwap_acceptance
+                "bars_since_last_vwap_touch": 2,  # Required for reclaim_timing_gate
                 "choch_detected": False,
                 "structure_conflict_flag": False,
+                "conflict_detected": False,  # Required for constraints
             }
         )
 
@@ -373,4 +387,3 @@ class TestVWAPReclaimEnhancedValidation:
 
         # Should REJECT because BOS is recent and conflicts with direction
         assert setup_type == "REJECTED"
-

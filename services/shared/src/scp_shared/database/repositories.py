@@ -13,7 +13,7 @@ class CandleRepository:
 
     def __init__(self, db_pool: DatabasePool) -> None:
         """Initialize repository.
-        
+
         Args:
             db_pool: Database connection pool
         """
@@ -31,7 +31,7 @@ class CandleRepository:
         volume: float,
     ) -> None:
         """Insert a candle into the database.
-        
+
         Args:
             timestamp: Candle timestamp
             symbol: Asset symbol
@@ -60,12 +60,12 @@ class CandleRepository:
         limit: int = 100,
     ) -> list[asyncpg.Record]:
         """Get recent candles for warmup.
-        
+
         Args:
             symbol: Asset symbol
             timeframe: Timeframe string
             limit: Number of candles to retrieve
-            
+
         Returns:
             List of candle records
         """
@@ -85,12 +85,12 @@ class CandleRepository:
         timeframe: str,
     ) -> asyncpg.Record | None:
         """Get a candle by exact timestamp.
-        
+
         Args:
             timestamp: Candle timestamp
             symbol: Asset symbol
             timeframe: Timeframe string
-            
+
         Returns:
             Candle record if found, None otherwise
         """
@@ -107,7 +107,7 @@ class TradeRepository:
 
     def __init__(self, db_pool: DatabasePool) -> None:
         """Initialize repository.
-        
+
         Args:
             db_pool: Database connection pool
         """
@@ -115,10 +115,10 @@ class TradeRepository:
 
     async def insert_trade(self, trade_data: dict[str, Any]) -> str:
         """Insert a new trade.
-        
+
         Args:
             trade_data: Trade data dictionary
-            
+
         Returns:
             Trade ID
         """
@@ -147,7 +147,7 @@ class TradeRepository:
 
     async def get_open_trades(self) -> list[asyncpg.Record]:
         """Get all open trades.
-        
+
         Returns:
             List of open trade records
         """
@@ -168,7 +168,7 @@ class TradeRepository:
         pnl_dollars: float,
     ) -> None:
         """Close a trade.
-        
+
         Args:
             trade_id: Trade ID
             closed_at: Close timestamp
@@ -186,4 +186,3 @@ class TradeRepository:
         await self.db.execute(
             query, trade_id, closed_at, exit_price, exit_reason, pnl_points, pnl_dollars
         )
-

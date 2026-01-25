@@ -92,7 +92,7 @@ async def test_session_reset_at_day_boundary_prevents_signal_blocking(
     trade_manager: TradeManager,
 ) -> None:
     """Test that check_session_reset is called BEFORE execute_pending_signals at day boundaries.
-    
+
     This test verifies the fix for a critical bug where:
     - Day 1: PDLL limit is hit (600 points loss)
     - Day 2: New trading day begins with first candle
@@ -112,16 +112,16 @@ async def test_session_reset_at_day_boundary_prevents_signal_blocking(
         close=2650.5,
         volume=100.0,
     )
-    
+
     # Process Day 1 candle and hit PDLL
     await trade_manager.on_candle(day1_candle, None)
     trade_manager._daily_tracker.record_trade_closed(-600.0)
-    
+
     # Verify PDLL is hit
     can_trade, reason = trade_manager._daily_tracker.can_trade()
     assert not can_trade
     assert "PDLL" in reason
-    
+
     # Day 2: New signal
     day2_candle = CandleMessage(
         timestamp=datetime(2024, 1, 2, 9, 30, tzinfo=timezone.utc),
@@ -133,11 +133,12 @@ async def test_session_reset_at_day_boundary_prevents_signal_blocking(
         close=2660.5,
         volume=100.0,
     )
-    
+
     # Signal arrives at 9:30, should execute at 9:31 (next bar)
     signal2 = SignalMessage(
         id="signal_day2",
-        timestamp=day2_candle.timestamp - timedelta(minutes=1),  # Signal at 9:29, candle at 9:30
+        timestamp=day2_candle.timestamp
+        - timedelta(minutes=1),  # Signal at 9:29, candle at 9:30
         direction="long",
         setup_type="VWAP_RECLAIM",
         score=9.0,
@@ -147,28 +148,29 @@ async def test_session_reset_at_day_boundary_prevents_signal_blocking(
         tp_price=2680.0,
         factors={},
     )
-    
+
     await trade_manager.on_signal(signal2)
-    
+
     # FIX: Call check_session_reset BEFORE execute_pending_signals
     # (this is what main.py does now)
     trade_manager.check_session_reset(day2_candle.timestamp)
-    
+
     # Verify limits are fresh BEFORE execute_pending_signals
     can_trade_after_reset, _ = trade_manager._daily_tracker.can_trade()
-    assert can_trade_after_reset, (
-        "FIX VERIFIED: Limits should be fresh after check_session_reset"
-    )
-    
+    assert (
+        can_trade_after_reset
+    ), "FIX VERIFIED: Limits should be fresh after check_session_reset"
+
     # Now execute pending signals with fresh session state
     # Candle at 9:30 is >= signal.timestamp + 1min (9:29 + 1min = 9:30), so it should execute
-    await trade_manager.execute_pending_signals(day2_candle.open, candle_timestamp=day2_candle.timestamp)
-    
-    # Then process candle
-    await trade_manager.on_candle(day2_candle, None)
-    
-    # Verify signal was NOT blocked (pending_signals should be cleared)
-    assert len(trade_manager._pending_signals) == 0, (
-        "Pending signals should be cleared after execution"
+    await trade_manager.execute_pending_signals(
+        day2_candle.open, candle_timestamp=day2_candle.timestamp
     )
 
+    # Then process candle
+    await trade_manager.on_candle(day2_candle, None)
+
+    # Verify signal was NOT blocked (pending_signals should be cleared)
+    assert (
+        len(trade_manager._pending_signals) == 0
+    ), "Pending signals should be cleared after execution"

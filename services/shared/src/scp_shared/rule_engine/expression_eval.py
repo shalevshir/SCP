@@ -372,8 +372,8 @@ def evaluate_expression(expression: str, context: dict[str, Any]) -> bool:
     # Validate expression length
     if len(expression) > MAX_EXPRESSION_LENGTH:
         raise ExpressionEvalError(
-        expression[:50] + "...",
-        f"Expression too long ({len(expression)} chars, max {MAX_EXPRESSION_LENGTH})",  # noqa: E501
+            expression[:50] + "...",
+            f"Expression too long ({len(expression)} chars, max {MAX_EXPRESSION_LENGTH})",  # noqa: E501
         )
 
     # Validate expression is not empty

@@ -72,4 +72,3 @@ class Signal:
     enforcer_tier: str
     # Optional diagnostics for debugging - contains structure params, RSI, BOS age, etc.
     diagnostics: dict[str, Any] = field(default_factory=dict)
-

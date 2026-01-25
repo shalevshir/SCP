@@ -271,7 +271,7 @@ class StreamingFeatureProcessor:
         if len(self.atr_buffer) >= self.atr_period:
             atr = sum(self.atr_buffer) / len(self.atr_buffer)
             features["atr"] = atr
-            
+
             # Calculate Normalized VWAP Deviation: (Price - VWAP) / ATR
             # This gives a dimensionless, volatility-adjusted deviation
             if atr > 0:
@@ -351,7 +351,7 @@ class StreamingFeatureProcessor:
             features["dxy_corr_micro"] = None
 
         # === 6. Structure Context (continuous state with derived fields) ===
-        
+
         # CRITICAL: Update session state BEFORE update() to ensure prior_session_high/low
         # are current in the returned StructureContext at session boundaries
         self.structure_tracker.update_session_state(
@@ -359,14 +359,14 @@ class StreamingFeatureProcessor:
             high=gc_bar.high,
             low=gc_bar.low,
         )
-        
+
         # Update GC structure tracker
         gc_structure_ctx = self.structure_tracker.update(
             high=gc_bar.high,
             low=gc_bar.low,
             close=gc_bar.close,
         )
-        
+
         # Update VWAP tracking for second confirmation
         self.structure_tracker.update_vwap_state(
             vwap=vwap,
@@ -374,11 +374,12 @@ class StreamingFeatureProcessor:
             high=gc_bar.high,
             low=gc_bar.low,
             open=gc_bar.open,
+            atr=features.get("atr"),  # Pass ATR for VWAP acceptance tracking
         )
-        
+
         # Update volume tracking for expansion confirmation
         self.structure_tracker.update_volume_state(volume=gc_bar.volume)
-        
+
         # Compute second confirmation for both directions
         long_conf = self.structure_tracker.compute_second_confirmation("long")
         short_conf = self.structure_tracker.compute_second_confirmation("short")
@@ -425,9 +426,19 @@ class StreamingFeatureProcessor:
         features["prior_session_high"] = gc_structure_ctx.prior_session_high
         features["prior_session_low"] = gc_structure_ctx.prior_session_low
 
+        # === 6c. VWAP Acceptance Tracking (SOP alignment) ===
+        # FIX: Read from tracker directly AFTER update_vwap_state() instead of stale gc_structure_ctx
+        # The gc_structure_ctx was captured BEFORE update_vwap_state() ran, so it has stale values
+        features["bars_near_vwap"] = self.structure_tracker.bars_near_vwap
+        features["bars_since_last_vwap_touch"] = (
+            self.structure_tracker.bars_since_last_vwap_touch
+        )
+
         # === 6b. Expansion Detection (for VWAP_RECLAIM entry timing) ===
         # Detect expansion signals to determine if market is resolving from compression
-        expansion_detected, expansion_reasons = self.structure_tracker.detect_expansion()
+        expansion_detected, expansion_reasons = (
+            self.structure_tracker.detect_expansion()
+        )
         features["expansion_detected"] = expansion_detected
         features["expansion_reasons"] = expansion_reasons
 
@@ -444,7 +455,7 @@ class StreamingFeatureProcessor:
         features["dxy_trend_direction"] = dxy_structure_ctx.trend_direction
         features["dxy_structure_clarity"] = dxy_structure_ctx.structure_clarity
         features["dxy_is_chop"] = dxy_structure_ctx.is_chop
-        
+
         # === 8. Second Confirmation for VWAP_RECLAIM ===
         features["second_confirmation_long"] = long_conf["confirmed"]
         features["second_confirmation_short"] = short_conf["confirmed"]

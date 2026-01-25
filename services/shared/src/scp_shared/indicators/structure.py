@@ -105,19 +105,37 @@ class StructureContext:
     sweep_direction: str | None = None  # "bullish" or "bearish"
     sweep_price: float | None = None
     sweep_age: int | None = None
-    
+
     # SL Priority System (SOP Section 3.2-3.3)
-    swing_hl_low: float | None = None  # Low of most recent HL swing (for long SL Priority A)
-    swing_lh_high: float | None = None  # High of most recent LH swing (for short SL Priority A)
-    
+    swing_hl_low: float | None = (
+        None  # Low of most recent HL swing (for long SL Priority A)
+    )
+    swing_lh_high: float | None = (
+        None  # High of most recent LH swing (for short SL Priority A)
+    )
+
     # TP Structural Targets (SOP Section 4.3 - 1m timeframe fields only)
     # NOTE: HTF targets (htf_range, untouched_liquidity, FVGs) are computed by HTF Bias Service
-    immediate_resistance: float | None = None  # Immediate 1m resistance level (blocks long TPs)
-    immediate_support: float | None = None  # Immediate 1m support level (blocks short TPs)
-    nearest_swing_high_above: float | None = None  # Nearest 1m swing high above (fallback for long TP)
-    nearest_swing_low_below: float | None = None  # Nearest 1m swing low below (fallback for short TP)
+    immediate_resistance: float | None = (
+        None  # Immediate 1m resistance level (blocks long TPs)
+    )
+    immediate_support: float | None = (
+        None  # Immediate 1m support level (blocks short TPs)
+    )
+    nearest_swing_high_above: float | None = (
+        None  # Nearest 1m swing high above (fallback for long TP)
+    )
+    nearest_swing_low_below: float | None = (
+        None  # Nearest 1m swing low below (fallback for short TP)
+    )
     prior_session_high: float | None = None  # Previous session high
     prior_session_low: float | None = None  # Previous session low
+
+    # VWAP acceptance tracking (SOP alignment)
+    bars_near_vwap: int | None = (
+        None  # Consecutive bars within VWAP proximity band (None when ATR unavailable)
+    )
+    bars_since_last_vwap_touch: int | None = None  # Bars since last VWAP interaction
 
 
 class StructureContextTracker:
@@ -132,15 +150,17 @@ class StructureContextTracker:
         timeframe: Timeframe for asset-adjusted ATR thresholds (default "1m")
     """
 
-    def __init__(self, swing_window: int = 5, clarity_window: int = 10, timeframe: str = "1m"):
+    def __init__(
+        self, swing_window: int = 5, clarity_window: int = 10, timeframe: str = "1m"
+    ):
         """Initialize tracker with configuration."""
         self.swing_window = swing_window
         self.clarity_window = clarity_window
         self.timeframe = timeframe
-        
+
         # Get ATR configuration for this timeframe
         self.atr_config = ATR_CONFIG.get(timeframe, ATR_CONFIG["1m"])
-        
+
         # Track current ATR and price baseline for floor checks
         self.current_atr: float | None = None
         self.price_baseline: float | None = None
@@ -157,7 +177,7 @@ class StructureContextTracker:
         self.high_buffer_atr: deque[float] = deque(maxlen=self.atr_window + 1)
         self.low_buffer_atr: deque[float] = deque(maxlen=self.atr_window + 1)
         self.close_buffer_atr: deque[float] = deque(maxlen=self.atr_window + 1)
-        
+
         # ATR baseline buffer for contextual noise detection
         # Maintains a longer window of ATR values to establish baseline volatility
         self.atr_baseline_window = 50
@@ -210,13 +230,13 @@ class StructureContextTracker:
         self.vwap_buffer: deque[float] = deque(maxlen=20)  # Track recent VWAP values
         self.close_buffer_vwap: deque[float] = deque(maxlen=20)  # Track recent closes
         self.volume_buffer: deque[float] = deque(maxlen=20)  # Track recent volume
-        
+
         # SL Priority System: Track reclaim candle OHLC (SOP Section 3.2-3.3 Priority B)
         self.reclaim_candle_high: float | None = None
         self.reclaim_candle_low: float | None = None
         self.reclaim_candle_open: float | None = None
         self.reclaim_candle_close: float | None = None
-        
+
         # SL Priority System: Persistent tracking of HL/LH swing extremes (SOP Section 3.2-3.3 Priority A)
         # These persist across subsequent swings to ensure SL Priority A remains available
         self.swing_hl_low: float | None = None  # Low of most recent HL swing
@@ -227,7 +247,7 @@ class StructureContextTracker:
 
         # Bar counter
         self.bar_count = 0
-        
+
         # Session high/low tracking (SOP Section 4.3 - TP Structural Targets Priority #3)
         # Sessions run from 08:20 ET to 08:19:59 ET next day (Gold futures RTH open)
         self.current_session_id: date | None = None
@@ -236,7 +256,18 @@ class StructureContextTracker:
         self.prior_session_high: float | None = None
         self.prior_session_low: float | None = None
 
-    def update(self, high: float, low: float, close: float, open: float | None = None) -> StructureContext:
+        # VWAP acceptance tracking (SOP alignment)
+        self.bars_near_vwap: int | None = (
+            None  # Consecutive bars within VWAP proximity (None when ATR unavailable)
+        )
+        self.bars_since_last_vwap_touch: int | None = (
+            None  # Bars since last VWAP interaction
+        )
+        self.last_vwap_touch_idx: int | None = None  # Bar index of last VWAP touch
+
+    def update(
+        self, high: float, low: float, close: float, open: float | None = None
+    ) -> StructureContext:
         """Update with new candle and return derived context.
 
         Args:
@@ -334,13 +365,20 @@ class StructureContextTracker:
         # Requirements: opposite trend + sufficient clarity + enough bars elapsed (10+)
         TREND_RESET_CLARITY_THRESHOLD = 0.5
         TREND_RESET_MIN_BARS = 10
-        if self.last_choch_direction is not None and \
-           self.last_choch_idx is not None and \
-           structure_clarity >= TREND_RESET_CLARITY_THRESHOLD:
+        if (
+            self.last_choch_direction is not None
+            and self.last_choch_idx is not None
+            and structure_clarity >= TREND_RESET_CLARITY_THRESHOLD
+        ):
             bars_since_choch = self.bar_count - self.last_choch_idx
             if bars_since_choch >= TREND_RESET_MIN_BARS:
-                if (self.last_choch_direction == "bearish" and trend_direction == "bullish") or \
-                   (self.last_choch_direction == "bullish" and trend_direction == "bearish"):
+                if (
+                    self.last_choch_direction == "bearish"
+                    and trend_direction == "bullish"
+                ) or (
+                    self.last_choch_direction == "bullish"
+                    and trend_direction == "bearish"
+                ):
                     # Sustained opposite trend established → reset guard
                     # Clear both direction and idx for semantic consistency:
                     # If there's no last CHoCH (direction=None), there should be
@@ -391,12 +429,12 @@ class StructureContextTracker:
             if self.last_sweep_idx is None
             else (self.bar_count - self.last_sweep_idx)
         )
-        
+
         # ====================================================================
         # TP Structural Targets: 1m timeframe only
         # (HTF targets computed by HTF Bias Service)
         # ====================================================================
-        
+
         # 1m swing targets (fallback, lowest priority in TP hierarchy)
         nearest_swing_high_above = None
         if len(self.swing_high_indices) > 0:
@@ -408,23 +446,23 @@ class StructureContextTracker:
             ]
             if swing_highs_above:
                 nearest_swing_high_above = min(swing_highs_above)
-        
+
         nearest_swing_low_below = None
         if len(self.swing_low_indices) > 0:
             # Get all swing lows below current close
             swing_lows_below = [
                 self.swing_low_values[idx]
                 for idx in self.swing_low_indices
-                if self.swing_low_values.get(idx, float('inf')) < close
+                if self.swing_low_values.get(idx, float("inf")) < close
             ]
             if swing_lows_below:
                 nearest_swing_low_below = max(swing_lows_below)
-        
+
         # Immediate resistance/support (nearest 1m swing as approximation)
         # TODO: Refine based on actual R distance calculation
         immediate_resistance = nearest_swing_high_above
         immediate_support = nearest_swing_low_below
-        
+
         # Prior session high/low from tracked session state
         # Sessions run from 08:20 ET to 08:19:59 ET next day (Gold futures RTH)
         prior_session_high = self.prior_session_high
@@ -466,9 +504,14 @@ class StructureContextTracker:
             nearest_swing_low_below=nearest_swing_low_below,
             prior_session_high=prior_session_high,
             prior_session_low=prior_session_low,
+            # VWAP acceptance tracking (SOP alignment)
+            bars_near_vwap=self.bars_near_vwap,
+            bars_since_last_vwap_touch=self.bars_since_last_vwap_touch,
         )
 
-    def detect_expansion(self, bos_recency_threshold: int = 10) -> tuple[bool, list[str]]:
+    def detect_expansion(
+        self, bos_recency_threshold: int = 10
+    ) -> tuple[bool, list[str]]:
         """Detect if market is expanding out of compression.
 
         This method checks for expansion signals that indicate price is resolving
@@ -498,7 +541,9 @@ class StructureContextTracker:
         reasons: list[str] = []
 
         # Signal 1: Recent BOS (within threshold)
-        bos_age = None if self.last_bos_idx is None else (self.bar_count - self.last_bos_idx)
+        bos_age = (
+            None if self.last_bos_idx is None else (self.bar_count - self.last_bos_idx)
+        )
         if bos_age is not None and bos_age <= bos_recency_threshold:
             reasons.append("recent_bos")
 
@@ -511,9 +556,13 @@ class StructureContextTracker:
 
             # Calculate median range of last 10 bars (excluding current)
             recent_ranges = []
-            for i in range(len(self.high_buffer_atr) - 11, len(self.high_buffer_atr) - 1):
+            for i in range(
+                len(self.high_buffer_atr) - 11, len(self.high_buffer_atr) - 1
+            ):
                 if i >= 0:
-                    recent_ranges.append(self.high_buffer_atr[i] - self.low_buffer_atr[i])
+                    recent_ranges.append(
+                        self.high_buffer_atr[i] - self.low_buffer_atr[i]
+                    )
 
             if recent_ranges:
                 median_range = sorted(recent_ranges)[len(recent_ranges) // 2]
@@ -535,14 +584,16 @@ class StructureContextTracker:
             current_close = self.close_buffer_atr[-1]
             prev_close = self.close_buffer_atr[-2]
             current_body = abs(current_close - prev_close)
-            
+
             # Also check current bar's range for validation
             current_range = self.high_buffer_atr[-1] - self.low_buffer_atr[-1]
 
             # Calculate average body of last 10 bars (close-to-close changes)
             recent_bodies = []
             recent_ranges = []
-            for i in range(len(self.close_buffer_atr) - 11, len(self.close_buffer_atr) - 1):
+            for i in range(
+                len(self.close_buffer_atr) - 11, len(self.close_buffer_atr) - 1
+            ):
                 if i >= 1:
                     body = abs(self.close_buffer_atr[i] - self.close_buffer_atr[i - 1])
                     recent_bodies.append(body)
@@ -553,19 +604,27 @@ class StructureContextTracker:
             if recent_bodies and recent_ranges:
                 avg_body = sum(recent_bodies) / len(recent_bodies)
                 avg_range = sum(recent_ranges) / len(recent_ranges)
-                
+
                 # Check if current body > 2x average OR current range > 2x average range
                 # This handles cases where closes don't change much but range expands
                 body_expansion = avg_body > 0 and current_body > avg_body * 2.0
                 range_displacement = avg_range > 0 and current_range > avg_range * 2.0
-                
+
                 if body_expansion or range_displacement:
                     reasons.append("displacement_candle")
 
         expansion_detected = len(reasons) > 0
         return expansion_detected, reasons
 
-    def update_vwap_state(self, vwap: float, close: float, high: float | None = None, low: float | None = None, open: float | None = None) -> None:
+    def update_vwap_state(
+        self,
+        vwap: float,
+        close: float,
+        high: float | None = None,
+        low: float | None = None,
+        open: float | None = None,
+        atr: float | None = None,
+    ) -> None:
         """Update VWAP tracking state and detect VWAP crosses.
 
         Tracks when price crosses above/below VWAP for second confirmation logic.
@@ -577,6 +636,7 @@ class StructureContextTracker:
             high: Current high price (optional, for reclaim candle tracking)
             low: Current low price (optional, for reclaim candle tracking)
             open: Current open price (optional, for reclaim candle tracking)
+            atr: Current ATR value (optional, for VWAP acceptance tracking)
         """
         # Track previous state before updating buffers
         prev_close = self.close_buffer_vwap[-1] if self.close_buffer_vwap else None
@@ -605,8 +665,7 @@ class StructureContextTracker:
                     self.reclaim_candle_close = close
                 # Trigger state machine: reclaim detected
                 self.vwap_reclaim_sm.on_reclaim_detected(
-                    bar_idx=self.bar_count - 1,
-                    direction="above"
+                    bar_idx=self.bar_count - 1, direction="above"
                 )
 
             # Detect cross below (was above, now below)
@@ -621,9 +680,38 @@ class StructureContextTracker:
                     self.reclaim_candle_close = close
                 # Trigger state machine: reclaim detected
                 self.vwap_reclaim_sm.on_reclaim_detected(
-                    bar_idx=self.bar_count - 1,
-                    direction="below"
+                    bar_idx=self.bar_count - 1, direction="below"
                 )
+
+        # VWAP acceptance tracking (SOP alignment)
+        # Track consecutive bars within VWAP proximity band (±0.2 ATR)
+        if atr is not None and atr > 0:
+            proximity_threshold = atr * 0.2
+            distance_from_vwap = abs(close - vwap)
+
+            # Check if price is within proximity band
+            is_near_vwap = distance_from_vwap <= proximity_threshold
+
+            if is_near_vwap:
+                # Price is near VWAP - increment counter (start at 1 if None)
+                self.bars_near_vwap = (
+                    1 if self.bars_near_vwap is None else self.bars_near_vwap + 1
+                )
+                # Update last touch
+                self.last_vwap_touch_idx = self.bar_count - 1
+                self.bars_since_last_vwap_touch = 0
+            else:
+                # Price moved away - reset counter to 0 (tracking available but not near)
+                self.bars_near_vwap = 0
+                # Increment bars since touch if we've had a touch
+                if self.last_vwap_touch_idx is not None:
+                    self.bars_since_last_vwap_touch = (
+                        self.bar_count - 1
+                    ) - self.last_vwap_touch_idx
+        else:
+            # No ATR available - can't track acceptance (keep as None)
+            # Don't set to 0 - None indicates tracking unavailable vs 0 = not currently near
+            pass
 
     def update_volume_state(self, volume: float) -> None:
         """Update volume tracking buffer.
@@ -633,49 +721,51 @@ class StructureContextTracker:
         """
         self.volume_buffer.append(volume)
 
-    def update_session_state(self, timestamp: datetime, high: float, low: float) -> None:
+    def update_session_state(
+        self, timestamp: datetime, high: float, low: float
+    ) -> None:
         """Update session high/low tracking for TP structural targets.
-        
+
         Tracks session extremes using VWAP session boundaries (08:20 ET to 08:19:59 ET next day).
         At session boundary, current session extremes are rolled over to prior session values.
-        
+
         Args:
             timestamp: Current bar timestamp (timezone-aware)
             high: Current bar high price
             low: Current bar low price
-            
+
         Notes:
             - prior_session_high/low remain None until first session boundary
             - Sessions align with Gold futures RTH open (08:20 ET)
             - DST transitions handled automatically by get_vwap_session_id
         """
         from datetime import datetime
-        
+
         # Get session ID for this timestamp
         session_id = get_vwap_session_id(timestamp)
-        
+
         if self.current_session_id is None:
             # First bar ever - initialize current session
             self.current_session_id = session_id
             self.current_session_high = high
             self.current_session_low = low
             # prior_session values remain None until we cross a session boundary
-            
+
         elif session_id != self.current_session_id:
             # Session boundary crossed - roll over current to prior
             self.prior_session_high = self.current_session_high
             self.prior_session_low = self.current_session_low
-            
+
             # Reset current session tracking
             self.current_session_id = session_id
             self.current_session_high = high
             self.current_session_low = low
-            
+
             logger.debug(
                 f"Session boundary at {timestamp}: "
                 f"prior_high={self.prior_session_high}, prior_low={self.prior_session_low}"
             )
-            
+
         else:
             # Same session - update extremes if exceeded
             if self.current_session_high is None or high > self.current_session_high:
@@ -774,7 +864,9 @@ class StructureContextTracker:
                 # Confirmation was achieved within window - setup is still valid
                 result["confirmed"] = True
                 result["confirmation_type"] = "confirmed_persistent"
-                result["reasons"] = ["Reclaim confirmed: confirmation achieved within window"]
+                result["reasons"] = [
+                    "Reclaim confirmed: confirmation achieved within window"
+                ]
                 return result
             else:
                 # No confirmation within window - setup expires
@@ -787,30 +879,46 @@ class StructureContextTracker:
         if direction == "long" and self.vwap_reclaim_direction == "above":
             # Check 1: VWAP hold - price holding above VWAP for 2+ bars
             # Require at least 2 POST-reclaim bars and scope to post-reclaim data only
-            if bars_since >= 2 and len(self.close_buffer_vwap) >= 2 and len(self.vwap_buffer) >= 2:
+            if (
+                bars_since >= 2
+                and len(self.close_buffer_vwap) >= 2
+                and len(self.vwap_buffer) >= 2
+            ):
                 # Use only the last min(bars_since, 2) bars (post-reclaim only)
                 lookback = min(bars_since, 2)
                 recent_closes = list(self.close_buffer_vwap)[-lookback:]
                 recent_vwaps = list(self.vwap_buffer)[-lookback:]
-                if all(c > v for c, v in zip(recent_closes, recent_vwaps, strict=False)):
+                if all(
+                    c > v for c, v in zip(recent_closes, recent_vwaps, strict=False)
+                ):
                     result["confirmed"] = True
                     result["confirmations"].add("vwap_hold")  # Sprint 2 Task 4
                     result["reasons"].append("vwap_hold: price holding above VWAP")
 
             # Check 2: Volume expansion (1.5x average)
             # Use pre-reclaim bars as baseline, verify spike is post-reclaim
-            if len(self.volume_buffer) >= bars_since + 4:  # Need at least 4 pre-reclaim bars for baseline
+            if (
+                len(self.volume_buffer) >= bars_since + 4
+            ):  # Need at least 4 pre-reclaim bars for baseline
                 recent_volume = list(self.volume_buffer)
                 # Split at reclaim: pre-reclaim bars for baseline, current bar must be post-reclaim
-                pre_reclaim_volumes = recent_volume[-(bars_since + 4):-bars_since] if bars_since > 0 else recent_volume[:-bars_since]
+                pre_reclaim_volumes = (
+                    recent_volume[-(bars_since + 4) : -bars_since]
+                    if bars_since > 0
+                    else recent_volume[:-bars_since]
+                )
                 current_volume = recent_volume[-1]  # Most recent bar (post-reclaim)
-                
+
                 if len(pre_reclaim_volumes) >= 4:
                     avg_volume = sum(pre_reclaim_volumes) / len(pre_reclaim_volumes)
                     if avg_volume > 0 and current_volume > avg_volume * 1.5:
                         result["confirmed"] = True
-                        result["confirmations"].add("volume_expansion")  # Sprint 2 Task 4
-                        result["reasons"].append("volume_expansion: volume > 1.5x average")
+                        result["confirmations"].add(
+                            "volume_expansion"
+                        )  # Sprint 2 Task 4
+                        result["reasons"].append(
+                            "volume_expansion: volume > 1.5x average"
+                        )
 
             # Check 3: Micro higher low (using low_buffer from structure tracking)
             # Require at least 2 POST-reclaim bars and scope to post-reclaim data only
@@ -828,30 +936,46 @@ class StructureContextTracker:
         elif direction == "short" and self.vwap_reclaim_direction == "below":
             # Check 1: VWAP hold - price holding below VWAP for 2+ bars
             # Require at least 2 POST-reclaim bars and scope to post-reclaim data only
-            if bars_since >= 2 and len(self.close_buffer_vwap) >= 2 and len(self.vwap_buffer) >= 2:
+            if (
+                bars_since >= 2
+                and len(self.close_buffer_vwap) >= 2
+                and len(self.vwap_buffer) >= 2
+            ):
                 # Use only the last min(bars_since, 2) bars (post-reclaim only)
                 lookback = min(bars_since, 2)
                 recent_closes = list(self.close_buffer_vwap)[-lookback:]
                 recent_vwaps = list(self.vwap_buffer)[-lookback:]
-                if all(c < v for c, v in zip(recent_closes, recent_vwaps, strict=False)):
+                if all(
+                    c < v for c, v in zip(recent_closes, recent_vwaps, strict=False)
+                ):
                     result["confirmed"] = True
                     result["confirmations"].add("vwap_hold")  # Sprint 2 Task 4
                     result["reasons"].append("vwap_hold: price holding below VWAP")
 
             # Check 2: Volume expansion (1.5x average)
             # Use pre-reclaim bars as baseline, verify spike is post-reclaim
-            if len(self.volume_buffer) >= bars_since + 4:  # Need at least 4 pre-reclaim bars for baseline
+            if (
+                len(self.volume_buffer) >= bars_since + 4
+            ):  # Need at least 4 pre-reclaim bars for baseline
                 recent_volume = list(self.volume_buffer)
                 # Split at reclaim: pre-reclaim bars for baseline, current bar must be post-reclaim
-                pre_reclaim_volumes = recent_volume[-(bars_since + 4):-bars_since] if bars_since > 0 else recent_volume[:-bars_since]
+                pre_reclaim_volumes = (
+                    recent_volume[-(bars_since + 4) : -bars_since]
+                    if bars_since > 0
+                    else recent_volume[:-bars_since]
+                )
                 current_volume = recent_volume[-1]  # Most recent bar (post-reclaim)
-                
+
                 if len(pre_reclaim_volumes) >= 4:
                     avg_volume = sum(pre_reclaim_volumes) / len(pre_reclaim_volumes)
                     if avg_volume > 0 and current_volume > avg_volume * 1.5:
                         result["confirmed"] = True
-                        result["confirmations"].add("volume_expansion")  # Sprint 2 Task 4
-                        result["reasons"].append("volume_expansion: volume > 1.5x average")
+                        result["confirmations"].add(
+                            "volume_expansion"
+                        )  # Sprint 2 Task 4
+                        result["reasons"].append(
+                            "volume_expansion: volume > 1.5x average"
+                        )
 
             # Check 3: Micro lower high (using high_buffer from structure tracking)
             # Require at least 2 POST-reclaim bars and scope to post-reclaim data only
@@ -859,7 +983,11 @@ class StructureContextTracker:
                 # Use only the last min(bars_since, 3) bars (post-reclaim only)
                 lookback = min(bars_since, 3)
                 highs = list(self.high_buffer)[-lookback:]
-                if len(highs) >= 2 and highs[-1] < highs[-2] and len(self.vwap_buffer) > 0:
+                if (
+                    len(highs) >= 2
+                    and highs[-1] < highs[-2]
+                    and len(self.vwap_buffer) > 0
+                ):
                     # Verify the lower high is below VWAP
                     if highs[-1] < self.vwap_buffer[-1]:
                         result["confirmed"] = True
@@ -874,14 +1002,15 @@ class StructureContextTracker:
         if expansion_detected and expansion_reasons:
             # Check if expansion aligns with reclaim direction
             reclaim_matches_direction = (
-                (direction == "long" and self.vwap_reclaim_direction == "above") or
-                (direction == "short" and self.vwap_reclaim_direction == "below")
-            )
+                direction == "long" and self.vwap_reclaim_direction == "above"
+            ) or (direction == "short" and self.vwap_reclaim_direction == "below")
             if reclaim_matches_direction:
                 result["confirmed"] = True
                 for reason in expansion_reasons:
                     result["confirmations"].add(f"expansion_{reason}")
-                    result["reasons"].append(f"expansion_{reason}: market resolving from compression")
+                    result["reasons"].append(
+                        f"expansion_{reason}: market resolving from compression"
+                    )
 
         # Sprint 2 Task 4: Set confirmation_type for backward compatibility
         if result["confirmations"]:
@@ -899,8 +1028,7 @@ class StructureContextTracker:
                 # Call on_confirmation for each confirmation type
                 for conf_type in result["confirmations"]:
                     self.vwap_reclaim_sm.on_confirmation(
-                        bar_idx=current_bar,
-                        confirmation_type=conf_type
+                        bar_idx=current_bar, confirmation_type=conf_type
                     )
 
         return result
@@ -1069,14 +1197,14 @@ class StructureContextTracker:
 
     def _detect_conflict(self) -> bool:
         """Detect if there are conflicting structural signals (refined logic).
-        
+
         Conflict requires meaningful opposing structure, not just presence of both HH/LL.
         A single pullback (e.g., one LL in bullish HH/HL sequence) is normal, not conflict.
-        
+
         Conflict criteria (any of):
         1. >= 2 HH AND >= 2 LL in recent history (range-bound whipsaw)
         2. Alternating HH/LL pattern (rapid reversals)
-        
+
         Trend protection: If strong trend exists (clarity >= 0.5 AND confidence >= 0.7),
         do NOT flag conflict from single opposing labels.
 
@@ -1089,17 +1217,17 @@ class StructureContextTracker:
 
         valid_labels = [label for label in self.label_history if label is not None]
         recent = valid_labels[-5:] if len(valid_labels) >= 5 else valid_labels
-        
+
         if len(recent) < 3:
             return False
 
         # Count HH and LL occurrences
         hh_count = recent.count("HH")
         ll_count = recent.count("LL")
-        
+
         # Criterion 1: Require >= 2 of each for conflict (not just presence)
         has_meaningful_conflict = hh_count >= 2 and ll_count >= 2
-        
+
         # Criterion 2: Check for alternating pattern (HH/LL whipsaw)
         alternating = False
         if len(recent) >= 4:
@@ -1109,22 +1237,24 @@ class StructureContextTracker:
                 curr = recent[i]
                 next_label = recent[i + 1]
                 # HH -> LL or LL -> HH is an alternation
-                if (curr == "HH" and next_label == "LL") or (curr == "LL" and next_label == "HH"):
+                if (curr == "HH" and next_label == "LL") or (
+                    curr == "LL" and next_label == "HH"
+                ):
                     alternation_count += 1
             # If >= 2 alternations in recent history, it's whipsaw
             alternating = alternation_count >= 2
-        
+
         # Detect conflict
         conflict_detected = has_meaningful_conflict or alternating
-        
+
         if not conflict_detected:
             return False
-        
+
         # Trend protection: Override conflict if strong trend exists
         # Compute current trend metrics
         clarity = self._compute_clarity()
         trend_direction, trend_confidence = self._compute_trend()
-        
+
         # If strong trend, ignore minor conflicts (single opposing label allowed)
         if clarity >= 0.5 and trend_confidence >= 0.7:
             # Only flag conflict if it's severe:
@@ -1134,12 +1264,12 @@ class StructureContextTracker:
                 return True  # Severe conflict overrides trend protection
             else:
                 return False  # Trend protection prevents flag
-        
+
         return conflict_detected
 
     def _has_poor_structure(self) -> bool:
         """Check if structure clarity is below threshold.
-        
+
         Returns:
             True if structure clarity < 0.3 (poor structure)
         """
@@ -1149,56 +1279,58 @@ class StructureContextTracker:
 
     def _has_recent_bos(self) -> bool:
         """Check if Break of Structure occurred recently.
-        
+
         Returns:
             True if BOS within last 15 bars
         """
         if self.last_bos_idx is None:
             return False
-        
+
         bos_age = self.bar_count - self.last_bos_idx
         BOS_RECENCY_THRESHOLD = 15
         return bos_age <= BOS_RECENCY_THRESHOLD
 
     def _is_atr_compressed(self) -> bool:
         """Check if ATR is compressed with asset-adjusted floor check.
-        
+
         Per SOP: ATR should ONLY confirm structural issues, never flag chop independently.
-        
+
         Floor check: If ATR % is below minimum for this timeframe, it's normal low
         volatility (not compression). This prevents over-flagging during regular
         intraday conditions.
-        
+
         Returns:
             True if ATR compressed below threshold AND above minimum floor
         """
         # Need ATR data
         if self.current_atr is None or self.price_baseline is None:
             return False
-        
+
         if self.price_baseline == 0:
             return False
-        
+
         # Calculate ATR as % of price
         atr_pct = self.current_atr / self.price_baseline
-        
+
         # Floor check: if ATR % is below minimum, it's normal low volatility, not compression
         if atr_pct < self.atr_config["min_pct"]:
             return False
-        
+
         # Compression check: use cached ATR compression ratio from most recent update
         # (don't recalculate as it would modify the baseline buffer)
-        return self.atr_compression_ratio_cached < self.atr_config["compression_threshold"]
+        return (
+            self.atr_compression_ratio_cached < self.atr_config["compression_threshold"]
+        )
 
     def _detect_wick_dominance(self) -> bool:
         """Check for persistent wick dominance without displacement.
-        
+
         Returns:
             True if persistent extreme wick dominance detected
         """
         if len(self.wick_ratio_buffer) < self.wick_dominance_window:
             return False
-        
+
         # Count bars with VERY high wick ratio (wick > 5x body equivalent)
         # Higher threshold to avoid false positives from trending markets
         high_wick_bars = sum(1 for ratio in self.wick_ratio_buffer if ratio > 5.0)
@@ -1211,20 +1343,20 @@ class StructureContextTracker:
         Per Shir Capital SOP:
         - Noise means structural disorder, not low volatility
         - ATR should ONLY confirm structural issues, never flag chop independently
-        
+
         Priority Order:
         0. OVERRIDE: Recent BOS without counter-CHoCH = clear trend continuation
            (never flag chop if this condition met)
-        
+
         1. PRIMARY (higher severity - immediate structural issues):
            - Rapid alternations (is_chop)
            - Structure conflict (mixed HH/LL)
            - Poor structure (clarity < threshold) AND no recent BOS
-        
+
         2. SECONDARY (confirmation only, requires primary issue):
            - Wick dominance
            - ATR compression
-        
+
         Returns:
             True if structural chop detected (requires at least one PRIMARY issue)
         """
@@ -1232,17 +1364,17 @@ class StructureContextTracker:
         # This indicates clear trend continuation, never flag as chop
         if self._has_recent_bos() and not self._has_counter_choch():
             return False  # Clear trend continuation, not chop
-        
+
         # PRIORITY 1: Primary structural issues
         # Rapid alternations or structure conflict are immediate red flags
         has_immediate_issue = (
             self._detect_chop()  # rapid alternations
             or self._detect_conflict()  # mixed HH/LL signals
         )
-        
+
         if has_immediate_issue:
             return True
-        
+
         # Secondary primary check: Poor structure AND no BOS (failed follow-through)
         # Both must be present - poor structure alone in a mature trend is okay
         # No BOS alone in clean structure is also okay (mature trend continuation)
@@ -1250,35 +1382,41 @@ class StructureContextTracker:
         has_poor_structure = self._has_poor_structure()
         has_no_bos = not self._has_recent_bos()
         clarity = self._compute_clarity()
-        
+
         # Only flag if poor structure AND no BOS AND some swings exist (clarity > 0)
         # If clarity is exactly 0, no swings detected → smooth trend, not chop
         if has_poor_structure and has_no_bos and clarity > 0:
             return True
-        
+
         # PRIORITY 2: Secondary confirmation (optional - tracked for scoring)
         # These are tracked for scoring penalties but don't change the structural chop decision
         _ = self._detect_wick_dominance()  # Track for potential future use
         _ = self._is_atr_compressed()  # Track for scoring penalty in scoring.py
-        
+
         # No primary issues found
         return False
-    
+
     def _has_counter_choch(self) -> bool:
         """Check if counter-CHoCH detected (CHoCH opposite to current BOS direction).
-        
+
         Returns:
             True if CHoCH detected in opposite direction to last BOS
         """
         if self.last_bos_direction is None or self.last_choch_direction is None:
             return False
-        
+
         # Counter-CHoCH means CHoCH in opposite direction to BOS
-        if self.last_bos_direction == "bullish" and self.last_choch_direction == "bearish":
+        if (
+            self.last_bos_direction == "bullish"
+            and self.last_choch_direction == "bearish"
+        ):
             return True
-        if self.last_bos_direction == "bearish" and self.last_choch_direction == "bullish":
+        if (
+            self.last_bos_direction == "bearish"
+            and self.last_choch_direction == "bullish"
+        ):
             return True
-        
+
         return False
 
     def _calculate_atr_compression_ratio(self) -> float:
@@ -1325,9 +1463,11 @@ class StructureContextTracker:
             return 1.0
 
         self.current_atr = sum(true_ranges) / len(true_ranges)
-        
+
         # Store price baseline (current close) for ATR % calculation
-        self.price_baseline = self.close_buffer_atr[-1] if len(self.close_buffer_atr) > 0 else None
+        self.price_baseline = (
+            self.close_buffer_atr[-1] if len(self.close_buffer_atr) > 0 else None
+        )
 
         # Add current ATR to baseline buffer for future comparisons
         self.atr_baseline_buffer.append(self.current_atr)
@@ -1337,7 +1477,9 @@ class StructureContextTracker:
             return 1.0  # Not enough data for baseline
 
         # Calculate baseline ATR (median is more robust to outliers than mean)
-        baseline_atr = sorted(self.atr_baseline_buffer)[len(self.atr_baseline_buffer) // 2]
+        baseline_atr = sorted(self.atr_baseline_buffer)[
+            len(self.atr_baseline_buffer) // 2
+        ]
 
         if baseline_atr == 0:
             self.atr_compression_ratio_cached = 1.0
@@ -1849,7 +1991,7 @@ def compute_structure_context_batch(
     contexts = []
     expansion_data = []  # Track expansion detection separately
     second_confirmation_data = []  # Track second confirmation for each bar
-    
+
     for i in range(len(df)):
         ctx = tracker.update(
             high=df["high"].iloc[i],
@@ -1857,7 +1999,7 @@ def compute_structure_context_batch(
             close=df["close"].iloc[i],
         )
         contexts.append(ctx)
-        
+
         # Update VWAP state for second confirmation tracking
         if has_vwap:
             vwap_val = vwap_series.iloc[i]
@@ -1865,31 +2007,33 @@ def compute_structure_context_batch(
             # Only update if both values are valid (not NaN)
             if pd.notna(vwap_val) and pd.notna(close_val):
                 tracker.update_vwap_state(vwap=float(vwap_val), close=float(close_val))
-        
+
         # Update volume state for second confirmation tracking
         if has_volume:
             vol_val = volume_series.iloc[i]
             if pd.notna(vol_val):
                 tracker.update_volume_state(volume=float(vol_val))
-        
+
         # Detect expansion for this bar (for VWAP_RECLAIM entry timing)
         expansion_detected, expansion_reasons = tracker.detect_expansion()
         expansion_data.append((expansion_detected, expansion_reasons))
-        
+
         # Compute second confirmation for both directions
         long_conf = tracker.compute_second_confirmation("long")
         short_conf = tracker.compute_second_confirmation("short")
-        second_confirmation_data.append({
-            "second_confirmation_long": long_conf["confirmed"],
-            "second_confirmation_short": short_conf["confirmed"],
-            "second_confirmation_long_type": long_conf["confirmation_type"],
-            "second_confirmation_short_type": short_conf["confirmation_type"],
-            "second_confirmation_long_types": list(long_conf["confirmations"]),
-            "second_confirmation_short_types": list(short_conf["confirmations"]),
-            "second_confirmation_long_reasons": long_conf["reasons"],
-            "second_confirmation_short_reasons": short_conf["reasons"],
-            "bars_since_vwap_reclaim": long_conf["bars_since_reclaim"],
-        })
+        second_confirmation_data.append(
+            {
+                "second_confirmation_long": long_conf["confirmed"],
+                "second_confirmation_short": short_conf["confirmed"],
+                "second_confirmation_long_type": long_conf["confirmation_type"],
+                "second_confirmation_short_type": short_conf["confirmation_type"],
+                "second_confirmation_long_types": list(long_conf["confirmations"]),
+                "second_confirmation_short_types": list(short_conf["confirmations"]),
+                "second_confirmation_long_reasons": long_conf["reasons"],
+                "second_confirmation_short_reasons": short_conf["reasons"],
+                "bars_since_vwap_reclaim": long_conf["bars_since_reclaim"],
+            }
+        )
 
     # Convert to DataFrame
     result = pd.DataFrame(

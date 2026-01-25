@@ -14,7 +14,9 @@ from datetime import datetime, timezone
 from scp_shared.rule_engine.htf.types import HTFBias
 from scp_shared.rule_engine.setup_validator import SetupValidator
 from scp_shared.rule_engine.setup_detectors.vwap_fade import detect_vwap_fade
-from scp_shared.rule_engine.setup_detectors.dxy_continuation import detect_dxy_continuation
+from scp_shared.rule_engine.setup_detectors.dxy_continuation import (
+    detect_dxy_continuation,
+)
 from scp_shared.rule_engine.htf.vwap.reclaim import validate_reclaim_context
 
 
@@ -60,15 +62,15 @@ class TestVWAPReclaimParity:
     def test_valid_context_both_pass(self):
         """Test that valid VWAP_RECLAIM context passes both validators."""
         from scp_shared.rule_engine.scoring import build_setup_context
-        
+
         validator = SetupValidator()
-        
+
         htf_bias = self._create_htf_bias()
         features = self._create_features(last_structure_label="HH")
 
         # Old validation
         old_result = validate_reclaim_context(htf_bias, features)
-        
+
         # New validation (use build_setup_context for proper fallback logic)
         context = build_setup_context(features, htf_bias)
         new_result = validator.validate_setup("VWAP_RECLAIM", context)
@@ -79,15 +81,15 @@ class TestVWAPReclaimParity:
     def test_missing_structure_1h_both_reject(self):
         """Test that missing structure_1h rejects in both validators."""
         from scp_shared.rule_engine.scoring import build_setup_context
-        
+
         validator = SetupValidator()
-        
+
         htf_bias = self._create_htf_bias(structure_1h=None)
         features = self._create_features()
 
         # Old validation
         old_result = validate_reclaim_context(htf_bias, features)
-        
+
         # New validation
         context = build_setup_context(features, htf_bias)
         new_result = validator.validate_setup("VWAP_RECLAIM", context)
@@ -101,15 +103,15 @@ class TestVWAPReclaimParity:
     def test_low_clarity_both_reject(self):
         """Test that low clarity rejects in both validators."""
         from scp_shared.rule_engine.scoring import build_setup_context
-        
+
         validator = SetupValidator()
-        
+
         htf_bias = self._create_htf_bias(structure_clarity=0.3)
         features = self._create_features(structure_clarity=0.3)
 
         # Old validation
         old_result = validate_reclaim_context(htf_bias, features)
-        
+
         # New validation
         context = build_setup_context(features, htf_bias)
         new_result = validator.validate_setup("VWAP_RECLAIM", context)
@@ -121,15 +123,15 @@ class TestVWAPReclaimParity:
     def test_bos_direction_conflict_both_reject(self):
         """Test that BOS direction conflict rejects in both validators."""
         from scp_shared.rule_engine.scoring import build_setup_context
-        
+
         validator = SetupValidator()
-        
+
         htf_bias = self._create_htf_bias()
         features = self._create_features(bos_direction="short", direction="long")
 
         # Old validation
         old_result = validate_reclaim_context(htf_bias, features)
-        
+
         # New validation
         context = build_setup_context(features, htf_bias)
         new_result = validator.validate_setup("VWAP_RECLAIM", context)
@@ -141,15 +143,15 @@ class TestVWAPReclaimParity:
     def test_structure_conflict_both_reject(self):
         """Test that structure conflict rejects in both validators."""
         from scp_shared.rule_engine.scoring import build_setup_context
-        
+
         validator = SetupValidator()
-        
+
         htf_bias = self._create_htf_bias(conflict_detected=True)
         features = self._create_features()
 
         # Old validation
         old_result = validate_reclaim_context(htf_bias, features)
-        
+
         # New validation
         context = build_setup_context(features, htf_bias)
         new_result = validator.validate_setup("VWAP_RECLAIM", context)
@@ -204,15 +206,15 @@ class TestVWAPFadeParity:
     def test_valid_fade_long_both_pass(self):
         """Test that valid long VWAP_FADE passes both detectors."""
         from scp_shared.rule_engine.scoring import build_setup_context
-        
+
         validator = SetupValidator()
-        
+
         htf_bias = self._create_htf_bias()
         features = self._create_features()
 
         # Old detection
         old_result = detect_vwap_fade(features, htf_bias, df=None)
-        
+
         # New validation
         context = build_setup_context(features, htf_bias)
         new_result = validator.validate_setup("VWAP_FADE", context)
@@ -224,15 +226,15 @@ class TestVWAPFadeParity:
     def test_no_sweep_both_reject(self):
         """Test that missing sweep rejects in both detectors."""
         from scp_shared.rule_engine.scoring import build_setup_context
-        
+
         validator = SetupValidator()
-        
+
         htf_bias = self._create_htf_bias(liquidity_sweep_detected=False)
         features = self._create_features(liquidity_sweep=False)
 
         # Old detection
         old_result = detect_vwap_fade(features, htf_bias, df=None)
-        
+
         # New validation
         context = build_setup_context(features, htf_bias)
         new_result = validator.validate_setup("VWAP_FADE", context)
@@ -244,9 +246,9 @@ class TestVWAPFadeParity:
     def test_no_rejection_wick_both_reject(self):
         """Test that missing rejection wick rejects in both detectors."""
         from scp_shared.rule_engine.scoring import build_setup_context
-        
+
         validator = SetupValidator()
-        
+
         htf_bias = self._create_htf_bias()
         # Create candle with small lower wick: open=2642, close=2644, low=2641
         # body = 2, lower_wick = 1, need lower_wick > 2.6 for long fade
@@ -259,7 +261,7 @@ class TestVWAPFadeParity:
 
         # Old detection
         old_result = detect_vwap_fade(features, htf_bias, df=None)
-        
+
         # New validation (build_setup_context calculates body/wicks automatically)
         context = build_setup_context(features, htf_bias)
         new_result = validator.validate_setup("VWAP_FADE", context)
@@ -308,15 +310,15 @@ class TestDXYContinuationParity:
     def test_valid_continuation_long_both_pass(self):
         """Test that valid long DXY_CONTINUATION passes both detectors."""
         from scp_shared.rule_engine.scoring import build_setup_context
-        
+
         validator = SetupValidator()
-        
+
         htf_bias = self._create_htf_bias()
         features = self._create_features()
 
         # Old detection
         old_result = detect_dxy_continuation(features, htf_bias, df=None)
-        
+
         # New validation
         context = build_setup_context(features, htf_bias)
         new_result = validator.validate_setup("DXY_CONTINUATION", context)
@@ -328,15 +330,15 @@ class TestDXYContinuationParity:
     def test_weak_correlation_both_reject(self):
         """Test that weak correlation rejects in both detectors."""
         from scp_shared.rule_engine.scoring import build_setup_context
-        
+
         validator = SetupValidator()
-        
+
         htf_bias = self._create_htf_bias(dxy_corr_1m=-0.2, dxy_corr_5m=-0.2)
         features = self._create_features(dxy_corr=-0.4)
 
         # Old detection
         old_result = detect_dxy_continuation(features, htf_bias, df=None)
-        
+
         # New validation
         context = build_setup_context(features, htf_bias)
         new_result = validator.validate_setup("DXY_CONTINUATION", context)
@@ -348,15 +350,15 @@ class TestDXYContinuationParity:
     def test_chop_both_reject(self):
         """Test that chop condition rejects in both detectors."""
         from scp_shared.rule_engine.scoring import build_setup_context
-        
+
         validator = SetupValidator()
-        
+
         htf_bias = self._create_htf_bias()
         features = self._create_features(is_chop=True)
 
         # Old detection
         old_result = detect_dxy_continuation(features, htf_bias, df=None)
-        
+
         # New validation
         context = build_setup_context(features, htf_bias)
         new_result = validator.validate_setup("DXY_CONTINUATION", context)
@@ -373,7 +375,8 @@ class TestSetupEnableDisable:
         """Test that disabled setup rejects regardless of valid conditions."""
         # Create a temp config with VWAP_FADE disabled
         config_file = tmp_path / "setups.yaml"
-        config_file.write_text("""
+        config_file.write_text(
+            """
 setups:
   VWAP_FADE:
     enabled: false
@@ -388,14 +391,15 @@ setups:
   
 confidence:
   a_plus: 8.0
-""")
-        
+"""
+        )
+
         validator = SetupValidator(config_path=str(config_file))
-        
+
         # Even with valid context, should reject because disabled
         context = {"any_field": "any_value"}
         result = validator.validate_setup("VWAP_FADE", context)
-        
+
         assert result.is_valid is False
         assert "disabled" in result.reject_reason.lower()
 
@@ -403,7 +407,8 @@ confidence:
         """Test that enabled setup can pass with valid conditions."""
         # Create a temp config with simple passing constraint
         config_file = tmp_path / "setups.yaml"
-        config_file.write_text("""
+        config_file.write_text(
+            """
 setups:
   TEST_SETUP:
     enabled: true
@@ -418,12 +423,13 @@ setups:
   
 confidence:
   a_plus: 8.0
-""")
-        
+"""
+        )
+
         validator = SetupValidator(config_path=str(config_file))
-        
+
         # Should pass with valid context
         context = {"value": 5}
         result = validator.validate_setup("TEST_SETUP", context)
-        
+
         assert result.is_valid is True

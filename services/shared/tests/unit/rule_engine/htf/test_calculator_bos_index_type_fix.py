@@ -41,7 +41,18 @@ class TestBOSIndexTypeConversion:
                 "close": [2095, 2105, 2115, 2125, 2135, 2125, 2115, 2105, 2095, 2085],
                 "vwap": [2092, 2102, 2112, 2122, 2132, 2122, 2112, 2102, 2092, 2082],
                 # BOS detected at index 5 (timestamp 2024-01-01 15:00:00)
-                "bos": [None, None, None, None, None, "bullish_bos", None, None, None, None],
+                "bos": [
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    "bullish_bos",
+                    None,
+                    None,
+                    None,
+                    None,
+                ],
             }
         )
         df_1h = df_1h.set_index("timestamp")

@@ -10,13 +10,13 @@ async def create_consumer_group(
     start_id: str = "0",
 ) -> bool:
     """Create a consumer group for a stream.
-    
+
     Args:
         redis_client: Async Redis client
         stream: Stream name
         group: Consumer group name
         start_id: Starting message ID ("0" = from beginning, "$" = from now)
-        
+
     Returns:
         True if created, False if already exists
     """
@@ -40,12 +40,12 @@ async def delete_consumer_group(
     group: str,
 ) -> bool:
     """Delete a consumer group.
-    
+
     Args:
         redis_client: Async Redis client
         stream: Stream name
         group: Consumer group name
-        
+
     Returns:
         True if deleted, False if didn't exist
     """
@@ -61,11 +61,11 @@ async def get_consumer_group_info(
     stream: str,
 ) -> list[dict[str, object]]:
     """Get information about all consumer groups for a stream.
-    
+
     Args:
         redis_client: Async Redis client
         stream: Stream name
-        
+
     Returns:
         List of consumer group info dicts
     """
@@ -81,14 +81,13 @@ async def get_stream_length(
     stream: str,
 ) -> int:
     """Get the number of messages in a stream.
-    
+
     Args:
         redis_client: Async Redis client
         stream: Stream name
-        
+
     Returns:
         Number of messages in stream
     """
     length = await redis_client.xlen(stream)
     return int(length) if length else 0
-

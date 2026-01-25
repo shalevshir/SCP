@@ -4,7 +4,9 @@ import pandas as pd
 import pytest
 
 from scp_shared.rule_engine.htf.types import HTFBias
-from scp_shared.rule_engine.setup_detectors.dxy_continuation import detect_dxy_continuation
+from scp_shared.rule_engine.setup_detectors.dxy_continuation import (
+    detect_dxy_continuation,
+)
 
 
 class TestDXYContinuationDetector:
@@ -269,7 +271,7 @@ class TestDXYContinuationDetector:
 
 class TestATRFallbackLogic:
     """Test ATR fallback logic for displacement calculation.
-    
+
     When ATR is unavailable, the fallback must allow valid displacement candles
     to pass. The previous fallback (using full range as ATR) made it mathematically
     impossible for the displacement check to pass since body <= range always.
@@ -277,12 +279,12 @@ class TestATRFallbackLogic:
 
     def test_strong_displacement_candle_without_atr_should_pass(self):
         """Test that a strong displacement candle can pass when ATR is missing.
-        
+
         Bug: When ATR is unavailable, fallback used (high - low) as ATR.
         Since body = |close - open| <= (high - low) always, then
         displacement = body / (high - low) <= 1.0, which can never
         satisfy the displacement >= 1.2 requirement.
-        
+
         Fix: Use a smaller ATR estimate (e.g., 0.7 * range) to allow
         high-body-ratio candles to pass.
         """
@@ -332,7 +334,7 @@ class TestATRFallbackLogic:
 
     def test_weak_body_candle_without_atr_should_fail(self):
         """Test that weak-bodied candles still fail when ATR is missing.
-        
+
         This verifies that the ATR fallback fix (0.65x range) doesn't make
         the displacement check too lenient. Candles with large wicks and
         small bodies should still fail.
@@ -382,22 +384,22 @@ class TestATRFallbackLogic:
 
 class TestNoiseZoneHandling:
     """Test that noise zone is handled via score penalty, not hard rejection.
-    
+
     Per Shir Capital SOP: "Noise zone now handled as score penalty (not hard-block)"
     The detect_dxy_continuation function should NOT hard-reject based on noise zone.
     Noise handling is done via calculate_noise_penalty() in scoring.py.
-    
+
     This test verifies the fix for the bug where is_noise_zone was checked as
     a hard gate but never computed in the feature engine.
     """
 
     def test_is_noise_zone_not_a_hard_rejection(self):
         """Test that is_noise_zone does NOT cause hard rejection.
-        
+
         Noise zone detection should be handled via score penalty in scoring.py,
         not as a hard gate in the detector. Valid setups should pass detection
         regardless of is_noise_zone value.
-        
+
         This is a regression test for the bug where is_noise_zone was checked
         but never computed in the feature engine (always defaulted to False).
         """

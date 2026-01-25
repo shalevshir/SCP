@@ -108,7 +108,7 @@ def compute_htf_range(
 
     # Check if range_high is broken (any close above it after it formed)
     if range_high_pos < len(scoped_df) - 1:
-        bars_after_high = scoped_df.iloc[range_high_pos + 1:]
+        bars_after_high = scoped_df.iloc[range_high_pos + 1 :]
     else:
         bars_after_high = scoped_df.iloc[0:0]
     if len(bars_after_high) > 0:
@@ -118,7 +118,7 @@ def compute_htf_range(
 
     # Check if range_low is broken (any close below it after it formed)
     if range_low_pos < len(scoped_df) - 1:
-        bars_after_low = scoped_df.iloc[range_low_pos + 1:]
+        bars_after_low = scoped_df.iloc[range_low_pos + 1 :]
     else:
         bars_after_low = scoped_df.iloc[0:0]
     if len(bars_after_low) > 0:
@@ -187,15 +187,17 @@ def compute_untouched_liquidity(
 
     for i in range(1, len(df) - 1):
         # Swing high: higher than both neighbors
-        if df["high"].iloc[i] > df["high"].iloc[i - 1] and df["high"].iloc[i] > df[
-            "high"
-        ].iloc[i + 1]:
+        if (
+            df["high"].iloc[i] > df["high"].iloc[i - 1]
+            and df["high"].iloc[i] > df["high"].iloc[i + 1]
+        ):
             swing_highs.append(df["high"].iloc[i])
 
         # Swing low: lower than both neighbors
-        if df["low"].iloc[i] < df["low"].iloc[i - 1] and df["low"].iloc[i] < df[
-            "low"
-        ].iloc[i + 1]:
+        if (
+            df["low"].iloc[i] < df["low"].iloc[i - 1]
+            and df["low"].iloc[i] < df["low"].iloc[i + 1]
+        ):
             swing_lows.append(df["low"].iloc[i])
 
     # Filter for valid liquidity highs (above price, not swept)
@@ -281,9 +283,10 @@ def find_nearest_fvg_targets(
 
         # Return nearest FVG (lowest fvg_low above price)
         nearest_idx = valid_fvgs["fvg_low"].idxmin()
-        return valid_fvgs.loc[nearest_idx, "fvg_high"], valid_fvgs.loc[
-            nearest_idx, "fvg_low"
-        ]
+        return (
+            valid_fvgs.loc[nearest_idx, "fvg_high"],
+            valid_fvgs.loc[nearest_idx, "fvg_low"],
+        )
 
     # For shorts: find bearish FVGs below current price
     elif direction == "short":
@@ -297,9 +300,10 @@ def find_nearest_fvg_targets(
 
         # Return nearest FVG (highest fvg_high below price)
         nearest_idx = valid_fvgs["fvg_high"].idxmax()
-        return valid_fvgs.loc[nearest_idx, "fvg_high"], valid_fvgs.loc[
-            nearest_idx, "fvg_low"
-        ]
+        return (
+            valid_fvgs.loc[nearest_idx, "fvg_high"],
+            valid_fvgs.loc[nearest_idx, "fvg_low"],
+        )
 
     else:
         return None, None
@@ -335,7 +339,7 @@ def find_opposing_fvgs(
         For longs (current_price < tp_price):
         - Find bearish FVGs where fvg_low is between entry and TP
         - Even if fvg_high extends beyond TP, the FVG blocks if it starts in path
-        
+
         For shorts (current_price > tp_price):
         - Find bullish FVGs where fvg_high is between TP and entry
         - Even if fvg_low extends beyond TP, the FVG blocks if its top is in path

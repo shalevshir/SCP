@@ -299,7 +299,7 @@ class SideBySideReplay:
                             # Safe attribute extraction
                             def safe_get_attrs(signal, attrs):
                                 """Safely get attributes from signal.
-                                
+
                                 Returns None if not found.
                                 """
                                 result = {}

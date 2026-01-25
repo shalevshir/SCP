@@ -38,13 +38,13 @@ class VWAPReclaimState:
     sweep_bar_idx: int | None = None
     displacement_detected: bool = False
     reclaim_confirmed: bool = False
-    
+
     # Migration: backward-compatible alias for started_below
     @property
     def started_below(self) -> bool:
         """Deprecated alias for started_on_dwell_side (backward compatibility)."""
         return self.started_on_dwell_side
-    
+
     @started_below.setter
     def started_below(self, value: bool) -> None:
         """Deprecated setter for started_below (backward compatibility)."""
@@ -196,14 +196,16 @@ def validate_reclaim_context(
     # Get structure_clarity from features (1M) as primary source
     # Fallback to htf_bias.structure_clarity (1H) if features not available
     if features is not None:
-        structure_clarity = features.get("structure_clarity", htf_bias.structure_clarity)
+        structure_clarity = features.get(
+            "structure_clarity", htf_bias.structure_clarity
+        )
     else:
         structure_clarity = htf_bias.structure_clarity
 
     # Get sweep info from features if available (more responsive)
     # Check both current bar sweep AND recent sweep via sweep_age
     SWEEP_RECENCY_THRESHOLD = 20  # Sweep within last 20 bars is considered recent
-    
+
     if features is not None:
         # Current bar sweep
         sweep_on_this_bar = (
@@ -212,15 +214,17 @@ def validate_reclaim_context(
         # Recent sweep via sweep_age
         sweep_age = features.get("sweep_age")
         sweep_recent = (
-            sweep_age is not None 
-            and not pd.isna(sweep_age) 
+            sweep_age is not None
+            and not pd.isna(sweep_age)
             and int(sweep_age) <= SWEEP_RECENCY_THRESHOLD
         )
         sweep_detected = sweep_on_this_bar or sweep_recent
         # BOS exists if: bos_recent=True, htf_bias.bos_detected=True, OR bos_age is valid
         bos_age_val = features.get("bos_age")
         bos_age_valid = bos_age_val is not None and not pd.isna(bos_age_val)
-        bos_detected = features.get("bos_recent", False) or htf_bias.bos_detected or bos_age_valid
+        bos_detected = (
+            features.get("bos_recent", False) or htf_bias.bos_detected or bos_age_valid
+        )
     else:
         sweep_detected = htf_bias.liquidity_sweep_detected
         bos_detected = htf_bias.bos_detected
@@ -234,7 +238,6 @@ def validate_reclaim_context(
         f"clarity={clarity_str}, "
         f"bos={bos_detected}"
     )
-    
 
     # Initialize quality flags (for penalty calculation, not rejection)
     quality_flags = {
@@ -257,15 +260,18 @@ def validate_reclaim_context(
     if features is not None:
         # Get structure_label, handling pd.NA properly (can't use 'or' with NA)
         raw_label = features.get("structure_label")
-        if raw_label is None or (isinstance(raw_label, float) and pd.isna(raw_label)) or pd.isna(raw_label):
+        if (
+            raw_label is None
+            or (isinstance(raw_label, float) and pd.isna(raw_label))
+            or pd.isna(raw_label)
+        ):
             raw_label = features.get("last_structure_label")
         structure_label = raw_label
-    
+
     # HARD REJECT if no structure label available at decision time
     # No guessing, no defaulting, no silent pass-through
-    is_label_missing = (
-        structure_label is None
-        or (isinstance(structure_label, float) and pd.isna(structure_label))
+    is_label_missing = structure_label is None or (
+        isinstance(structure_label, float) and pd.isna(structure_label)
     )
     # Handle pandas NA type explicitly
     try:
@@ -273,7 +279,7 @@ def validate_reclaim_context(
             is_label_missing = True
     except (TypeError, ValueError):
         pass
-    
+
     if is_label_missing:
         logger.warning(
             "VWAP_RECLAIM HARD REJECT: no structure_label available at decision time"
@@ -285,7 +291,7 @@ def validate_reclaim_context(
             structure_clarity=structure_clarity,
             quality_flags=quality_flags,
         )
-    
+
     # Check structure_label direction alignment (applies to both long and short)
     if direction == "long" and structure_label in ("LH", "LL"):
         logger.debug(
@@ -323,27 +329,27 @@ def validate_reclaim_context(
         bos_age = features.get("bos_age")
         choch_detected = features.get("choch_detected", False)
         choch_direction = features.get("choch_direction")
-        
+
         direction = htf_bias.direction
-        
+
         # Determine if BOS is stale (>15 bars old) - stale BOS should not cause rejection
         bos_is_stale = False
         if bos_age is not None and not pd.isna(bos_age):
             bos_is_stale = int(bos_age) > 15
-        
+
         logger.debug(
             f"VWAP_RECLAIM direction check: direction={direction}, "
             f"bos_direction={bos_direction}, bos_recent={bos_recent}, bos_age={bos_age}, "
             f"bos_stale={bos_is_stale}, choch={choch_detected}, choch_dir={choch_direction}"
         )
-        
+
         # Only reject if there's an EXPLICIT directional conflict AND BOS is recent
         # None/unknown BOS direction is allowed (matches backtester where micro_bos was null)
         # Stale BOS is also allowed through (not relevant to current setup)
         if direction == "long":
             # Reject only if BOS is explicitly bearish AND recent AND no bullish CHoCH
             has_bearish_conflict = (
-                bos_direction == "bearish" 
+                bos_direction == "bearish"
                 and not bos_is_stale  # Only reject if BOS is recent
                 and not (choch_detected and choch_direction == "bullish")
             )
@@ -378,7 +384,7 @@ def validate_reclaim_context(
                     structure_clarity=structure_clarity,
                     quality_flags=quality_flags,
                 )
-        
+
         # SAFETY CHECK 2: Structure conflict
         # This is a SAFETY gate - conflict indicates unreliable structure
         structure_conflict = features.get("structure_conflict_flag", False)
@@ -527,7 +533,7 @@ def detect_vwap_reclaim(
         ...     print("Valid VWAP reclaim detected")
     """
     state = VWAPReclaimState()
-    
+
     # Get trade direction from HTF bias
     direction = htf_bias.direction  # "long" or "short"
 
@@ -540,7 +546,7 @@ def detect_vwap_reclaim(
     # Need at least lookback bars + dwell bars
     MIN_DWELL_BARS = 30  # SOP: 30-60 bars minimum
     min_required_bars = lookback + MIN_DWELL_BARS
-    
+
     if len(df) < lookback:
         return False, state
 
@@ -548,20 +554,20 @@ def detect_vwap_reclaim(
     # This prevents premature reclaim signals on brief touches of VWAP
     if len(df) >= min_required_bars:
         # Count bars spent on dwell side in the window BEFORE the recent lookback
-        dwell_df = df.iloc[-(lookback + MIN_DWELL_BARS):-lookback]
-        
+        dwell_df = df.iloc[-(lookback + MIN_DWELL_BARS) : -lookback]
+
         if direction == "long":
             dwell_bars = (dwell_df["close"] < dwell_df["vwap"]).sum()
         else:  # short
             dwell_bars = (dwell_df["close"] > dwell_df["vwap"]).sum()
-        
+
         if dwell_bars < MIN_DWELL_BARS:
             logger.debug(
                 f"VWAP_RECLAIM rejected: insufficient dwell time "
                 f"({dwell_bars} < {MIN_DWELL_BARS} bars on {'below' if direction == 'long' else 'above'} VWAP)"
             )
             return False, state
-        
+
         logger.debug(
             f"VWAP_RECLAIM dwell gate passed: {dwell_bars} bars on dwell side "
             f"(direction={direction})"
@@ -575,12 +581,14 @@ def detect_vwap_reclaim(
         was_on_side = (recent_df["close"] < recent_df["vwap"]).any()
     else:  # short
         was_on_side = (recent_df["close"] > recent_df["vwap"]).any()
-    
+
     # Convert numpy.bool_ to Python bool for proper identity comparison
     state.started_on_dwell_side = bool(was_on_side)
 
     if not was_on_side:
-        logger.debug(f"VWAP_RECLAIM rejected: price not on dwell side (direction={direction})")
+        logger.debug(
+            f"VWAP_RECLAIM rejected: price not on dwell side (direction={direction})"
+        )
         return False, state
 
     # Check 2: Liquidity sweep detected (from HTF bias)
@@ -605,7 +613,7 @@ def detect_vwap_reclaim(
         else:  # short
             # Crossed from above to below
             crossed = curr_close > curr_vwap and next_close < next_vwap
-        
+
         if crossed:
             reclaim_bar_idx = i + 1  # The bar that crossed
             break
@@ -636,7 +644,7 @@ def detect_vwap_reclaim(
     # Check 4: Currently closed on reclaim side (above for long, below for short)
     current_close = recent_df["close"].iloc[-1]
     current_vwap = recent_df["vwap"].iloc[-1]
-    
+
     # Convert numpy.bool_ to Python bool for proper identity comparison
     if direction == "long":
         state.reclaim_confirmed = bool(current_close > current_vwap)
@@ -690,7 +698,9 @@ def validate_reclaim_prerequisites(
     # Get structure_clarity from features (1M) as primary source (warms up faster)
     # Fallback to htf_bias.structure_clarity (1H) if features not available
     if features is not None:
-        structure_clarity = features.get("structure_clarity", htf_bias.structure_clarity)
+        structure_clarity = features.get(
+            "structure_clarity", htf_bias.structure_clarity
+        )
     else:
         structure_clarity = htf_bias.structure_clarity
 
@@ -704,8 +714,12 @@ def validate_reclaim_prerequisites(
             bars_since_bos = htf_bias.bars_since_bos
             bos_age_valid = False
         # BOS exists if: bos_recent=True, htf_bias.bos_detected=True, OR bos_age is valid
-        bos_detected = features.get("bos_recent", False) or htf_bias.bos_detected or bos_age_valid
-        sweep_detected = features.get("liquidity_sweep", False) or htf_bias.liquidity_sweep_detected
+        bos_detected = (
+            features.get("bos_recent", False) or htf_bias.bos_detected or bos_age_valid
+        )
+        sweep_detected = (
+            features.get("liquidity_sweep", False) or htf_bias.liquidity_sweep_detected
+        )
     else:
         bos_detected = htf_bias.bos_detected
         bars_since_bos = htf_bias.bars_since_bos
@@ -713,8 +727,12 @@ def validate_reclaim_prerequisites(
 
     # Get BOS/CHoCH direction early for logging
     bos_direction_log = features.get("bos_direction") if features is not None else None
-    choch_detected_log = features.get("choch_detected", False) if features is not None else False
-    choch_direction_log = features.get("choch_direction") if features is not None else None
+    choch_detected_log = (
+        features.get("choch_detected", False) if features is not None else False
+    )
+    choch_direction_log = (
+        features.get("choch_direction") if features is not None else None
+    )
 
     # Log all values for debugging
     logger.info(
@@ -756,7 +774,10 @@ def validate_reclaim_prerequisites(
         logger.debug(
             f"VWAP_RECLAIM rejected: BOS too stale ({bars_since_bos} > {BOS_STALENESS_LIMIT})"
         )
-        return False, f"BOS too stale: {bars_since_bos} bars ago (>{BOS_STALENESS_LIMIT})"
+        return (
+            False,
+            f"BOS too stale: {bars_since_bos} bars ago (>{BOS_STALENESS_LIMIT})",
+        )
 
     # Enhanced checks if features are provided
     if features is not None:
