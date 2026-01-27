@@ -1,10 +1,10 @@
 """Unit tests for HTF Bias warmup functionality."""
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from scp_shared.messaging.schemas import CandleMessage
+from scp_shared.messaging.schemas import CandleMessage, HTFBiasMessage
 
 from htf_bias_svc.processor import HTFBiasProcessor
 from htf_bias_svc.repository import BiasRepository
@@ -174,6 +174,76 @@ class TestWarmupProcessor:
             await warmup_processor(mock_processor, mock_repository)
 
             mock_processor.process.assert_not_called()
+
+
+class TestWarmupFromStream:
+    """Test warmup_from_stream exception handling."""
+
+    @pytest.mark.asyncio
+    async def test_warmup_from_stream_handles_persistence_error(self) -> None:
+        """Stream warmup returns False when batch persistence fails."""
+        base_ts = datetime(2025, 1, 15, 10, 0, tzinfo=timezone.utc)
+        gc_candles = [
+            CandleMessage(
+                timestamp=base_ts + timedelta(minutes=i),
+                symbol="GC",
+                timeframe="1m",
+                open=2650.0,
+                high=2655.0,
+                low=2648.0,
+                close=2654.0,
+                volume=1000.0,
+            )
+            for i in range(60)
+        ]
+        dxy_candles = [
+            CandleMessage(
+                timestamp=base_ts + timedelta(minutes=i),
+                symbol="DXY",
+                timeframe="1m",
+                open=103.5,
+                high=103.7,
+                low=103.4,
+                close=103.6,
+                volume=500.0,
+            )
+            for i in range(60)
+        ]
+
+        async def fake_consume(
+            _redis_client: object, stream_name: str, timeout_seconds: int
+        ) -> list[CandleMessage]:
+            return gc_candles if stream_name.endswith(".gc") else dxy_candles
+
+        bias = HTFBiasMessage(
+            timestamp=base_ts,
+            bias="bullish",
+            score=8.5,
+            confidence="A+",
+            dxy_aligned=True,
+            chop_detected=False,
+        )
+
+        processor = MagicMock()
+        processor.process = MagicMock(return_value=bias)
+
+        repository = MagicMock()
+        repository.save_bias_batch = AsyncMock(side_effect=Exception("db error"))
+
+        with patch(
+            "scp_shared.messaging.warmup_consumer.check_warmup_available",
+            new=AsyncMock(return_value={"available": True}),
+        ), patch(
+            "scp_shared.messaging.warmup_consumer.consume_warmup_stream",
+            new=AsyncMock(side_effect=fake_consume),
+        ), patch("htf_bias_svc.main.config") as mock_config:
+            mock_config.warmup_stream_timeout_seconds = 1
+
+            from htf_bias_svc.main import warmup_from_stream
+
+            success = await warmup_from_stream(MagicMock(), processor, repository)
+
+        assert success is False
 
 
 class TestProcessCandlePair:
