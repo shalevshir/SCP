@@ -223,6 +223,17 @@ class IBHistoricalFetcher:
                 )
                 return
             except Exception as e:
+                if self._ib:
+                    try:
+                        if self._ib.isConnected():
+                            self._ib.disconnect()
+                    except Exception as disconnect_error:
+                        logger.warning(
+                            "Failed to disconnect IB after connection error: "
+                            f"{disconnect_error}"
+                        )
+                    finally:
+                        self._ib = None
                 if attempt == max_retries - 1:
                     raise ConnectionError(
                         f"Failed to connect to IB Gateway after "
