@@ -124,6 +124,31 @@ def test_rejection_reasons_set_complete():
     assert metrics.REJECTION_REASONS == expected_reasons
 
 
+def test_rejection_encoding_covers_all_rejection_reasons():
+    """Test that REJECTION_ENCODING covers all rejection reasons."""
+    expected_keys = set(metrics.REJECTION_REASONS) | {None}
+
+    assert set(metrics.REJECTION_ENCODING.keys()) == expected_keys
+
+
+def test_update_signal_state_metrics_invalid_context_sets_rejection_code():
+    """Test invalid_context rejection updates the rejection gauge."""
+    metrics.update_signal_state_metrics(
+        signal_msg=None,
+        raw_signal=None,
+        rejection_reason="invalid_context",
+        htf_bias=None,
+        mode="test",
+        service="bot-core",
+    )
+
+    rejection_value = metrics.signal_last_rejection.labels(
+        mode="test", service="bot-core"
+    )._value._value
+
+    assert rejection_value == metrics.REJECTION_ENCODING["invalid_context"]
+
+
 def test_enforcer_tier_map_complete():
     """Test that ENFORCER_TIER_MAP contains all expected tiers."""
     expected_tiers = {
