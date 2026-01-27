@@ -196,8 +196,8 @@ class IBHistoricalFetcher:
         if duration_seconds < 86400:
             return f"{duration_seconds} S"
 
-        # For longer durations, use days
-        days = duration_seconds // 86400
+        # For longer durations, use days (round up to cover partial days)
+        days = (duration_seconds + 86399) // 86400
         return f"{days} D"
 
     async def _ensure_connected(self) -> None:
@@ -223,6 +223,17 @@ class IBHistoricalFetcher:
                 )
                 return
             except Exception as e:
+                if self._ib:
+                    try:
+                        if self._ib.isConnected():
+                            self._ib.disconnect()
+                    except Exception as disconnect_error:
+                        logger.warning(
+                            "Failed to disconnect IB after connection error: "
+                            f"{disconnect_error}"
+                        )
+                    finally:
+                        self._ib = None
                 if attempt == max_retries - 1:
                     raise ConnectionError(
                         f"Failed to connect to IB Gateway after "

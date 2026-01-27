@@ -228,6 +228,11 @@ def test_duration_calculation(fetcher):
     end = datetime(2025, 1, 15, 0, 0, tzinfo=UTC)
     assert fetcher._calculate_duration(start, end) == "5 D"
 
+    # 2.5 days should round up to 3 days
+    start = datetime(2025, 1, 10, 0, 0, tzinfo=UTC)
+    end = datetime(2025, 1, 12, 12, 0, tzinfo=UTC)
+    assert fetcher._calculate_duration(start, end) == "3 D"
+
     # Less than 1 hour (1800 seconds = 30 minutes)
     start = datetime(2025, 1, 15, 10, 0, tzinfo=UTC)
     end = datetime(2025, 1, 15, 10, 30, tzinfo=UTC)
@@ -358,6 +363,34 @@ async def test_connection_retry(fetcher):
             assert call_count == 3
             # Should have slept twice with exponential backoff (1s, 2s)
             assert mock_sleep.call_count == 2
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_connection_retry_disconnects_on_market_data_error(fetcher):
+    """Test that a connected IB instance is disconnected on setup failure."""
+    first_ib = MagicMock()
+    first_ib.connectAsync = AsyncMock()
+    first_ib.reqMarketDataType = MagicMock(
+        side_effect=Exception("Market data type failed")
+    )
+    first_ib.isConnected.return_value = True
+
+    second_ib = MagicMock()
+    second_ib.connectAsync = AsyncMock()
+    second_ib.reqMarketDataType = MagicMock()
+    second_ib.isConnected.return_value = True
+
+    with patch(
+        "data_adapter.ib_historical_fetcher.IB",
+        side_effect=[first_ib, second_ib],
+    ):
+        with patch("data_adapter.ib_historical_fetcher.asyncio.sleep") as mock_sleep:
+            await fetcher._ensure_connected()
+
+    first_ib.disconnect.assert_called_once()
+    assert mock_sleep.call_count == 1
+    assert fetcher._ib is second_ib
 
 
 @pytest.mark.unit
