@@ -118,6 +118,7 @@ def test_rejection_reasons_set_complete():
         "warmup",
         "kill_switch",
         "active_trade",
+        "tp_validation",
     }
 
     assert metrics.REJECTION_REASONS == expected_reasons
