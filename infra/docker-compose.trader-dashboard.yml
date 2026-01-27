@@ -1,0 +1,96 @@
+# Trader Dashboard (No Execution)
+# ================================
+# 
+# Purpose: Provide real-time market insights and signal scoring to help
+# the trader make better decisions. No automated execution.
+#
+# Usage:
+#   docker compose \
+#     -f docker-compose.infra.yml \
+#     -f docker-compose.services.yml \
+#     -f docker-compose.trader-dashboard.yml \
+#     up --build -d
+#
+# Services Deployed:
+#   ✅ data-adapter    - Live data from IB Gateway
+#   ✅ feature-engine  - Indicator computation
+#   ✅ htf-bias        - Higher-timeframe analysis
+#   ✅ bot-core        - Signal scoring (display only)
+#   ❌ execution       - NOT DEPLOYED (disabled via profile)
+#
+# Prerequisites:
+#   1. IB Gateway running in paper trading mode (port 4002)
+#   2. Environment variables set in .env file
+#
+# Dashboard Access:
+#   Grafana: http://localhost:3000
+#   Select Mode: "dashboard" in dashboard dropdown
+
+services:
+  data-adapter:
+    container_name: scp-data-adapter-dashboard
+    environment:
+      SERVICE_MODE: dashboard
+      DATA_PROVIDER: ib
+      IB_HOST: ${IB_HOST:-host.docker.internal}
+      IB_PORT: ${IB_PORT:-4002}  # Paper trading port
+      IB_CLIENT_ID: ${IB_CLIENT_ID:-1}
+      IB_GC_SYMBOL: ${IB_GC_SYMBOL:-GC}
+      IB_DXY_SYMBOL: ${IB_DXY_SYMBOL:-DX}
+      IB_MARKET_DATA_TYPE: ${IB_MARKET_DATA_TYPE:-3}  # 1=Live, 3=Delayed (15-min)
+      SESSION_FILTER_ENABLED: "true"
+      GAP_BACKFILL_ENABLED: "true"
+      RECONNECT_MAX_RETRIES: 10
+      RECONNECT_BASE_DELAY: 1.0
+      RECONNECT_MAX_DELAY: 60.0
+      LOG_LEVEL: INFO
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  feature-engine:
+    container_name: scp-feature-engine-dashboard
+    environment:
+      SERVICE_MODE: dashboard
+      LOG_LEVEL: INFO
+      WARMUP_ENABLED: "true"
+      # Metrics will be exposed at /metrics endpoint
+      METRICS_ENABLED: "true"
+
+  htf-bias:
+    container_name: scp-htf-bias-dashboard
+    environment:
+      SERVICE_MODE: dashboard
+      LOG_LEVEL: INFO
+      # Metrics will be exposed at /metrics endpoint
+      METRICS_ENABLED: "true"
+
+  bot-core:
+    container_name: scp-bot-core-dashboard
+    environment:
+      SERVICE_MODE: dashboard
+      SESSION_VALIDATION_ENABLED: "true"
+      LOG_LEVEL: INFO
+      # Metrics will be exposed at /metrics endpoint
+      METRICS_ENABLED: "true"
+      # Signal generation is active, but no Execution Service consumes them
+      # Signals are for dashboard display only
+
+  # ============================================================
+  # EXECUTION SERVICE IS DISABLED IN TRADER DASHBOARD
+  # ============================================================
+  # The execution service is excluded using Docker Compose profiles.
+  # It will not start unless explicitly requested with --profile paper
+  execution:
+    profiles:
+      - paper  # Only starts when running with --profile paper
+
+  # Prometheus config for scraping dashboard services
+  prometheus:
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+
+  # Grafana with trader decision dashboard as home
+  grafana:
+    environment:
+      - GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/var/lib/grafana/dashboards/trader-decision.json

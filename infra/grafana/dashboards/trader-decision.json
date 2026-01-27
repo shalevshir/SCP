@@ -2563,9 +2563,9 @@
     "list": [
       {
         "current": {
-          "selected": false,
-          "text": "paper",
-          "value": "paper"
+          "selected": true,
+          "text": "dashboard",
+          "value": "dashboard"
         },
         "hide": 0,
         "includeAll": false,
@@ -2573,6 +2573,11 @@
         "multi": false,
         "name": "mode",
         "options": [
+          {
+            "selected": true,
+            "text": "dashboard",
+            "value": "dashboard"
+          },
           {
             "selected": false,
             "text": "dev",
@@ -2589,7 +2594,7 @@
             "value": "replay"
           },
           {
-            "selected": true,
+            "selected": false,
             "text": "paper",
             "value": "paper"
           },
@@ -2599,7 +2604,7 @@
             "value": "live"
           }
         ],
-        "query": "dev,test,replay,paper,live",
+        "query": "dashboard,dev,test,replay,paper,live",
         "queryValue": "",
         "skipUrlSync": false,
         "type": "custom"
