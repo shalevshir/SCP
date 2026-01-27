@@ -114,6 +114,12 @@ class WarmupPublisher:
 
             logger.info(f"Fetched {len(dxy_candles)} DXY candles")
 
+            # Clear any existing warmup streams to avoid stale data mixing
+            await self.redis.delete(
+                "warmup.candles.1m.gc",
+                "warmup.candles.1m.dxy",
+            )
+
             # Publish GC candles to warmup stream
             logger.info("Publishing GC candles to warmup stream...")
             for candle in gc_candles:
