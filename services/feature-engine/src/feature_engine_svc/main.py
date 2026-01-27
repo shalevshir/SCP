@@ -148,6 +148,13 @@ async def warmup_from_stream(
     dxy_dict = {c.timestamp: c for c in dxy_candles[-config.warmup_candles :]}
     common_ts = sorted(set(gc_dict.keys()) & set(dxy_dict.keys()))
 
+    if len(common_ts) < config.warmup_candles:
+        logger.warning(
+            f"Insufficient warmup candles: {len(common_ts)}/{config.warmup_candles} - "
+            f"will use database fallback"
+        )
+        return False
+
     for ts in common_ts:
         processor.process(gc_dict[ts], dxy_dict[ts])
 
