@@ -196,8 +196,8 @@ class IBHistoricalFetcher:
         if duration_seconds < 86400:
             return f"{duration_seconds} S"
 
-        # For longer durations, use days
-        days = duration_seconds // 86400
+        # For longer durations, use days (round up to cover partial days)
+        days = (duration_seconds + 86399) // 86400
         return f"{days} D"
 
     async def _ensure_connected(self) -> None:
