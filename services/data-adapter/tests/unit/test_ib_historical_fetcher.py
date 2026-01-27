@@ -228,6 +228,11 @@ def test_duration_calculation(fetcher):
     end = datetime(2025, 1, 15, 0, 0, tzinfo=UTC)
     assert fetcher._calculate_duration(start, end) == "5 D"
 
+    # 2.5 days should round up to 3 days
+    start = datetime(2025, 1, 10, 0, 0, tzinfo=UTC)
+    end = datetime(2025, 1, 12, 12, 0, tzinfo=UTC)
+    assert fetcher._calculate_duration(start, end) == "3 D"
+
     # Less than 1 hour (1800 seconds = 30 minutes)
     start = datetime(2025, 1, 15, 10, 0, tzinfo=UTC)
     end = datetime(2025, 1, 15, 10, 30, tzinfo=UTC)
