@@ -314,6 +314,16 @@ async def process_feature_message(
         # METRIC: Clear setup type when no signal generated
         core_metrics.current_setup_type.labels(mode=mode, service=service).set(0.0)
 
+    # Update full signal state metrics for trader decision dashboard
+    core_metrics.update_signal_state_metrics(
+        signal_msg=result.signal_msg,
+        raw_signal=result.raw_signal,
+        rejection_reason=result.rejection_reason,
+        htf_bias=bias,
+        mode=mode,
+        service=service,
+    )
+
     return warmup_bar_count
 
 
@@ -356,7 +366,23 @@ async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
     core_metrics.session_valid.labels(mode=mode, service=service).set(0.0)
     core_metrics.current_setup_type.labels(mode=mode, service=service).set(0.0)
     core_metrics.signal_score.labels(mode=mode, service=service).set(0.0)
-    logger.info("Initialized session/setup metrics with default values")
+
+    # Initialize signal state metrics for trader decision dashboard
+    core_metrics.signal_aplus_verdict.labels(mode=mode, service=service).set(0.0)
+    core_metrics.signal_hard_gates_pass.labels(mode=mode, service=service).set(0.0)
+    core_metrics.signal_direction.labels(mode=mode, service=service).set(0.0)
+    core_metrics.signal_confidence.labels(mode=mode, service=service).set(0.0)
+    core_metrics.signal_entry_price.labels(mode=mode, service=service).set(0.0)
+    core_metrics.signal_sl_price.labels(mode=mode, service=service).set(0.0)
+    core_metrics.signal_tp_price.labels(mode=mode, service=service).set(0.0)
+    core_metrics.signal_tp2_price.labels(mode=mode, service=service).set(0.0)
+    core_metrics.signal_rr_tp1.labels(mode=mode, service=service).set(0.0)
+    core_metrics.signal_rr_potential.labels(mode=mode, service=service).set(0.0)
+    core_metrics.signal_risk_points.labels(mode=mode, service=service).set(0.0)
+    core_metrics.signal_tp_mode.labels(mode=mode, service=service).set(0.0)
+    core_metrics.signal_be_after_tp1.labels(mode=mode, service=service).set(0.0)
+    core_metrics.signal_last_rejection.labels(mode=mode, service=service).set(0.0)
+    logger.info("Initialized session/setup/signal metrics with default values")
 
     # Send service started alert
     send_alert(
