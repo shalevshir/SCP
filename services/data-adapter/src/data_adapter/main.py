@@ -112,6 +112,16 @@ def create_historical_fetcher(config: DataAdapterConfig):
             dataset=config.databento_dataset,
         )
 
+    elif provider == "ib":
+        from data_adapter.ib_historical_fetcher import IBHistoricalFetcher
+
+        return IBHistoricalFetcher(
+            host=config.ib_host,
+            port=config.ib_port,
+            client_id=config.ib_client_id + 1,  # Use different client ID (11 if streaming is 10)
+            market_data_type=config.ib_market_data_type,
+        )
+
     else:
         logger.info("Mock provider - no historical fetcher")
         return None
