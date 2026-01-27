@@ -29,6 +29,105 @@ config = HTFBiasConfig()
 shutdown_event = asyncio.Event()
 
 
+async def warmup_from_stream(
+    redis_client: redis.Redis,
+    processor: HTFBiasProcessor,
+    repository: BiasRepository,
+) -> bool:
+    """Attempt warmup from Redis streams for HTF Bias with database persistence.
+
+    Consumes warmup candles from Redis streams, processes them through the
+    HTF bias processor, and persists bias records at HTF boundaries to the
+    database for historical analysis.
+
+    Args:
+        redis_client: Redis client
+        processor: HTF bias processor to warmup
+        repository: Repository for database persistence
+
+    Returns:
+        True if successful, False if should fall back to database
+    """
+    from scp_shared.messaging.warmup_consumer import (
+        check_warmup_available,
+        consume_warmup_stream,
+    )
+
+    # Check if warmup streams available
+    status = await check_warmup_available(redis_client)
+    if not status["available"]:
+        logger.info("Warmup streams not available - will use database fallback")
+        return False
+
+    # Consume GC and DXY warmup streams
+    gc_candles = await consume_warmup_stream(
+        redis_client,
+        "warmup.candles.1m.gc",
+        timeout_seconds=config.warmup_stream_timeout_seconds,
+    )
+    dxy_candles = await consume_warmup_stream(
+        redis_client,
+        "warmup.candles.1m.dxy",
+        timeout_seconds=config.warmup_stream_timeout_seconds,
+    )
+
+    if not gc_candles or not dxy_candles:
+        logger.warning("Failed to consume warmup streams - will use database fallback")
+        return False
+
+    # Pair candles by timestamp and process (need all candles for structure detection)
+    gc_dict = {c.timestamp: c for c in gc_candles}
+    dxy_dict = {c.timestamp: c for c in dxy_candles}
+    common_ts = sorted(set(gc_dict.keys()) & set(dxy_dict.keys()))
+
+    # Require at least 60 candles (1 hour) for minimum viable warmup
+    # Full 1440 (24h) is ideal but markets may be closed
+    min_warmup_candles = 60
+    if len(common_ts) < min_warmup_candles:
+        logger.warning(
+            f"Insufficient warmup candles: {len(common_ts)}/{min_warmup_candles} minimum - "
+            f"will use database fallback"
+        )
+        return False
+
+    logger.info(
+        f"Processing {len(common_ts)} warmup candle pairs from Redis streams "
+        f"(range: {common_ts[0]} to {common_ts[-1]})"
+    )
+
+    # Process all candles through HTFBiasProcessor and collect bias at HTF boundaries
+    all_bias: list = []
+    for ts in common_ts:
+        bias = processor.process(gc_dict[ts], dxy_dict[ts])
+        # Only collect non-None bias (produced at HTF boundaries like 15m)
+        if bias is not None:
+            all_bias.append(bias)
+
+    # Batch persist bias records to database
+    if all_bias:
+        logger.info(f"Persisting {len(all_bias)} warmup bias records to database...")
+        await repository.save_bias_batch(all_bias)
+
+    # Log buffer sizes after warmup
+    calc = processor.calculator
+    logger.info(
+        f"Warmup complete from Redis streams: 1H buffer={len(calc.df_1h_buffer)} bars, "
+        f"15M buffer={len(calc.df_15m_buffer)} bars, "
+        f"DXY 1H buffer={len(calc.dxy_1h_buffer)} bars, "
+        f"persisted {len(all_bias)} bias records to database"
+    )
+
+    # Log structure detection status
+    features_1h = calc.get_current_features_1h()
+    features_15m = calc.get_current_features_15m()
+    logger.info(
+        f"After warmup: structure_1h={features_1h.get('structure_label')}, "
+        f"structure_15m={features_15m.get('structure_label')}"
+    )
+
+    return True
+
+
 async def warmup_processor(
     processor: HTFBiasProcessor,
     repository: BiasRepository,
@@ -93,6 +192,36 @@ async def warmup_processor(
         # Continue without warmup
 
 
+async def warmup_processor_with_fallback(
+    redis_client: redis.Redis,
+    processor: HTFBiasProcessor,
+    repository: BiasRepository,
+    before_timestamp: datetime | None = None,
+) -> None:
+    """Warmup processor from streams (preferred) or database (fallback).
+
+    Args:
+        redis_client: Redis client
+        processor: HTF bias processor to warmup
+        repository: Repository for database fallback
+        before_timestamp: Only load candles before this timestamp (for replay alignment)
+    """
+    if not config.enable_warmup:
+        logger.info("Warmup disabled for HTF bias processor")
+        return
+
+    # Try stream warmup first (not compatible with replay mode)
+    if config.warmup_use_redis_streams and before_timestamp is None:
+        # Note: Stream warmup not compatible with replay mode (before_timestamp)
+        success = await warmup_from_stream(redis_client, processor, repository)
+        if success:
+            return
+
+    # Fall back to database warmup (existing logic)
+    logger.info("Using database warmup for HTF bias")
+    await warmup_processor(processor, repository, before_timestamp)
+
+
 async def process_candles(
     redis_client: redis.Redis,
     db_pool: DatabasePool,
@@ -128,8 +257,10 @@ async def process_candles(
         except ValueError:
             logger.warning(f"Invalid REPLAY_START_TIMESTAMP format: {replay_start_str}")
 
-    # Warmup processor
-    await warmup_processor(processor, repository, before_timestamp)
+    # Warmup processor (use new wrapper with stream-first, database-fallback)
+    await warmup_processor_with_fallback(
+        redis_client, processor, repository, before_timestamp
+    )
 
     # Create consumers for GC and DXY candles
     gc_consumer = RedisStreamConsumer(

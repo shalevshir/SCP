@@ -26,3 +26,14 @@ class HTFBiasConfig(BaseServiceConfig):
         default=1440,
         description="Number of 1m candles to load for warmup (1440 = 24 hours, needed for 1H structure detection)",
     )
+
+    # Redis stream warmup settings
+    warmup_use_redis_streams: bool = Field(
+        default=True,
+        description="Use Redis warmup streams if available (fallback to database)",
+    )
+
+    warmup_stream_timeout_seconds: int = Field(
+        default=60,
+        description="Timeout waiting for warmup streams before database fallback",
+    )

@@ -90,6 +90,117 @@ class DXYVWAPTracker:
         return vwap, vwap_slope
 
 
+async def warmup_from_stream(
+    redis_client: redis.Redis,
+    processor: FeatureProcessor,
+    repository: FeatureRepository,
+    timeframe: str,
+) -> bool:
+    """Attempt warmup from Redis streams with database persistence.
+
+    Consumes warmup candles from Redis streams, processes them through the
+    feature processor, and persists both candles and features to the database
+    for historical analysis and dashboard queries.
+
+    Args:
+        redis_client: Redis client
+        processor: Feature processor to warmup
+        repository: Repository for database persistence
+        timeframe: Timeframe to warmup
+
+    Returns:
+        True if successful, False if should fall back to database
+    """
+    from scp_shared.messaging.warmup_consumer import (
+        check_warmup_available,
+        consume_warmup_stream,
+    )
+
+    # Check if warmup streams available
+    status = await check_warmup_available(redis_client)
+    if not status["available"]:
+        logger.info(
+            f"Warmup streams not available for {timeframe} - will use database fallback"
+        )
+        return False
+
+    # Consume GC and DXY warmup streams
+    gc_candles = await consume_warmup_stream(
+        redis_client,
+        "warmup.candles.1m.gc",
+        timeout_seconds=config.warmup_stream_timeout_seconds,
+    )
+    dxy_candles = await consume_warmup_stream(
+        redis_client,
+        "warmup.candles.1m.dxy",
+        timeout_seconds=config.warmup_stream_timeout_seconds,
+    )
+
+    if not gc_candles or not dxy_candles:
+        logger.warning("Failed to consume warmup streams - will use database fallback")
+        return False
+
+    # For HTF timeframes (15m, 1h), we need pre-aggregated candles from database
+    # Stream warmup only supports 1m timeframe currently
+    if timeframe != "1m":
+        logger.info(
+            f"HTF timeframe {timeframe} - using database for warmup (streams only support 1m)"
+        )
+        return False
+
+    # For 1m timeframe, use candles directly
+    # Pair candles by timestamp and use ALL candles (not just warmup_candles)
+    # to populate the database with full 24h of historical data
+    gc_dict = {c.timestamp: c for c in gc_candles}
+    dxy_dict = {c.timestamp: c for c in dxy_candles}
+    common_ts = sorted(set(gc_dict.keys()) & set(dxy_dict.keys()))
+
+    if len(common_ts) < config.warmup_candles:
+        logger.warning(
+            f"Insufficient warmup candles: {len(common_ts)}/{config.warmup_candles} - "
+            f"will use database fallback"
+        )
+        return False
+
+    # Collect candles and features for batch insert
+    all_gc_candles: list = []
+    all_dxy_candles: list = []
+    all_features: list = []
+
+    for ts in common_ts:
+        gc_candle = gc_dict[ts]
+        dxy_candle = dxy_dict[ts]
+
+        # Collect candles for batch insert
+        all_gc_candles.append(gc_candle)
+        all_dxy_candles.append(dxy_candle)
+
+        # Process through feature processor (updates internal state)
+        features = processor.process(gc_candle, dxy_candle)
+        all_features.append(features)
+
+    # Batch persist candles to database
+    logger.info(
+        f"Persisting {len(all_gc_candles)} GC + {len(all_dxy_candles)} DXY "
+        f"warmup candles to database..."
+    )
+    await repository.save_candles_batch(all_gc_candles)
+    await repository.save_candles_batch(all_dxy_candles)
+
+    # Batch persist features to database
+    logger.info(f"Persisting {len(all_features)} warmup features to database...")
+    await repository.save_features_batch(all_features)
+
+    logger.info(
+        f"Warmup complete from Redis streams for {timeframe}: "
+        f"{processor.bar_count} bars processed, "
+        f"warmed_up={processor.is_warmed_up()}, "
+        f"persisted {len(all_gc_candles) + len(all_dxy_candles)} candles "
+        f"and {len(all_features)} features to database"
+    )
+    return True
+
+
 async def warmup_processor(
     processor: FeatureProcessor,
     repository: FeatureRepository,
@@ -135,6 +246,35 @@ async def warmup_processor(
     except Exception as e:
         logger.error(f"Warmup failed for {timeframe}: {e}", exc_info=True)
         # Continue without warmup
+
+
+async def warmup_processor_with_fallback(
+    redis_client: redis.Redis,
+    processor: FeatureProcessor,
+    repository: FeatureRepository,
+    timeframe: str,
+) -> None:
+    """Warmup processor from streams (preferred) or database (fallback).
+
+    Args:
+        redis_client: Redis client
+        processor: Feature processor to warmup
+        repository: Repository for database fallback
+        timeframe: Timeframe to warmup
+    """
+    if not config.enable_warmup:
+        logger.info(f"Warmup disabled for {timeframe}")
+        return
+
+    # Try stream warmup first (only for 1m timeframe)
+    if config.warmup_use_redis_streams and timeframe == "1m":
+        success = await warmup_from_stream(redis_client, processor, repository, timeframe)
+        if success:
+            return
+
+    # Fall back to database warmup (existing logic)
+    logger.info(f"Using database warmup for {timeframe}")
+    await warmup_processor(processor, repository, timeframe)
 
 
 async def warmup_htf_aggregator(
@@ -254,12 +394,12 @@ async def process_candles(
     publisher = FeaturePublisher(redis_client)
     repository = FeatureRepository(db_pool)
 
-    # Warmup processors
-    await warmup_processor(processor_1m, repository, "1m")
-    await warmup_processor(processor_15m, repository, "15m")
-    await warmup_processor(processor_1h, repository, "1h")
+    # Warmup processors (use new wrapper with stream-first, database-fallback)
+    await warmup_processor_with_fallback(redis_client, processor_1m, repository, "1m")
+    await warmup_processor_with_fallback(redis_client, processor_15m, repository, "15m")
+    await warmup_processor_with_fallback(redis_client, processor_1h, repository, "1h")
 
-    # Warmup HTF aggregators with current period's candles
+    # Warmup HTF aggregators with current period's candles (database only - needs partial period state)
     await warmup_htf_aggregator(htf_aggregator_gc, repository, symbol="GC")
     await warmup_htf_aggregator(htf_aggregator_dxy, repository, symbol="DXY")
 

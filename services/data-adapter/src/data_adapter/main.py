@@ -22,9 +22,11 @@ from data_adapter.databento_client import (
 )
 from data_adapter.gap_detector import GapDetector
 from data_adapter.ib_data_client import IBDataClient, ResilientIBDataClient
+from data_adapter.ib_historical_fetcher import IBHistoricalFetcher
 from data_adapter.publisher import CandlePublisher
 from data_adapter.session_events import SessionEventPublisher
 from data_adapter.session_filter import GoldFuturesSessionFilter, SessionFilter
+from data_adapter.warmup_publisher import WarmupPublisher
 
 logger = get_logger(__name__)
 
@@ -273,6 +275,56 @@ async def consume_ticks(
         raise
 
 
+async def warmup_phase(
+    redis_client: redis.Redis,
+    historical_fetcher: IBHistoricalFetcher | DatabentoHistoricalFetcher | None,
+) -> None:
+    """Execute warmup phase: fetch historical data and publish to warmup streams.
+
+    Args:
+        redis_client: Redis client for stream publishing
+        historical_fetcher: Historical data fetcher (IB or Databento)
+    """
+    if not config.warmup_enabled:
+        logger.info("Warmup disabled - skipping warmup phase")
+        return
+
+    if historical_fetcher is None:
+        logger.warning("Historical fetcher not available - skipping warmup phase")
+        return
+
+    # Only IB historical fetcher supports warmup currently
+    if not isinstance(historical_fetcher, IBHistoricalFetcher):
+        logger.warning(
+            f"Warmup only supported for IB Gateway (current: {type(historical_fetcher).__name__}) - "
+            "skipping warmup phase"
+        )
+        return
+
+    logger.info("Starting warmup phase...")
+
+    try:
+        publisher = WarmupPublisher(
+            redis_client=redis_client,
+            ib_fetcher=historical_fetcher,
+            lookback_hours=config.warmup_lookback_hours,
+            ttl_seconds=config.warmup_stream_ttl_seconds,
+        )
+
+        success = await publisher.publish_warmup_data()
+
+        if success:
+            logger.info("Warmup phase complete - warmup streams ready for downstream services")
+        else:
+            logger.warning(
+                "Warmup phase failed - downstream services will fall back to database warmup"
+            )
+
+    except Exception as e:
+        logger.error(f"Warmup phase failed with exception: {e}", exc_info=True)
+        logger.warning("Downstream services will fall back to database warmup")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
     """Manage application lifecycle."""
@@ -310,6 +362,11 @@ async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
     adapter_metrics.data_provider_connected.labels(
         mode=config.service_mode, service=config.service_name, provider=provider
     ).set(1)
+
+    # Execute warmup phase BEFORE starting live streaming
+    # This fetches historical data from IB Gateway and publishes to warmup streams
+    # for downstream service initialization
+    await warmup_phase(redis_client, historical_fetcher)
 
     logger.info("Starting tick consumer task")
 
