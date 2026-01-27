@@ -7,7 +7,6 @@ historical data without querying the database.
 
 import asyncio
 import time
-from datetime import datetime
 
 import redis.asyncio as redis
 
@@ -49,6 +48,18 @@ async def check_warmup_available(redis_client: redis.Redis) -> dict:
 
         # Decode bytes to strings
         status_decoded = {k.decode(): v.decode() for k, v in status.items()}
+
+        # Check for error field (defensive check - publisher should clear this)
+        if "error" in status_decoded:
+            error_msg = status_decoded.get("error", "unknown error")
+            logger.info(f"Warmup status indicates error: {error_msg}")
+            return {
+                "available": False,
+                "gc_ready": False,
+                "dxy_ready": False,
+                "gc_count": 0,
+                "dxy_count": 0,
+            }
 
         gc_ready = status_decoded.get("gc") == "complete"
         dxy_ready = status_decoded.get("dxy") == "complete"
@@ -113,7 +124,10 @@ async def consume_warmup_stream(
     start_time = time.time()
 
     # Wait for stream to exist (data-adapter may still be fetching from IB)
-    logger.info(f"Waiting for warmup stream: {stream_name} (timeout: {timeout_seconds}s)")
+    logger.info(
+        f"Waiting for warmup stream: {stream_name} "
+        f"(timeout: {timeout_seconds}s)"
+    )
 
     while time.time() - start_time < timeout_seconds:
         exists = await redis_client.exists(stream_name)
@@ -146,7 +160,7 @@ async def consume_warmup_stream(
                 # No more messages
                 break
 
-            for stream, entries in messages:
+            for _stream, entries in messages:
                 for entry_id, data in entries:
                     # Parse candle from JSON
                     candle_json = data.get(b"data")

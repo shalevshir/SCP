@@ -60,3 +60,46 @@ async def test_publish_warmup_data_clears_streams_before_publish() -> None:
     assert "xadd" in call_order
     assert call_order.index("delete") < call_order.index("xadd")
     assert mock_redis.xadd.await_count == len(gc_candles) + len(dxy_candles)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_error_status_clears_stale_success_markers() -> None:
+    """Error status deletes entire hash to prevent stale success markers.
+
+    Regression test for bug where _set_error_status would leave gc/dxy
+    completion markers from previous successful runs, causing downstream
+    consumers to incorrectly see warmup as available.
+    """
+    mock_redis = AsyncMock()
+    mock_fetcher = AsyncMock()
+
+    # Simulate fetch failure (no candles)
+    mock_fetcher.fetch_candles = AsyncMock(return_value=[])
+
+    publisher = WarmupPublisher(
+        redis_client=mock_redis,
+        ib_fetcher=mock_fetcher,
+        lookback_hours=1,
+        ttl_seconds=600,
+    )
+
+    # Execute publish (will fail due to no candles)
+    result = await publisher.publish_warmup_data()
+
+    assert result is False
+
+    # Verify error status setting behavior:
+    # 1. First delete call clears warmup:status hash (removes stale markers)
+    # 2. Then hset adds fresh error status
+    delete_calls = [
+        call for call in mock_redis.delete.await_args_list if "warmup:status" in str(call)
+    ]
+    assert len(delete_calls) >= 1, "Should delete warmup:status to clear stale markers"
+
+    # Verify hset was called with error status
+    mock_redis.hset.assert_awaited()
+    hset_call = mock_redis.hset.await_args_list[-1]
+    assert hset_call[0][0] == "warmup:status"
+    assert "error" in hset_call[1]["mapping"]
+    assert "timestamp" in hset_call[1]["mapping"]

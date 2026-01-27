@@ -8,7 +8,6 @@ warmup initialization.
 from datetime import UTC, datetime, timedelta
 
 import redis.asyncio as redis
-
 from scp_shared.common.logger import get_logger
 
 from data_adapter.ib_historical_fetcher import IBHistoricalFetcher
@@ -154,8 +153,8 @@ class WarmupPublisher:
             await self.redis.expire("warmup:status", self.ttl_seconds)
 
             logger.info(
-                f"Published warmup data: {len(gc_candles)} GC, {len(dxy_candles)} DXY candles "
-                f"(TTL: {self.ttl_seconds}s)"
+                f"Published warmup data: {len(gc_candles)} GC, "
+                f"{len(dxy_candles)} DXY candles (TTL: {self.ttl_seconds}s)"
             )
 
             return True
@@ -168,10 +167,18 @@ class WarmupPublisher:
     async def _set_error_status(self, error_message: str) -> None:
         """Set error status in Redis for downstream services.
 
+        Deletes any existing warmup status hash to prevent stale success
+        markers from previous runs from being visible to consumers.
+
         Args:
             error_message: Error message to log
         """
         try:
+            # Delete entire status hash to clear any stale success markers
+            # from previous warmup runs (prevents false positives within TTL)
+            await self.redis.delete("warmup:status")
+
+            # Set fresh error status
             await self.redis.hset(
                 "warmup:status",
                 mapping={
