@@ -2467,31 +2467,22 @@
           "color": {
             "mode": "thresholds"
           },
-          "decimals": 1,
+          "decimals": 0,
           "mappings": [
             {
               "options": {
-                "from": 0,
-                "result": {
+                "0": {
                   "color": "red",
-                  "index": 1,
+                  "index": 0,
                   "text": "NOT A+ \u2014 STAND DOWN"
                 },
-                "to": 7.99
-              },
-              "type": "range"
-            },
-            {
-              "options": {
-                "from": 8,
-                "result": {
+                "1": {
                   "color": "green",
-                  "index": 0,
+                  "index": 1,
                   "text": "A+ \u2014 EXECUTION PERMITTED"
-                },
-                "to": 10
+                }
               },
-              "type": "range"
+              "type": "value"
             }
           ],
           "thresholds": {
@@ -2503,7 +2494,7 @@
               },
               {
                 "color": "green",
-                "value": 8
+                "value": 1
               }
             ]
           },
@@ -2542,7 +2533,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "scp_signal_score{mode=\"$mode\"} * (scp_htf_conflict_detected{mode=\"$mode\"} == 0) * (scp_htf_dxy_aligned{mode=\"$mode\"} == 1)",
+          "expr": "scp_signal_aplus_verdict{mode=\"$mode\"}",
           "refId": "A"
         }
       ],
