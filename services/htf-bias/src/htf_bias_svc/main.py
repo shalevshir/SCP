@@ -6,8 +6,8 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 
 import redis.asyncio as redis
-from scp_shared.common import get_logger, mask_connection_url
 from fastapi import FastAPI
+from scp_shared.common import get_logger, mask_connection_url
 from scp_shared.database import DatabasePool
 from scp_shared.health import create_health_router
 from scp_shared.messaging import RedisStreamConsumer, CandleSynchronizer

@@ -27,8 +27,8 @@ services:
       SERVICE_MODE: live
       DATABASE_URL: postgresql://scp:${POSTGRES_PASSWORD}@postgres:5432/scp
       DATA_PROVIDER: ib
-      IB_HOST: ${IB_HOST:-host.docker.internal}
-      IB_PORT: ${IB_PORT:-4001}
+      IB_HOST: ib-gateway
+      IB_PORT: ${IB_PORT:-4003}  # Live trading port (Docker IB Gateway)
       IB_CLIENT_ID: ${IB_CLIENT_ID:-1}
       IB_GC_CONTRACT: ${IB_GC_CONTRACT:-GC}
       IB_DXY_CONTRACT: ${IB_DXY_CONTRACT:-DX}
@@ -44,8 +44,9 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+    depends_on:
+      ib-gateway:
+        condition: service_healthy
 
   feature-engine:
     container_name: scp-feature-engine-live
@@ -96,8 +97,8 @@ services:
       SERVICE_MODE: live
       DATABASE_URL: postgresql://scp:${POSTGRES_PASSWORD}@postgres:5432/scp
       BROKER_MODE: ib_live  # ⚠️  REAL MONEY ⚠️
-      IB_HOST: ${IB_HOST:-host.docker.internal}
-      IB_PORT: ${IB_PORT:-4001}  # IB Gateway LIVE trading port
+      IB_HOST: ib-gateway
+      IB_PORT: ${IB_PORT:-4003}  # Live trading port (Docker IB Gateway)
       IB_CLIENT_ID: ${IB_CLIENT_ID:-2}  # Different client ID than data adapter
       IB_ACCOUNT: ${IB_ACCOUNT}  # Required for live trading
       MAX_ACTIVE_TRADES: ${MAX_ACTIVE_TRADES:-1}
@@ -110,8 +111,9 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+    depends_on:
+      ib-gateway:
+        condition: service_healthy
 
   # Override Prometheus to scrape Docker service names (not host.docker.internal)
   prometheus:

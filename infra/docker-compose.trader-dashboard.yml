@@ -32,8 +32,8 @@ services:
     environment:
       SERVICE_MODE: dashboard
       DATA_PROVIDER: ib
-      IB_HOST: ${IB_HOST:-host.docker.internal}
-      IB_PORT: ${IB_PORT:-4002}  # Paper trading port
+      IB_HOST: ib-gateway
+      IB_PORT: ${IB_PORT:-4004}  # Paper trading port (Docker IB Gateway)
       IB_CLIENT_ID: ${IB_CLIENT_ID:-1}
       IB_GC_SYMBOL: ${IB_GC_SYMBOL:-GC}
       IB_DXY_SYMBOL: ${IB_DXY_SYMBOL:-DX}
@@ -44,8 +44,9 @@ services:
       RECONNECT_BASE_DELAY: 1.0
       RECONNECT_MAX_DELAY: 60.0
       LOG_LEVEL: INFO
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+    depends_on:
+      ib-gateway:
+        condition: service_healthy
 
   feature-engine:
     container_name: scp-feature-engine-dashboard
