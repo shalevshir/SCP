@@ -10,6 +10,7 @@ from scp_shared.common import get_logger, mask_connection_url
 from scp_shared.health import create_health_router
 from scp_shared.metrics import create_metrics_router
 
+from data_adapter import metrics as adapter_metrics
 from data_adapter.candle_aggregator import CandleAggregator
 from data_adapter.config import DataAdapterConfig
 from data_adapter.databento_client import (
@@ -21,7 +22,6 @@ from data_adapter.databento_client import (
 )
 from data_adapter.gap_detector import GapDetector
 from data_adapter.ib_data_client import IBDataClient, ResilientIBDataClient
-from data_adapter import metrics as adapter_metrics
 from data_adapter.publisher import CandlePublisher
 from data_adapter.session_events import SessionEventPublisher
 from data_adapter.session_filter import GoldFuturesSessionFilter, SessionFilter
@@ -110,6 +110,17 @@ def create_historical_fetcher(config: DataAdapterConfig):
         return DatabentoHistoricalFetcher(
             api_key=config.databento_api_key,
             dataset=config.databento_dataset,
+        )
+
+    elif provider == "ib":
+        from data_adapter.ib_historical_fetcher import IBHistoricalFetcher
+
+        return IBHistoricalFetcher(
+            host=config.ib_host,
+            port=config.ib_port,
+            # Use different client ID (11 if streaming is 10)
+            client_id=config.ib_client_id + 1,
+            market_data_type=config.ib_market_data_type,
         )
 
     else:
@@ -243,7 +254,7 @@ async def consume_ticks(
                     )
 
             # METRIC: Update lag metrics periodically (every 100 ticks)
-            # Note: This is a simple heuristic to avoid calling datetime.now() on every tick
+            # Note: This avoids calling datetime.now() on every tick
             try:
                 tick_count = adapter_metrics.market_ticks_total.labels(
                     mode=mode, service=service, symbol=tick.symbol
@@ -336,6 +347,11 @@ async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
 
         # Ensure cleanup happens regardless of how consumer_task ended
         await client.close()
+
+        # Close historical fetcher if it has a close method (e.g., IB connection)
+        if historical_fetcher is not None and hasattr(historical_fetcher, "close"):
+            await historical_fetcher.close()
+
         await redis_client.aclose()
         logger.info("Data Adapter Service stopped")
 
