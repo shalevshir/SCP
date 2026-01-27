@@ -32,12 +32,18 @@ shutdown_event = asyncio.Event()
 async def warmup_from_stream(
     redis_client: redis.Redis,
     processor: HTFBiasProcessor,
+    repository: BiasRepository,
 ) -> bool:
-    """Attempt warmup from Redis streams for HTF Bias.
+    """Attempt warmup from Redis streams for HTF Bias with database persistence.
+
+    Consumes warmup candles from Redis streams, processes them through the
+    HTF bias processor, and persists bias records at HTF boundaries to the
+    database for historical analysis.
 
     Args:
         redis_client: Redis client
         processor: HTF bias processor to warmup
+        repository: Repository for database persistence
 
     Returns:
         True if successful, False if should fall back to database
@@ -74,9 +80,12 @@ async def warmup_from_stream(
     dxy_dict = {c.timestamp: c for c in dxy_candles}
     common_ts = sorted(set(gc_dict.keys()) & set(dxy_dict.keys()))
 
-    if len(common_ts) < config.warmup_candles:
+    # Require at least 60 candles (1 hour) for minimum viable warmup
+    # Full 1440 (24h) is ideal but markets may be closed
+    min_warmup_candles = 60
+    if len(common_ts) < min_warmup_candles:
         logger.warning(
-            f"Insufficient warmup candles: {len(common_ts)}/{config.warmup_candles} - "
+            f"Insufficient warmup candles: {len(common_ts)}/{min_warmup_candles} minimum - "
             f"will use database fallback"
         )
         return False
@@ -86,16 +95,26 @@ async def warmup_from_stream(
         f"(range: {common_ts[0]} to {common_ts[-1]})"
     )
 
-    # Process all candles through HTFBiasProcessor
+    # Process all candles through HTFBiasProcessor and collect bias at HTF boundaries
+    all_bias: list = []
     for ts in common_ts:
-        processor.process(gc_dict[ts], dxy_dict[ts])
+        bias = processor.process(gc_dict[ts], dxy_dict[ts])
+        # Only collect non-None bias (produced at HTF boundaries like 15m)
+        if bias is not None:
+            all_bias.append(bias)
+
+    # Batch persist bias records to database
+    if all_bias:
+        logger.info(f"Persisting {len(all_bias)} warmup bias records to database...")
+        await repository.save_bias_batch(all_bias)
 
     # Log buffer sizes after warmup
     calc = processor.calculator
     logger.info(
         f"Warmup complete from Redis streams: 1H buffer={len(calc.df_1h_buffer)} bars, "
         f"15M buffer={len(calc.df_15m_buffer)} bars, "
-        f"DXY 1H buffer={len(calc.dxy_1h_buffer)} bars"
+        f"DXY 1H buffer={len(calc.dxy_1h_buffer)} bars, "
+        f"persisted {len(all_bias)} bias records to database"
     )
 
     # Log structure detection status
@@ -194,7 +213,7 @@ async def warmup_processor_with_fallback(
     # Try stream warmup first (not compatible with replay mode)
     if config.warmup_use_redis_streams and before_timestamp is None:
         # Note: Stream warmup not compatible with replay mode (before_timestamp)
-        success = await warmup_from_stream(redis_client, processor)
+        success = await warmup_from_stream(redis_client, processor, repository)
         if success:
             return
 

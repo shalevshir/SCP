@@ -100,6 +100,103 @@ class FeatureRepository:
             ),
         )
 
+    async def save_candles_batch(self, candles: list[CandleMessage]) -> int:
+        """Batch insert candles for warmup performance.
+
+        Uses executemany() for efficient bulk insert with UPSERT pattern.
+
+        Args:
+            candles: List of candle messages to persist
+
+        Returns:
+            Number of candles inserted/updated
+        """
+        if not candles:
+            return 0
+
+        query = """
+            INSERT INTO candles (
+                timestamp, symbol, timeframe, open, high, low, close, volume
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            ON CONFLICT (timestamp, symbol, timeframe) DO UPDATE SET
+                open = EXCLUDED.open,
+                high = EXCLUDED.high,
+                low = EXCLUDED.low,
+                close = EXCLUDED.close,
+                volume = EXCLUDED.volume
+        """
+
+        data = [
+            (c.timestamp, c.symbol, c.timeframe, c.open, c.high, c.low, c.close, c.volume)
+            for c in candles
+        ]
+
+        async with self.db.acquire() as conn:
+            await conn.executemany(query, data)
+
+        return len(candles)
+
+    async def save_features_batch(self, features_list: list[FeaturesMessage]) -> int:
+        """Batch insert features for warmup performance.
+
+        Uses executemany() for efficient bulk insert with UPSERT pattern.
+
+        Args:
+            features_list: List of features messages to persist
+
+        Returns:
+            Number of features inserted/updated
+        """
+        if not features_list:
+            return 0
+
+        query = """
+            INSERT INTO features (
+                timestamp, symbol, timeframe, close, vwap, vwap_slope, rsi,
+                ema_9, ema_20, ema_50, dxy_correlation,
+                structure_label, vwap_deviation, atr, vwap_deviation_normalized
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+            ON CONFLICT (timestamp, symbol, timeframe) DO UPDATE SET
+                close = EXCLUDED.close,
+                vwap = EXCLUDED.vwap,
+                vwap_slope = EXCLUDED.vwap_slope,
+                rsi = EXCLUDED.rsi,
+                ema_9 = EXCLUDED.ema_9,
+                ema_20 = EXCLUDED.ema_20,
+                ema_50 = EXCLUDED.ema_50,
+                dxy_correlation = EXCLUDED.dxy_correlation,
+                structure_label = EXCLUDED.structure_label,
+                vwap_deviation = EXCLUDED.vwap_deviation,
+                atr = EXCLUDED.atr,
+                vwap_deviation_normalized = EXCLUDED.vwap_deviation_normalized
+        """
+
+        data = [
+            (
+                f.timestamp,
+                f.symbol,
+                f.timeframe,
+                f.close,
+                f.vwap,
+                f.vwap_slope if hasattr(f, "vwap_slope") else None,
+                f.rsi,
+                f.ema_9,
+                f.ema_20,
+                f.ema_50,
+                f.dxy_correlation,
+                f.structure_label,
+                f.vwap_deviation,
+                f.atr if hasattr(f, "atr") else None,
+                f.vwap_deviation_normalized if hasattr(f, "vwap_deviation_normalized") else None,
+            )
+            for f in features_list
+        ]
+
+        async with self.db.acquire() as conn:
+            await conn.executemany(query, data)
+
+        return len(features_list)
+
     async def load_recent_candles(
         self,
         symbol: str,

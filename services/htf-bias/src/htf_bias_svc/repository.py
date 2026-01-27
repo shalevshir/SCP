@@ -60,6 +60,61 @@ class BiasRepository:
             bias.vwap_trend_confirmed,
         )
 
+    async def save_bias_batch(self, bias_list: list[HTFBiasMessage]) -> int:
+        """Batch insert HTF bias for warmup performance.
+
+        Uses executemany() for efficient bulk insert with UPSERT pattern.
+
+        Args:
+            bias_list: List of bias messages to persist
+
+        Returns:
+            Number of bias records inserted/updated
+        """
+        if not bias_list:
+            return 0
+
+        query = """
+            INSERT INTO htf_bias_history (
+                timestamp, bias, score, confidence,
+                structure_15m, structure_1h, dxy_aligned, chop_detected,
+                seasonality_adjustment, seasonality_period, vwap_trend_confirmed
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+            ON CONFLICT (timestamp) DO UPDATE SET
+                bias = EXCLUDED.bias,
+                score = EXCLUDED.score,
+                confidence = EXCLUDED.confidence,
+                structure_15m = EXCLUDED.structure_15m,
+                structure_1h = EXCLUDED.structure_1h,
+                dxy_aligned = EXCLUDED.dxy_aligned,
+                chop_detected = EXCLUDED.chop_detected,
+                seasonality_adjustment = EXCLUDED.seasonality_adjustment,
+                seasonality_period = EXCLUDED.seasonality_period,
+                vwap_trend_confirmed = EXCLUDED.vwap_trend_confirmed
+        """
+
+        data = [
+            (
+                b.timestamp,
+                b.bias,
+                b.score,
+                b.confidence,
+                b.structure_15m,
+                b.structure_1h,
+                b.dxy_aligned,
+                b.chop_detected,
+                b.seasonality_adjustment,
+                b.seasonality_period,
+                b.vwap_trend_confirmed,
+            )
+            for b in bias_list
+        ]
+
+        async with self.db.acquire() as conn:
+            await conn.executemany(query, data)
+
+        return len(bias_list)
+
     async def load_recent_candles(
         self,
         count: int,

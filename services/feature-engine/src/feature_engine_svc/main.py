@@ -93,13 +93,19 @@ class DXYVWAPTracker:
 async def warmup_from_stream(
     redis_client: redis.Redis,
     processor: FeatureProcessor,
+    repository: FeatureRepository,
     timeframe: str,
 ) -> bool:
-    """Attempt warmup from Redis streams.
+    """Attempt warmup from Redis streams with database persistence.
+
+    Consumes warmup candles from Redis streams, processes them through the
+    feature processor, and persists both candles and features to the database
+    for historical analysis and dashboard queries.
 
     Args:
         redis_client: Redis client
         processor: Feature processor to warmup
+        repository: Repository for database persistence
         timeframe: Timeframe to warmup
 
     Returns:
@@ -143,9 +149,10 @@ async def warmup_from_stream(
         return False
 
     # For 1m timeframe, use candles directly
-    # Pair candles by timestamp and take last warmup_candles
-    gc_dict = {c.timestamp: c for c in gc_candles[-config.warmup_candles :]}
-    dxy_dict = {c.timestamp: c for c in dxy_candles[-config.warmup_candles :]}
+    # Pair candles by timestamp and use ALL candles (not just warmup_candles)
+    # to populate the database with full 24h of historical data
+    gc_dict = {c.timestamp: c for c in gc_candles}
+    dxy_dict = {c.timestamp: c for c in dxy_candles}
     common_ts = sorted(set(gc_dict.keys()) & set(dxy_dict.keys()))
 
     if len(common_ts) < config.warmup_candles:
@@ -155,13 +162,41 @@ async def warmup_from_stream(
         )
         return False
 
+    # Collect candles and features for batch insert
+    all_gc_candles: list = []
+    all_dxy_candles: list = []
+    all_features: list = []
+
     for ts in common_ts:
-        processor.process(gc_dict[ts], dxy_dict[ts])
+        gc_candle = gc_dict[ts]
+        dxy_candle = dxy_dict[ts]
+
+        # Collect candles for batch insert
+        all_gc_candles.append(gc_candle)
+        all_dxy_candles.append(dxy_candle)
+
+        # Process through feature processor (updates internal state)
+        features = processor.process(gc_candle, dxy_candle)
+        all_features.append(features)
+
+    # Batch persist candles to database
+    logger.info(
+        f"Persisting {len(all_gc_candles)} GC + {len(all_dxy_candles)} DXY "
+        f"warmup candles to database..."
+    )
+    await repository.save_candles_batch(all_gc_candles)
+    await repository.save_candles_batch(all_dxy_candles)
+
+    # Batch persist features to database
+    logger.info(f"Persisting {len(all_features)} warmup features to database...")
+    await repository.save_features_batch(all_features)
 
     logger.info(
         f"Warmup complete from Redis streams for {timeframe}: "
         f"{processor.bar_count} bars processed, "
-        f"warmed_up={processor.is_warmed_up()}"
+        f"warmed_up={processor.is_warmed_up()}, "
+        f"persisted {len(all_gc_candles) + len(all_dxy_candles)} candles "
+        f"and {len(all_features)} features to database"
     )
     return True
 
@@ -233,7 +268,7 @@ async def warmup_processor_with_fallback(
 
     # Try stream warmup first (only for 1m timeframe)
     if config.warmup_use_redis_streams and timeframe == "1m":
-        success = await warmup_from_stream(redis_client, processor, timeframe)
+        success = await warmup_from_stream(redis_client, processor, repository, timeframe)
         if success:
             return
 
