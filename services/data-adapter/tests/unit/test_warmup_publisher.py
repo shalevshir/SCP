@@ -55,6 +55,7 @@ async def test_publish_warmup_data_clears_streams_before_publish() -> None:
     mock_redis.delete.assert_awaited_once_with(
         "warmup.candles.1m.gc",
         "warmup.candles.1m.dxy",
+        "warmup.status"
     )
     call_order = [call_item[0] for call_item in mock_redis.method_calls]
     assert "xadd" in call_order
