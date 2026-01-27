@@ -261,30 +261,26 @@ def test_bar_to_candle_conversion(fetcher):
 
 @pytest.mark.unit
 def test_bar_to_candle_timezone_handling(fetcher):
-    """Test timezone normalization in bar conversion."""
-    # Test naive datetime (should add UTC)
-    bar_naive = MockBarData(
-        date=datetime(2025, 1, 15, 10, 0),  # No timezone
+    """Test timezone handling with formatDate=2 (UTC timestamps).
+    
+    With formatDate=2, IB returns timezone-aware datetimes in UTC.
+    This is the correct approach to avoid timezone ambiguity.
+    """
+    # Test UTC-aware datetime (formatDate=2 returns this)
+    bar_utc = MockBarData(
+        date=datetime(2025, 1, 15, 15, 0, tzinfo=UTC),  # 3 PM UTC
         open=2650.0,
         high=2652.0,
         low=2649.0,
         close=2651.0,
         volume=1000.0,
     )
-    candle = fetcher._bar_to_candle_message(bar_naive, "GC", "1m")
+    candle = fetcher._bar_to_candle_message(bar_utc, "GC", "1m")
+    
+    # Should preserve UTC timestamp exactly
+    assert candle.timestamp == datetime(2025, 1, 15, 15, 0, tzinfo=UTC)
     assert candle.timestamp.tzinfo == UTC
-
-    # Test timezone-aware datetime (should convert to UTC)
-    bar_aware = MockBarData(
-        date=datetime(2025, 1, 15, 10, 0, tzinfo=UTC),
-        open=2650.0,
-        high=2652.0,
-        low=2649.0,
-        close=2651.0,
-        volume=1000.0,
-    )
-    candle = fetcher._bar_to_candle_message(bar_aware, "GC", "1m")
-    assert candle.timestamp.tzinfo == UTC
+    assert candle.close == 2651.0
 
 
 @pytest.mark.unit

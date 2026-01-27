@@ -280,12 +280,23 @@ class IBHistoricalFetcher:
 
         Returns:
             CandleMessage instance
+
+        Notes:
+            With formatDate=2, IB returns timezone-aware datetime objects in UTC.
+            This avoids timezone ambiguity (formatDate=1 returns TWS local timezone).
         """
-        # Ensure timezone-aware timestamp (IB may return naive datetime)
+        # IB with formatDate=2 returns UTC-aware datetimes
         timestamp = bar.date
+        
+        # Ensure timestamp is in UTC (should already be with formatDate=2)
         if timestamp.tzinfo is None:
+            # This shouldn't happen with formatDate=2, but handle defensively
+            logger.warning(
+                f"Received naive datetime from IB (expected UTC with formatDate=2): {timestamp}"
+            )
             timestamp = timestamp.replace(tzinfo=UTC)
-        else:
+        elif timestamp.tzinfo != UTC:
+            # Convert to UTC if in different timezone
             timestamp = timestamp.astimezone(UTC)
 
         return CandleMessage(
@@ -351,7 +362,7 @@ class IBHistoricalFetcher:
                 barSizeSetting=bar_size,
                 whatToShow="TRADES",
                 useRTH=False,  # Include all hours (RTH + ETH)
-                formatDate=1,  # Return as datetime objects
+                formatDate=2,  # Return as UTC timezone-aware datetime objects
             )
 
             if not bars:
