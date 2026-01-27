@@ -187,24 +187,33 @@ async def process_feature_message(
     # Increment bar counter
     warmup_bar_count += 1
 
+    def record_early_rejection(reason: str) -> int:
+        """Record rejection and update decision dashboard metrics."""
+        core_metrics.record_signal_rejection(reason, mode, service)
+        core_metrics.update_signal_state_metrics(
+            signal_msg=None,
+            raw_signal=None,
+            rejection_reason=reason,
+            htf_bias=bias_cache.get_for_timestamp(features.timestamp),
+            mode=mode,
+            service=service,
+        )
+        return warmup_bar_count
+
     # KILL SWITCH: Skip signal generation if killed
     if _is_killed:
         logger.debug(
             f"🚨 Kill switch active - skipping signal generation "
             f"at {features.timestamp}"
         )
-        # METRIC: Track rejection
-        core_metrics.record_signal_rejection("kill_switch", mode, service)
-        return warmup_bar_count
+        return record_early_rejection("kill_switch")
 
     # Check warmup period
     if warmup_bar_count <= warmup_bars:
         logger.debug(
             f"Warmup: bar {warmup_bar_count}/{warmup_bars} - skipping signal generation"
         )
-        # METRIC: Track rejection
-        core_metrics.record_signal_rejection("warmup", mode, service)
-        return warmup_bar_count
+        return record_early_rejection("warmup")
 
     # 1. Validate session
     session_result = session_service.evaluate(features.timestamp)
@@ -219,9 +228,7 @@ async def process_feature_message(
         logger.debug(
             f"Session blocked at {features.timestamp}: {session_result.reason}"
         )
-        # METRIC: Track rejection
-        core_metrics.record_signal_rejection("session_filter", mode, service)
-        return warmup_bar_count
+        return record_early_rejection("session_filter")
 
     # 2. Check guardrails
     guardrail_result = guardrails_service.evaluate(session_result.constraints)
@@ -229,9 +236,7 @@ async def process_feature_message(
         logger.debug(
             f"Guardrails blocked at {features.timestamp}: {guardrail_result.reasons}"
         )
-        # METRIC: Track rejection (use risk_limit as the general category)
-        core_metrics.record_signal_rejection("risk_limit", mode, service)
-        return warmup_bar_count
+        return record_early_rejection("risk_limit")
 
     # 2.5. Check DXY availability (required for accurate scoring)
     if features.dxy_correlation is None and features.dxy_corr is None:
@@ -239,9 +244,7 @@ async def process_feature_message(
             f"DXY data unavailable at {features.timestamp} "
             f"- skipping signal generation"
         )
-        # METRIC: Track rejection
-        core_metrics.record_signal_rejection("invalid_context", mode, service)
-        return warmup_bar_count
+        return record_early_rejection("invalid_context")
 
     # 2.6. CRITICAL: Check if active trade exists (matches backtest)
     # Backtest blocks signal generation when active trades >= max_concurrent
@@ -251,9 +254,7 @@ async def process_feature_message(
             f"Signal blocked at {features.timestamp}: "
             f"active trade exists ({active_count} active)"
         )
-        # METRIC: Track rejection
-        core_metrics.record_signal_rejection("active_trade", mode, service)
-        return warmup_bar_count
+        return record_early_rejection("active_trade")
 
     # 3. Get bias for this feature's timestamp (critical for replay mode)
     # Uses timestamp-aware lookup to ensure features are evaluated with
@@ -314,6 +315,16 @@ async def process_feature_message(
         # METRIC: Clear setup type when no signal generated
         core_metrics.current_setup_type.labels(mode=mode, service=service).set(0.0)
 
+    # Update full signal state metrics for trader decision dashboard
+    core_metrics.update_signal_state_metrics(
+        signal_msg=result.signal_msg,
+        raw_signal=result.raw_signal,
+        rejection_reason=result.rejection_reason,
+        htf_bias=bias,
+        mode=mode,
+        service=service,
+    )
+
     return warmup_bar_count
 
 
@@ -356,7 +367,23 @@ async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
     core_metrics.session_valid.labels(mode=mode, service=service).set(0.0)
     core_metrics.current_setup_type.labels(mode=mode, service=service).set(0.0)
     core_metrics.signal_score.labels(mode=mode, service=service).set(0.0)
-    logger.info("Initialized session/setup metrics with default values")
+
+    # Initialize signal state metrics for trader decision dashboard
+    core_metrics.signal_aplus_verdict.labels(mode=mode, service=service).set(0.0)
+    core_metrics.signal_hard_gates_pass.labels(mode=mode, service=service).set(0.0)
+    core_metrics.signal_direction.labels(mode=mode, service=service).set(0.0)
+    core_metrics.signal_confidence.labels(mode=mode, service=service).set(0.0)
+    core_metrics.signal_entry_price.labels(mode=mode, service=service).set(0.0)
+    core_metrics.signal_sl_price.labels(mode=mode, service=service).set(0.0)
+    core_metrics.signal_tp_price.labels(mode=mode, service=service).set(0.0)
+    core_metrics.signal_tp2_price.labels(mode=mode, service=service).set(0.0)
+    core_metrics.signal_rr_tp1.labels(mode=mode, service=service).set(0.0)
+    core_metrics.signal_rr_potential.labels(mode=mode, service=service).set(0.0)
+    core_metrics.signal_risk_points.labels(mode=mode, service=service).set(0.0)
+    core_metrics.signal_tp_mode.labels(mode=mode, service=service).set(0.0)
+    core_metrics.signal_be_after_tp1.labels(mode=mode, service=service).set(0.0)
+    core_metrics.signal_last_rejection.labels(mode=mode, service=service).set(0.0)
+    logger.info("Initialized session/setup/signal metrics with default values")
 
     # Send service started alert
     send_alert(

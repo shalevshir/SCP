@@ -98,7 +98,7 @@ class DataAdapterConfig(BaseServiceConfig):
 
     # Warmup configuration
     warmup_enabled: bool = Field(
-        default=False,
+        default=True,
         description="Enable warmup stream publishing from IB Gateway on startup",
     )
 
