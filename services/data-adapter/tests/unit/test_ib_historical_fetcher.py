@@ -371,6 +371,34 @@ async def test_connection_retry(fetcher):
 
 @pytest.mark.unit
 @pytest.mark.asyncio
+async def test_connection_retry_disconnects_on_market_data_error(fetcher):
+    """Test that a connected IB instance is disconnected on setup failure."""
+    first_ib = MagicMock()
+    first_ib.connectAsync = AsyncMock()
+    first_ib.reqMarketDataType = MagicMock(
+        side_effect=Exception("Market data type failed")
+    )
+    first_ib.isConnected.return_value = True
+
+    second_ib = MagicMock()
+    second_ib.connectAsync = AsyncMock()
+    second_ib.reqMarketDataType = MagicMock()
+    second_ib.isConnected.return_value = True
+
+    with patch(
+        "data_adapter.ib_historical_fetcher.IB",
+        side_effect=[first_ib, second_ib],
+    ):
+        with patch("data_adapter.ib_historical_fetcher.asyncio.sleep") as mock_sleep:
+            await fetcher._ensure_connected()
+
+    first_ib.disconnect.assert_called_once()
+    assert mock_sleep.call_count == 1
+    assert fetcher._ib is second_ib
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
 async def test_connection_failure_max_retries(fetcher):
     """Test connection failure after max retries."""
     mock_ib_instance = MagicMock()
