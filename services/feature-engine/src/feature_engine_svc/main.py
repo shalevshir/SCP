@@ -124,81 +124,89 @@ async def warmup_from_stream(
         )
         return False
 
-    # Consume GC and DXY warmup streams
-    gc_candles = await consume_warmup_stream(
-        redis_client,
-        "warmup.candles.1m.gc",
-        timeout_seconds=config.warmup_stream_timeout_seconds,
-    )
-    dxy_candles = await consume_warmup_stream(
-        redis_client,
-        "warmup.candles.1m.dxy",
-        timeout_seconds=config.warmup_stream_timeout_seconds,
-    )
+    try:
+        # Consume GC and DXY warmup streams
+        gc_candles = await consume_warmup_stream(
+            redis_client,
+            "warmup.candles.1m.gc",
+            timeout_seconds=config.warmup_stream_timeout_seconds,
+        )
+        dxy_candles = await consume_warmup_stream(
+            redis_client,
+            "warmup.candles.1m.dxy",
+            timeout_seconds=config.warmup_stream_timeout_seconds,
+        )
 
-    if not gc_candles or not dxy_candles:
-        logger.warning("Failed to consume warmup streams - will use database fallback")
-        return False
+        if not gc_candles or not dxy_candles:
+            logger.warning(
+                "Failed to consume warmup streams - will use database fallback"
+            )
+            return False
 
-    # For HTF timeframes (15m, 1h), we need pre-aggregated candles from database
-    # Stream warmup only supports 1m timeframe currently
-    if timeframe != "1m":
+        # For HTF timeframes (15m, 1h), we need pre-aggregated candles from database
+        # Stream warmup only supports 1m timeframe currently
+        if timeframe != "1m":
+            logger.info(
+                f"HTF timeframe {timeframe} - using database for warmup (streams only support 1m)"
+            )
+            return False
+
+        # For 1m timeframe, use candles directly
+        # Pair candles by timestamp and use ALL candles (not just warmup_candles)
+        # to populate the database with full 24h of historical data
+        gc_dict = {c.timestamp: c for c in gc_candles}
+        dxy_dict = {c.timestamp: c for c in dxy_candles}
+        common_ts = sorted(set(gc_dict.keys()) & set(dxy_dict.keys()))
+
+        if len(common_ts) < config.warmup_candles:
+            logger.warning(
+                f"Insufficient warmup candles: {len(common_ts)}/{config.warmup_candles} - "
+                f"will use database fallback"
+            )
+            return False
+
+        # Collect candles and features for batch insert
+        all_gc_candles: list = []
+        all_dxy_candles: list = []
+        all_features: list = []
+
+        for ts in common_ts:
+            gc_candle = gc_dict[ts]
+            dxy_candle = dxy_dict[ts]
+
+            # Collect candles for batch insert
+            all_gc_candles.append(gc_candle)
+            all_dxy_candles.append(dxy_candle)
+
+            # Process through feature processor (updates internal state)
+            features = processor.process(gc_candle, dxy_candle)
+            all_features.append(features)
+
+        # Batch persist candles to database
         logger.info(
-            f"HTF timeframe {timeframe} - using database for warmup (streams only support 1m)"
+            f"Persisting {len(all_gc_candles)} GC + {len(all_dxy_candles)} DXY "
+            f"warmup candles to database..."
+        )
+        await repository.save_candles_batch(all_gc_candles)
+        await repository.save_candles_batch(all_dxy_candles)
+
+        # Batch persist features to database
+        logger.info(f"Persisting {len(all_features)} warmup features to database...")
+        await repository.save_features_batch(all_features)
+
+        logger.info(
+            f"Warmup complete from Redis streams for {timeframe}: "
+            f"{processor.bar_count} bars processed, "
+            f"warmed_up={processor.is_warmed_up()}, "
+            f"persisted {len(all_gc_candles) + len(all_dxy_candles)} candles "
+            f"and {len(all_features)} features to database"
+        )
+        return True
+    except Exception as e:
+        logger.error(
+            f"Warmup from Redis streams failed for {timeframe}: {e}", exc_info=True
         )
         return False
-
-    # For 1m timeframe, use candles directly
-    # Pair candles by timestamp and use ALL candles (not just warmup_candles)
-    # to populate the database with full 24h of historical data
-    gc_dict = {c.timestamp: c for c in gc_candles}
-    dxy_dict = {c.timestamp: c for c in dxy_candles}
-    common_ts = sorted(set(gc_dict.keys()) & set(dxy_dict.keys()))
-
-    if len(common_ts) < config.warmup_candles:
-        logger.warning(
-            f"Insufficient warmup candles: {len(common_ts)}/{config.warmup_candles} - "
-            f"will use database fallback"
-        )
-        return False
-
-    # Collect candles and features for batch insert
-    all_gc_candles: list = []
-    all_dxy_candles: list = []
-    all_features: list = []
-
-    for ts in common_ts:
-        gc_candle = gc_dict[ts]
-        dxy_candle = dxy_dict[ts]
-
-        # Collect candles for batch insert
-        all_gc_candles.append(gc_candle)
-        all_dxy_candles.append(dxy_candle)
-
-        # Process through feature processor (updates internal state)
-        features = processor.process(gc_candle, dxy_candle)
-        all_features.append(features)
-
-    # Batch persist candles to database
-    logger.info(
-        f"Persisting {len(all_gc_candles)} GC + {len(all_dxy_candles)} DXY "
-        f"warmup candles to database..."
-    )
-    await repository.save_candles_batch(all_gc_candles)
-    await repository.save_candles_batch(all_dxy_candles)
-
-    # Batch persist features to database
-    logger.info(f"Persisting {len(all_features)} warmup features to database...")
-    await repository.save_features_batch(all_features)
-
-    logger.info(
-        f"Warmup complete from Redis streams for {timeframe}: "
-        f"{processor.bar_count} bars processed, "
-        f"warmed_up={processor.is_warmed_up()}, "
-        f"persisted {len(all_gc_candles) + len(all_dxy_candles)} candles "
-        f"and {len(all_features)} features to database"
-    )
-    return True
 
 
 async def warmup_processor(
