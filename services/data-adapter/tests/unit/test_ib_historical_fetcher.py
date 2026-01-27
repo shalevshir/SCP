@@ -213,25 +213,25 @@ def test_timeframe_mapping(fetcher):
 @pytest.mark.unit
 def test_duration_calculation(fetcher):
     """Test IB duration string calculation."""
-    # 4 hours
+    # 4 hours (14400 seconds)
     start = datetime(2025, 1, 15, 8, 0, tzinfo=UTC)
     end = datetime(2025, 1, 15, 12, 0, tzinfo=UTC)
-    assert fetcher._calculate_duration(start, end) == "4 H"
+    assert fetcher._calculate_duration(start, end) == "14400 S"
 
-    # 1 hour
+    # 1 hour (3600 seconds)
     start = datetime(2025, 1, 15, 10, 0, tzinfo=UTC)
     end = datetime(2025, 1, 15, 11, 0, tzinfo=UTC)
-    assert fetcher._calculate_duration(start, end) == "1 H"
+    assert fetcher._calculate_duration(start, end) == "3600 S"
 
     # 5 days
     start = datetime(2025, 1, 10, 0, 0, tzinfo=UTC)
     end = datetime(2025, 1, 15, 0, 0, tzinfo=UTC)
     assert fetcher._calculate_duration(start, end) == "5 D"
 
-    # Less than 1 hour (should still return 1 H)
+    # Less than 1 hour (1800 seconds = 30 minutes)
     start = datetime(2025, 1, 15, 10, 0, tzinfo=UTC)
     end = datetime(2025, 1, 15, 10, 30, tzinfo=UTC)
-    assert fetcher._calculate_duration(start, end) == "1 H"
+    assert fetcher._calculate_duration(start, end) == "1800 S"
 
 
 @pytest.mark.unit

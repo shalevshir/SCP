@@ -177,7 +177,7 @@ class IBHistoricalFetcher:
         """Calculate IB duration string from time range.
 
         IB duration format: "<amount> <unit>" where unit is S|D|W|M|Y
-        Examples: "4 H", "240 S" (seconds = bars), "5 D"
+        Examples: "14400 S" (4 hours in seconds), "5 D"
 
         Args:
             start: Start datetime
@@ -185,13 +185,16 @@ class IBHistoricalFetcher:
 
         Returns:
             IB duration string
+
+        Notes:
+            IB API requires duration in seconds for intraday data.
+            For multi-day requests, uses days.
         """
         duration_seconds = int((end - start).total_seconds())
 
-        # For short durations (< 24h), use hours
+        # For short durations (< 24h), use seconds
         if duration_seconds < 86400:
-            hours = duration_seconds // 3600
-            return f"{hours} H" if hours > 0 else "1 H"
+            return f"{duration_seconds} S"
 
         # For longer durations, use days
         days = duration_seconds // 86400
@@ -262,8 +265,8 @@ class IBHistoricalFetcher:
                 )
                 await asyncio.sleep(wait_seconds)
 
-        # Record this request
-        self._request_timestamps.append(now)
+        # Record this request with current time (after potential wait)
+        self._request_timestamps.append(datetime.now(UTC))
 
     def _bar_to_candle_message(
         self, bar, symbol: str, timeframe: str
