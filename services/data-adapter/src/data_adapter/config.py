@@ -95,3 +95,19 @@ class DataAdapterConfig(BaseServiceConfig):
         default=True,
         description="Enable automatic gap backfill from historical data",
     )
+
+    # Warmup configuration
+    warmup_enabled: bool = Field(
+        default=False,
+        description="Enable warmup stream publishing from IB Gateway on startup",
+    )
+
+    warmup_lookback_hours: int = Field(
+        default=24,
+        description="Hours of historical data to fetch for warmup (24 = 1440 1m candles)",
+    )
+
+    warmup_stream_ttl_seconds: int = Field(
+        default=600,
+        description="TTL for warmup streams (auto-expire after consumption, default: 10 minutes)",
+    )
