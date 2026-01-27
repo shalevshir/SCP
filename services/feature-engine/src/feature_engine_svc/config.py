@@ -16,3 +16,14 @@ class FeatureEngineConfig(BaseServiceConfig):
         default=60, description="Number of candles to load for warmup"
     )
     enable_warmup: bool = Field(default=True, description="Enable warmup from database")
+
+    # Redis stream warmup settings
+    warmup_use_redis_streams: bool = Field(
+        default=True,
+        description="Use Redis warmup streams if available (fallback to database)",
+    )
+
+    warmup_stream_timeout_seconds: int = Field(
+        default=60,
+        description="Timeout waiting for warmup streams before database fallback",
+    )
