@@ -139,7 +139,7 @@ signal_be_after_tp1 = create_gauge(
 # Rejection tracking
 signal_last_rejection = create_gauge(
     "signal_last_rejection",
-    "Last rejection reason encoded (0=approved, 1-10=rejection codes)",
+    "Last rejection reason encoded (0=approved, 1-11=rejection codes)",
 )
 
 # Encoding maps for signal state metrics
@@ -158,6 +158,7 @@ REJECTION_ENCODING = {
     "warmup": 8.0,
     "kill_switch": 9.0,
     "active_trade": 10.0,
+    "invalid_context": 11.0,
 }
 
 
@@ -270,6 +271,11 @@ def update_signal_state_metrics(
         signal_be_after_tp1.labels(**labels).set(0.0)
 
         # Set rejection reason
-        signal_last_rejection.labels(**labels).set(
-            REJECTION_ENCODING.get(rejection_reason, 0.0)
-        )
+        if rejection_reason is None:
+            rejection_value = 0.0
+        else:
+            rejection_value = REJECTION_ENCODING.get(
+                rejection_reason, REJECTION_ENCODING["invalid_context"]
+            )
+
+        signal_last_rejection.labels(**labels).set(rejection_value)
