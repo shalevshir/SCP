@@ -54,6 +54,16 @@ session_valid = create_gauge(
     "Session validity status (1=valid, 0=invalid)",
 )
 
+current_session = create_gauge(
+    "current_session",
+    "Current trading session (0=closed, 1=asia, 2=london, 3=ny, 4=off_hours)",
+)
+
+session_tradeable = create_gauge(
+    "session_tradeable",
+    "Whether current session allows trading (1=yes, 0=no)",
+)
+
 current_setup_type = create_gauge(
     "current_setup_type",
     "Current setup type (VWAP_RECLAIM=1, VWAP_FADE=2, DXY_CONTINUATION=3, NONE=0)",

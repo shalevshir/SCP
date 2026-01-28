@@ -200,6 +200,30 @@ async def process_feature_message(
         )
         return warmup_bar_count
 
+    # 0. Update session metrics ALWAYS (even during warmup/kill switch)
+    # These metrics should reflect current state regardless of signal generation
+    from scp_shared.validation import (
+        SESSION_ENCODING,
+        get_current_session,
+        is_session_tradeable,
+    )
+
+    session_result = session_service.evaluate(features.timestamp)
+    current_session = get_current_session(features.timestamp)
+    tradeable = is_session_tradeable(current_session)
+
+    # METRIC: Update session metrics for trader dashboard
+    session_valid_value = 1.0 if session_result.session_ok else 0.0
+    core_metrics.session_valid.labels(mode=mode, service=service).set(
+        session_valid_value
+    )
+    core_metrics.current_session.labels(mode=mode, service=service).set(
+        SESSION_ENCODING.get(current_session, 0.0)
+    )
+    core_metrics.session_tradeable.labels(mode=mode, service=service).set(
+        1.0 if tradeable else 0.0
+    )
+
     # KILL SWITCH: Skip signal generation if killed
     if _is_killed:
         logger.debug(
@@ -215,20 +239,8 @@ async def process_feature_message(
         )
         return record_early_rejection("warmup")
 
-    # 1. Validate session
-    session_result = session_service.evaluate(features.timestamp)
-
-    # METRIC: Update session validity for trader dashboard
-    session_valid_value = 1.0 if session_result.session_ok else 0.0
-    core_metrics.session_valid.labels(mode=mode, service=service).set(
-        session_valid_value
-    )
-
-    if not session_result.session_ok:
-        logger.debug(
-            f"Session blocked at {features.timestamp}: {session_result.reason}"
-        )
-        return record_early_rejection("session_filter")
+    # NOTE: Session blocking moved to execution service
+    # Bot-core generates signals regardless of session, execution service decides whether to execute
 
     # 2. Check guardrails
     guardrail_result = guardrails_service.evaluate(session_result.constraints)
