@@ -19,6 +19,16 @@ from scp_shared.validation.session_validator import (
     SessionResult,
     SessionValidator,
 )
+from scp_shared.validation.trading_sessions import (
+    SESSION_ENCODING,
+    SESSION_WINDOWS,
+    SessionWindow,
+    TradingSession,
+    format_session_for_display,
+    get_current_session,
+    get_session_info,
+    is_session_tradeable,
+)
 
 __all__ = [
     "BehaviorGuardrails",
@@ -31,4 +41,13 @@ __all__ = [
     "SessionResult",
     "SessionValidator",
     "load_session_config",
+    # Trading sessions
+    "TradingSession",
+    "SessionWindow",
+    "SESSION_WINDOWS",
+    "SESSION_ENCODING",
+    "get_current_session",
+    "is_session_tradeable",
+    "get_session_info",
+    "format_session_for_display",
 ]
