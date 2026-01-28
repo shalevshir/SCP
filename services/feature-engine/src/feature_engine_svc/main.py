@@ -166,6 +166,7 @@ async def warmup_from_stream(
     all_gc_candles: list = []
     all_dxy_candles: list = []
     all_features: list = []
+    last_features = None  # Track last valid features for metrics update
 
     for ts in common_ts:
         gc_candle = gc_dict[ts]
@@ -177,7 +178,9 @@ async def warmup_from_stream(
 
         # Process through feature processor (updates internal state)
         features = processor.process(gc_candle, dxy_candle)
-        all_features.append(features)
+        if features is not None:
+            all_features.append(features)
+            last_features = features
 
     # Batch persist candles to database
     logger.info(
@@ -200,10 +203,10 @@ async def warmup_from_stream(
     )
 
     # Update metrics with final warmup state so dashboard shows correct initial values
-    if all_features:
+    if last_features is not None:
         mode = config.service_mode
         service = config.service_name
-        engine_metrics.update_feature_metrics(all_features[-1], mode, service)
+        engine_metrics.update_feature_metrics(last_features, mode, service)
         logger.info(f"Updated feature metrics with warmup end state for {timeframe}")
 
     return True
