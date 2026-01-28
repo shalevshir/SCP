@@ -238,6 +238,12 @@ def test_duration_calculation(fetcher):
     end = datetime(2025, 1, 15, 10, 30, tzinfo=UTC)
     assert fetcher._calculate_duration(start, end) == "1800 S"
 
+    # Exactly 24 hours (86400 seconds) - edge case for warmup
+    # Must use seconds to ensure full 24 calendar hours, not "1 D" trading day
+    start = datetime(2025, 1, 14, 12, 0, tzinfo=UTC)
+    end = datetime(2025, 1, 15, 12, 0, tzinfo=UTC)
+    assert fetcher._calculate_duration(start, end) == "86400 S"
+
 
 @pytest.mark.unit
 def test_bar_to_candle_conversion(fetcher):
