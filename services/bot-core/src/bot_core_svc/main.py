@@ -315,6 +315,18 @@ async def process_feature_message(
         # METRIC: Clear setup type when no signal generated
         core_metrics.current_setup_type.labels(mode=mode, service=service).set(0.0)
 
+    # METRIC: Always update detected_setup_type from raw_signal (regardless of A+ status)
+    # This shows what setup is being evaluated even if it doesn't meet A+ criteria
+    if result.raw_signal is not None:
+        detected_type_value = core_metrics.SETUP_TYPE_ENCODING.get(
+            result.raw_signal.setup_type, 0.0
+        )
+        core_metrics.detected_setup_type.labels(mode=mode, service=service).set(
+            detected_type_value
+        )
+    else:
+        core_metrics.detected_setup_type.labels(mode=mode, service=service).set(0.0)
+
     # Update full signal state metrics for trader decision dashboard
     core_metrics.update_signal_state_metrics(
         signal_msg=result.signal_msg,
@@ -366,6 +378,7 @@ async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
     # Initialize session and setup type metrics with defaults
     core_metrics.session_valid.labels(mode=mode, service=service).set(0.0)
     core_metrics.current_setup_type.labels(mode=mode, service=service).set(0.0)
+    core_metrics.detected_setup_type.labels(mode=mode, service=service).set(0.0)
     core_metrics.signal_score.labels(mode=mode, service=service).set(0.0)
 
     # Initialize signal state metrics for trader decision dashboard

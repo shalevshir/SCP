@@ -59,6 +59,11 @@ current_setup_type = create_gauge(
     "Current setup type (VWAP_RECLAIM=1, VWAP_FADE=2, DXY_CONTINUATION=3, NONE=0)",
 )
 
+detected_setup_type = create_gauge(
+    "detected_setup_type",
+    "Detected setup type regardless of A+ status (VWAP_RECLAIM=1, VWAP_FADE=2, DXY_CONTINUATION=3, NONE=0)",
+)
+
 # Map enforcer tier names to numeric values
 ENFORCER_TIER_MAP = {
     "Conservative": 1.0,
