@@ -125,6 +125,15 @@ async def warmup_from_stream(
         f"structure_15m={features_15m.get('structure_label')}"
     )
 
+    # Update metrics with final warmup state so dashboard shows correct initial values
+    if all_bias:
+        mode = config.service_mode
+        service = config.service_name
+        last_bias = all_bias[-1]
+        bias_metrics.update_bias_metrics(last_bias.bias, mode, service)
+        bias_metrics.update_htf_detail_metrics(last_bias, mode, service)
+        logger.info("Updated HTF bias metrics with warmup end state")
+
     return True
 
 
@@ -166,10 +175,13 @@ async def warmup_processor(
             f"Loaded {len(candle_pairs)} candle pairs for warmup: {first_ts} to {last_ts}"
         )
 
-        # Replay through processor
+        # Replay through processor, keeping track of last bias for metrics
+        last_bias = None
         for gc_candle, dxy_candle in candle_pairs:
             # Process returns None until sufficient data accumulated
-            processor.process(gc_candle, dxy_candle)
+            bias = processor.process(gc_candle, dxy_candle)
+            if bias is not None:
+                last_bias = bias
 
         # Log buffer sizes after warmup
         calc = processor.calculator
@@ -186,6 +198,14 @@ async def warmup_processor(
             f"After warmup: structure_1h={features_1h.get('structure_label')}, "
             f"structure_15m={features_15m.get('structure_label')}"
         )
+
+        # Update metrics with final warmup state so dashboard shows correct initial values
+        if last_bias is not None:
+            mode = config.service_mode
+            service = config.service_name
+            bias_metrics.update_bias_metrics(last_bias.bias, mode, service)
+            bias_metrics.update_htf_detail_metrics(last_bias, mode, service)
+            logger.info("Updated HTF bias metrics with warmup end state")
 
     except Exception as e:
         logger.error(f"Warmup failed: {e}", exc_info=True)

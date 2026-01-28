@@ -198,6 +198,14 @@ async def warmup_from_stream(
         f"persisted {len(all_gc_candles) + len(all_dxy_candles)} candles "
         f"and {len(all_features)} features to database"
     )
+
+    # Update metrics with final warmup state so dashboard shows correct initial values
+    if all_features:
+        mode = config.service_mode
+        service = config.service_name
+        engine_metrics.update_feature_metrics(all_features[-1], mode, service)
+        logger.info(f"Updated feature metrics with warmup end state for {timeframe}")
+
     return True
 
 
@@ -233,15 +241,23 @@ async def warmup_processor(
 
         logger.info(f"Loaded {len(candle_pairs)} candle pairs for warmup")
 
-        # Replay through processor
+        # Replay through processor, keeping track of last features for metrics
+        last_features = None
         for gc_candle, dxy_candle in candle_pairs:
-            processor.process(gc_candle, dxy_candle)
+            last_features = processor.process(gc_candle, dxy_candle)
 
         logger.info(
             f"Warmup complete for {timeframe}: "
             f"{processor.bar_count} bars processed, "
             f"warmed_up={processor.is_warmed_up()}"
         )
+
+        # Update metrics with final warmup state so dashboard shows correct initial values
+        if last_features is not None:
+            mode = config.service_mode
+            service = config.service_name
+            engine_metrics.update_feature_metrics(last_features, mode, service)
+            logger.info(f"Updated feature metrics with warmup end state for {timeframe}")
 
     except Exception as e:
         logger.error(f"Warmup failed for {timeframe}: {e}", exc_info=True)
