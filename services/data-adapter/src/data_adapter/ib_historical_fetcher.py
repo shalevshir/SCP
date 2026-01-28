@@ -192,8 +192,10 @@ class IBHistoricalFetcher:
         """
         duration_seconds = int((end - start).total_seconds())
 
-        # For short durations (< 24h), use seconds
-        if duration_seconds < 86400:
+        # For short durations (<= 24h), use seconds
+        # IB's "1 D" returns one trading day, not 24 calendar hours,
+        # so we use seconds for exactness at the 24h boundary
+        if duration_seconds <= 86400:
             return f"{duration_seconds} S"
 
         # For longer durations, use days (round up to cover partial days)

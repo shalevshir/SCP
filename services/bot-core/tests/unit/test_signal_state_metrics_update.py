@@ -36,7 +36,7 @@ def build_features(
     [
         "kill_switch",
         "warmup",
-        "session_filter",
+        # session_filter removed - session blocking moved to execution service
         "risk_limit",
         "invalid_context",
         "active_trade",
@@ -84,10 +84,6 @@ async def test_early_rejections_update_signal_state_metrics(
         warmup_bar_count = 0
     elif reason == "warmup":
         warmup_bar_count = 0
-    elif reason == "session_filter":
-        session_service.evaluate.return_value = Mock(
-            session_ok=False, constraints={}, reason="outside_window"
-        )
     elif reason == "risk_limit":
         guardrails_service.evaluate.return_value = Mock(
             allowed=False, reasons=["pdll_limit"]

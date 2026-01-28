@@ -3,6 +3,7 @@
 import asyncio
 from contextlib import asynccontextmanager
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import redis.asyncio as redis
 from fastapi import FastAPI
@@ -200,6 +201,30 @@ async def process_feature_message(
         )
         return warmup_bar_count
 
+    # 0. Update session metrics ALWAYS (even during warmup/kill switch)
+    # These metrics should reflect current state regardless of signal generation
+    from scp_shared.validation import (
+        SESSION_ENCODING,
+        get_current_session,
+        is_session_tradeable,
+    )
+
+    session_result = session_service.evaluate(features.timestamp)
+    current_session = get_current_session(features.timestamp)
+    tradeable = is_session_tradeable(current_session)
+
+    # METRIC: Update session metrics for trader dashboard
+    session_valid_value = 1.0 if session_result.session_ok else 0.0
+    core_metrics.session_valid.labels(mode=mode, service=service).set(
+        session_valid_value
+    )
+    core_metrics.current_session.labels(mode=mode, service=service).set(
+        SESSION_ENCODING.get(current_session, 0.0)
+    )
+    core_metrics.session_tradeable.labels(mode=mode, service=service).set(
+        1.0 if tradeable else 0.0
+    )
+
     # KILL SWITCH: Skip signal generation if killed
     if _is_killed:
         logger.debug(
@@ -215,20 +240,8 @@ async def process_feature_message(
         )
         return record_early_rejection("warmup")
 
-    # 1. Validate session
-    session_result = session_service.evaluate(features.timestamp)
-
-    # METRIC: Update session validity for trader dashboard
-    session_valid_value = 1.0 if session_result.session_ok else 0.0
-    core_metrics.session_valid.labels(mode=mode, service=service).set(
-        session_valid_value
-    )
-
-    if not session_result.session_ok:
-        logger.debug(
-            f"Session blocked at {features.timestamp}: {session_result.reason}"
-        )
-        return record_early_rejection("session_filter")
+    # NOTE: Session blocking moved to execution service
+    # Bot-core generates signals regardless of session, execution service decides whether to execute
 
     # 2. Check guardrails
     guardrail_result = guardrails_service.evaluate(session_result.constraints)
@@ -315,6 +328,18 @@ async def process_feature_message(
         # METRIC: Clear setup type when no signal generated
         core_metrics.current_setup_type.labels(mode=mode, service=service).set(0.0)
 
+    # METRIC: Always update detected_setup_type from raw_signal (regardless of A+ status)
+    # This shows what setup is being evaluated even if it doesn't meet A+ criteria
+    if result.raw_signal is not None:
+        detected_type_value = core_metrics.SETUP_TYPE_ENCODING.get(
+            result.raw_signal.setup_type, 0.0
+        )
+        core_metrics.detected_setup_type.labels(mode=mode, service=service).set(
+            detected_type_value
+        )
+    else:
+        core_metrics.detected_setup_type.labels(mode=mode, service=service).set(0.0)
+
     # Update full signal state metrics for trader decision dashboard
     core_metrics.update_signal_state_metrics(
         signal_msg=result.signal_msg,
@@ -363,9 +388,23 @@ async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
     core_metrics.enforcer_tier.labels(mode=mode, service=service).set(tier_value)
     logger.info(f"Enforcer tier: {config.enforcer_tier} (metric value: {tier_value})")
 
-    # Initialize session and setup type metrics with defaults
+    # Initialize session and setup type metrics with current values
+    from scp_shared.validation import (
+        SESSION_ENCODING,
+        get_current_session,
+        is_session_tradeable,
+    )
+
+    current_session = get_current_session(datetime.now(tz=ZoneInfo("UTC")))
     core_metrics.session_valid.labels(mode=mode, service=service).set(0.0)
+    core_metrics.current_session.labels(mode=mode, service=service).set(
+        SESSION_ENCODING.get(current_session, 0.0)
+    )
+    core_metrics.session_tradeable.labels(mode=mode, service=service).set(
+        1.0 if is_session_tradeable(current_session) else 0.0
+    )
     core_metrics.current_setup_type.labels(mode=mode, service=service).set(0.0)
+    core_metrics.detected_setup_type.labels(mode=mode, service=service).set(0.0)
     core_metrics.signal_score.labels(mode=mode, service=service).set(0.0)
 
     # Initialize signal state metrics for trader decision dashboard

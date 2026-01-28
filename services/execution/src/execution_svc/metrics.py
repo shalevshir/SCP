@@ -69,7 +69,15 @@ ORDER_REJECTION_REASONS = {
     "risk_limit",  # PDLL/streak limit
     "trading_disabled",  # Kill switch
     "invalid_state",  # Bad signal/state
+    "session_blocked",  # Outside tradeable session
 }
+
+# Signal rejection tracking (signals blocked before becoming orders)
+signals_rejected_by_session = create_counter(
+    "signals_rejected_by_session",
+    "Signals rejected due to non-tradeable session",
+    labels=["session"],
+)
 
 # Valid unsafe state reasons (finite set)
 UNSAFE_STATE_REASONS = {
