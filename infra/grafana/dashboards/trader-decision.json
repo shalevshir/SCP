@@ -115,6 +115,7 @@
             "uid": "prometheus"
           },
           "expr": "scp_session_valid{mode=\"$mode\"}",
+          "instant": true,
           "refId": "A"
         }
       ],
@@ -203,6 +204,7 @@
             "uid": "prometheus"
           },
           "expr": "scp_enforcer_tier{mode=\"$mode\"}",
+          "instant": true,
           "refId": "A"
         }
       ],
@@ -285,6 +287,7 @@
             "uid": "prometheus"
           },
           "expr": "clamp_max(scp_htf_conflict_detected{mode=\"$mode\"} + scp_htf_chop_detected{mode=\"$mode\"}, 1)",
+          "instant": true,
           "refId": "A"
         }
       ],
@@ -367,6 +370,7 @@
             "uid": "prometheus"
           },
           "expr": "scp_htf_dxy_aligned{mode=\"$mode\"}",
+          "instant": true,
           "refId": "A"
         }
       ],
@@ -441,6 +445,7 @@
             "uid": "prometheus"
           },
           "expr": "max by (reason) (scp_trading_halt_reason{mode=\"$mode\"} == 1)",
+          "instant": true,
           "legendFormat": "{{reason}}",
           "refId": "A"
         }
@@ -506,6 +511,7 @@
             "uid": "prometheus"
           },
           "expr": "scp_htf_seasonality_adjustment{mode=\"$mode\"}",
+          "instant": true,
           "refId": "A"
         }
       ],
@@ -1076,6 +1082,7 @@
             "uid": "prometheus"
           },
           "expr": "scp_htf_bias_current{mode=\"$mode\"}",
+          "instant": true,
           "legendFormat": "Bias",
           "refId": "A"
         },
@@ -1085,6 +1092,7 @@
             "uid": "prometheus"
           },
           "expr": "scp_htf_bias_score{mode=\"$mode\"}",
+          "instant": true,
           "legendFormat": "Score",
           "refId": "B"
         },
@@ -1094,6 +1102,7 @@
             "uid": "prometheus"
           },
           "expr": "scp_htf_bias_confidence{mode=\"$mode\"}",
+          "instant": true,
           "legendFormat": "Confidence",
           "refId": "C"
         }
@@ -1188,6 +1197,7 @@
             "uid": "prometheus"
           },
           "expr": "scp_htf_structure_15m{mode=\"$mode\"}",
+          "instant": true,
           "legendFormat": "15M",
           "refId": "A"
         },
@@ -1197,6 +1207,7 @@
             "uid": "prometheus"
           },
           "expr": "scp_htf_structure_1h{mode=\"$mode\"}",
+          "instant": true,
           "legendFormat": "1H",
           "refId": "B"
         }
@@ -1280,6 +1291,7 @@
             "uid": "prometheus"
           },
           "expr": "scp_htf_vwap_trend_confirmed{mode=\"$mode\"}",
+          "instant": true,
           "legendFormat": "VWAP Trend",
           "refId": "A"
         },
@@ -1289,6 +1301,7 @@
             "uid": "prometheus"
           },
           "expr": "scp_htf_bos_detected{mode=\"$mode\"}",
+          "instant": true,
           "legendFormat": "BOS",
           "refId": "B"
         },
@@ -1298,6 +1311,7 @@
             "uid": "prometheus"
           },
           "expr": "scp_htf_chop_detected{mode=\"$mode\"}",
+          "instant": true,
           "legendFormat": "Chop",
           "refId": "C"
         },
@@ -1307,6 +1321,7 @@
             "uid": "prometheus"
           },
           "expr": "scp_htf_liquidity_sweep_detected{mode=\"$mode\"}",
+          "instant": true,
           "legendFormat": "Liquidity Sweep",
           "refId": "D"
         }
@@ -1391,7 +1406,7 @@
           "calcs": [
             "lastNotNull"
           ],
-          "fields": "/^dxy_structure$/",
+          "fields": "",
           "values": false
         },
         "text": {
@@ -1408,7 +1423,6 @@
             "uid": "prometheus"
           },
           "expr": "scp_feature_dxy_structure{mode=\"$mode\"}",
-          "format": "table",
           "instant": true,
           "refId": "A"
         }
@@ -1481,6 +1495,7 @@
             "uid": "prometheus"
           },
           "expr": "scp_feature_dxy_corr{mode=\"$mode\"}",
+          "instant": true,
           "legendFormat": "1m",
           "refId": "A"
         },
@@ -1490,6 +1505,7 @@
             "uid": "prometheus"
           },
           "expr": "scp_feature_dxy_5m_corr{mode=\"$mode\"}",
+          "instant": true,
           "legendFormat": "5m",
           "refId": "B"
         }
@@ -1573,6 +1589,7 @@
             "uid": "prometheus"
           },
           "expr": "scp_htf_dxy_aligned{mode=\"$mode\"}",
+          "instant": true,
           "refId": "A"
         }
       ],
@@ -1601,7 +1618,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Current setup type",
+      "description": "Detected setup type (regardless of A+ status)",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1677,7 +1694,8 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "scp_current_setup_type{mode=\"$mode\"}",
+          "expr": "scp_detected_setup_type{mode=\"$mode\"}",
+          "instant": true,
           "refId": "A"
         }
       ],
@@ -1942,6 +1960,7 @@
             "uid": "prometheus"
           },
           "expr": "scp_feature_bos_recent{mode=\"$mode\"}",
+          "instant": true,
           "legendFormat": "BOS Recent",
           "refId": "A"
         },
@@ -1951,6 +1970,7 @@
             "uid": "prometheus"
           },
           "expr": "scp_feature_bos_age{mode=\"$mode\"}",
+          "instant": true,
           "legendFormat": "BOS Age",
           "refId": "B"
         },
@@ -1960,6 +1980,7 @@
             "uid": "prometheus"
           },
           "expr": "scp_feature_choch_detected{mode=\"$mode\"}",
+          "instant": true,
           "legendFormat": "CHoCH",
           "refId": "C"
         },
@@ -1969,6 +1990,7 @@
             "uid": "prometheus"
           },
           "expr": "scp_feature_structure_clarity{mode=\"$mode\"}",
+          "instant": true,
           "legendFormat": "Clarity",
           "refId": "D"
         }
@@ -2063,6 +2085,7 @@
             "uid": "prometheus"
           },
           "expr": "scp_feature_rsi{mode=\"$mode\"}",
+          "instant": true,
           "legendFormat": "RSI",
           "refId": "A"
         }
@@ -2254,6 +2277,7 @@
             "uid": "prometheus"
           },
           "expr": "scp_feature_expansion_detected{mode=\"$mode\"}",
+          "instant": true,
           "legendFormat": "Expansion",
           "refId": "A"
         }
@@ -2337,6 +2361,7 @@
             "uid": "prometheus"
           },
           "expr": "scp_feature_second_confirmation_long{mode=\"$mode\"}",
+          "instant": true,
           "legendFormat": "Long",
           "refId": "A"
         },
@@ -2346,6 +2371,7 @@
             "uid": "prometheus"
           },
           "expr": "scp_feature_second_confirmation_short{mode=\"$mode\"}",
+          "instant": true,
           "legendFormat": "Short",
           "refId": "B"
         }
@@ -2534,6 +2560,7 @@
             "uid": "prometheus"
           },
           "expr": "scp_signal_aplus_verdict{mode=\"$mode\"}",
+          "instant": true,
           "refId": "A"
         }
       ],
