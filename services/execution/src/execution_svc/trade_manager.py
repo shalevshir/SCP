@@ -138,6 +138,24 @@ class TradeManager:
         Args:
             signal: Signal message
         """
+        from scp_shared.validation import get_current_session, is_session_tradeable
+
+        from execution_svc import metrics as exec_metrics
+
+        # Check trading session - block signals outside tradeable sessions
+        current_session = get_current_session(signal.timestamp)
+        if not is_session_tradeable(current_session):
+            logger.info(
+                f"Signal {signal.id} rejected: outside tradeable session "
+                f"(session={current_session.value}, timestamp={signal.timestamp})"
+            )
+            exec_metrics.signals_rejected_by_session.labels(
+                mode=self._service_mode,
+                service=self._service_name,
+                session=current_session.value,
+            ).inc()
+            return
+
         # Check if we can take more trades
         if len(self._active_trades) >= self._max_active_trades:
             logger.info(
