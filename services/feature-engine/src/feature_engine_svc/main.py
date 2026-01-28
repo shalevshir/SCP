@@ -244,7 +244,9 @@ async def warmup_processor(
         # Replay through processor, keeping track of last features for metrics
         last_features = None
         for gc_candle, dxy_candle in candle_pairs:
-            last_features = processor.process(gc_candle, dxy_candle)
+            features = processor.process(gc_candle, dxy_candle)
+            if features is not None:
+                last_features = features
 
         logger.info(
             f"Warmup complete for {timeframe}: "
