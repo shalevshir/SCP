@@ -5,10 +5,13 @@
 timezone: "Asia/Jerusalem"
 
 # Default session rules (applied when no season-specific rule matches)
+# NOTE: Session window validation is now informational only in bot-core.
+# Actual trade blocking by session is handled in execution service using
+# trading_sessions.py (Asia, London, NY, Off-hours windows).
 default_session:
   name: "Default Conservative"
-  window_start: "01:00"  # ILT (Israel Local Time)
-  window_end: "23:59"    # ILT (Israel Local Time)
+  window_start: "00:00"  # ILT (Israel Local Time) - Allow all hours
+  window_end: "23:59"    # ILT - Execution service handles session blocking
   allowed_tiers:
     - "Conservative"
     - "EarlyMild"
@@ -27,7 +30,7 @@ seasons:
   # September Defensive: Heightened caution, strict requirements
   - name: "September Defensive"
     months: [9]  # September
-    window_start: "01:00"
+    window_start: "00:00"
     window_end: "23:59"
     allowed_tiers:
       - "Conservative"
@@ -42,7 +45,7 @@ seasons:
   # October Base/Reconstruction: Transitional phase
   - name: "October Base/Reconstruction"
     months: [10]  # October
-    window_start: "01:00"
+    window_start: "00:00"
     window_end: "23:59"
     allowed_tiers:
       - "Conservative"
@@ -59,7 +62,7 @@ seasons:
   # November-December Trend Window: Optimal trading conditions
   - name: "November-December Trend Window"
     months: [11, 12]  # November and December
-    window_start: "01:00"  # ILT (Israel Local Time)
+    window_start: "00:00"  # ILT (Israel Local Time)
     window_end: "23:59"    # ILT (Israel Local Time)
     allowed_tiers:
       - "Conservative"
