@@ -3,6 +3,7 @@
 import asyncio
 from contextlib import asynccontextmanager
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import redis.asyncio as redis
 from fastapi import FastAPI
@@ -387,8 +388,21 @@ async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
     core_metrics.enforcer_tier.labels(mode=mode, service=service).set(tier_value)
     logger.info(f"Enforcer tier: {config.enforcer_tier} (metric value: {tier_value})")
 
-    # Initialize session and setup type metrics with defaults
+    # Initialize session and setup type metrics with current values
+    from scp_shared.validation import (
+        SESSION_ENCODING,
+        get_current_session,
+        is_session_tradeable,
+    )
+
+    current_session = get_current_session(datetime.now(tz=ZoneInfo("UTC")))
     core_metrics.session_valid.labels(mode=mode, service=service).set(0.0)
+    core_metrics.current_session.labels(mode=mode, service=service).set(
+        SESSION_ENCODING.get(current_session, 0.0)
+    )
+    core_metrics.session_tradeable.labels(mode=mode, service=service).set(
+        1.0 if is_session_tradeable(current_session) else 0.0
+    )
     core_metrics.current_setup_type.labels(mode=mode, service=service).set(0.0)
     core_metrics.detected_setup_type.labels(mode=mode, service=service).set(0.0)
     core_metrics.signal_score.labels(mode=mode, service=service).set(0.0)

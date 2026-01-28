@@ -127,7 +127,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Active enforcer tier configuration",
+      "description": "Current trading session (Asia/London/NY/Off-hours)",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -136,25 +136,30 @@
           "mappings": [
             {
               "options": {
-                "1": {
-                  "color": "blue",
+                "0": {
+                  "color": "dark-red",
                   "index": 0,
-                  "text": "Conservative"
+                  "text": "CLOSED"
+                },
+                "1": {
+                  "color": "purple",
+                  "index": 1,
+                  "text": "ASIA"
                 },
                 "2": {
-                  "color": "yellow",
-                  "index": 1,
-                  "text": "Early Mild"
+                  "color": "blue",
+                  "index": 2,
+                  "text": "LONDON"
                 },
                 "3": {
-                  "color": "orange",
-                  "index": 2,
-                  "text": "Mild"
+                  "color": "green",
+                  "index": 3,
+                  "text": "NY"
                 },
                 "4": {
-                  "color": "red",
-                  "index": 3,
-                  "text": "Offensive"
+                  "color": "orange",
+                  "index": 4,
+                  "text": "OFF-HOURS"
                 }
               },
               "type": "value"
@@ -164,8 +169,24 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "blue",
+                "color": "dark-red",
                 "value": null
+              },
+              {
+                "color": "purple",
+                "value": 1
+              },
+              {
+                "color": "blue",
+                "value": 2
+              },
+              {
+                "color": "green",
+                "value": 3
+              },
+              {
+                "color": "orange",
+                "value": 4
               }
             ]
           }
@@ -173,11 +194,11 @@
       },
       "gridPos": {
         "h": 2,
-        "w": 4,
+        "w": 3,
         "x": 4,
         "y": 1
       },
-      "id": 2,
+      "id": 107,
       "options": {
         "colorMode": "background",
         "graphMode": "none",
@@ -203,12 +224,95 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "scp_enforcer_tier{mode=\"$mode\"}",
+          "expr": "scp_current_session{mode=\"$mode\"}",
           "instant": true,
           "refId": "A"
         }
       ],
-      "title": "Enforcer Tier",
+      "title": "Current Session",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Whether current session allows trading",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [
+            {
+              "options": {
+                "0": {
+                  "color": "red",
+                  "index": 1,
+                  "text": "BLOCKED"
+                },
+                "1": {
+                  "color": "green",
+                  "index": 0,
+                  "text": "TRADEABLE"
+                }
+              },
+              "type": "value"
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 2,
+        "w": 3,
+        "x": 7,
+        "y": 1
+      },
+      "id": 108,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "text": {
+          "titleSize": 10,
+          "valueSize": 16
+        },
+        "textMode": "value"
+      },
+      "pluginVersion": "10.2.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "scp_session_tradeable{mode=\"$mode\"}",
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Tradeable",
       "type": "stat"
     },
     {
@@ -257,7 +361,7 @@
       "gridPos": {
         "h": 2,
         "w": 4,
-        "x": 8,
+        "x": 10,
         "y": 1
       },
       "id": 3,
@@ -340,7 +444,7 @@
       "gridPos": {
         "h": 2,
         "w": 4,
-        "x": 12,
+        "x": 14,
         "y": 1
       },
       "id": 4,
@@ -414,8 +518,8 @@
       },
       "gridPos": {
         "h": 2,
-        "w": 4,
-        "x": 16,
+        "w": 3,
+        "x": 18,
         "y": 1
       },
       "id": 5,
@@ -480,8 +584,8 @@
       },
       "gridPos": {
         "h": 2,
-        "w": 4,
-        "x": 20,
+        "w": 3,
+        "x": 21,
         "y": 1
       },
       "id": 6,

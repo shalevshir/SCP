@@ -379,7 +379,7 @@ These are binary gates that must ALL pass before any trade is considered.
 | **Metric** | `scp_session_valid{mode="$mode"}` |
 | **Type** | Gauge |
 | **Service** | bot-core (port 8004) |
-| **Source File** | `services/bot-core/src/bot_core_svc/metrics.py:44-46` |
+| **Source File** | `services/bot-core/src/bot_core_svc/metrics.py:52-55` |
 | **Values** | `1` = VALID (green), `0` = INVALID (red) |
 
 **Calculation:**
@@ -389,6 +389,50 @@ Validates current time against configured trading session windows. Gold futures 
 - Only trade during active sessions when institutional flow is present
 - Overnight sessions have different characteristics (wider spreads, less liquidity)
 - Session validation prevents trading during low-liquidity periods
+
+---
+
+### Current Session
+| Attribute | Value |
+|-----------|-------|
+| **Metric** | `scp_current_session{mode="$mode"}` |
+| **Type** | Gauge |
+| **Service** | bot-core (port 8004) |
+| **Source File** | `services/bot-core/src/bot_core_svc/metrics.py:57-59` |
+| **Encoding** | `0` = MARKET_CLOSED, `1` = ASIA, `2` = LONDON, `3` = NY, `4` = OFF_HOURS |
+
+**Session windows (UTC):**
+| Session | UTC Hours | Israel Time | Tradeable |
+|---------|-----------|-------------|-----------|
+| ASIA | 01:00-07:00 | 03:00-09:00 | **Yes** |
+| LONDON | 07:00-12:00 | 09:00-14:00 | **Yes** |
+| NY | 12:00-21:00 | 14:00-23:00 | **Yes** |
+| OFF_HOURS | 21:00-01:00 | 23:00-03:00 | No (DXY maintenance) |
+| MARKET_CLOSED | Weekend | Weekend | No |
+
+**Trading interpretation:**
+- **ASIA**, **LONDON** and **NY** sessions are tradeable (DXY available for correlation)
+- **OFF_HOURS** includes DXY maintenance window (5-8 PM ET / 00:00-03:00 ILT) - no DXY data
+- Execution service blocks signals only during OFF_HOURS and MARKET_CLOSED
+
+---
+
+### Session Tradeable
+| Attribute | Value |
+|-----------|-------|
+| **Metric** | `scp_session_tradeable{mode="$mode"}` |
+| **Type** | Gauge |
+| **Service** | bot-core (port 8004) |
+| **Source File** | `services/bot-core/src/bot_core_svc/metrics.py:61-63` |
+| **Values** | `1` = TRADEABLE (green), `0` = NOT TRADEABLE (red) |
+
+**Calculation:**
+Indicates whether the current session allows trade execution. Only LONDON and NY sessions are tradeable.
+
+**Trading interpretation:**
+- Green = signals can be executed
+- Red = signals will be blocked by execution service
+- Use this to understand why signals are not being executed
 
 ---
 
