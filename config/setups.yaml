@@ -34,8 +34,12 @@ setups:
         reject_reason: "No structure label available - cannot safely manage trade"
 
       vwap_reclaim_distance:
-        expression: "vwap_deviation_normalized is None or (abs(vwap_deviation_normalized) >= 0.5 and abs(vwap_deviation_normalized) <= 3.0)"
-        reject_reason: "VWAP reclaim invalid - price too far from VWAP (late/chase reclaim)"
+        expression: "max_abs_deviation_last_20 is None or (max_abs_deviation_last_20 >= 0.5 and max_abs_deviation_last_20 <= 8.0)"
+        reject_reason: "VWAP reclaim invalid - no prior excursion from VWAP (must be 0.5-8.0 ATR away in last 20 bars)"
+
+      vwap_reclaim_current_distance:
+        expression: "vwap_deviation_normalized is None or abs(vwap_deviation_normalized) <= 2.0"
+        reject_reason: "VWAP reclaim invalid - currently too far from VWAP (chasing price, must be within 2.0 ATR)"
 
       no_late_reclaim:
         expression: "bos_recent is not True or (bos_age is not None and bos_age >= 20)"
@@ -58,11 +62,14 @@ setups:
         reject_reason: "HTF structure conflict detected"
 
       min_vwap_acceptance:
-        expression: "bars_near_vwap is None or bars_near_vwap >= 3"
-        reject_reason: "No acceptance near VWAP - drive-by reclaim"
+        # Rolling count of bars near VWAP in last 20 bars
+        # >= 2 is selective (P75=1, P95=6) but blocks drive-by reclaims (count=0)
+        expression: "near_vwap_count_last_20 is None or near_vwap_count_last_20 >= 2"
+        reject_reason: "No meaningful VWAP acceptance in last 20 bars"
 
       reclaim_timing_gate:
-        expression: "bars_since_last_vwap_touch is None or bars_since_last_vwap_touch <= 10"
+        # Relaxed from 10 to 30 bars based on EDA showing median bars_since_last_vwap_touch of 130
+        expression: "bars_since_last_vwap_touch is None or bars_since_last_vwap_touch <= 30"
         reject_reason: "VWAP reclaim too delayed - invalid continuation"
 
       structure_label_direction_long:
