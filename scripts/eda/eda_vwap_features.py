@@ -110,7 +110,7 @@ class VWAPFeatureEDA:
         "min_vwap_acceptance": {
             "fields": ["near_vwap_count_last_20"],
             "type": "numeric",
-            "bounds": (3, None),
+            "bounds": (2, None),
         },
         "reclaim_timing_gate": {
             "fields": ["bars_since_last_vwap_touch"],
@@ -333,17 +333,17 @@ class VWAPFeatureEDA:
                 passed = (data >= threshold).sum()
                 pass_rates.append(passed / len(data))
 
-            current_threshold = 3
+            current_threshold = 2
 
         elif constraint_name == "reclaim_timing_gate":
-            # Test upper bound variations (5 to 20 bars)
-            thresholds = np.arange(5, 21, 1)
+            # Test upper bound variations (5 to 30 bars)
+            thresholds = np.arange(5, 31, 1)
             pass_rates = []
             for threshold in thresholds:
                 passed = (data <= threshold).sum()
                 pass_rates.append(passed / len(data))
 
-            current_threshold = 10
+            current_threshold = 30
 
         else:
             return {}
