@@ -650,7 +650,7 @@
       "gridPos": {
         "h": 2,
         "w": 6,
-        "x": 0,
+        "x": 6,
         "y": 3
       },
       "id": 109,
@@ -660,15 +660,17 @@
         "justifyMode": "center",
         "orientation": "auto",
         "reduceOptions": {
-          "calcs": [],
-          "fields": "",
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/^contract$/",
           "values": false
         },
         "text": {
           "titleSize": 12,
           "valueSize": 24
         },
-        "textMode": "name"
+        "textMode": "value"
       },
       "pluginVersion": "10.2.0",
       "targets": [
@@ -680,40 +682,10 @@
           "expr": "scp_ib_contract_info{mode=\"$mode\", symbol=\"GC\"}",
           "format": "table",
           "instant": true,
-          "legendFormat": "{{contract}}",
           "refId": "A"
         }
       ],
       "title": "GC IB Contract",
-      "transformations": [
-        {
-          "id": "labelsToFields",
-          "options": {
-            "mode": "columns",
-            "valueLabel": "contract"
-          }
-        },
-        {
-          "id": "organize",
-          "options": {
-            "excludeByName": {
-              "Time": true,
-              "Value": true,
-              "__name__": true,
-              "contract_month": true,
-              "exchange": true,
-              "instance": true,
-              "job": true,
-              "mode": true,
-              "service": true,
-              "symbol": true
-            },
-            "renameByName": {
-              "contract": "GC Contract"
-            }
-          }
-        }
-      ],
       "type": "stat"
     },
     {
@@ -744,7 +716,7 @@
       "gridPos": {
         "h": 2,
         "w": 6,
-        "x": 6,
+        "x": 12,
         "y": 3
       },
       "id": 110,
@@ -754,15 +726,17 @@
         "justifyMode": "center",
         "orientation": "auto",
         "reduceOptions": {
-          "calcs": [],
-          "fields": "",
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/^contract$/",
           "values": false
         },
         "text": {
           "titleSize": 12,
           "valueSize": 24
         },
-        "textMode": "name"
+        "textMode": "value"
       },
       "pluginVersion": "10.2.0",
       "targets": [
@@ -774,40 +748,10 @@
           "expr": "scp_ib_contract_info{mode=\"$mode\", symbol=\"DXY\"}",
           "format": "table",
           "instant": true,
-          "legendFormat": "{{contract}}",
           "refId": "A"
         }
       ],
       "title": "DXY IB Contract",
-      "transformations": [
-        {
-          "id": "labelsToFields",
-          "options": {
-            "mode": "columns",
-            "valueLabel": "contract"
-          }
-        },
-        {
-          "id": "organize",
-          "options": {
-            "excludeByName": {
-              "Time": true,
-              "Value": true,
-              "__name__": true,
-              "contract_month": true,
-              "exchange": true,
-              "instance": true,
-              "job": true,
-              "mode": true,
-              "service": true,
-              "symbol": true
-            },
-            "renameByName": {
-              "contract": "DXY Contract"
-            }
-          }
-        }
-      ],
       "type": "stat"
     },
     {
