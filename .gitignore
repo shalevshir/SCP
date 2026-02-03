@@ -33,6 +33,15 @@ output/
 .cursor/debug.log
 
 
+# Reports and diagnostics (regenerated from scripts)
+reports/
+diagnostics_reports/
+services/bot-core/diagnostics_reports/
+eda-*.md
+
+# EDA cache
+scripts/eda/__pycache__/
+
 # Terraform
 .terraform/
 *.tfstate

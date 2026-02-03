@@ -161,6 +161,10 @@ def features_message_to_series(msg: FeaturesMessage) -> pd.Series:
             # VWAP acceptance fields for min_vwap_acceptance and reclaim_timing_gate constraints
             "bars_near_vwap": msg.bars_near_vwap,
             "bars_since_last_vwap_touch": msg.bars_since_last_vwap_touch,
+            "near_vwap_count_last_20": msg.near_vwap_count_last_20,
+            # VWAP deviation history for vwap_reclaim_distance constraint (excursion tracking)
+            "max_abs_deviation_last_20": msg.max_abs_deviation_last_20,
+            "min_abs_deviation_last_20": msg.min_abs_deviation_last_20,
         }
     )
 

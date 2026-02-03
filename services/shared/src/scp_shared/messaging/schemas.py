@@ -182,10 +182,24 @@ class FeaturesMessage(BaseModel):
     # VWAP acceptance fields (SOP alignment)
     bars_near_vwap: int | None = Field(
         default=None,
-        description="Consecutive bars within VWAP proximity band (±0.2 ATR); None when ATR unavailable",
+        description="Consecutive bars within VWAP proximity band (±0.5 ATR); None when ATR unavailable",
     )
     bars_since_last_vwap_touch: int | None = Field(
         default=None, description="Bars since last VWAP touch/interaction"
+    )
+    near_vwap_count_last_20: int | None = Field(
+        default=None,
+        description="Count of bars within VWAP proximity in last 20 bars (rolling acceptance); None when ATR unavailable",
+    )
+
+    # VWAP deviation history (excursion tracking for VWAP_RECLAIM)
+    max_abs_deviation_last_20: float | None = Field(
+        default=None,
+        description="Maximum absolute VWAP deviation (ATR-normalized) in last 20 bars; None when ATR unavailable",
+    )
+    min_abs_deviation_last_20: float | None = Field(
+        default=None,
+        description="Minimum absolute VWAP deviation (ATR-normalized) in last 20 bars; None when ATR unavailable",
     )
 
     class Config:

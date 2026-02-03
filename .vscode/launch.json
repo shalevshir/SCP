@@ -286,7 +286,8 @@
       "configurations": [
         "Feature Engine Service",
         "Bot Core Service",
-        "Execution Service"
+        "Execution Service",
+        "HTF Bias Service"
       ],
       "stopAll": true,
       "presentation": {

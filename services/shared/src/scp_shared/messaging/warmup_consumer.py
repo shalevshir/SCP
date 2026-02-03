@@ -16,6 +16,63 @@ from scp_shared.messaging.schemas import CandleMessage
 logger = get_logger(__name__)
 
 
+async def wait_for_warmup_ready(
+    redis_client: redis.Redis,
+    timeout_seconds: int = 120,
+    poll_interval: float = 1.0,
+) -> bool:
+    """Wait for warmup data to be available in Redis.
+
+    Polls the warmup:status hash until both GC and DXY are marked complete,
+    or until timeout is reached. Used by services to wait for the replay script
+    or data-adapter to finish publishing warmup data before proceeding.
+
+    Args:
+        redis_client: Redis client
+        timeout_seconds: Maximum time to wait (default: 120s)
+        poll_interval: Seconds between status checks (default: 1.0s)
+        settle_delay_seconds: Additional delay after warmup is ready to allow
+            the publishing process to fully complete (default: 3.0s)
+
+    Returns:
+        True if warmup is ready, False if timeout or error
+
+    Example:
+        >>> if await wait_for_warmup_ready(redis_client, timeout_seconds=60):
+        ...     candles = await consume_warmup_stream(redis_client, "warmup.candles.1m.gc")
+        ... else:
+        ...     logger.warning("Warmup not available, falling back to database")
+    """
+    logger.info(f"Waiting for warmup data to be ready (timeout: {timeout_seconds}s)...")
+    start_time = time.time()
+    last_log_time = 0.0
+
+    while time.time() - start_time < timeout_seconds:
+        elapsed = time.time() - start_time
+
+        status = await check_warmup_available(redis_client)
+
+        if status["available"]:
+            logger.info(
+                f"Warmup ready after {elapsed:.1f}s: "
+                f"{status['gc_count']} GC candles, {status['dxy_count']} DXY candles"
+            )
+            return True
+
+        # Log progress every 10 seconds
+        if elapsed - last_log_time >= 10:
+            logger.info(
+                f"Waiting for warmup... ({elapsed:.0f}s elapsed, "
+                f"gc_ready={status['gc_ready']}, dxy_ready={status['dxy_ready']})"
+            )
+            last_log_time = elapsed
+
+        await asyncio.sleep(poll_interval)
+
+    logger.warning(f"Warmup not ready after {timeout_seconds}s timeout")
+    return False
+
+
 async def check_warmup_available(redis_client: redis.Redis) -> dict:
     """Check if warmup streams exist and are complete.
 

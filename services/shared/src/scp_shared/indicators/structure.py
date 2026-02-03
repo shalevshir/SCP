@@ -136,6 +136,11 @@ class StructureContext:
         None  # Consecutive bars within VWAP proximity band (None when ATR unavailable)
     )
     bars_since_last_vwap_touch: int | None = None  # Bars since last VWAP interaction
+    near_vwap_count_last_20: int | None = None  # Count of bars near VWAP in last 20 bars
+
+    # VWAP deviation history (excursion tracking for reclaim validation)
+    max_abs_deviation_last_20: float | None = None  # Max deviation in last 20 bars
+    min_abs_deviation_last_20: float | None = None  # Min deviation in last 20 bars
 
 
 class StructureContextTracker:
@@ -264,6 +269,16 @@ class StructureContextTracker:
             None  # Bars since last VWAP interaction
         )
         self.last_vwap_touch_idx: int | None = None  # Bar index of last VWAP touch
+
+        # Rolling VWAP acceptance tracking (counts touches in last N bars)
+        # This is more useful than consecutive streak for detecting acceptance zones
+        self.near_vwap_history: deque[bool] = deque(maxlen=20)  # Last 20 bars near/not-near
+        self.near_vwap_count_last_20: int | None = None  # Count of bars near VWAP in last 20
+
+        # VWAP deviation history tracking (excursion detection for reclaim validation)
+        self.deviation_history: deque[float] = deque(maxlen=20)  # Last 20 abs deviations
+        self.max_abs_deviation_last_20: float | None = None  # Max deviation in window
+        self.min_abs_deviation_last_20: float | None = None  # Min deviation in window
 
     def update(
         self, high: float, low: float, close: float, open: float | None = None
@@ -507,6 +522,10 @@ class StructureContextTracker:
             # VWAP acceptance tracking (SOP alignment)
             bars_near_vwap=self.bars_near_vwap,
             bars_since_last_vwap_touch=self.bars_since_last_vwap_touch,
+            near_vwap_count_last_20=self.near_vwap_count_last_20,
+            # VWAP deviation history (excursion tracking)
+            max_abs_deviation_last_20=self.max_abs_deviation_last_20,
+            min_abs_deviation_last_20=self.min_abs_deviation_last_20,
         )
 
     def detect_expansion(
@@ -684,13 +703,18 @@ class StructureContextTracker:
                 )
 
         # VWAP acceptance tracking (SOP alignment)
-        # Track consecutive bars within VWAP proximity band (±0.2 ATR)
+        # Track consecutive bars within VWAP proximity band (±0.5 ATR)
+        # Also track rolling count of bars near VWAP in last 20 bars
         if atr is not None and atr > 0:
-            proximity_threshold = atr * 0.2
+            proximity_threshold = atr * 0.5  # Relaxed from 0.2 to 0.5 ATR
             distance_from_vwap = abs(close - vwap)
 
             # Check if price is within proximity band
             is_near_vwap = distance_from_vwap <= proximity_threshold
+
+            # Track rolling history (for near_vwap_count_last_20)
+            self.near_vwap_history.append(is_near_vwap)
+            self.near_vwap_count_last_20 = sum(self.near_vwap_history)
 
             if is_near_vwap:
                 # Price is near VWAP - increment counter (start at 1 if None)
@@ -712,6 +736,34 @@ class StructureContextTracker:
             # No ATR available - can't track acceptance (keep as None)
             # Don't set to 0 - None indicates tracking unavailable vs 0 = not currently near
             pass
+
+    def update_vwap_deviation_history(
+        self,
+        vwap_deviation_normalized: float | None,
+    ) -> None:
+        """Track historical VWAP deviations for excursion detection.
+
+        This enables detecting if price was previously stretched away from VWAP
+        (prior excursion) before current consolidation near VWAP (acceptance).
+
+        The max deviation over the last 20 bars is used to validate VWAP_RECLAIM setups:
+        price must have been at least 0.5 ATR away from VWAP recently, even if it's
+        currently near VWAP (consolidating/accepting).
+
+        Args:
+            vwap_deviation_normalized: Current bar's ATR-normalized deviation (signed)
+        """
+        if vwap_deviation_normalized is None:
+            return
+
+        # Track absolute deviation (direction-agnostic)
+        abs_dev = abs(vwap_deviation_normalized)
+        self.deviation_history.append(abs_dev)
+
+        # Update rolling max/min
+        if self.deviation_history:
+            self.max_abs_deviation_last_20 = max(self.deviation_history)
+            self.min_abs_deviation_last_20 = min(self.deviation_history)
 
     def update_volume_state(self, volume: float) -> None:
         """Update volume tracking buffer.

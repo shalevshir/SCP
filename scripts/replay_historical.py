@@ -5,6 +5,10 @@ This script loads historical GC and DXY candles from CSV files and publishes
 them to Redis streams for microservices to process. Used for validation testing
 to compare microservices results against backtester results.
 
+Includes a warmup phase that publishes historical candles from before the start
+date to warmup streams, allowing downstream services to initialize their
+indicators (VWAP, EMA, RSI, etc.) before the main replay begins.
+
 Usage:
     # Fast replay (100x speed)
     poetry run python scripts/replay_historical.py \
@@ -18,6 +22,10 @@ Usage:
     poetry run python scripts/replay_historical.py \
         --start 2024-11-01 --end 2024-11-30 \
         --data-dir data/gc_dx_ohlcv
+
+    # Skip warmup phase
+    poetry run python scripts/replay_historical.py \
+        --start 2024-11-01 --end 2024-11-30 --no-warmup
 """
 
 import argparse
@@ -46,6 +54,10 @@ BACKPRESSURE_WAIT_SECONDS = 0.5  # Wait time when backpressure detected
 # NOTE: Must be larger than total candles to prevent slower consumers from losing messages
 # 30 days * 24h * 60min = 43,200 candles, so use 50,000 to be safe
 STREAM_MAXLEN = 50000  # Max messages per stream (uses approximate trimming)
+
+# Warmup configuration
+DEFAULT_WARMUP_LOOKBACK_HOURS = 24  # Default lookback for warmup data
+WARMUP_STREAM_TTL_SECONDS = 600  # TTL for warmup streams (10 minutes)
 
 # Consumer groups to monitor (stream -> group name)
 # These are the downstream consumers that might fall behind
@@ -125,6 +137,291 @@ def parse_iso_datetime(value: str) -> datetime:
     return dt
 
 
+async def publish_warmup_data(
+    redis_client: redis.Redis,
+    data_dir: Path,
+    replay_start: datetime,
+    lookback_hours: int = DEFAULT_WARMUP_LOOKBACK_HOURS,
+    ttl_seconds: int = WARMUP_STREAM_TTL_SECONDS,
+) -> bool:
+    """Publish warmup data from CSV files to Redis warmup streams.
+
+    Loads historical candles from BEFORE the replay start date and publishes
+    them to warmup streams for downstream services to initialize their indicators.
+
+    If the CSV files don't have enough data for the full lookback period,
+    uses as much data as available (goes back to the earliest available candle).
+
+    Args:
+        redis_client: Redis client for stream publishing
+        data_dir: Directory containing CSV files
+        replay_start: Start datetime of the main replay (warmup uses data before this)
+        lookback_hours: Desired hours of warmup data (default: 24)
+        ttl_seconds: TTL for warmup streams (default: 600s / 10 minutes)
+
+    Returns:
+        True if warmup data published successfully, False otherwise
+    """
+    logger.info("=" * 80)
+    logger.info("Warmup Phase")
+    logger.info("=" * 80)
+
+    # Calculate desired warmup range
+    desired_warmup_start = replay_start - timedelta(hours=lookback_hours)
+    warmup_end = replay_start - timedelta(minutes=1)  # End 1 minute before replay starts
+
+    logger.info(f"Desired warmup range: {desired_warmup_start} to {warmup_end}")
+    logger.info(f"Lookback: {lookback_hours} hours ({lookback_hours * 60} candles)")
+
+    try:
+        # Load warmup data with the requested lookback period
+        loader = HistoricalDataLoader(data_dir)
+
+        logger.info("Loading warmup candles from CSV files...")
+
+        # First try with the desired lookback
+        try:
+            warmup_data = loader.load(["GC", "DXY"], "1m", desired_warmup_start, warmup_end)
+        except Exception as e:
+            logger.warning(f"Failed to load warmup data with desired lookback: {e}")
+            # If that fails, try loading from very early to get whatever is available
+            max_lookback_start = replay_start - timedelta(days=365)
+            warmup_data = loader.load(["GC", "DXY"], "1m", max_lookback_start, warmup_end)
+
+        gc_warmup_df = warmup_data.get("GC")
+        dxy_warmup_df = warmup_data.get("DXY")
+
+        if gc_warmup_df is None or gc_warmup_df.empty:
+            logger.warning("No GC warmup data available")
+            await _set_warmup_error_status(redis_client, "No GC warmup data", ttl_seconds)
+            return False
+
+        if dxy_warmup_df is None or dxy_warmup_df.empty:
+            logger.warning("No DXY warmup data available")
+            await _set_warmup_error_status(redis_client, "No DXY warmup data", ttl_seconds)
+            return False
+
+        # Reset index to get timestamp as column
+        if "timestamp" not in gc_warmup_df.columns:
+            gc_warmup_df = gc_warmup_df.reset_index()
+        if "timestamp" not in dxy_warmup_df.columns:
+            dxy_warmup_df = dxy_warmup_df.reset_index()
+
+        # Log actual warmup range
+        gc_start = gc_warmup_df["timestamp"].min()
+        gc_end = gc_warmup_df["timestamp"].max()
+        dxy_start = dxy_warmup_df["timestamp"].min()
+        dxy_end = dxy_warmup_df["timestamp"].max()
+
+        logger.info(f"GC warmup data: {len(gc_warmup_df)} candles ({gc_start} to {gc_end})")
+        logger.info(f"DXY warmup data: {len(dxy_warmup_df)} candles ({dxy_start} to {dxy_end})")
+
+        # Check if we have less than desired lookback
+        actual_gc_hours = (gc_end - gc_start).total_seconds() / 3600 if len(gc_warmup_df) > 1 else 0
+        actual_dxy_hours = (dxy_end - dxy_start).total_seconds() / 3600 if len(dxy_warmup_df) > 1 else 0
+
+        if actual_gc_hours < lookback_hours:
+            logger.warning(
+                f"GC warmup data limited: {actual_gc_hours:.1f}h available "
+                f"(requested {lookback_hours}h)"
+            )
+        if actual_dxy_hours < lookback_hours:
+            logger.warning(
+                f"DXY warmup data limited: {actual_dxy_hours:.1f}h available "
+                f"(requested {lookback_hours}h)"
+            )
+
+        # Clear any existing warmup streams and status
+        logger.info("Clearing existing warmup streams...")
+        await redis_client.delete(
+            "warmup.candles.1m.gc",
+            "warmup.candles.1m.dxy",
+            "warmup:status",
+        )
+
+        # Publish GC warmup candles
+        logger.info(f"Publishing {len(gc_warmup_df)} GC warmup candles...")
+        for _, row in gc_warmup_df.iterrows():
+            candle = CandleMessage(
+                timestamp=row["timestamp"],
+                symbol="GC",
+                timeframe="1m",
+                open=float(row["open"]),
+                high=float(row["high"]),
+                low=float(row["low"]),
+                close=float(row["close"]),
+                volume=float(row["volume"]),
+            )
+            await redis_client.xadd(
+                "warmup.candles.1m.gc",
+                {"data": candle.model_dump_json()},
+            )
+
+        # Publish DXY warmup candles
+        logger.info(f"Publishing {len(dxy_warmup_df)} DXY warmup candles...")
+        for _, row in dxy_warmup_df.iterrows():
+            candle = CandleMessage(
+                timestamp=row["timestamp"],
+                symbol="DXY",
+                timeframe="1m",
+                open=float(row["open"]),
+                high=float(row["high"]),
+                low=float(row["low"]),
+                close=float(row["close"]),
+                volume=float(row["volume"]),
+            )
+            await redis_client.xadd(
+                "warmup.candles.1m.dxy",
+                {"data": candle.model_dump_json()},
+            )
+
+        # Set completion status
+        await redis_client.hset(
+            "warmup:status",
+            mapping={
+                "gc": "complete",
+                "dxy": "complete",
+                "gc_count": str(len(gc_warmup_df)),
+                "dxy_count": str(len(dxy_warmup_df)),
+                "gc_start": str(gc_start),
+                "gc_end": str(gc_end),
+                "dxy_start": str(dxy_start),
+                "dxy_end": str(dxy_end),
+                "timestamp": datetime.now(UTC).isoformat(),
+            },
+        )
+
+        # Set TTL on warmup streams
+        await redis_client.expire("warmup.candles.1m.gc", ttl_seconds)
+        await redis_client.expire("warmup.candles.1m.dxy", ttl_seconds)
+        await redis_client.expire("warmup:status", ttl_seconds)
+
+        logger.info(
+            f"Warmup phase complete: {len(gc_warmup_df)} GC, "
+            f"{len(dxy_warmup_df)} DXY candles published (TTL: {ttl_seconds}s)"
+        )
+        logger.info("=" * 80)
+
+        return True
+
+    except Exception as e:
+        logger.error(f"Warmup phase failed: {e}", exc_info=True)
+        await _set_warmup_error_status(redis_client, str(e), ttl_seconds)
+        return False
+
+
+async def _set_warmup_error_status(
+    redis_client: redis.Redis,
+    error_message: str,
+    ttl_seconds: int,
+) -> None:
+    """Set error status in Redis for warmup failure."""
+    try:
+        await redis_client.delete("warmup:status")
+        await redis_client.hset(
+            "warmup:status",
+            mapping={
+                "error": error_message,
+                "timestamp": datetime.now(UTC).isoformat(),
+            },
+        )
+        await redis_client.expire("warmup:status", ttl_seconds)
+    except Exception as e:
+        logger.error(f"Failed to set warmup error status: {e}")
+
+
+async def wait_for_services_warmup_consumption(
+    redis_client: redis.Redis,
+    timeout_seconds: int = 120,
+    poll_interval: float = 2.0,
+    settle_delay_seconds: float = 10.0,
+) -> bool:
+    """Wait for downstream services to consume warmup data.
+
+    Monitors warmup stream lengths - when they reach 0 or are deleted,
+    services have consumed all warmup candles.
+
+    Args:
+        redis_client: Redis client
+        timeout_seconds: Maximum time to wait (default: 120s)
+        poll_interval: Seconds between checks (default: 2.0s)
+        settle_delay_seconds: Additional delay after services signal consumption
+            to allow them to finish processing (default: 5.0s)
+
+    Returns:
+        True if services consumed warmup data, False on timeout
+    """
+    logger.info("=" * 80)
+    logger.info("Waiting for services to consume warmup data...")
+    logger.info("=" * 80)
+
+    start_time = asyncio.get_event_loop().time()
+    last_log_time = 0.0
+
+    while True:
+        elapsed = asyncio.get_event_loop().time() - start_time
+
+        if elapsed > timeout_seconds:
+            logger.warning(
+                f"Timeout waiting for services to consume warmup data after {timeout_seconds}s"
+            )
+            return False
+
+        # Check if warmup streams are empty or deleted
+        gc_len = await redis_client.xlen("warmup.candles.1m.gc")
+        dxy_len = await redis_client.xlen("warmup.candles.1m.dxy")
+
+        # Log progress every 10 seconds
+        if elapsed - last_log_time >= 10:
+            logger.info(
+                f"Warmup consumption progress: GC stream={gc_len}, DXY stream={dxy_len} "
+                f"({elapsed:.0f}s elapsed)"
+            )
+            last_log_time = elapsed
+
+        # Streams are consumed when empty (length 0) or deleted (also returns 0)
+        # We check if both are 0, meaning services have read all messages
+        # Note: Services use XREAD which doesn't delete messages, so we check
+        # if warmup:status has been processed by looking for a consumed marker
+
+        # Check if warmup status still exists (TTL hasn't expired)
+        status_exists = await redis_client.exists("warmup:status")
+
+        if not status_exists:
+            # Status expired - warmup window passed
+            logger.info("Warmup status expired - proceeding with replay")
+            return True
+
+        # Check for consumption complete marker set by services
+        status = await redis_client.hgetall("warmup:status")
+        if status:
+            status_decoded = {
+                k.decode() if isinstance(k, bytes) else k:
+                v.decode() if isinstance(v, bytes) else v
+                for k, v in status.items()
+            }
+
+            # Services set these when they finish consuming
+            fe_consumed = status_decoded.get("feature_engine_consumed") == "true"
+            htf_consumed = status_decoded.get("htf_bias_consumed") == "true"
+
+            if fe_consumed and htf_consumed:
+                logger.info(
+                    f"All services consumed warmup data after {elapsed:.1f}s"
+                )
+                # Add settle delay to allow services to finish processing
+                if settle_delay_seconds > 0:
+                    logger.info(
+                        f"Waiting {settle_delay_seconds}s for services to finish processing warmup..."
+                    )
+                    await asyncio.sleep(settle_delay_seconds)
+                return True
+
+        await asyncio.sleep(poll_interval)
+
+    return False
+
+
 async def replay_historical_data(
     data_dir: Path,
     start: datetime,
@@ -132,6 +429,8 @@ async def replay_historical_data(
     redis_url: str,
     speed_multiplier: float = 1.0,
     processing_delay: float = 5.0,
+    warmup_enabled: bool = True,
+    warmup_lookback_hours: int = DEFAULT_WARMUP_LOOKBACK_HOURS,
 ) -> dict:
     """Replay historical candles through Redis streams.
 
@@ -142,6 +441,8 @@ async def replay_historical_data(
         redis_url: Redis connection URL
         speed_multiplier: Speed multiplier (1.0 = real-time, 100.0 = 100x faster)
         processing_delay: Seconds to wait after publishing for pipeline processing
+        warmup_enabled: Whether to run warmup phase before replay (default: True)
+        warmup_lookback_hours: Hours of warmup data to load (default: 24)
 
     Returns:
         Dictionary with replay statistics
@@ -208,6 +509,28 @@ async def replay_historical_data(
         except Exception:
             pass  # Stream might not exist
     logger.info(f"Cleaned up {len(streams_to_delete)} streams")
+
+    # Execute warmup phase - publish historical data before replay start
+    # for downstream services to initialize indicators
+    if warmup_enabled:
+        warmup_success = await publish_warmup_data(
+            redis_client=redis_client,
+            data_dir=data_dir,
+            replay_start=start,
+            lookback_hours=warmup_lookback_hours,
+        )
+        if warmup_success:
+            # Wait for downstream services to consume warmup data before starting replay
+            await wait_for_services_warmup_consumption(
+                redis_client=redis_client,
+                timeout_seconds=120,  # 2 minute timeout
+            )
+        else:
+            logger.warning(
+                "Warmup phase failed - downstream services may have cold indicators"
+            )
+    else:
+        logger.info("\nWarmup disabled - skipping warmup phase")
 
     # Prepare candles for publishing
     # Align GC and DXY by timestamp
@@ -556,6 +879,19 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Seconds to wait after publishing for pipeline processing (default: 5.0)",
     )
 
+    # Warmup options
+    parser.add_argument(
+        "--no-warmup",
+        action="store_true",
+        help="Skip warmup phase (downstream services will have cold indicators)",
+    )
+    parser.add_argument(
+        "--warmup-lookback",
+        type=int,
+        default=DEFAULT_WARMUP_LOOKBACK_HOURS,
+        help=f"Hours of warmup data to load before replay start (default: {DEFAULT_WARMUP_LOOKBACK_HOURS})",
+    )
+
     return parser
 
 
@@ -583,6 +919,8 @@ async def main() -> None:
             redis_url=args.redis_url,
             speed_multiplier=args.speed,
             processing_delay=args.processing_delay,
+            warmup_enabled=not args.no_warmup,
+            warmup_lookback_hours=args.warmup_lookback,
         )
 
         if stats["success"]:

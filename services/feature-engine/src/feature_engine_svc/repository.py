@@ -60,8 +60,10 @@ class FeatureRepository:
             INSERT INTO features (
                 timestamp, symbol, timeframe, close, vwap, vwap_slope, rsi,
                 ema_9, ema_20, ema_50, dxy_correlation,
-                structure_label, vwap_deviation, atr, vwap_deviation_normalized
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+                structure_label, vwap_deviation, atr, vwap_deviation_normalized,
+                bars_near_vwap, bars_since_last_vwap_touch, near_vwap_count_last_20,
+                max_abs_deviation_last_20, min_abs_deviation_last_20
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
             ON CONFLICT (timestamp, symbol, timeframe) DO UPDATE SET
                 close = EXCLUDED.close,
                 vwap = EXCLUDED.vwap,
@@ -74,7 +76,12 @@ class FeatureRepository:
                 structure_label = EXCLUDED.structure_label,
                 vwap_deviation = EXCLUDED.vwap_deviation,
                 atr = EXCLUDED.atr,
-                vwap_deviation_normalized = EXCLUDED.vwap_deviation_normalized
+                vwap_deviation_normalized = EXCLUDED.vwap_deviation_normalized,
+                bars_near_vwap = EXCLUDED.bars_near_vwap,
+                bars_since_last_vwap_touch = EXCLUDED.bars_since_last_vwap_touch,
+                near_vwap_count_last_20 = EXCLUDED.near_vwap_count_last_20,
+                max_abs_deviation_last_20 = EXCLUDED.max_abs_deviation_last_20,
+                min_abs_deviation_last_20 = EXCLUDED.min_abs_deviation_last_20
         """
 
         await self.db.execute(
@@ -96,6 +103,27 @@ class FeatureRepository:
             (
                 features.vwap_deviation_normalized
                 if hasattr(features, "vwap_deviation_normalized")
+                else None
+            ),
+            features.bars_near_vwap if hasattr(features, "bars_near_vwap") else None,
+            (
+                features.bars_since_last_vwap_touch
+                if hasattr(features, "bars_since_last_vwap_touch")
+                else None
+            ),
+            (
+                features.near_vwap_count_last_20
+                if hasattr(features, "near_vwap_count_last_20")
+                else None
+            ),
+            (
+                features.max_abs_deviation_last_20
+                if hasattr(features, "max_abs_deviation_last_20")
+                else None
+            ),
+            (
+                features.min_abs_deviation_last_20
+                if hasattr(features, "min_abs_deviation_last_20")
                 else None
             ),
         )
@@ -154,8 +182,10 @@ class FeatureRepository:
             INSERT INTO features (
                 timestamp, symbol, timeframe, close, vwap, vwap_slope, rsi,
                 ema_9, ema_20, ema_50, dxy_correlation,
-                structure_label, vwap_deviation, atr, vwap_deviation_normalized
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+                structure_label, vwap_deviation, atr, vwap_deviation_normalized,
+                bars_near_vwap, bars_since_last_vwap_touch, near_vwap_count_last_20,
+                max_abs_deviation_last_20, min_abs_deviation_last_20
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
             ON CONFLICT (timestamp, symbol, timeframe) DO UPDATE SET
                 close = EXCLUDED.close,
                 vwap = EXCLUDED.vwap,
@@ -168,7 +198,12 @@ class FeatureRepository:
                 structure_label = EXCLUDED.structure_label,
                 vwap_deviation = EXCLUDED.vwap_deviation,
                 atr = EXCLUDED.atr,
-                vwap_deviation_normalized = EXCLUDED.vwap_deviation_normalized
+                vwap_deviation_normalized = EXCLUDED.vwap_deviation_normalized,
+                bars_near_vwap = EXCLUDED.bars_near_vwap,
+                bars_since_last_vwap_touch = EXCLUDED.bars_since_last_vwap_touch,
+                near_vwap_count_last_20 = EXCLUDED.near_vwap_count_last_20,
+                max_abs_deviation_last_20 = EXCLUDED.max_abs_deviation_last_20,
+                min_abs_deviation_last_20 = EXCLUDED.min_abs_deviation_last_20
         """
 
         data = [
@@ -188,6 +223,11 @@ class FeatureRepository:
                 f.vwap_deviation,
                 f.atr if hasattr(f, "atr") else None,
                 f.vwap_deviation_normalized if hasattr(f, "vwap_deviation_normalized") else None,
+                f.bars_near_vwap if hasattr(f, "bars_near_vwap") else None,
+                f.bars_since_last_vwap_touch if hasattr(f, "bars_since_last_vwap_touch") else None,
+                f.near_vwap_count_last_20 if hasattr(f, "near_vwap_count_last_20") else None,
+                f.max_abs_deviation_last_20 if hasattr(f, "max_abs_deviation_last_20") else None,
+                f.min_abs_deviation_last_20 if hasattr(f, "min_abs_deviation_last_20") else None,
             )
             for f in features_list
         ]

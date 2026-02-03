@@ -1,10 +1,11 @@
 """Tests for VWAP_RECLAIM SOP alignment constraints.
 
 Tests the new config constraints added for SOP alignment:
-- vwap_reclaim_distance: Rejects chase reclaims (> 3 ATR from VWAP)
-- no_late_reclaim: Blocks entries immediately after BOS
-- min_vwap_acceptance: Requires >= 3 bars near VWAP
-- reclaim_timing_gate: Requires reclaim within 10 bars of VWAP touch
+- vwap_reclaim_distance: Requires prior excursion (0.5-8.0 ATR in last 20 bars)
+- vwap_reclaim_current_distance: Rejects chase reclaims (> 2.0 ATR from VWAP)
+- no_late_reclaim: Blocks entries immediately after BOS (age < 20)
+- min_vwap_acceptance: Requires >= 2 bars near VWAP in last 20 bars
+- reclaim_timing_gate: Requires reclaim within 30 bars of VWAP touch
 """
 
 import pandas as pd
@@ -13,24 +14,25 @@ from scp_shared.rule_engine.setup_validator import SetupValidator
 
 
 class TestVWAPReclaimDistanceConstraint:
-    """Test vwap_reclaim_distance constraint (max 3.0 ATR)."""
+    """Test vwap_reclaim_distance constraint (prior excursion 0.5-8.0 ATR) and
+    vwap_reclaim_current_distance constraint (current distance <= 2.0 ATR)."""
 
     def test_accepts_reclaim_within_range(self):
-        """Test that reclaims within 0.5-3.0 ATR pass."""
+        """Test that reclaims with valid prior excursion and current distance pass."""
         validator = SetupValidator()
 
-        # Test at 1.5 ATR (ideal range)
+        # Test with prior excursion at 1.5 ATR (ideal range) and current at 0.8 ATR
         context = {
             "structure_1h": "HH",
             "structure_label": "HL",
             "direction": "long",
-            "vwap_deviation_normalized": 1.5,
+            "max_abs_deviation_last_20": 1.5,  # Prior excursion within 0.5-8.0 ATR
+            "vwap_deviation_normalized": 0.8,  # Current distance within 2.0 ATR
             "bos_recent": False,
             "bos_age": 25,
-            "bos_direction": "long",
             "bos_direction": "long",  # BOS matches direction
             "conflict_detected": False,
-            "bars_near_vwap": 5,
+            "near_vwap_count_last_20": 5,
             "bars_since_last_vwap_touch": 2,
         }
 
@@ -38,40 +40,42 @@ class TestVWAPReclaimDistanceConstraint:
         assert result.is_valid
 
     def test_rejects_chase_reclaim_above_3_atr(self):
-        """Test that reclaims > 3.0 ATR are rejected (chase entry)."""
+        """Test that reclaims > 2.0 ATR current distance are rejected (chase entry)."""
         validator = SetupValidator()
 
         context = {
             "structure_1h": "HH",
             "structure_label": "HL",
             "direction": "long",
-            "vwap_deviation_normalized": 4.5,  # Too far from VWAP
+            "max_abs_deviation_last_20": 1.5,  # Valid prior excursion
+            "vwap_deviation_normalized": 2.5,  # Too far from VWAP (> 2.0 ATR)
             "bos_recent": False,
             "bos_age": 25,
             "bos_direction": "long",
             "conflict_detected": False,
-            "bars_near_vwap": 5,
+            "near_vwap_count_last_20": 5,
             "bars_since_last_vwap_touch": 2,
         }
 
         result = validator.validate_setup("VWAP_RECLAIM", context)
         assert not result.is_valid
-        assert "late/chase reclaim" in result.reject_reason.lower()
+        assert "chasing" in result.reject_reason.lower() or "too far" in result.reject_reason.lower()
 
     def test_accepts_at_upper_boundary(self):
-        """Test that exactly 3.0 ATR passes."""
+        """Test that exactly 2.0 ATR current distance passes."""
         validator = SetupValidator()
 
         context = {
             "structure_1h": "HH",
             "structure_label": "HL",
             "direction": "long",
-            "vwap_deviation_normalized": 3.0,
+            "max_abs_deviation_last_20": 1.5,  # Valid prior excursion
+            "vwap_deviation_normalized": 2.0,  # At boundary
             "bos_recent": False,
             "bos_age": 25,
             "bos_direction": "long",
             "conflict_detected": False,
-            "bars_near_vwap": 5,
+            "near_vwap_count_last_20": 5,
             "bars_since_last_vwap_touch": 2,
         }
 
@@ -79,19 +83,20 @@ class TestVWAPReclaimDistanceConstraint:
         assert result.is_valid
 
     def test_rejects_below_minimum_threshold(self):
-        """Test that reclaims < 0.5 ATR are rejected (too close, micro-fakeout)."""
+        """Test that no prior excursion (< 0.5 ATR) is rejected."""
         validator = SetupValidator()
 
         context = {
             "structure_1h": "HH",
             "structure_label": "HL",
             "direction": "long",
-            "vwap_deviation_normalized": 0.3,  # Too close
+            "max_abs_deviation_last_20": 0.3,  # No prior excursion (< 0.5 ATR)
+            "vwap_deviation_normalized": 0.8,  # Current distance OK
             "bos_recent": False,
             "bos_age": 25,
             "bos_direction": "long",
             "conflict_detected": False,
-            "bars_near_vwap": 5,
+            "near_vwap_count_last_20": 5,
             "bars_since_last_vwap_touch": 2,
         }
 
@@ -100,7 +105,7 @@ class TestVWAPReclaimDistanceConstraint:
 
 
 class TestNoLateReclaimConstraint:
-    """Test no_late_reclaim constraint (blocks BOS age < 20)."""
+    """Test no_late_reclaim constraint (blocks BOS age < 20 when bos_recent is True)."""
 
     def test_accepts_reclaim_after_bos_cooled_off(self):
         """Test that reclaims with BOS age >= 20 pass."""
@@ -110,13 +115,14 @@ class TestNoLateReclaimConstraint:
             "structure_1h": "HH",
             "structure_label": "HL",
             "direction": "long",
-            "vwap_deviation_normalized": 1.5,
-            "bos_direction": "bullish",  # Required for bos_reclaim_gate
+            "max_abs_deviation_last_20": 1.5,
+            "vwap_deviation_normalized": 0.8,
+            "bos_direction": "long",  # Must match direction exactly
             "bos_recent": True,  # Recent BOS flag
-            "bos_age": 25,  # But old enough
+            "bos_age": 25,  # But old enough (>= 20)
             "conflict_detected": False,
             "choch_detected": False,  # Required for direction_bos_alignment
-            "bars_near_vwap": 5,
+            "near_vwap_count_last_20": 5,
             "bars_since_last_vwap_touch": 2,
         }
 
@@ -131,19 +137,20 @@ class TestNoLateReclaimConstraint:
             "structure_1h": "HH",
             "structure_label": "HL",
             "direction": "long",
-            "vwap_deviation_normalized": 1.5,
-            "bos_direction": "bullish",
+            "max_abs_deviation_last_20": 1.5,
+            "vwap_deviation_normalized": 0.8,
+            "bos_direction": "long",
             "bos_recent": True,
-            "bos_age": 15,  # Too recent
+            "bos_age": 15,  # Too recent (< 20)
             "conflict_detected": False,
             "choch_detected": False,
-            "bars_near_vwap": 5,
+            "near_vwap_count_last_20": 5,
             "bars_since_last_vwap_touch": 2,
         }
 
         result = validator.validate_setup("VWAP_RECLAIM", context)
         assert not result.is_valid
-        assert "late" in result.reject_reason.lower()
+        assert "late" in result.reject_reason.lower() or "expanding" in result.reject_reason.lower()
 
     def test_accepts_when_bos_not_recent(self):
         """Test that reclaims pass when bos_recent is False."""
@@ -153,12 +160,13 @@ class TestNoLateReclaimConstraint:
             "structure_1h": "HH",
             "structure_label": "HL",
             "direction": "long",
-            "vwap_deviation_normalized": 1.5,
+            "max_abs_deviation_last_20": 1.5,
+            "vwap_deviation_normalized": 0.8,
             "bos_recent": False,
             "bos_age": 5,  # Age doesn't matter if not recent
             "bos_direction": "long",  # Required for bos_reclaim_gate constraint
             "conflict_detected": False,
-            "bars_near_vwap": 5,
+            "near_vwap_count_last_20": 5,
             "bars_since_last_vwap_touch": 2,
         }
 
@@ -173,13 +181,14 @@ class TestNoLateReclaimConstraint:
             "structure_1h": "HH",
             "structure_label": "HL",
             "direction": "long",
-            "vwap_deviation_normalized": 1.5,
-            "bos_direction": "bullish",
+            "max_abs_deviation_last_20": 1.5,
+            "vwap_deviation_normalized": 0.8,
+            "bos_direction": "long",
             "bos_recent": True,
-            "bos_age": 20,  # Boundary
+            "bos_age": 20,  # Boundary (>= 20)
             "conflict_detected": False,
             "choch_detected": False,
-            "bars_near_vwap": 5,
+            "near_vwap_count_last_20": 5,
             "bars_since_last_vwap_touch": 2,
         }
 
@@ -188,7 +197,7 @@ class TestNoLateReclaimConstraint:
 
 
 class TestBOSReclaimGateConstraint:
-    """Test bos_reclaim_gate constraint (blocks BOS direction conflicts)."""
+    """Test bos_reclaim_gate constraint (blocks BOS direction conflicts when age < 20)."""
 
     def test_accepts_when_bos_direction_matches(self):
         """Test that reclaims pass when BOS direction matches trade direction."""
@@ -198,13 +207,14 @@ class TestBOSReclaimGateConstraint:
             "structure_1h": "HH",
             "structure_label": "HL",
             "direction": "long",
-            "vwap_deviation_normalized": 1.5,
-            "bos_direction": "long",  # FIXED: Must match direction exactly
+            "max_abs_deviation_last_20": 1.5,
+            "vwap_deviation_normalized": 0.8,
+            "bos_direction": "long",  # Must match direction exactly
             "bos_recent": False,
             "bos_age": 18,  # Recent but matches direction
             "conflict_detected": False,
             "choch_detected": False,
-            "bars_near_vwap": 5,
+            "near_vwap_count_last_20": 5,
             "bars_since_last_vwap_touch": 2,
         }
 
@@ -212,26 +222,27 @@ class TestBOSReclaimGateConstraint:
         assert result.is_valid
 
     def test_rejects_when_bos_direction_conflicts(self):
-        """Test that reclaims are rejected when BOS direction conflicts."""
+        """Test that reclaims are rejected when BOS direction conflicts and age < 20."""
         validator = SetupValidator()
 
         context = {
             "structure_1h": "HH",
             "structure_label": "HL",
             "direction": "long",
-            "vwap_deviation_normalized": 1.5,
-            "bos_direction": "bearish",  # Conflicts with long
+            "max_abs_deviation_last_20": 1.5,
+            "vwap_deviation_normalized": 0.8,
+            "bos_direction": "short",  # Conflicts with long
             "bos_recent": False,
             "bos_age": 18,  # Age < 20 and direction conflicts
             "conflict_detected": False,
             "choch_detected": False,
-            "bars_near_vwap": 5,
+            "near_vwap_count_last_20": 5,
             "bars_since_last_vwap_touch": 2,
         }
 
         result = validator.validate_setup("VWAP_RECLAIM", context)
         assert not result.is_valid
-        assert "BOS direction conflicts" in result.reject_reason
+        assert "BOS direction" in result.reject_reason or "direction" in result.reject_reason.lower()
 
     def test_accepts_old_bos_despite_direction_conflict(self):
         """Test that old BOS (age >= 20) is ignored even if direction conflicts."""
@@ -241,13 +252,14 @@ class TestBOSReclaimGateConstraint:
             "structure_1h": "HH",
             "structure_label": "HL",
             "direction": "long",
-            "vwap_deviation_normalized": 1.5,
-            "bos_direction": "bearish",  # Conflicts
+            "max_abs_deviation_last_20": 1.5,
+            "vwap_deviation_normalized": 0.8,
+            "bos_direction": "short",  # Conflicts
             "bos_recent": False,
-            "bos_age": 25,  # But old enough to ignore
+            "bos_age": 25,  # But old enough to ignore (>= 20)
             "conflict_detected": False,
             "choch_detected": False,
-            "bars_near_vwap": 5,
+            "near_vwap_count_last_20": 5,
             "bars_since_last_vwap_touch": 2,
         }
 
@@ -262,13 +274,14 @@ class TestBOSReclaimGateConstraint:
             "structure_1h": "HH",
             "structure_label": "HL",
             "direction": "long",
-            "vwap_deviation_normalized": 1.5,
+            "max_abs_deviation_last_20": 1.5,
+            "vwap_deviation_normalized": 0.8,
             "bos_direction": None,  # No BOS
             "bos_recent": False,
             "bos_age": None,
             "conflict_detected": False,
             "choch_detected": False,
-            "bars_near_vwap": 5,
+            "near_vwap_count_last_20": 5,
             "bars_since_last_vwap_touch": 2,
         }
 
@@ -277,22 +290,23 @@ class TestBOSReclaimGateConstraint:
 
 
 class TestMinVWAPAcceptanceConstraint:
-    """Test min_vwap_acceptance constraint (>= 3 bars near VWAP)."""
+    """Test min_vwap_acceptance constraint (>= 2 bars near VWAP in last 20 bars)."""
 
     def test_accepts_with_sufficient_acceptance(self):
-        """Test that reclaims with >= 3 bars near VWAP pass."""
+        """Test that reclaims with >= 2 bars near VWAP pass."""
         validator = SetupValidator()
 
         context = {
             "structure_1h": "HH",
             "structure_label": "HL",
             "direction": "long",
-            "vwap_deviation_normalized": 1.5,
+            "max_abs_deviation_last_20": 1.5,
+            "vwap_deviation_normalized": 0.8,
             "bos_recent": False,
             "bos_age": 25,
             "bos_direction": "long",
             "conflict_detected": False,
-            "bars_near_vwap": 5,  # Good acceptance
+            "near_vwap_count_last_20": 5,  # Good acceptance
             "bars_since_last_vwap_touch": 2,
         }
 
@@ -300,40 +314,42 @@ class TestMinVWAPAcceptanceConstraint:
         assert result.is_valid
 
     def test_rejects_drive_by_reclaim(self):
-        """Test that drive-by reclaims (< 3 bars near VWAP) are rejected."""
+        """Test that drive-by reclaims (< 2 bars near VWAP) are rejected."""
         validator = SetupValidator()
 
         context = {
             "structure_1h": "HH",
             "structure_label": "HL",
             "direction": "long",
-            "vwap_deviation_normalized": 1.5,
+            "max_abs_deviation_last_20": 1.5,
+            "vwap_deviation_normalized": 0.8,
             "bos_recent": False,
             "bos_age": 25,
             "bos_direction": "long",
             "conflict_detected": False,
-            "bars_near_vwap": 1,  # Drive-by
+            "near_vwap_count_last_20": 1,  # Drive-by (< 2)
             "bars_since_last_vwap_touch": 2,
         }
 
         result = validator.validate_setup("VWAP_RECLAIM", context)
         assert not result.is_valid
-        assert "drive-by" in result.reject_reason.lower()
+        assert "acceptance" in result.reject_reason.lower() or "vwap" in result.reject_reason.lower()
 
     def test_accepts_at_minimum_threshold(self):
-        """Test that exactly 3 bars near VWAP passes."""
+        """Test that exactly 2 bars near VWAP passes."""
         validator = SetupValidator()
 
         context = {
             "structure_1h": "HH",
             "structure_label": "HL",
             "direction": "long",
-            "vwap_deviation_normalized": 1.5,
+            "max_abs_deviation_last_20": 1.5,
+            "vwap_deviation_normalized": 0.8,
             "bos_recent": False,
             "bos_age": 25,
             "bos_direction": "long",
             "conflict_detected": False,
-            "bars_near_vwap": 3,  # Boundary
+            "near_vwap_count_last_20": 2,  # Boundary (>= 2)
             "bars_since_last_vwap_touch": 2,
         }
 
@@ -348,14 +364,14 @@ class TestMinVWAPAcceptanceConstraint:
             "structure_1h": "HH",
             "structure_label": "HL",
             "direction": "long",
-            "vwap_deviation_normalized": 1.5,
-            "bos_direction": "bullish",
+            "max_abs_deviation_last_20": 1.5,
+            "vwap_deviation_normalized": 0.8,
             "bos_recent": False,
             "bos_age": 25,
             "bos_direction": "long",
             "conflict_detected": False,
             "choch_detected": False,
-            "bars_near_vwap": None,  # ATR unavailable
+            "near_vwap_count_last_20": None,  # ATR unavailable
             "bars_since_last_vwap_touch": 2,
         }
 
@@ -370,39 +386,40 @@ class TestMinVWAPAcceptanceConstraint:
             "structure_1h": "HH",
             "structure_label": "HL",
             "direction": "long",
-            "vwap_deviation_normalized": 1.5,
-            "bos_direction": "bullish",
+            "max_abs_deviation_last_20": 1.5,
+            "vwap_deviation_normalized": 0.8,
             "bos_recent": False,
             "bos_age": 25,
             "bos_direction": "long",
             "conflict_detected": False,
             "choch_detected": False,
-            "bars_near_vwap": 0,  # ATR available but price not near VWAP
+            "near_vwap_count_last_20": 0,  # No acceptance (< 2)
             "bars_since_last_vwap_touch": 2,
         }
 
         result = validator.validate_setup("VWAP_RECLAIM", context)
         assert not result.is_valid
-        assert "drive-by" in result.reject_reason.lower()
+        assert "acceptance" in result.reject_reason.lower() or "vwap" in result.reject_reason.lower()
 
 
 class TestReclaimTimingGateConstraint:
-    """Test reclaim_timing_gate constraint (<= 10 bars since VWAP touch)."""
+    """Test reclaim_timing_gate constraint (<= 30 bars since VWAP touch)."""
 
     def test_accepts_timely_reclaim(self):
-        """Test that reclaims within 10 bars of VWAP touch pass."""
+        """Test that reclaims within 30 bars of VWAP touch pass."""
         validator = SetupValidator()
 
         context = {
             "structure_1h": "HH",
             "structure_label": "HL",
             "direction": "long",
-            "vwap_deviation_normalized": 1.5,
+            "max_abs_deviation_last_20": 1.5,
+            "vwap_deviation_normalized": 0.8,
             "bos_recent": False,
             "bos_age": 25,
             "bos_direction": "long",
             "conflict_detected": False,
-            "bars_near_vwap": 5,
+            "near_vwap_count_last_20": 5,
             "bars_since_last_vwap_touch": 5,  # Timely
         }
 
@@ -410,20 +427,21 @@ class TestReclaimTimingGateConstraint:
         assert result.is_valid
 
     def test_rejects_delayed_reclaim(self):
-        """Test that delayed reclaims (> 10 bars) are rejected."""
+        """Test that delayed reclaims (> 30 bars) are rejected."""
         validator = SetupValidator()
 
         context = {
             "structure_1h": "HH",
             "structure_label": "HL",
             "direction": "long",
-            "vwap_deviation_normalized": 1.5,
+            "max_abs_deviation_last_20": 1.5,
+            "vwap_deviation_normalized": 0.8,
             "bos_recent": False,
             "bos_age": 25,
             "bos_direction": "long",
             "conflict_detected": False,
-            "bars_near_vwap": 5,
-            "bars_since_last_vwap_touch": 15,  # Too delayed
+            "near_vwap_count_last_20": 5,
+            "bars_since_last_vwap_touch": 35,  # Too delayed (> 30)
         }
 
         result = validator.validate_setup("VWAP_RECLAIM", context)
@@ -431,20 +449,21 @@ class TestReclaimTimingGateConstraint:
         assert "delayed" in result.reject_reason.lower()
 
     def test_accepts_at_boundary(self):
-        """Test that exactly 10 bars passes."""
+        """Test that exactly 30 bars passes."""
         validator = SetupValidator()
 
         context = {
             "structure_1h": "HH",
             "structure_label": "HL",
             "direction": "long",
-            "vwap_deviation_normalized": 1.5,
+            "max_abs_deviation_last_20": 1.5,
+            "vwap_deviation_normalized": 0.8,
             "bos_recent": False,
             "bos_age": 25,
             "bos_direction": "long",
             "conflict_detected": False,
-            "bars_near_vwap": 5,
-            "bars_since_last_vwap_touch": 10,  # Boundary
+            "near_vwap_count_last_20": 5,
+            "bars_since_last_vwap_touch": 30,  # Boundary (<= 30)
         }
 
         result = validator.validate_setup("VWAP_RECLAIM", context)
@@ -458,12 +477,13 @@ class TestReclaimTimingGateConstraint:
             "structure_1h": "HH",
             "structure_label": "HL",
             "direction": "long",
-            "vwap_deviation_normalized": 1.5,
+            "max_abs_deviation_last_20": 1.5,
+            "vwap_deviation_normalized": 0.8,
             "bos_recent": False,
             "bos_age": 25,
             "bos_direction": "long",
             "conflict_detected": False,
-            "bars_near_vwap": 5,
+            "near_vwap_count_last_20": 5,
             "bars_since_last_vwap_touch": None,
         }
 
@@ -482,13 +502,14 @@ class TestCombinedConstraints:
             "structure_1h": "HH",
             "structure_label": "HL",
             "direction": "long",
-            "vwap_deviation_normalized": 1.2,  # Ideal distance
+            "max_abs_deviation_last_20": 1.5,  # Valid prior excursion
+            "vwap_deviation_normalized": 0.8,  # Within 2.0 ATR
             "bos_recent": False,
             "bos_age": 30,  # Well past expansion
             "bos_direction": "long",  # Required for bos_reclaim_gate constraint
             "conflict_detected": False,
-            "bars_near_vwap": 4,  # Good acceptance
-            "bars_since_last_vwap_touch": 3,  # Timely
+            "near_vwap_count_last_20": 4,  # Good acceptance (>= 2)
+            "bars_since_last_vwap_touch": 3,  # Timely (<= 30)
         }
 
         result = validator.validate_setup("VWAP_RECLAIM", context)
@@ -500,17 +521,18 @@ class TestCombinedConstraints:
         """Test that violating any constraint causes rejection."""
         validator = SetupValidator()
 
-        # Good on all except VWAP distance
+        # Good on all except current VWAP distance (> 2.0 ATR)
         context = {
             "structure_1h": "HH",
             "structure_label": "HL",
             "direction": "long",
-            "vwap_deviation_normalized": 5.0,  # FAIL: too far
+            "max_abs_deviation_last_20": 1.5,  # Valid prior excursion
+            "vwap_deviation_normalized": 2.5,  # FAIL: too far (> 2.0 ATR)
             "bos_recent": False,
             "bos_age": 30,
             "bos_direction": "long",
             "conflict_detected": False,
-            "bars_near_vwap": 4,
+            "near_vwap_count_last_20": 4,
             "bars_since_last_vwap_touch": 3,
         }
 

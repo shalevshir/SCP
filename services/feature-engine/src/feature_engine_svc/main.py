@@ -112,13 +112,16 @@ async def warmup_from_stream(
         True if successful, False if should fall back to database
     """
     from scp_shared.messaging.warmup_consumer import (
-        check_warmup_available,
         consume_warmup_stream,
+        wait_for_warmup_ready,
     )
 
-    # Check if warmup streams available
-    status = await check_warmup_available(redis_client)
-    if not status["available"]:
+    # Wait for warmup data to be available (replay script or data-adapter publishes it)
+    warmup_ready = await wait_for_warmup_ready(
+        redis_client,
+        timeout_seconds=config.warmup_stream_timeout_seconds,
+    )
+    if not warmup_ready:
         logger.info(
             f"Warmup streams not available for {timeframe} - will use database fallback"
         )
@@ -208,6 +211,16 @@ async def warmup_from_stream(
         service = config.service_name
         engine_metrics.update_feature_metrics(last_features, mode, service)
         logger.info(f"Updated feature metrics with warmup end state for {timeframe}")
+
+    # Signal to replay script that feature-engine has consumed warmup data
+    try:
+        await redis_client.hset(
+            "warmup:status",
+            mapping={"feature_engine_consumed": "true"},
+        )
+        logger.info("Set feature_engine_consumed marker in warmup:status")
+    except Exception as e:
+        logger.warning(f"Failed to set warmup consumed marker: {e}")
 
     return True
 
