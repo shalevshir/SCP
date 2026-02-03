@@ -1,7 +1,7 @@
 # Force use of bash for all recipes (required for db-reset and other advanced shell features)
 SHELL := /bin/bash
 
-.PHONY: test test-unit test-verbose test-parallel test-coverage test-fast lint format check clean system-clean system-clean-yes system-clean-db system-clean-redis help install data-clean data-fetch data-resample data-resample-5m data-resample-1h infra-up infra-down infra-logs infra-ps db-migrate db-reset db-shell shared-install shared-test service-test-coverage service-test-coverage-all services-up services-down services-build services-logs services-ps paper-trading-up paper-trading-down paper-trading-logs live-trading-up live-trading-down live-trading-logs replay compare-results validate-replay replay-clean
+.PHONY: test test-unit test-verbose test-parallel test-coverage test-fast lint format check clean system-clean system-clean-yes system-clean-db system-clean-redis help install data-clean data-fetch data-resample data-resample-5m data-resample-1h infra-up infra-down infra-logs infra-ps db-migrate db-reset db-shell shared-install shared-test service-test-coverage service-test-coverage-all services-up services-down services-build services-logs services-ps paper-trading-up paper-trading-down paper-trading-logs live-trading-up live-trading-down live-trading-logs replay replay-validate compare-results validate-replay replay-clean eda-vwap
 
 help:
 	@echo "SCP Trading Bot - Development Commands"
@@ -64,13 +64,17 @@ help:
 	@echo "  make check             Run all checks (lint + test)"
 	@echo ""
 	@echo "Replay Mode & Validation:"
-	@echo "  make replay START=... END=... [SPEED=120]  Run replay from CSV (default SPEED=120; SPEED=0 is turbo)"
+	@echo "  make replay START=... END=... [SPEED=0]    Run replay from CSV (SPEED=0 is turbo, default)"
+	@echo "  make replay-validate START=... END=...     Full validation (backtest + replay + compare)"
 	@echo "  make replay-databento START=... END=...    Run replay from Databento (requires API key)"
 	@echo "  make validate-databento START=... END=...  Full validation with Databento data"
 	@echo "  make test-databento-replay                 Test Databento replay (1 day sample)"
 	@echo "  make compare-results BACKTEST=...          Compare backtest vs microservices"
-	@echo "  make validate-replay START=... END=...     Full validation (CSV replay + compare)"
+	@echo "  make validate-replay START=... END=...     Alias for replay-validate (deprecated)"
 	@echo "  make replay-clean                          Clean replay artifacts"
+	@echo ""
+	@echo "Analysis & Reporting:"
+	@echo "  make eda-vwap START=... END=...            Generate VWAP feature EDA report"
 	@echo ""
 	@echo "Cleanup:"
 	@echo "  make clean             Remove test artifacts and caches"
@@ -217,10 +221,12 @@ db-migrate:
 		echo "Error: PostgreSQL container not running. Run 'make infra-up' first."; \
 		exit 1; \
 	fi
-	@echo "Migrations are auto-applied on first startup via docker-entrypoint-initdb.d"
-	@echo "For manual migration, use:"
-	@echo "  psql -h localhost -U scp -d scp -f infra/migrations/001_initial_schema.sql"
-	@echo "  psql -h localhost -U scp -d scp -f infra/migrations/002_indexes.sql"
+	@for f in infra/migrations/*.sql; do \
+		echo "Applying $$f..."; \
+		docker exec -i scp-postgres psql -U scp -d scp -f /docker-entrypoint-initdb.d/$$(basename $$f) 2>/dev/null || \
+		docker exec -i scp-postgres psql -U scp -d scp < $$f; \
+	done
+	@echo "✓ Migrations complete"
 
 db-reset:
 	@echo "Resetting database..."
@@ -403,16 +409,57 @@ live-trading-logs:
 # Replay Mode & Validation Commands (Phase 8)
 # ============================================================================
 
+# Simple replay - just run historical data through the pipeline
 replay:
 	@if [ -z "$(START)" ] || [ -z "$(END)" ]; then \
 		echo "Error: START and END required."; \
-		echo "Usage: make replay START=2024-11-01 END=2024-11-30 [SPEED=120] (SPEED=0 is turbo)"; \
+		echo "Usage: make replay START=2024-11-01 END=2024-11-30 [SPEED=0] [DATA_DIR=...] [REDIS_URL=...] [NO_WARMUP=1]"; \
+		echo ""; \
+		echo "Options:"; \
+		echo "  SPEED=0        Turbo mode (no delays, default)"; \
+		echo "  SPEED=100      100x faster than real-time"; \
+		echo "  SPEED=1        Real-time replay"; \
+		echo "  DATA_DIR=...   Custom data directory (default: data/gc_dx_ohlcv)"; \
+		echo "  REDIS_URL=...  Redis URL (default: redis://localhost:6379)"; \
+		echo "  DELAY=...      Processing delay in seconds (default: 5.0)"; \
+		echo "  NO_WARMUP=1    Skip warmup phase (cold start)"; \
 		exit 1; \
 	fi
-	@echo "Running replay validation..."
+	@echo "Running historical data replay..."
 	@echo "  Date range: $(START) to $(END)"
 	@if [ -z "$(SPEED)" ]; then \
-		echo "  Speed: DEFAULT (120x)"; \
+		echo "  Speed: TURBO (no delays, maximum speed)"; \
+	elif [ "$(SPEED)" = "0" ]; then \
+		echo "  Speed: TURBO (no delays, maximum speed)"; \
+	else \
+		echo "  Speed: $(SPEED)x"; \
+	fi
+	@if [ -n "$(DATA_DIR)" ]; then \
+		echo "  Data directory: $(DATA_DIR)"; \
+	fi
+	@echo ""
+	@echo "Replaying through microservices pipeline..."
+	@poetry run python scripts/replay_historical.py \
+		--start $(START) --end $(END) \
+		--speed $(if $(SPEED),$(SPEED),0) \
+		$(if $(DATA_DIR),--data-dir $(DATA_DIR),) \
+		$(if $(REDIS_URL),--redis-url $(REDIS_URL),) \
+		--processing-delay $(if $(DELAY),$(DELAY),5.0) \
+		$(if $(NO_WARMUP),--no-warmup,)
+	@echo ""
+	@echo "✓ Replay complete!"
+
+# Full validation - run backtest + replay + comparison
+replay-validate:
+	@if [ -z "$(START)" ] || [ -z "$(END)" ]; then \
+		echo "Error: START and END required."; \
+		echo "Usage: make replay-validate START=2024-11-01 END=2024-11-30 [SPEED=0]"; \
+		exit 1; \
+	fi
+	@echo "Running full validation workflow (backtest + replay + compare)..."
+	@echo "  Date range: $(START) to $(END)"
+	@if [ -z "$(SPEED)" ]; then \
+		echo "  Speed: TURBO (no delays, maximum speed)"; \
 	elif [ "$(SPEED)" = "0" ]; then \
 		echo "  Speed: TURBO (no delays, maximum speed)"; \
 	else \
@@ -420,25 +467,17 @@ replay:
 	fi
 	@echo ""
 	@echo "Step 1/3: Running backtester..."
-	poetry run python scripts/run_backtest_and_view.py \
+	@poetry run python scripts/run_backtest_and_view.py \
 		--start $(START) --end $(END) --no-view \
 		--output-file output/backtest_validation_$(START)_$(END).json
 	@echo ""
-
-	@echo "Step 3/3: Replaying historical data..."
-	@if [ -z "$(SPEED)" ]; then \
-		poetry run python scripts/replay_historical.py \
-			--start $(START) --end $(END) \
-			--speed 120 \
-			--processing-delay 10; \
-	else \
-		poetry run python scripts/replay_historical.py \
-			--start $(START) --end $(END) \
-			--speed $(SPEED) \
-			--processing-delay 10; \
-	fi
+	@echo "Step 2/3: Replaying historical data through microservices..."
+	@$(MAKE) replay START=$(START) END=$(END) SPEED=$(if $(SPEED),$(SPEED),0)
 	@echo ""
-	@echo "✓ Replay complete. Run 'make compare-results' to analyze."
+	@echo "Step 3/3: Comparing results..."
+	@$(MAKE) compare-results BACKTEST=output/backtest_validation_$(START)_$(END).json
+	@echo ""
+	@echo "✓ Full validation complete!"
 
 compare-results:
 	@if [ -z "$(BACKTEST)" ]; then \
@@ -452,19 +491,11 @@ compare-results:
 		--database postgresql://scp:scp_dev_password@localhost:5432/scp \
 		--output output/comparison_report_$(shell date +%Y%m%d_%H%M%S).json
 
+# Backwards compatibility alias
 validate-replay:
-	@if [ -z "$(START)" ] || [ -z "$(END)" ]; then \
-		echo "Error: START and END required."; \
-		echo "Usage: make validate-replay START=2024-11-01 END=2024-11-30"; \
-		exit 1; \
-	fi
-	@echo "Running full validation workflow..."
-	@$(MAKE) replay START=$(START) END=$(END) SPEED=0
+	@echo "⚠️  Note: 'make validate-replay' is deprecated. Use 'make replay-validate' instead."
 	@echo ""
-	@echo "Comparing results..."
-	@$(MAKE) compare-results BACKTEST=output/backtest_validation_$(START)_$(END).json
-	@echo ""
-	@echo "✓ Validation complete!"
+	@$(MAKE) replay-validate START=$(START) END=$(END) SPEED=$(SPEED)
 
 side-by-side:
 	@if [ -z "$(DATE)" ] && ([ -z "$(START)" ] || [ -z "$(END)" ]); then \
@@ -566,3 +597,39 @@ replay-clean:
 	else \
 		echo "Cancelled"; \
 	fi
+
+# =============================================================================
+# VWAP_RECLAIM Diagnostics
+# =============================================================================
+
+diagnose-vwap-reclaim:
+	@if [ -z "$(START)" ] || [ -z "$(END)" ]; then \
+		echo "Usage: make diagnose-vwap-reclaim START=2024-11-01 END=2024-11-05"; \
+		exit 1; \
+	fi
+	@echo "Running VWAP_RECLAIM constraint failure analysis..."
+	@echo "Period: $(START) to $(END)"
+	@poetry run python scripts/diagnose_vwap_reclaim.py \
+		--start "$(START)" \
+		--end "$(END)" \
+		--db-dsn "postgresql://scp:scp_dev_password@localhost:5432/scp"
+
+# =============================================================================
+# EDA: Exploratory Data Analysis
+# =============================================================================
+
+eda-vwap:
+	@if [ -z "$(START)" ] || [ -z "$(END)" ]; then \
+		echo "Error: START and END required."; \
+		echo "Usage: make eda-vwap START=2025-11-05 END=2025-11-10"; \
+		exit 1; \
+	fi
+	@echo "Generating VWAP feature EDA report..."
+	@mkdir -p reports
+	@poetry run python scripts/eda/eda_vwap_features.py \
+		--start $(START) \
+		--end $(END) \
+		--output reports/vwap_eda_$(START)_$(END).html \
+		--detect-anomalies \
+		--db-url "postgresql://scp:scp_dev_password@localhost:5432/scp"
+	@echo "Report saved to: reports/vwap_eda_$(START)_$(END).html"
