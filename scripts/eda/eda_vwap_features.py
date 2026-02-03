@@ -189,15 +189,21 @@ class VWAPFeatureEDA:
             if feature not in self.features_df.columns:
                 continue
 
+            null_count = int(self.features_df[feature].isna().sum())
+            total_count = len(self.features_df)
             data = self.features_df[feature].dropna()
             if len(data) == 0:
-                stats_dict[feature] = {"count": 0, "null_pct": 100.0}
+                stats_dict[feature] = {
+                    "count": 0,
+                    "null_count": null_count,
+                    "null_pct": (null_count / total_count) * 100 if total_count > 0 else 0,
+                }
                 continue
 
             stats_dict[feature] = {
                 "count": len(data),
-                "null_count": self.features_df[feature].isna().sum(),
-                "null_pct": (self.features_df[feature].isna().sum() / len(self.features_df)) * 100,
+                "null_count": null_count,
+                "null_pct": (null_count / total_count) * 100 if total_count > 0 else 0,
                 "mean": float(data.mean()),
                 "median": float(data.median()),
                 "std": float(data.std()),
