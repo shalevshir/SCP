@@ -192,6 +192,16 @@ class FeatureProcessor:
             bars_since_last_vwap_touch=self._safe_int(
                 features_series.get("bars_since_last_vwap_touch")
             ),
+            near_vwap_count_last_20=self._safe_int(
+                features_series.get("near_vwap_count_last_20")
+            ),
+            # VWAP deviation history (excursion tracking for VWAP_RECLAIM)
+            max_abs_deviation_last_20=self._safe_float(
+                features_series.get("max_abs_deviation_last_20")
+            ),
+            min_abs_deviation_last_20=self._safe_float(
+                features_series.get("min_abs_deviation_last_20")
+            ),
         )
 
     def is_warmed_up(self) -> bool:
