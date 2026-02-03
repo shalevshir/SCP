@@ -65,6 +65,12 @@ class ExecutionConfig(BaseServiceConfig):
         description="Commission per trade in dollars when enabled",
     )
 
+    # Contract specifications for P&L calculation
+    point_value: float = Field(
+        default=100.0,
+        description="Dollar value per point for the traded instrument (GC = $100/point)",
+    )
+
     # Position sizing configuration
     sizing_mode: str = Field(
         default="fixed",

@@ -24,6 +24,6 @@ class FeatureEngineConfig(BaseServiceConfig):
     )
 
     warmup_stream_timeout_seconds: int = Field(
-        default=60,
+        default=10,
         description="Timeout waiting for warmup streams before database fallback",
     )

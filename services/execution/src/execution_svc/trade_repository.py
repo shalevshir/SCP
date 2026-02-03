@@ -17,19 +17,21 @@ class TradeRepository:
     Handles CRUD operations for trades table and provides recovery methods.
 
     Example:
-        >>> repo = TradeRepository(db_pool)
+        >>> repo = TradeRepository(db_pool, point_value=100.0)
         >>> trade_id = await repo.insert_trade(trade_record)
         >>> await repo.update_trade(trade_id, {"exit_price": 2660.0})
         >>> open_trades = await repo.get_open_trades()
     """
 
-    def __init__(self, db_pool: DatabasePool) -> None:
+    def __init__(self, db_pool: DatabasePool, point_value: float = 100.0) -> None:
         """Initialize trade repository.
 
         Args:
             db_pool: Database connection pool
+            point_value: Dollar value per point for P&L calculation (default: $100 for GC)
         """
         self._db_pool = db_pool
+        self._point_value = point_value
 
     async def insert_trade(
         self,
@@ -143,23 +145,39 @@ class TradeRepository:
             exit_reason: Exit reason (e.g., "TP_HIT", "SL_HIT")
             closed_at: Trade close timestamp
         """
-        # Get trade to calculate P&L
-        trade = await self.get_trade(trade_id)
-        if trade is None:
+        # Get trade data including quantity for P&L calculation
+        query = """
+            SELECT direction, entry_price, sl_price, quantity
+            FROM trades
+            WHERE id = $1
+        """
+        row = await self._db_pool.fetchrow(query, UUID(trade_id))
+        if row is None:
             error_msg = f"Trade {trade_id} not found"
             logger.error(f"Cannot close trade: {error_msg}")
             raise ValueError(error_msg)
 
         # Calculate P&L (convert Decimal to float for arithmetic)
-        entry_price_float = float(trade.entry_price)
-        if trade.direction == "long":
+        entry_price_float = float(row["entry_price"])
+        direction = row["direction"]
+        quantity = row["quantity"]
+
+        if direction == "long":
             pnl_points = exit_price - entry_price_float
         else:  # short
             pnl_points = entry_price_float - exit_price
 
-        # Calculate R-multiple (convert Decimal to float for arithmetic)
-        risk_amount_float = float(trade.risk_amount) if trade.risk_amount else 0.0
-        r_multiple = pnl_points / risk_amount_float if risk_amount_float > 0 else 0.0
+        # Calculate P&L in dollars: points * point_value * quantity
+        # For GC futures: point_value = $100 per point
+        pnl_dollars = pnl_points * self._point_value * quantity
+
+        # Calculate R-multiple from risk amount (entry - SL distance)
+        sl_price_float = float(row["sl_price"])
+        if direction == "long":
+            risk_amount = entry_price_float - sl_price_float
+        else:  # short
+            risk_amount = sl_price_float - entry_price_float
+        r_multiple = pnl_points / risk_amount if risk_amount > 0 else 0.0
 
         # Determine state
         state = "CLOSED"
@@ -178,9 +196,10 @@ class TradeRepository:
                 exit_price = $2,
                 exit_reason = $3,
                 pnl_points = $4,
-                r_multiple = $5,
-                state = $6
-            WHERE id = $7
+                pnl_dollars = $5,
+                r_multiple = $6,
+                state = $7
+            WHERE id = $8
         """
 
         await self._db_pool.execute(
@@ -189,6 +208,7 @@ class TradeRepository:
             exit_price,
             exit_reason_truncated,
             pnl_points,
+            pnl_dollars,
             r_multiple,
             state,
             UUID(trade_id),
@@ -196,7 +216,8 @@ class TradeRepository:
 
         logger.info(
             f"Closed trade {trade_id}: exit={exit_price:.2f}, "
-            f"pnl={pnl_points:.2f} points ({r_multiple:.2f}R), reason={exit_reason}"
+            f"pnl={pnl_points:.2f} points (${pnl_dollars:.2f}, {r_multiple:.2f}R), "
+            f"reason={exit_reason}"
         )
 
     async def get_trade(self, trade_id: str) -> TradeRecord | None:

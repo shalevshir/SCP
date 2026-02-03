@@ -10,7 +10,7 @@ from fastapi import FastAPI
 from scp_shared.common import get_logger, mask_connection_url
 from scp_shared.database import DatabasePool
 from scp_shared.health import create_health_router
-from scp_shared.messaging import RedisStreamConsumer, CandleSynchronizer
+from scp_shared.messaging import RedisStreamConsumer, CandleSynchronizer, SyncAckPublisher
 from scp_shared.messaging.schemas import CandleMessage, FeaturesMessage
 from scp_shared.metrics import create_metrics_router
 
@@ -440,6 +440,15 @@ async def process_candles(
     # DXY VWAP tracker for participation context (dashboard visualization)
     dxy_vwap_tracker = DXYVWAPTracker(session_reset=True)
 
+    # Sync ack publisher for backtest orchestration (SBOP)
+    # Only sends acks in "replay" mode for synchronous backtesting
+    sync_ack_publisher = SyncAckPublisher(
+        redis_client,
+        service_id="feature-engine",
+        mode="backtest" if config.service_mode == "replay" else config.service_mode,
+    )
+
+
     # Create consumers for GC and DXY candles
     gc_consumer = RedisStreamConsumer(
         redis_client,
@@ -494,6 +503,7 @@ async def process_candles(
                         publisher,
                         repository,
                         dxy_vwap_tracker,
+                        sync_ack_publisher,
                     )
 
             # METRIC: Update queue depth gauge
@@ -525,6 +535,7 @@ async def process_candle_pair(
     publisher: FeaturePublisher,
     repository: FeatureRepository,
     dxy_vwap_tracker: DXYVWAPTracker | None = None,
+    sync_ack_publisher: SyncAckPublisher | None = None,
 ) -> None:
     """Process a synchronized candle pair.
 
@@ -538,6 +549,7 @@ async def process_candle_pair(
         publisher: Feature publisher
         repository: Feature repository
         dxy_vwap_tracker: Optional DXY VWAP tracker for slope metric
+        sync_ack_publisher: Optional sync ack publisher for backtest orchestration (SBOP)
     """
     gc_candle, dxy_candle = pair
 
@@ -665,6 +677,11 @@ async def process_candle_pair(
                 f"Processed 1h features: {htf_candle_gc.timestamp} "
                 f"(GC: {htf_candle_gc.close}, DXY: {htf_candle_dxy.close})"
             )
+
+    # SBOP: Send sync acknowledgment after all processing is complete
+    # This signals to the backtest orchestrator that this tick is fully processed
+    if sync_ack_publisher is not None:
+        await sync_ack_publisher.ack(gc_candle.timestamp)
 
 
 @asynccontextmanager

@@ -10,7 +10,7 @@ from fastapi import FastAPI
 from scp_shared.common import get_logger, mask_connection_url
 from scp_shared.database import DatabasePool
 from scp_shared.health import create_health_router
-from scp_shared.messaging import RedisStreamConsumer, CandleSynchronizer
+from scp_shared.messaging import RedisStreamConsumer, CandleSynchronizer, SyncAckPublisher
 from scp_shared.messaging.schemas import CandleMessage
 from scp_shared.metrics import create_metrics_router
 
@@ -295,6 +295,14 @@ async def process_candles(
         redis_client, processor, repository, before_timestamp
     )
 
+    # Sync ack publisher for backtest orchestration (SBOP)
+    # Only sends acks in "replay" mode for synchronous backtesting
+    sync_ack_publisher = SyncAckPublisher(
+        redis_client,
+        service_id="htf-bias",
+        mode="backtest" if config.service_mode == "replay" else config.service_mode,
+    )
+
     # Create consumers for GC and DXY candles
     gc_consumer = RedisStreamConsumer(
         redis_client,
@@ -333,6 +341,7 @@ async def process_candles(
                         processor,
                         publisher,
                         repository,
+                        sync_ack_publisher,
                     )
 
             # Log buffer stats periodically
@@ -353,6 +362,7 @@ async def process_candle_pair(
     processor: HTFBiasProcessor,
     publisher: BiasPublisher,
     repository: BiasRepository,
+    sync_ack_publisher: SyncAckPublisher | None = None,
 ) -> None:
     """Process a synchronized candle pair.
 
@@ -361,6 +371,7 @@ async def process_candle_pair(
         processor: HTF bias processor
         publisher: Bias publisher
         repository: Bias repository
+        sync_ack_publisher: Optional sync ack publisher for backtest orchestration (SBOP)
     """
     gc_candle, dxy_candle = pair
 
@@ -398,6 +409,12 @@ async def process_candle_pair(
         )
     else:
         logger.debug(f"Processed candles at {gc_candle.timestamp} (no bias update)")
+
+    # SBOP: Send sync acknowledgment after processing is complete
+    # CRITICAL: Must ack after EVERY 1m candle, not just at HTF boundaries
+    # Otherwise the orchestrator will hang waiting for an ack that never comes
+    if sync_ack_publisher is not None:
+        await sync_ack_publisher.ack(gc_candle.timestamp)
 
 
 @asynccontextmanager
