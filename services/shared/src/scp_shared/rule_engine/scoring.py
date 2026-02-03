@@ -728,8 +728,8 @@ def score_signal(features: pd.Series, htf_bias: HTFBias, context: dict) -> Signa
     # Load scoring configuration
     config = load_scoring_config()
 
-    # Determine setup type based on features
-    setup_type = determine_setup_type(features, htf_bias)
+    # Determine setup type based on features (pass diagnostics for constraint tracking)
+    setup_type = determine_setup_type(features, htf_bias, diagnostics)
 
     # Handle rejected setups
     if setup_type == "REJECTED":
@@ -1094,17 +1094,73 @@ def build_setup_context(features: pd.Series, htf_bias: HTFBias) -> dict:
         # VWAP acceptance tracking fields (SOP alignment)
         "bars_near_vwap": features.get("bars_near_vwap"),
         "bars_since_last_vwap_touch": features.get("bars_since_last_vwap_touch"),
+        "near_vwap_count_last_20": features.get("near_vwap_count_last_20"),
+        # VWAP deviation history (excursion tracking for VWAP_RECLAIM)
+        "max_abs_deviation_last_20": features.get("max_abs_deviation_last_20"),
+        "min_abs_deviation_last_20": features.get("min_abs_deviation_last_20"),
     }
 
     return context
 
 
-def determine_setup_type(features: pd.Series, htf_bias: HTFBias) -> str:
+def _extract_relevant_context(context: dict, failed_constraint: str | None) -> dict:
+    """Extract context fields relevant to a failed constraint for debugging.
+
+    Args:
+        context: Full setup validation context
+        failed_constraint: Name of the constraint that failed
+
+    Returns:
+        Dictionary with only relevant context fields for the failed constraint
+    """
+    if failed_constraint is None:
+        return {}
+
+    # Map constraints to their relevant context keys for debugging
+    relevant_fields_map = {
+        "structure_1h_available": ["structure_1h"],
+        "htf_structure_integrity": ["structure_1h", "direction"],
+        "structure_label_available": ["structure_label"],
+        "vwap_reclaim_distance": [
+            "vwap_deviation_normalized",
+            "max_abs_deviation_last_20",
+            "min_abs_deviation_last_20",
+            "direction",
+            "close",
+            "vwap",
+        ],
+        "no_late_reclaim": ["bos_direction", "bos_age", "bos_invalid"],
+        "bos_reclaim_gate": ["bos_direction", "bos_age", "direction"],
+        "direction_bos_alignment": [
+            "bos_direction",
+            "bos_age",
+            "bos_invalid",
+            "direction",
+            "choch_direction",
+        ],
+        "no_structure_conflict": ["conflict_detected"],
+        "min_vwap_acceptance": ["near_vwap_count_last_20"],
+        "reclaim_timing_gate": ["bars_since_last_vwap_touch"],
+        "structure_label_direction_long": ["structure_label", "direction"],
+        "structure_label_direction_short": ["structure_label", "direction"],
+    }
+
+    # Get relevant fields for this constraint, default to empty list
+    relevant_fields = relevant_fields_map.get(failed_constraint, [])
+
+    # Extract only relevant context values
+    return {k: context.get(k) for k in relevant_fields if k in context}
+
+
+def determine_setup_type(
+    features: pd.Series, htf_bias: HTFBias, diagnostics: dict | None = None
+) -> str:
     """Determine setup type based on market features using config-driven validation.
 
     Args:
         features: Feature data including VWAP, RSI, DXY correlation
         htf_bias: HTFBias object
+        diagnostics: Optional diagnostics dict to populate with constraint failures
 
     Returns:
         Setup type name: "VWAP_RECLAIM", "VWAP_FADE", "DXY_CONTINUATION", or "REJECTED"
@@ -1118,6 +1174,8 @@ def determine_setup_type(features: pd.Series, htf_bias: HTFBias) -> str:
     Note:
         Constraints for each setup are defined in config/setups.yaml.
         Setups can be enabled/disabled and constraints modified via config.
+        If diagnostics dict is provided, detailed rejection reasons for VWAP_RECLAIM
+        will be saved for post-hoc analysis.
     """
     # Build context from features and HTF bias
     context = build_setup_context(features, htf_bias)
@@ -1145,7 +1203,26 @@ def determine_setup_type(features: pd.Series, htf_bias: HTFBias) -> str:
             logger.debug("Setup detected: VWAP_RECLAIM")
             return "VWAP_RECLAIM"
         else:
-            logger.debug(f"VWAP_RECLAIM rejected: {result.reject_reason}")
+            # ENHANCED: Log detailed rejection with constraint values
+            failed_constraint = result.failed_constraint
+            reject_reason = result.reject_reason
+
+            # Extract relevant context values for debugging
+            relevant_context = _extract_relevant_context(context, failed_constraint)
+
+            logger.info(
+                f"VWAP_RECLAIM constraint '{failed_constraint}' failed: "
+                f"{reject_reason} | Context: {relevant_context}"
+            )
+
+            # Save to diagnostics for database persistence
+            if diagnostics is not None:
+                diagnostics["vwap_reclaim_validation"] = {
+                    "failed_constraint": failed_constraint,
+                    "reject_reason": reject_reason,
+                    "evaluated_constraints": result.evaluated_constraints,
+                    "context_snapshot": relevant_context,
+                }
 
     # 3. DXY_CONTINUATION: Broader correlation-based setup (fallback)
     if validator.is_setup_enabled("DXY_CONTINUATION"):
