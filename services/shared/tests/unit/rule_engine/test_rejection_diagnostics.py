@@ -202,13 +202,17 @@ class TestRejectionDiagnostics:
                 "is_structural_chop": False,
                 "atr_compression_ratio": 1.0,
                 "structure_clarity": 0.8,
-                "bos_age": 5,
-                "bos_direction": "bullish",
-                "bos_recent": True,
+                "bos_age": 25,
+                "bos_direction": "long",  # Must match direction for bos_reclaim_gate
+                "bos_recent": False,  # Must be False or bos_age >= 20 for no_late_reclaim
                 "choch_detected": False,
                 "structure_conflict_flag": False,
                 "liquidity_sweep": True,
                 "expansion_detected": True,
+                # VWAP_RECLAIM constraint fields
+                "max_abs_deviation_last_20": 1.5,  # Valid prior excursion (0.5-12.0 ATR)
+                "near_vwap_count_last_20": 5,  # Good acceptance (>= 2)
+                "vwap_deviation_normalized": 0.8,  # Within 3.0 ATR
             }
         )
 
@@ -219,9 +223,10 @@ class TestRejectionDiagnostics:
             confidence="high",
             structure_1h="HH",  # Required for validation
             structure_clarity=0.8,
-            bars_since_bos=5,
+            bars_since_bos=25,
             liquidity_sweep_detected=True,
             bos_detected=True,
+            conflict_detected=False,  # Required for no_structure_conflict
         )
 
         context = {"session_ok": True, "enforcer_tier": "EarlyMild"}
@@ -229,7 +234,7 @@ class TestRejectionDiagnostics:
         signal = score_signal(features, htf_bias, context)
 
         # Should pass
-        assert signal.confidence == "A+", f"Signal should pass, got {signal.confidence}"
+        assert signal.confidence == "A+", f"Signal should pass, got {signal.confidence}. Diagnostics: {signal.diagnostics}"
 
         # Should have rejection analysis with passed=True
         rejection = signal.diagnostics.get("rejection_analysis", {})

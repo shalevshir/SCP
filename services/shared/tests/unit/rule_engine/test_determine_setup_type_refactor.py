@@ -145,16 +145,22 @@ class TestDetermineSetupTypeRefactor:
         """
         from scp_shared.rule_engine.scoring import determine_setup_type
 
-        # DXY_CONTINUATION doesn't require structure_1h
+        # DXY_CONTINUATION doesn't require structure_1h but requires:
+        # - dxy_structure for dxy_structure_required constraint
+        # - last_structure_label for gold_structure_required constraint
+        # - bars_since_bos or htf_bos_detected for bos_confirmation_required
         features = self._create_features(
             dxy_corr=-0.7,
             is_chop=False,
             structure_clarity=0.6,
+            last_structure_label="HH",  # Gold bullish for long direction
         )
         htf_bias = self._create_htf_bias(
             structure_1h=None,  # Fails VWAP_RECLAIM
             dxy_corr_1m=-0.5,
             dxy_corr_5m=-0.4,
+            dxy_structure="LL",  # DXY bearish supports gold long
+            bars_since_bos=10,  # Recent BOS for confirmation
         )
 
         setup_type = determine_setup_type(features, htf_bias)
