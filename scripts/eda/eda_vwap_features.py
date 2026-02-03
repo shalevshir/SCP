@@ -110,7 +110,7 @@ class VWAPFeatureEDA:
         "min_vwap_acceptance": {
             "fields": ["near_vwap_count_last_20"],
             "type": "numeric",
-            "bounds": (3, None),
+            "bounds": (2, None),
         },
         "reclaim_timing_gate": {
             "fields": ["bars_since_last_vwap_touch"],
@@ -189,15 +189,21 @@ class VWAPFeatureEDA:
             if feature not in self.features_df.columns:
                 continue
 
+            null_count = int(self.features_df[feature].isna().sum())
+            total_count = len(self.features_df)
             data = self.features_df[feature].dropna()
             if len(data) == 0:
-                stats_dict[feature] = {"count": 0, "null_pct": 100.0}
+                stats_dict[feature] = {
+                    "count": 0,
+                    "null_count": null_count,
+                    "null_pct": (null_count / total_count) * 100 if total_count > 0 else 0,
+                }
                 continue
 
             stats_dict[feature] = {
                 "count": len(data),
-                "null_count": self.features_df[feature].isna().sum(),
-                "null_pct": (self.features_df[feature].isna().sum() / len(self.features_df)) * 100,
+                "null_count": null_count,
+                "null_pct": (null_count / total_count) * 100 if total_count > 0 else 0,
                 "mean": float(data.mean()),
                 "median": float(data.median()),
                 "std": float(data.std()),
@@ -333,17 +339,17 @@ class VWAPFeatureEDA:
                 passed = (data >= threshold).sum()
                 pass_rates.append(passed / len(data))
 
-            current_threshold = 3
+            current_threshold = 2
 
         elif constraint_name == "reclaim_timing_gate":
-            # Test upper bound variations (5 to 20 bars)
-            thresholds = np.arange(5, 21, 1)
+            # Test upper bound variations (5 to 30 bars)
+            thresholds = np.arange(5, 31, 1)
             pass_rates = []
             for threshold in thresholds:
                 passed = (data <= threshold).sum()
                 pass_rates.append(passed / len(data))
 
-            current_threshold = 10
+            current_threshold = 30
 
         else:
             return {}
@@ -869,7 +875,12 @@ class VWAPFeatureEDA:
 """
 
         # Threshold optimization curves
-        for constraint_name in ["vwap_reclaim_distance", "min_vwap_acceptance", "reclaim_timing_gate"]:
+        for constraint_name in [
+            "vwap_reclaim_distance",
+            "vwap_reclaim_current_distance",
+            "min_vwap_acceptance",
+            "reclaim_timing_gate",
+        ]:
             optimization = self.analyze_threshold_optimization(constraint_name)
             if optimization:
                 thresholds = np.array(optimization["thresholds"])

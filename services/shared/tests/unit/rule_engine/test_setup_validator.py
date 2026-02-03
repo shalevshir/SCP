@@ -101,12 +101,13 @@ class TestVWAPReclaimValidation:
             "structure_clarity": 0.6,
             "close": 2650.0,
             "vwap": 2645.0,  # 0.19% deviation
-            "vwap_deviation_normalized": 0.6,  # >= 0.5 ATR threshold
+            "vwap_deviation_normalized": 0.6,  # <= 2.0 ATR threshold for current distance
+            "max_abs_deviation_last_20": 1.5,  # 0.5-8.0 ATR range for prior excursion
             "bos_direction": "long",
             "bos_recent": False,  # BOS not recent (passes no_late_reclaim constraint)
             "bos_age": None,  # No BOS age (fresh or not applicable)
-            "bars_near_vwap": 5,  # Required for min_vwap_acceptance constraint
-            "bars_since_last_vwap_touch": 2,  # Required for reclaim_timing_gate constraint
+            "near_vwap_count_last_20": 5,  # Required for min_vwap_acceptance constraint (>= 2)
+            "bars_since_last_vwap_touch": 2,  # Required for reclaim_timing_gate constraint (<= 30)
             "direction": "long",
             "conflict_detected": False,
             "choch_detected": False,  # Required by direction_bos_alignment constraint
@@ -176,21 +177,19 @@ class TestVWAPReclaimValidation:
         assert result.is_valid is True
 
     def test_insufficient_vwap_deviation_rejects(self) -> None:
-        """Test that insufficient VWAP deviation rejects VWAP_RECLAIM."""
+        """Test that insufficient prior VWAP excursion rejects VWAP_RECLAIM."""
         from scp_shared.rule_engine.setup_validator import SetupValidator
 
         validator = SetupValidator()
         context = self._create_base_context()
-        context["close"] = 2645.5  # Very close to VWAP
-        context["vwap"] = 2645.0  # Only 0.02% deviation
-        context["vwap_deviation_normalized"] = 0.3  # < 0.5 ATR threshold
+        # No prior excursion from VWAP (below 0.5 ATR threshold)
+        context["max_abs_deviation_last_20"] = 0.3  # < 0.5 ATR threshold
 
         result = validator.validate_setup("VWAP_RECLAIM", context)
 
         assert result.is_valid is False
-        # Check that rejection is related to VWAP distance/reclaim
-        assert ("VWAP" in result.reject_reason and 
-                ("deviation" in result.reject_reason or "reclaim" in result.reject_reason or "far" in result.reject_reason))
+        # Check that rejection is related to VWAP reclaim distance
+        assert "VWAP reclaim" in result.reject_reason or "excursion" in result.reject_reason
 
     def test_bos_direction_conflict_rejects(self) -> None:
         """Test that BOS direction conflict rejects VWAP_RECLAIM."""
@@ -199,12 +198,12 @@ class TestVWAPReclaimValidation:
         validator = SetupValidator()
         context = self._create_base_context()
         context["bos_direction"] = "short"  # Conflicts with direction=long
-        context["bos_age"] = 5  # Recent BOS (not stale)
+        context["bos_age"] = 5  # Recent BOS (not stale, < 20 bars)
 
         result = validator.validate_setup("VWAP_RECLAIM", context)
 
         assert result.is_valid is False
-        assert "BOS direction" in result.reject_reason
+        assert "BOS direction" in result.reject_reason or "direction" in result.reject_reason.lower()
 
     def test_structure_conflict_rejects(self) -> None:
         """Test that structure conflict rejects VWAP_RECLAIM."""

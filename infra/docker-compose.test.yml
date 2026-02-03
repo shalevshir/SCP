@@ -61,6 +61,7 @@ services:
     environment:
       SERVICE_MODE: test
       DATABASE_URL: postgresql://scp_test:scp_test_password@postgres:5432/scp_test
+      WARMUP_USE_REDIS_STREAMS: "false"  # Disable warmup streams for integration tests
       LOG_LEVEL: INFO
     restart: "no"
 

@@ -253,11 +253,11 @@ async def process_feature_message(
         return record_early_rejection("kill_switch")
 
     # Check warmup period
-    #if warmup_bar_count <= warmup_bars:
-    #    logger.debug(
-    #        f"Warmup: bar {warmup_bar_count}/{warmup_bars} - skipping signal generation"
-    #    )
-    #    return record_early_rejection("warmup")
+    if warmup_bar_count <= warmup_bars:
+        logger.debug(
+            f"Warmup: bar {warmup_bar_count}/{warmup_bars} - skipping signal generation"
+        )
+        return record_early_rejection("warmup")
 
     # NOTE: Session blocking moved to execution service
     # Bot-core generates signals regardless of session, execution service decides whether to execute
