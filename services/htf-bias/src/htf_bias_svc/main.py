@@ -49,13 +49,16 @@ async def warmup_from_stream(
         True if successful, False if should fall back to database
     """
     from scp_shared.messaging.warmup_consumer import (
-        check_warmup_available,
         consume_warmup_stream,
+        wait_for_warmup_ready,
     )
 
-    # Check if warmup streams available
-    status = await check_warmup_available(redis_client)
-    if not status["available"]:
+    # Wait for warmup data to be available (replay script or data-adapter publishes it)
+    warmup_ready = await wait_for_warmup_ready(
+        redis_client,
+        timeout_seconds=config.warmup_stream_timeout_seconds,
+    )
+    if not warmup_ready:
         logger.info("Warmup streams not available - will use database fallback")
         return False
 
@@ -133,6 +136,16 @@ async def warmup_from_stream(
         bias_metrics.update_bias_metrics(last_bias.bias, mode, service)
         bias_metrics.update_htf_detail_metrics(last_bias, mode, service)
         logger.info("Updated HTF bias metrics with warmup end state")
+
+    # Signal to replay script that htf-bias has consumed warmup data
+    try:
+        await redis_client.hset(
+            "warmup:status",
+            mapping={"htf_bias_consumed": "true"},
+        )
+        logger.info("Set htf_bias_consumed marker in warmup:status")
+    except Exception as e:
+        logger.warning(f"Failed to set warmup consumed marker: {e}")
 
     return True
 
@@ -230,9 +243,9 @@ async def warmup_processor_with_fallback(
         logger.info("Warmup disabled for HTF bias processor")
         return
 
-    # Try stream warmup first (not compatible with replay mode)
-    if config.warmup_use_redis_streams and before_timestamp is None:
-        # Note: Stream warmup not compatible with replay mode (before_timestamp)
+    # Try stream warmup first (works for both live mode AND replay mode)
+    # The replay script now publishes warmup data to Redis streams before replay starts
+    if config.warmup_use_redis_streams:
         success = await warmup_from_stream(redis_client, processor, repository)
         if success:
             return
