@@ -282,6 +282,11 @@ class StreamingFeatureProcessor:
             features["atr"] = None
             features["vwap_deviation_normalized"] = None
 
+        # Update VWAP deviation history for excursion tracking (VWAP_RECLAIM constraint)
+        self.structure_tracker.update_vwap_deviation_history(
+            vwap_deviation_normalized=features.get("vwap_deviation_normalized")
+        )
+
         # === 4. RSI (incremental Wilder's smoothing for parity with backtester) ===
         features["rsi"] = self.rsi_state.update(gc_bar.close)
 
@@ -433,6 +438,14 @@ class StreamingFeatureProcessor:
         features["bars_since_last_vwap_touch"] = (
             self.structure_tracker.bars_since_last_vwap_touch
         )
+        features["near_vwap_count_last_20"] = (
+            self.structure_tracker.near_vwap_count_last_20
+        )
+
+        # === 6d. VWAP Deviation History (excursion tracking for VWAP_RECLAIM) ===
+        # Track max/min absolute deviation over last 20 bars to detect prior excursion from VWAP
+        features["max_abs_deviation_last_20"] = gc_structure_ctx.max_abs_deviation_last_20
+        features["min_abs_deviation_last_20"] = gc_structure_ctx.min_abs_deviation_last_20
 
         # === 6b. Expansion Detection (for VWAP_RECLAIM entry timing) ===
         # Detect expansion signals to determine if market is resolving from compression
@@ -470,7 +483,6 @@ class StreamingFeatureProcessor:
         features["bars_since_vwap_reclaim"] = long_conf["bars_since_reclaim"]
 
         return pd.Series(features)
-
     def is_warmed_up(self) -> bool:
         """Check if processor has enough data to produce reliable features.
 
