@@ -14,7 +14,7 @@ services:
 
   postgres:
     environment:
-      POSTGRES_DB: scp_dev
+      POSTGRES_DB: scp
       POSTGRES_USER: scp
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-scp_dev_password}
     command: 
@@ -32,7 +32,7 @@ services:
     container_name: scp-data-adapter-dev
     environment:
       SERVICE_MODE: dev
-      DATABASE_URL: postgresql://scp:${POSTGRES_PASSWORD:-scp_dev_password}@postgres:5432/scp_dev
+      DATABASE_URL: postgresql://scp:${POSTGRES_PASSWORD:-scp_dev_password}@postgres:5432/scp
       DATA_PROVIDER: mock
       MOCK_DATA_PATH: ${MOCK_DATA_PATH:-/app/data}
       SESSION_FILTER_ENABLED: "false"
@@ -43,21 +43,21 @@ services:
     container_name: scp-feature-engine-dev
     environment:
       SERVICE_MODE: dev
-      DATABASE_URL: postgresql://scp:${POSTGRES_PASSWORD:-scp_dev_password}@postgres:5432/scp_dev
+      DATABASE_URL: postgresql://scp:${POSTGRES_PASSWORD:-scp_dev_password}@postgres:5432/scp
       LOG_LEVEL: DEBUG
 
   htf-bias:
     container_name: scp-htf-bias-dev
     environment:
       SERVICE_MODE: dev
-      DATABASE_URL: postgresql://scp:${POSTGRES_PASSWORD:-scp_dev_password}@postgres:5432/scp_dev
+      DATABASE_URL: postgresql://scp:${POSTGRES_PASSWORD:-scp_dev_password}@postgres:5432/scp
       LOG_LEVEL: DEBUG
 
   bot-core:
     container_name: scp-bot-core-dev
     environment:
       SERVICE_MODE: dev
-      DATABASE_URL: postgresql://scp:${POSTGRES_PASSWORD:-scp_dev_password}@postgres:5432/scp_dev
+      DATABASE_URL: postgresql://scp:${POSTGRES_PASSWORD:-scp_dev_password}@postgres:5432/scp
       SESSION_VALIDATION_ENABLED: "false"
       LOG_LEVEL: DEBUG
 
@@ -65,7 +65,7 @@ services:
     container_name: scp-execution-dev
     environment:
       SERVICE_MODE: dev
-      DATABASE_URL: postgresql://scp:${POSTGRES_PASSWORD:-scp_dev_password}@postgres:5432/scp_dev
+      DATABASE_URL: postgresql://scp:${POSTGRES_PASSWORD:-scp_dev_password}@postgres:5432/scp
       BROKER_MODE: paper
       LOG_LEVEL: DEBUG
 

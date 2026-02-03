@@ -22,7 +22,7 @@
         "DATABASE_URL": "postgresql://scp:scp_dev_password@localhost:5432/scp",
         "LOG_LEVEL": "DEBUG",
         // Data provider selection (use "mock" for local dev without IB Gateway, "ib" for live testing)
-        "DATA_PROVIDER": "mock",
+        "DATA_PROVIDER": "ib",
         // Mock data configuration
         "MOCK_DATA_PATH": "${workspaceFolder}/data",
         // Databento configuration
@@ -39,7 +39,7 @@
         // Session filter configuration (disabled for local dev)
         "SESSION_FILTER_ENABLED": "false",
         // Gap detection configuration (disabled for local dev)
-        "GAP_BACKFILL_ENABLED": "false",
+        "GAP_BACKFILL_ENABLED": "true",
         // Reconnection configuration
         "RECONNECT_MAX_RETRIES": "10",
         "RECONNECT_BASE_DELAY": "1.0",
@@ -71,7 +71,7 @@
         "SERVICE_MODE": "dev",
         "REDIS_URL": "redis://localhost:6379",
         "DATABASE_URL": "postgresql://scp:scp_dev_password@localhost:5432/scp",
-        "ENABLE_WARMUP": "false",
+        "ENABLE_WARMUP": "true",
         "LOG_LEVEL": "DEBUG"
       },
       "console": "integratedTerminal",
@@ -286,7 +286,8 @@
       "configurations": [
         "Feature Engine Service",
         "Bot Core Service",
-        "Execution Service"
+        "Execution Service",
+        "HTF Bias Service"
       ],
       "stopAll": true,
       "presentation": {
