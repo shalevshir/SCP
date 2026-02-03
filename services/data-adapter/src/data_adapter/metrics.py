@@ -5,7 +5,16 @@ Metrics for market data integrity monitoring.
 
 from datetime import datetime
 
+from prometheus_client import Info
 from scp_shared.metrics import create_counter, create_gauge, create_histogram
+
+# IB contract info metrics (using Prometheus Info type for static labels)
+# This exposes the actual IB symbols being used for data fetching
+ib_contract_info = Info(
+    "scp_ib_contract",
+    "IB contract information for data fetching",
+    ["mode", "service", "symbol"],
+)
 
 # Market data metrics
 market_ticks_total = create_counter(

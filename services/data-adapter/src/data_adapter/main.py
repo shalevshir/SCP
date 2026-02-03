@@ -37,6 +37,58 @@ config = DataAdapterConfig()
 shutdown_event = asyncio.Event()
 
 
+def set_ib_contract_metrics(
+    inner_client: IBDataClient, mode: str, service: str
+) -> None:
+    """Set IB contract info metrics for Grafana display.
+
+    Args:
+        inner_client: IBDataClient instance with contract info
+        mode: Service mode (dev/test/replay/paper/live)
+        service: Service name (data-adapter)
+    """
+    # Get front month contract info
+    gc_month = inner_client._get_front_month("GC")
+    dx_month = inner_client._get_front_month("DX")
+
+    # Format contract symbols (e.g., GC -> GCM5 for June 2025)
+    # Month codes: F=Jan, G=Feb, H=Mar, J=Apr, K=May, M=Jun,
+    #              N=Jul, Q=Aug, U=Sep, V=Oct, X=Nov, Z=Dec
+    month_codes = {
+        1: "F",
+        2: "G",
+        3: "H",
+        4: "J",
+        5: "K",
+        6: "M",
+        7: "N",
+        8: "Q",
+        9: "U",
+        10: "V",
+        11: "X",
+        12: "Z",
+    }
+
+    gc_month_num = int(gc_month[4:6])
+    gc_year = gc_month[2:4]
+    gc_contract = f"GC{month_codes[gc_month_num]}{gc_year}"
+
+    dx_month_num = int(dx_month[4:6])
+    dx_year = dx_month[2:4]
+    dx_contract = f"DX{month_codes[dx_month_num]}{dx_year}"
+
+    logger.info(f"IB contracts: GC={gc_contract} ({gc_month}), DXY={dx_contract} ({dx_month})")
+
+    # Set metrics with contract info as labels
+    adapter_metrics.ib_contract_info.labels(
+        mode=mode, service=service, symbol="GC"
+    ).info({"contract": gc_contract, "contract_month": gc_month, "exchange": "COMEX"})
+
+    adapter_metrics.ib_contract_info.labels(
+        mode=mode, service=service, symbol="DXY"
+    ).info({"contract": dx_contract, "contract_month": dx_month, "exchange": "NYBOT"})
+
+
 def create_data_client(config: DataAdapterConfig) -> DataClientBase:
     """Create appropriate data client based on configuration.
 
@@ -58,6 +110,10 @@ def create_data_client(config: DataAdapterConfig) -> DataClientBase:
             dxy_symbol=config.ib_dxy_symbol,
             market_data_type=config.ib_market_data_type,
         )
+
+        # Set IB contract info metrics for Grafana
+        set_ib_contract_metrics(inner_client, config.service_mode, config.service_name)
+
         return ResilientIBDataClient(
             inner=inner_client,
             max_retries=config.reconnect_max_retries,
