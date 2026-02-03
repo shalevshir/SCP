@@ -441,3 +441,39 @@ class TradeMessage(BaseModel):
                 "exit_reason": "TP_HIT",
             }
         }
+
+
+class SyncAckMessage(BaseModel):
+    """Synchronization acknowledgment for backtest orchestration.
+
+    Published by: Feature Engine, HTF Bias, Bot Core
+    Consumed by: Backtest Orchestrator
+
+    Used in the Synchronous Backtesting Orchestration Protocol (SBOP) to ensure
+    deterministic backtest execution. Each service sends an ack after processing
+    each tick, allowing the orchestrator to advance only when all services have
+    completed.
+    """
+
+    service_id: str = Field(
+        description="Service identifier (e.g., 'feature-engine', 'htf-bias', 'bot-core')"
+    )
+    tick_timestamp: datetime = Field(
+        description="The candle/tick timestamp being acknowledged"
+    )
+    status: str = Field(
+        description="Completion status", pattern="^(OK|ERROR)$"
+    )
+    error_message: str | None = Field(
+        default=None, description="Error details if status=ERROR"
+    )
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "service_id": "feature-engine",
+                "tick_timestamp": "2025-01-15T10:00:00Z",
+                "status": "OK",
+                "error_message": None,
+            }
+        }
