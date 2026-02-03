@@ -869,7 +869,12 @@ class VWAPFeatureEDA:
 """
 
         # Threshold optimization curves
-        for constraint_name in ["vwap_reclaim_distance", "min_vwap_acceptance", "reclaim_timing_gate"]:
+        for constraint_name in [
+            "vwap_reclaim_distance",
+            "vwap_reclaim_current_distance",
+            "min_vwap_acceptance",
+            "reclaim_timing_gate",
+        ]:
             optimization = self.analyze_threshold_optimization(constraint_name)
             if optimization:
                 thresholds = np.array(optimization["thresholds"])
