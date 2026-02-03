@@ -88,9 +88,13 @@ async def analyze_vwap_reclaim_rejections(
             constraint_name = row["constraint_name"]
             reject_reason = row["reject_reason"]
             failure_count = row["failure_count"]
-            example_context = (
-                json.loads(row["example_context"]) if row["example_context"] else {}
-            )
+            example_context_raw = row["example_context"]
+            if example_context_raw is None:
+                example_context = {}
+            elif isinstance(example_context_raw, (str, bytes, bytearray)):
+                example_context = json.loads(example_context_raw)
+            else:
+                example_context = example_context_raw
 
             top_constraints.append(
                 {
