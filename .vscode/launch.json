@@ -194,6 +194,158 @@
       },
       "consoleName": "💹 Execution"
     },
+    // ===== BACKTEST/REPLAY MODE CONFIGURATIONS (SBOP) =====
+    {
+      "name": "[Backtest] Feature Engine",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "uvicorn",
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "args": [
+        "feature_engine_svc.main:app",
+        "--host", "0.0.0.0",
+        "--port", "8002"
+      ],
+      "cwd": "${workspaceFolder}/services/feature-engine",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/services/feature-engine/src:${workspaceFolder}/services/shared/src",
+        "SERVICE_MODE": "replay",
+        "REDIS_URL": "redis://localhost:6379",
+        "DATABASE_URL": "postgresql://scp:scp_dev_password@localhost:5432/scp",
+        // Warmup: Load historical candles from warmup stream/database to initialize indicators
+        "ENABLE_WARMUP": "true",
+        "LOG_LEVEL": "INFO"
+      },
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "presentation": {
+        "group": "backtest",
+        "order": 1
+      },
+      "consoleName": "⚙️ [BT] Feature Engine"
+    },
+    {
+      "name": "[Backtest] HTF Bias",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "uvicorn",
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "args": [
+        "htf_bias_svc.main:app",
+        "--host", "0.0.0.0",
+        "--port", "8003"
+      ],
+      "cwd": "${workspaceFolder}/services/htf-bias",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/services/htf-bias/src:${workspaceFolder}/services/shared/src",
+        "SERVICE_MODE": "replay",
+        "REDIS_URL": "redis://localhost:6379",
+        "DATABASE_URL": "postgresql://scp:scp_dev_password@localhost:5432/scp",
+        // Warmup: Load historical candles from warmup stream/database to initialize HTF bias
+        "ENABLE_WARMUP": "true",
+        "LOG_LEVEL": "INFO"
+      },
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "presentation": {
+        "group": "backtest",
+        "order": 2
+      },
+      "consoleName": "📊 [BT] HTF Bias"
+    },
+    {
+      "name": "[Backtest] Bot Core",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "uvicorn",
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "args": [
+        "bot_core_svc.main:app",
+        "--host", "0.0.0.0",
+        "--port", "8004"
+      ],
+      "cwd": "${workspaceFolder}/services/bot-core",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/services/bot-core/src:${workspaceFolder}/services/shared/src",
+        "SERVICE_MODE": "replay",
+        "REDIS_URL": "redis://localhost:6379",
+        "DATABASE_URL": "postgresql://scp:scp_dev_password@localhost:5432/scp",
+        "SESSION_CONFIG_PATH": "${workspaceFolder}/config/validation.yaml",
+        "SESSION_VALIDATION_ENABLED": "false",
+        "ENFORCER_TIER": "EarlyMild",
+        // Warmup: Skip first N bars before generating signals (allows indicators to stabilize)
+        // 60 bars = 1 hour of 1m candles
+        "WARMUP_BARS": "60",
+        "LOG_LEVEL": "INFO"
+      },
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "presentation": {
+        "group": "backtest",
+        "order": 3
+      },
+      "consoleName": "🤖 [BT] Bot Core"
+    },
+    {
+      "name": "[Backtest] Execution",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "uvicorn",
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "args": [
+        "execution_svc.main:app",
+        "--host", "0.0.0.0",
+        "--port", "8005"
+      ],
+      "cwd": "${workspaceFolder}/services/execution",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/services/execution/src:${workspaceFolder}/services/shared/src",
+        "SERVICE_MODE": "replay",
+        "REDIS_URL": "redis://localhost:6379",
+        "DATABASE_URL": "postgresql://scp:scp_dev_password@localhost:5432/scp",
+        "LOG_LEVEL": "DEBUG",
+        "BROKER_MODE": "paper",
+        "PDLL_LIMIT": "1000.0",
+        "MAX_ACTIVE_TRADES": "3",
+        "MAX_TRADES_PER_DAY": "10",
+        "SIZING_MODE": "fixed",
+        "FIXED_QUANTITY": "1",
+        "ENABLE_SLIPPAGE": "false",
+        "ENABLE_COMMISSION": "false"
+      },
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "presentation": {
+        "group": "backtest",
+        "order": 4
+      },
+      "consoleName": "💹 [BT] Execution"
+    },
+    {
+      "name": "[Backtest] Orchestrator",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/scripts/backtest_orchestrator.py",
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "args": [
+        "--start", "2024-11-05",
+        "--end", "2024-11-11",
+        "--data-dir", "${workspaceFolder}/data/gc_dx_ohlcv",
+        "--redis-url", "redis://localhost:6379"
+      ],
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}:${workspaceFolder}/services/shared/src"
+      },
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "presentation": {
+        "group": "backtest",
+        "order": 5
+      },
+      "consoleName": "🎯 [BT] Orchestrator"
+    },
+    // ===== VECTORIZED BACKTEST CONFIGURATIONS =====
     {
       "name": "Debug Backtest Viewer (Load Results)",
       "type": "debugpy",
@@ -293,6 +445,20 @@
       "presentation": {
         "group": "microservices",
         "order": 2
+      }
+    },
+    {
+      "name": "[Backtest] All Services (SBOP)",
+      "configurations": [
+        "[Backtest] Feature Engine",
+        "[Backtest] HTF Bias",
+        "[Backtest] Bot Core",
+        "[Backtest] Execution"
+      ],
+      "stopAll": true,
+      "presentation": {
+        "group": "backtest",
+        "order": 1
       }
     }
   ]
