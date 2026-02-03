@@ -54,8 +54,26 @@ async def load_features(
             f.structure_label,
             f.ema_9,
             f.ema_20,
-            f.ema_50
+            f.ema_50,
+            sh.direction
         FROM features f
+        LEFT JOIN (
+            SELECT DISTINCT ON (timestamp, symbol, timeframe)
+                timestamp,
+                symbol,
+                timeframe,
+                direction
+            FROM signal_history
+            WHERE symbol = $1
+              AND timeframe = $2
+              AND timestamp >= $3
+              AND timestamp < $4
+              AND (setup_type = 'REJECTED' OR setup_type = 'VWAP_RECLAIM')
+            ORDER BY timestamp, symbol, timeframe, was_approved DESC, created_at DESC
+        ) sh
+          ON f.timestamp = sh.timestamp
+         AND f.symbol = sh.symbol
+         AND f.timeframe = sh.timeframe
         WHERE f.symbol = $1
           AND f.timeframe = $2
           AND f.timestamp >= $3
