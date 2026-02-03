@@ -1,7 +1,7 @@
 # Force use of bash for all recipes (required for db-reset and other advanced shell features)
 SHELL := /bin/bash
 
-.PHONY: test test-unit test-verbose test-parallel test-coverage test-fast lint format check clean system-clean system-clean-yes system-clean-db system-clean-redis help install data-clean data-fetch data-resample data-resample-5m data-resample-1h infra-up infra-down infra-logs infra-ps db-migrate db-reset db-shell shared-install shared-test service-test-coverage service-test-coverage-all services-up services-down services-build services-logs services-ps paper-trading-up paper-trading-down paper-trading-logs live-trading-up live-trading-down live-trading-logs replay replay-validate compare-results validate-replay replay-clean eda-vwap
+.PHONY: test test-unit test-verbose test-parallel test-coverage test-fast lint format check clean system-clean system-clean-yes system-clean-db system-clean-redis help install data-clean data-fetch data-resample data-resample-5m data-resample-1h infra-up infra-down infra-logs infra-ps db-migrate db-reset db-shell shared-install shared-test service-test-coverage service-test-coverage-all services-up services-down services-build services-logs services-ps paper-trading-up paper-trading-down paper-trading-logs live-trading-up live-trading-down live-trading-logs replay replay-validate compare-results validate-replay replay-clean eda-vwap eda-trades
 
 help:
 	@echo "SCP Trading Bot - Development Commands"
@@ -75,6 +75,7 @@ help:
 	@echo ""
 	@echo "Analysis & Reporting:"
 	@echo "  make eda-vwap START=... END=...            Generate VWAP feature EDA report"
+	@echo "  make eda-trades START=... END=...          Generate trades EDA report"
 	@echo ""
 	@echo "Cleanup:"
 	@echo "  make clean             Remove test artifacts and caches"
@@ -633,3 +634,18 @@ eda-vwap:
 		--detect-anomalies \
 		--db-url "postgresql://scp:scp_dev_password@localhost:5432/scp"
 	@echo "Report saved to: reports/vwap_eda_$(START)_$(END).html"
+
+eda-trades:
+	@if [ -z "$(START)" ] || [ -z "$(END)" ]; then \
+		echo "Error: START and END required."; \
+		echo "Usage: make eda-trades START=2025-11-05 END=2025-11-10"; \
+		exit 1; \
+	fi
+	@echo "Generating trades EDA report..."
+	@mkdir -p reports
+	@poetry run python scripts/eda/eda_trades.py \
+		--start $(START) \
+		--end $(END) \
+		--output reports/trades_eda_$(START)_$(END).html \
+		--db-url "postgresql://scp:scp_dev_password@localhost:5432/scp"
+	@echo "Reports saved to: reports/trades_eda_$(START)_$(END).html and .json"
