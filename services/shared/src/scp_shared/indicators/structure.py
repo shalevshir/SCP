@@ -1124,6 +1124,10 @@ class StructureContextTracker:
                     label = "HH"  # Equal - default to HH
             else:
                 label = "HH"  # First swing high
+            logger.debug(
+                f"[SWING] bar={self.bar_count} | SWING HIGH detected | "
+                f"label={label}, center_high={center_high}, prev_swing_high={self.prev_swing_high}"
+            )
             self.prev_swing_high = center_high
 
         # Process swing low
@@ -1137,6 +1141,10 @@ class StructureContextTracker:
                     label = "HL"  # Equal - default to HL
             else:
                 label = "HL"  # First swing low
+            logger.debug(
+                f"[SWING] bar={self.bar_count} | SWING LOW detected | "
+                f"label={label}, center_low={center_low}, prev_swing_low={self.prev_swing_low}"
+            )
             self.prev_swing_low = center_low
 
         return label
@@ -1213,39 +1221,42 @@ class StructureContextTracker:
         return clarity
 
     def _detect_chop(self) -> bool:
-        """Detect if structure is choppy.
+        """Detect choppy structure via alternation density in recent labels.
 
-        Choppy structure = rapid consecutive alternations (H→L→H or L→H→L).
+        Chop = frequent H<->L switching in recent structure labels.
+        Uses alternation ratio instead of requiring a perfect consecutive run.
+
+        This approach catches chop regimes without falsely flagging trends:
+        - A trend like HH->HL->HH->HL->HH won't usually trip it (low alternation ratio)
+        - Chop like HH->LL->HL->LH->HH->LL will trip it (high alternation ratio)
+        - No brittle "reset to 0" artifact from old implementation
 
         Returns:
-            True if chop detected
+            True if chop detected (alternation_ratio >= 0.6)
         """
-        if len(self.label_history) < 4:
+        if len(self.label_history) < 5:
             return False
 
         valid_labels = [label for label in self.label_history if label is not None]
-        if len(valid_labels) < 4:
+        if len(valid_labels) < 5:
             return False
 
-        # Count consecutive alternations in recent labels
-        recent = valid_labels[-6:] if len(valid_labels) >= 6 else valid_labels
-        alternation_count = 0
+        # Use last 6 labels (same intent as original)
+        recent = valid_labels[-6:]
+        transitions = len(recent) - 1
+        if transitions < 4:
+            return False
 
-        for i in range(len(recent) - 1):
-            current = recent[i]
-            next_label = recent[i + 1]
+        # Count total alternations (H->L or L->H transitions)
+        alternations = 0
+        for a, b in zip(recent, recent[1:]):
+            if (a[0] == "H" and b[0] == "L") or (a[0] == "L" and b[0] == "H"):
+                alternations += 1
 
-            # Check if alternation (H→L or L→H)
-            if (current[0] == "H" and next_label[0] == "L") or (
-                current[0] == "L" and next_label[0] == "H"
-            ):
-                alternation_count += 1
-            else:
-                # Reset on continuation
-                alternation_count = 0
+        alternation_ratio = alternations / transitions
 
-        # Chop if 2+ consecutive alternations
-        return alternation_count >= 2
+        # Conservative: requires "mostly alternating" (60%+ of transitions are alternations)
+        return alternation_ratio >= 0.6
 
     def _detect_conflict(self) -> bool:
         """Detect if there are conflicting structural signals (refined logic).
@@ -1619,6 +1630,10 @@ class StructureContextTracker:
         """
         # Need at least one swing to detect BOS
         if not self.swing_high_indices and not self.swing_low_indices:
+            logger.debug(
+                f"[BOS] bar={self.bar_count} | no swings detected yet | "
+                f"swing_highs={len(self.swing_high_indices)}, swing_lows={len(self.swing_low_indices)}"
+            )
             return False
 
         # Check if breaks any PRIOR swing high (strict >)
@@ -1669,6 +1684,10 @@ class StructureContextTracker:
         if breaks_high and breaks_low:
             # Ambiguous: breaks both directions → volatility/liquidity sweep
             # Don't update BOS (return False)
+            logger.debug(
+                f"[BOS] bar={self.bar_count} | AMBIGUOUS (both dirs) | "
+                f"close={close}, highest_broken={highest_broken}, lowest_broken={lowest_broken}"
+            )
             return False
         elif breaks_high:
             # Bullish BOS detected - update tracking
@@ -1681,6 +1700,10 @@ class StructureContextTracker:
                 self.highest_broken_swing_high = max(
                     self.highest_broken_swing_high, close
                 )
+            logger.info(
+                f"[BOS] bar={self.bar_count} | BULLISH BOS DETECTED | "
+                f"close={close} broke swing high, new highest_broken={self.highest_broken_swing_high}"
+            )
             return True
         elif breaks_low:
             # Bearish BOS detected - update tracking
@@ -1691,9 +1714,19 @@ class StructureContextTracker:
                 self.lowest_broken_swing_low = close
             else:
                 self.lowest_broken_swing_low = min(self.lowest_broken_swing_low, close)
+            logger.info(
+                f"[BOS] bar={self.bar_count} | BEARISH BOS DETECTED | "
+                f"close={close} broke swing low, new lowest_broken={self.lowest_broken_swing_low}"
+            )
             return True
 
-        # No BOS
+        # No BOS - log reason for diagnostics (only periodically to avoid spam)
+        if self.bar_count % 100 == 0:  # Log every 100 bars
+            logger.debug(
+                f"[BOS] bar={self.bar_count} | NO BOS | "
+                f"close={close}, highest_broken={highest_broken}, lowest_broken={lowest_broken}, "
+                f"swing_highs={len(self.swing_high_indices)}, swing_lows={len(self.swing_low_indices)}"
+            )
         return False
 
     def _detect_sweep_event(self, high: float, low: float, close: float) -> bool:
