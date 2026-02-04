@@ -1174,6 +1174,7 @@ def build_setup_context(features: pd.Series, htf_bias: HTFBias) -> dict:
         "dxy_structure": htf_bias.dxy_structure,
         "dxy_corr_1m": htf_bias.dxy_corr_1m,
         "dxy_corr_5m": htf_bias.dxy_corr_5m,
+        "dxy_alignment": htf_bias.dxy_alignment,  # DXY alignment for DXY_CONTINUATION
         "htf_direction": htf_bias.direction,  # HTF bias direction for DXY_CONTINUATION
         "vwap_deviation_normalized": features.get("vwap_deviation_normalized"),
         "vwap_deviation": features.get("vwap_deviation"),
@@ -1184,6 +1185,15 @@ def build_setup_context(features: pd.Series, htf_bias: HTFBias) -> dict:
         # VWAP deviation history (excursion tracking for VWAP_RECLAIM)
         "max_abs_deviation_last_20": features.get("max_abs_deviation_last_20"),
         "min_abs_deviation_last_20": features.get("min_abs_deviation_last_20"),
+        # VWAP trend confirmation (from HTF bias)
+        "vwap_trend_confirmed": htf_bias.vwap_trend_confirmed,
+        # Chop detection (from HTF bias)
+        "chop_detected": htf_bias.chop_detected,
+        # Reclaim candle tracking (for clear reclaim validation)
+        "reclaim_candle_close": features.get("reclaim_candle_close"),
+        "reclaim_candle_open": features.get("reclaim_candle_open"),
+        "reclaim_candle_high": features.get("reclaim_candle_high"),
+        "reclaim_candle_low": features.get("reclaim_candle_low"),
     }
 
     return context
@@ -1231,6 +1241,8 @@ def _extract_relevant_context(context: dict, failed_constraint: str | None) -> d
         "structure_label_direction_long": ["structure_label", "direction"],
         "structure_label_direction_short": ["structure_label", "direction"],
         "vwap_reclaim_current_distance": ["vwap_deviation_normalized", "close", "vwap"],
+        "vwap_trend_confirmed_required": ["vwap_trend_confirmed"],
+        "clear_reclaim_candle": ["reclaim_candle_close"],
         # DXY_CONTINUATION constraints
         "valid_direction": ["direction"],
         "dual_correlation_required": ["dxy_corr_1m", "dxy_corr_5m"],
@@ -1242,6 +1254,7 @@ def _extract_relevant_context(context: dict, failed_constraint: str | None) -> d
         "bos_recency": ["bars_since_bos", "htf_bos_detected", "bos_age"],
         "min_clarity": ["structure_clarity"],
         "no_chop": ["is_chop"],
+        "no_chop_allowed": ["chop_detected"],
         "gold_structure_required": ["last_structure_label"],
         "gold_structure_long": ["direction", "last_structure_label"],
         "gold_structure_short": ["direction", "last_structure_label"],
