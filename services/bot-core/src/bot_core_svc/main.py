@@ -12,7 +12,7 @@ from scp_shared.alerts import AlertLevel, AlertType, send_alert
 from scp_shared.common import get_logger, mask_connection_url
 from scp_shared.database import DatabasePool
 from scp_shared.health import create_health_router
-from scp_shared.messaging import RedisStreamConsumer
+from scp_shared.messaging import RedisStreamConsumer, SyncAckPublisher
 from scp_shared.messaging.schemas import FeaturesMessage, HTFBiasMessage
 from scp_shared.metrics import create_metrics_router
 
@@ -26,6 +26,7 @@ from bot_core_svc.session import SessionValidationService
 from bot_core_svc.signal_engine import SignalEngine
 from bot_core_svc.signal_repository import SignalRepository
 from bot_core_svc.state_repository import StateRepository
+from bot_core_svc.sync_coordinator import BacktestSyncCoordinator
 
 logger = get_logger(__name__)
 
@@ -73,6 +74,12 @@ async def process_features(
     # Active trade checker - matches backtest blocking when trade active
     active_trade_checker = ActiveTradeChecker(db_pool, max_active_trades=1)
 
+    # SBOP: Sync coordinator and ack publisher for backtest orchestration
+    # Only active in "replay" mode for synchronous backtesting
+    sync_mode = "backtest" if config.service_mode == "replay" else config.service_mode
+    sync_coordinator = BacktestSyncCoordinator(redis_client, sync_mode)
+    sync_ack_publisher = SyncAckPublisher(redis_client, "bot-core", sync_mode)
+
     # Load daily state
     await guardrails_service.load_state()
 
@@ -118,6 +125,15 @@ async def process_features(
 
             # Process features
             for features_msg in features_list:
+                # SBOP: Wait for upstream services to complete (Feature Engine + HTF Bias)
+                # In backtest/replay mode, this blocks until both services ack
+                # In live mode, this returns immediately
+                try:
+                    await sync_coordinator.wait_for_data_ready(features_msg.timestamp)
+                except TimeoutError as e:
+                    logger.error(f"Sync timeout: {e}")
+                    raise
+
                 warmup_bar_count = await process_feature_message(
                     features_msg,
                     bias_cache,
@@ -130,6 +146,9 @@ async def process_features(
                     warmup_bar_count,
                     config.warmup_bars,
                 )
+
+                # SBOP: Send sync ack after processing is complete
+                await sync_ack_publisher.ack(features_msg.timestamp)
 
     except asyncio.CancelledError:
         logger.info("Feature processing cancelled")

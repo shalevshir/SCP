@@ -15,7 +15,7 @@ from scp_shared.common import get_logger, mask_connection_url
 from scp_shared.common.types import Candle
 from scp_shared.database import DatabasePool
 from scp_shared.health import create_health_router
-from scp_shared.messaging import RedisStreamConsumer, CandleFeatureSynchronizer
+from scp_shared.messaging import RedisStreamConsumer, CandleFeatureSynchronizer, SyncAckPublisher
 from scp_shared.messaging.schemas import CandleMessage, FeaturesMessage, SignalMessage
 from scp_shared.metrics import create_metrics_router, infrastructure
 
@@ -23,6 +23,7 @@ from execution_svc.broker import BaseBroker, create_broker
 from execution_svc.config import ExecutionConfig
 from execution_svc import metrics as exec_metrics
 from execution_svc.state_machine_manager import StateMachineManager
+from execution_svc.sync_coordinator import ExecutionSyncCoordinator
 from execution_svc.trade_manager import TradeManager, is_valid_candle
 from execution_svc.trade_publisher import TradePublisher
 from execution_svc.trade_repository import TradeRepository
@@ -69,7 +70,7 @@ async def process_streams(
     if broker is None:
         raise RuntimeError("Broker not initialized. This should not happen.")
     sm_manager = StateMachineManager(db_pool)
-    trade_repo = TradeRepository(db_pool)
+    trade_repo = TradeRepository(db_pool, point_value=config.point_value)
     trade_publisher = TradePublisher(redis_client)
     # HARDCODED: Force max_active_trades=1 for debugging (matching backtest)
     _max_active = 1  # config.max_active_trades
@@ -164,6 +165,26 @@ async def process_streams(
 
     logger.info("Execution Service ready - consuming signals and candles")
 
+    # SBOP: Sync ack publisher for backtest orchestration
+    # Only sends acks in "replay" mode for synchronous backtesting
+    sbop_mode = "backtest" if config.service_mode == "replay" else config.service_mode
+    sync_ack_publisher = SyncAckPublisher(
+        redis_client,
+        service_id="execution",
+        mode=sbop_mode,
+    )
+    logger.info(
+        f"SBOP: service_mode={config.service_mode}, sbop_mode={sbop_mode}, "
+        f"enabled={sync_ack_publisher.enabled}"
+    )
+
+    # SBOP: Sync coordinator to wait for bot-core before processing
+    # Ensures signals arrive before we process candles
+    sync_coordinator = ExecutionSyncCoordinator(
+        redis_client,
+        mode=sbop_mode,
+    )
+
     # Synchronizer to pair candles with their matching features by timestamp
     # CRITICAL: Use a VERY large timeout (7 days of data-time) to handle:
     # 1. High-speed replay where candles arrive in batches spanning hours
@@ -180,8 +201,16 @@ async def process_streams(
     cleanup_counter = 0
     cleanup_interval = 50  # Cleanup every 50 candles (~50 minutes)
 
+    # SBOP: Track timestamps we've acked to avoid double-acking (must persist across iterations)
+    acked_timestamps: set[datetime] = set()
+
+    loop_iteration = 0
+
     try:
         while not shutdown_event.is_set():
+            loop_iteration += 1
+            if loop_iteration == 1 or loop_iteration % 100 == 0:
+                logger.info(f"Execution loop iteration {loop_iteration}")
             # Read from all streams IN PARALLEL to avoid sequential blocking
             # Previously, each read blocked for up to 1000ms, causing ~3 second
             # delays when streams were empty. Now they run concurrently.
@@ -196,6 +225,15 @@ async def process_streams(
                     count=100, block_ms=100
                 ),  # Larger batch for replay
             )
+
+            # SBOP: Debug logging in backtest mode
+            if sync_ack_publisher.enabled:
+                if candles_list or features_list:
+                    logger.info(
+                        f"SBOP: Read {len(candles_list)} candles, {len(features_list)} features"
+                    )
+                elif loop_iteration % 50 == 0:
+                    logger.info(f"SBOP: No messages read (iteration {loop_iteration})")
 
             # Process signals (buffer for next bar execution)
             # KILL SWITCH: Skip signal processing if killed
@@ -220,6 +258,7 @@ async def process_streams(
                 all_messages.append(("candle", c))
             for f in features_list:
                 all_messages.append(("features", f))
+
             all_messages.sort(key=lambda x: x[1].timestamp)
 
             for msg_type, msg in all_messages:
@@ -229,7 +268,17 @@ async def process_streams(
                     pair = synchronizer.add_features(msg)  # type: ignore[arg-type]
 
                 if pair:
-                    await _process_candle_with_features(pair, trade_manager, sm_manager)
+                    # SBOP: Wait for bot-core to complete before processing
+                    # This ensures signals have been generated and published
+                    await sync_coordinator.wait_for_bot_core_ready(pair[0].timestamp)
+
+                    await _process_candle_with_features(pair, trade_manager, sm_manager, sync_ack_publisher)
+
+                    # SBOP: Ack AFTER processing is complete
+                    # This ensures Execution only signals completion after trade logic has executed
+                    if sync_ack_publisher.enabled and pair[0].timestamp not in acked_timestamps:
+                        await sync_ack_publisher.ack(pair[0].timestamp)
+                        acked_timestamps.add(pair[0].timestamp)
                     cleanup_counter += 1
 
             # Log synchronizer stats periodically for debugging
@@ -268,6 +317,7 @@ async def _process_candle_with_features(
     pair: tuple[CandleMessage, FeaturesMessage],
     trade_manager: TradeManager,
     sm_manager: StateMachineManager,
+    sync_ack_publisher: SyncAckPublisher | None = None,
 ) -> None:
     """Process a synchronized candle-features pair.
 
@@ -278,6 +328,7 @@ async def _process_candle_with_features(
         pair: Tuple of (candle, features) with matching timestamps
         trade_manager: Trade manager instance
         sm_manager: State machine manager instance
+        sync_ack_publisher: Optional sync ack publisher for backtest orchestration (SBOP)
     """
     global _is_killed  # noqa: PLW0603 - intentional global for kill switch
     candle_msg, features_msg = pair
@@ -335,6 +386,9 @@ async def _process_candle_with_features(
     # Now we pass the CORRECT features that match this candle's timestamp
     # Note: Invalid candle validation already handled above, so this is safe
     await trade_manager.on_candle(candle_msg, features_msg)
+
+    # NOTE: SBOP ack is now sent in the main processing loop to handle
+    # cases where features arrive before candles (ack based on features receipt)
 
 
 @asynccontextmanager

@@ -10,11 +10,16 @@ from scp_shared.messaging.schemas import (
     FeaturesMessage,
     HTFBiasMessage,
     SignalMessage,
+    SyncAckMessage,
     TradeMessage,
 )
+from scp_shared.messaging.sync_ack import (
+    SYNC_ACK_STREAM,
+    SyncAckPublisher,
+)
 from scp_shared.messaging.synchronizer import (
-    CandleSynchronizer,
     CandleFeatureSynchronizer,
+    CandleSynchronizer,
 )
 
 __all__ = [
@@ -26,7 +31,10 @@ __all__ = [
     "FeaturesMessage",
     "HTFBiasMessage",
     "SignalMessage",
+    "SyncAckMessage",
     "TradeMessage",
     "CandleSynchronizer",
     "CandleFeatureSynchronizer",
+    "SyncAckPublisher",
+    "SYNC_ACK_STREAM",
 ]
