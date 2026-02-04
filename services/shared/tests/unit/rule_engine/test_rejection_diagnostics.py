@@ -202,13 +202,15 @@ class TestRejectionDiagnostics:
                 "is_structural_chop": False,
                 "atr_compression_ratio": 1.0,
                 "structure_clarity": 0.8,
-                "bos_age": 5,
-                "bos_direction": "bullish",
-                "bos_recent": True,
+                "bos_age": 25,  # >= 20 to satisfy no_late_reclaim
+                "bos_direction": "long",  # Must match direction format
+                "bos_recent": False,  # False to avoid no_late_reclaim rejection
                 "choch_detected": False,
                 "structure_conflict_flag": False,
+                "conflict_detected": False,  # Required for no_structure_conflict
                 "liquidity_sweep": True,
                 "expansion_detected": True,
+                "near_vwap_count_last_20": 5,  # Required for min_vwap_acceptance
             }
         )
 
@@ -219,7 +221,7 @@ class TestRejectionDiagnostics:
             confidence="high",
             structure_1h="HH",  # Required for validation
             structure_clarity=0.8,
-            bars_since_bos=5,
+            bars_since_bos=25,
             liquidity_sweep_detected=True,
             bos_detected=True,
         )
