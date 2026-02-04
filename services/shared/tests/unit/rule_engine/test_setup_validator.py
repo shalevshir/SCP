@@ -191,8 +191,13 @@ class TestVWAPReclaimValidation:
         # Check that rejection is related to VWAP reclaim distance
         assert "VWAP reclaim" in result.reject_reason or "excursion" in result.reject_reason
 
-    def test_bos_direction_conflict_rejects(self) -> None:
-        """Test that BOS direction conflict rejects VWAP_RECLAIM."""
+    def test_bos_direction_conflict_allowed_with_scoring_penalty(self) -> None:
+        """Test that BOS direction conflict does NOT hard-reject VWAP_RECLAIM.
+
+        Per 2024-02 optimization: BOS direction constraints moved to SCORING-ONLY.
+        BOS = regime confirmation (score bonus), not entry timing (hard gate).
+        Scoring applies: bos_recency_bonus, late_reclaim_penalty, bos_direction_penalty.
+        """
         from scp_shared.rule_engine.setup_validator import SetupValidator
 
         validator = SetupValidator()
@@ -202,8 +207,8 @@ class TestVWAPReclaimValidation:
 
         result = validator.validate_setup("VWAP_RECLAIM", context)
 
-        assert result.is_valid is False
-        assert "BOS direction" in result.reject_reason or "direction" in result.reject_reason.lower()
+        # BOS direction conflict is now a scoring penalty, not a hard rejection
+        assert result.is_valid is True
 
     def test_structure_conflict_rejects(self) -> None:
         """Test that structure conflict rejects VWAP_RECLAIM."""

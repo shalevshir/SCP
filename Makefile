@@ -1,7 +1,7 @@
 # Force use of bash for all recipes (required for db-reset and other advanced shell features)
 SHELL := /bin/bash
 
-.PHONY: test test-unit test-verbose test-parallel test-coverage test-fast lint format check clean system-clean system-clean-yes system-clean-db system-clean-redis help install data-clean data-fetch data-resample data-resample-5m data-resample-1h infra-up infra-down infra-logs infra-ps db-migrate db-reset db-shell shared-install shared-test service-test-coverage service-test-coverage-all services-up services-down services-build services-logs services-ps paper-trading-up paper-trading-down paper-trading-logs live-trading-up live-trading-down live-trading-logs replay replay-validate compare-results validate-replay replay-clean eda-vwap eda-trades
+.PHONY: test test-unit test-verbose test-parallel test-coverage test-fast lint format check clean system-clean system-clean-yes system-clean-db system-clean-redis help install data-clean data-fetch data-resample data-resample-5m data-resample-1h infra-up infra-down infra-logs infra-ps db-migrate db-reset db-shell shared-install shared-test service-test-coverage service-test-coverage-all services-up services-down services-build services-logs services-ps paper-trading-up paper-trading-down paper-trading-logs live-trading-up live-trading-down live-trading-logs replay replay-validate compare-results validate-replay replay-clean backtest-orchestrate backtest-report backtest-full eda-vwap eda-dxy eda-trades
 
 help:
 	@echo "SCP Trading Bot - Development Commands"
@@ -63,6 +63,11 @@ help:
 	@echo "  make format            Run code formatters (black, isort)"
 	@echo "  make check             Run all checks (lint + test)"
 	@echo ""
+	@echo "Backtesting (SBOP - Synchronous Backtest Orchestration Protocol):"
+	@echo "  make backtest-full START=... END=...       🎯 Run backtest + generate report (recommended)"
+	@echo "  make backtest-orchestrate START=... END=...   Run SBOP backtest only"
+	@echo "  make backtest-report START=... END=...        Generate diagnostics report (HTML + JSON)"
+	@echo ""
 	@echo "Replay Mode & Validation:"
 	@echo "  make replay START=... END=... [SPEED=0]    Run replay from CSV (SPEED=0 is turbo, default)"
 	@echo "  make replay-validate START=... END=...     Full validation (backtest + replay + compare)"
@@ -75,6 +80,7 @@ help:
 	@echo ""
 	@echo "Analysis & Reporting:"
 	@echo "  make eda-vwap START=... END=...            Generate VWAP feature EDA report"
+	@echo "  make eda-dxy START=... END=...             Generate DXY_CONTINUATION feature EDA report"
 	@echo "  make eda-trades START=... END=...          Generate trades EDA report"
 	@echo ""
 	@echo "Cleanup:"
@@ -575,6 +581,103 @@ validate-databento:
 		--api-key "$$DATABENTO_API_KEY" \
 		--speed 0
 
+# Synchronous backtest with orchestrator (SBOP)
+backtest-orchestrate:
+	@if [ -z "$(START)" ] || [ -z "$(END)" ]; then \
+		echo "Error: START and END required."; \
+		echo "Usage: make backtest-orchestrate START=2025-11-01 END=2025-11-30 [DATA_DIR=...] [NO_WARMUP=1] [WARMUP_HOURS=24]"; \
+		echo ""; \
+		echo "Options:"; \
+		echo "  DATA_DIR=...     Custom data directory (default: data/gc_dx_ohlcv)"; \
+		echo "  REDIS_URL=...    Redis URL (default: redis://localhost:6379)"; \
+		echo "  NO_WARMUP=1      Skip warmup phase"; \
+		echo "  WARMUP_HOURS=24  Warmup lookback hours (default: 24)"; \
+		exit 1; \
+	fi
+	@echo "🚀 Running Synchronous Backtest Orchestration Protocol (SBOP)"
+	@echo "  📅 Date range: $(START) to $(END)"
+	@if [ -n "$(DATA_DIR)" ]; then \
+		echo "  📂 Data directory: $(DATA_DIR)"; \
+	fi
+	@if [ "$(NO_WARMUP)" = "1" ]; then \
+		echo "  ⚡ Warmup: DISABLED (cold start)"; \
+	else \
+		echo "  ⏳ Warmup: $(if $(WARMUP_HOURS),$(WARMUP_HOURS),24) hours lookback"; \
+	fi
+	@echo ""
+	@poetry run python scripts/backtest_orchestrator.py \
+		--start $(START) --end $(END) \
+		$(if $(DATA_DIR),--data-dir $(DATA_DIR),) \
+		$(if $(REDIS_URL),--redis-url $(REDIS_URL),) \
+		$(if $(NO_WARMUP),--no-warmup,) \
+		$(if $(WARMUP_HOURS),--warmup-lookback $(WARMUP_HOURS),)
+	@echo ""
+	@echo "✅ Backtest orchestration complete!"
+
+# Generate diagnostics report from backtest results
+backtest-report:
+	@if [ -z "$(START)" ] || [ -z "$(END)" ]; then \
+		echo "Error: START and END required."; \
+		echo "Usage: make backtest-report START=2025-11-01 END=2025-11-30 [OUTPUT=...]"; \
+		echo ""; \
+		echo "Options:"; \
+		echo "  OUTPUT=...  Output path without extension (default: reports/backtest_YYYYMMDD)"; \
+		exit 1; \
+	fi
+	@echo "📊 Generating backtest diagnostics report..."
+	@echo "  📅 Date range: $(START) to $(END)"
+	@mkdir -p reports
+	@OUTPUT_PATH=$(if $(OUTPUT),$(OUTPUT),reports/backtest_$(shell date +%Y%m%d_%H%M%S)); \
+	poetry run python scripts/generate_backtest_report.py \
+		--start $(START) \
+		--end $(END) \
+		--output $$OUTPUT_PATH; \
+	echo ""; \
+	echo "✅ Reports generated:"; \
+	echo "  📄 HTML: $$OUTPUT_PATH.html"; \
+	echo "  📋 JSON: $$OUTPUT_PATH.json"
+
+# Run backtest and generate report automatically
+backtest-full:
+	@if [ -z "$(START)" ] || [ -z "$(END)" ]; then \
+		echo "Error: START and END required."; \
+		echo "Usage: make backtest-full START=2025-11-01 END=2025-11-30 [OPTIONS...]"; \
+		echo ""; \
+		echo "This target runs:"; \
+		echo "  1. Backtest orchestration (SBOP)"; \
+		echo "  2. Diagnostics report generation (HTML + JSON)"; \
+		echo ""; \
+		echo "Options:"; \
+		echo "  DATA_DIR=...     Custom data directory"; \
+		echo "  NO_WARMUP=1      Skip warmup phase"; \
+		echo "  WARMUP_HOURS=24  Warmup lookback hours"; \
+		echo "  OUTPUT=...       Report output path without extension"; \
+		exit 1; \
+	fi
+	@echo "═══════════════════════════════════════════════════════════════════════════════════════════════════════════"
+	@echo "  🎯 FULL BACKTEST WORKFLOW"
+	@echo "═══════════════════════════════════════════════════════════════════════════════════════════════════════════"
+	@echo "  📅 Period: $(START) → $(END)"
+	@echo "  🔄 Phase 1: Backtest Orchestration (SBOP)"
+	@echo "  📊 Phase 2: Diagnostics Report Generation"
+	@echo "═══════════════════════════════════════════════════════════════════════════════════════════════════════════"
+	@echo ""
+	@$(MAKE) backtest-orchestrate START=$(START) END=$(END) \
+		$(if $(DATA_DIR),DATA_DIR=$(DATA_DIR),) \
+		$(if $(NO_WARMUP),NO_WARMUP=$(NO_WARMUP),) \
+		$(if $(WARMUP_HOURS),WARMUP_HOURS=$(WARMUP_HOURS),)
+	@echo ""
+	@echo "═══════════════════════════════════════════════════════════════════════════════════════════════════════════"
+	@echo "  Phase 1 Complete ✅ | Starting Phase 2..."
+	@echo "═══════════════════════════════════════════════════════════════════════════════════════════════════════════"
+	@echo ""
+	@$(MAKE) backtest-report START=$(START) END=$(END) \
+		$(if $(OUTPUT),OUTPUT=$(OUTPUT),)
+	@echo ""
+	@echo "═══════════════════════════════════════════════════════════════════════════════════════════════════════════"
+	@echo "  ✅ FULL BACKTEST WORKFLOW COMPLETE"
+	@echo "═══════════════════════════════════════════════════════════════════════════════════════════════════════════"
+
 replay-clean:
 	@echo "Cleaning replay artifacts..."
 	@echo "Warning: This will clear Redis streams and database trades!"
@@ -634,6 +737,22 @@ eda-vwap:
 		--detect-anomalies \
 		--db-url "postgresql://scp:scp_dev_password@localhost:5432/scp"
 	@echo "Report saved to: reports/vwap_eda_$(START)_$(END).html"
+
+eda-dxy:
+	@if [ -z "$(START)" ] || [ -z "$(END)" ]; then \
+		echo "Error: START and END required."; \
+		echo "Usage: make eda-dxy START=2025-11-05 END=2025-11-10"; \
+		exit 1; \
+	fi
+	@echo "Generating DXY_CONTINUATION feature EDA report..."
+	@mkdir -p reports
+	@poetry run python scripts/eda/eda_dxy_features.py \
+		--start $(START) \
+		--end $(END) \
+		--output reports/dxy_eda_$(START)_$(END).html \
+		--detect-anomalies \
+		--db-url "postgresql://scp:scp_dev_password@localhost:5432/scp"
+	@echo "Report saved to: reports/dxy_eda_$(START)_$(END).html"
 
 eda-trades:
 	@if [ -z "$(START)" ] || [ -z "$(END)" ]; then \

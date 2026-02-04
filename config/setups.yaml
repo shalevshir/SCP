@@ -41,21 +41,15 @@ setups:
         expression: "vwap_deviation_normalized is None or abs(vwap_deviation_normalized) <= 3.0"
         reject_reason: "VWAP reclaim invalid - currently too far from VWAP (must be within 3.0 ATR)"
 
-      no_late_reclaim:
-        expression: "bos_recent is not True or (bos_age is not None and bos_age >= 20)"
-        reject_reason: "Late VWAP reclaim - structure still expanding"
-
-      bos_reclaim_gate:
-        # Stricter BOS direction check for VWAP_RECLAIM (no permissive fallbacks)
-        # Requires: BOS matches direction, OR no BOS exists, OR BOS old enough (>=20) to ignore
-        expression: "bos_direction is None or bos_direction == direction or (bos_age is not None and bos_age >= 20)"
-        reject_reason: "BOS direction conflicts with VWAP reclaim direction"
-
-      direction_bos_alignment:
-        # Allow through if: no BOS, BOS matches direction, neutral direction, stale BOS (>15 bars), or CHoCH overrides
-        # Stale BOS (>15 bars old) is not relevant to current setup and shouldn't cause rejection
-        expression: "bos_direction is None or bos_direction == direction or direction == 'neutral' or (bos_age is not None and bos_age > 15) or (direction == 'long' and choch_detected and choch_direction == 'long') or (direction == 'short' and choch_detected and choch_direction == 'short')"
-        reject_reason: "Recent BOS direction conflicts with trade direction"
+      # NOTE: BOS constraints moved to SCORING-ONLY (2024-02 optimization)
+      # BOS = regime confirmation (score bonus), not entry timing (hard gate)
+      # EDA showed bos_age mean of 542 bars - BOS too stale to be a reliable hard gate
+      # Scoring handles: bos_recency_bonus, late_reclaim_penalty, bos_direction_penalty
+      #
+      # REMOVED hard gates:
+      # - no_late_reclaim: "bos_recent is not True or bos_age >= 20"
+      # - bos_reclaim_gate: "bos_direction == direction or bos_age >= 20"
+      # - direction_bos_alignment: "bos_direction == direction or bos_age > 15 or CHoCH override"
 
       no_structure_conflict:
         expression: "not conflict_detected"
@@ -170,83 +164,121 @@ setups:
   # ============================================================================
   DXY_CONTINUATION:
     enabled: true
-    min_score: 8.0
+    min_score: 7.5  # Lowered from 8.0 to allow more setups with score-based filtering
 
-    # SOP-HARD constraints: Capital Protection > Setup Frequency
+    # HARD CONSTRAINTS (Non-negotiable - structural validity only)
     constraints:
       valid_direction:
         expression: "direction in ('long', 'short')"
         reject_reason: "Invalid direction for continuation"
 
-      # HARD: Require BOTH 1m and 5m correlations present and below threshold
-      dual_correlation_required:
-        expression: "dxy_corr_1m is not None and dxy_corr_5m is not None"
-        reject_reason: "Missing DXY correlation data (both 1m and 5m required)"
-
-      dual_correlation_strength:
-        expression: "dxy_corr_1m < -0.3 and dxy_corr_5m < -0.3"
-        reject_reason: "DXY correlation too weak (both 1m and 5m must be < -0.3)"
-
-      # HARD: Require dxy_structure present (no None fallback)
-      dxy_structure_required:
-        expression: "dxy_structure is not None"
-        reject_reason: "DXY structure missing - cannot validate inverse correlation"
-
-      dxy_structure_supports_long:
-        expression: "direction != 'long' or dxy_structure in ('LL', 'LH')"
-        reject_reason: "DXY structure doesn't support long (need LL/LH)"
-
-      dxy_structure_supports_short:
-        expression: "direction != 'short' or dxy_structure in ('HH', 'HL')"
-        reject_reason: "DXY structure doesn't support short (need HH/HL)"
-
-      # HARD: Require BOS confirmation present (no None fallback)
-      bos_confirmation_required:
-        expression: "bars_since_bos is not None or htf_bos_detected"
-        reject_reason: "No BOS confirmation available - structure unconfirmed"
-
-      bos_recency:
-        expression: "bars_since_bos is None or bars_since_bos <= 15 or htf_bos_detected"
-        reject_reason: "BOS too old for continuation (must be within 15 bars or HTF BOS)"
-
-      min_clarity:
-        expression: "structure_clarity >= 0.5"
-        reject_reason: "Structure clarity too low for continuation"
-
-      no_chop:
-        expression: "not is_chop"
-        reject_reason: "Market in chop condition"
-
-      # HARD: Require gold structure present (no None fallback)
+      # HARD: Gold structure must be present and aligned with direction
       gold_structure_required:
         expression: "last_structure_label is not None"
         reject_reason: "Gold structure missing - cannot validate direction alignment"
 
       gold_structure_long:
         expression: "direction != 'long' or last_structure_label in ('HH', 'HL')"
-        reject_reason: "Gold structure contradicts long direction"
+        reject_reason: "Gold structure contradicts long direction (need HH/HL, got {last_structure_label})"
 
       gold_structure_short:
         expression: "direction != 'short' or last_structure_label in ('LH', 'LL')"
-        reject_reason: "Gold structure contradicts short direction"
+        reject_reason: "Gold structure contradicts short direction (need LH/LL, got {last_structure_label})"
+
+      # HARD: Reject if DXY correlation is POSITIVE (contradictory to inverse relationship)
+      # Soft threshold handled in scoring, but hard reject positive correlation
+      no_positive_dxy_correlation:
+        expression: "(dxy_corr_1m is None or dxy_corr_1m < 0.1) and (dxy_corr_5m is None or dxy_corr_5m < 0.1)"
+        reject_reason: "DXY correlation is positive - contradicts inverse relationship (1m: {dxy_corr_1m}, 5m: {dxy_corr_5m})"
+
+      # NOTE: DXY structure alignment moved to SCORING-ONLY (dxy_structure_bonus)
+      # Per Enforced Correction: DXY structure label should not be a hard gate
+      # Rationale: In continuation, DXY often ranges/pauses while gold trends
+
+      # HARD: Wick-chop / fakeout chop (not general pause/consolidation)
+      # Redefined: reject if heavy wick chop (wicks dominate body, suggesting indecision)
+      no_wick_chop:
+        expression: "not is_chop or (body is not None and lower_wick is not None and upper_wick is not None and (lower_wick + upper_wick) / max(body, 0.1) < 3.0)"
+        reject_reason: "Wick-chop detected - excessive wicks indicate fakeout regime"
+
+      # HTF bias alignment (if available - allow None to pass, penalize in scoring)
+      # HARD reject only if HTF bias exists AND contradicts direction
+      no_contradicting_htf_bias:
+        expression: "htf_direction is None or htf_direction == direction or htf_direction == 'neutral'"
+        reject_reason: "HTF bias contradicts direction (htf: {htf_direction}, direction: {direction})"
+
+    # SOFT CONSTRAINTS (Score-based - handled in scoring factors, not hard rejection)
+    # Per Enforced Correction from dxy_continuation_config_review_insights.md:
+    # - dxy_structure_bonus: Bonus if DXY structure aligned (was hard constraint)
+    # - dual_correlation_strength: Score bonus for strong correlation (< -0.3)
+    # - bos_recency: Bonus if BOS within 15 bars
+    # - min_clarity: Bonus if clarity >= 0.5
 
     weights:
-      structure_alignment: 2.5
-      dxy_corr: 3.0
-      rsi_mid_reset: 1.5
-      vwap_relation: 1.5
-      ema_stack: 1.0
-      fvg_alignment: 0.5
+      structure_alignment: 2.5   # Gold structure quality + HTF alignment
+      dxy_corr: 3.5              # Increased - primary edge for this setup
+      dxy_structure_bonus: 1.0   # NEW - bonus for aligned DXY structure (was hard constraint)
+      bos_recency_bonus: 1.0     # Bonus for fresh BOS (scoring-only)
+      clarity_bonus: 1.0         # Bonus for high clarity (scoring-only)
+      rsi_mid_reset: 1.0         # RSI returning to midline (50)
+      vwap_relation: 1.0         # Position relative to VWAP
+      ema_stack: 0.5             # EMA alignment
+      fvg_alignment: 0.5         # FVG present and aligned
 
     params:
-      correlation_threshold: -0.6
-      dual_correlation_threshold: -0.3
-      bos_threshold: 15
-      displacement_threshold: 1.2
-      clarity_threshold: 0.5
+      # Correlation scoring thresholds
+      correlation_strong: -0.5      # Score 1.0 if both < -0.5
+      correlation_moderate: -0.3    # Score 0.6 if both < -0.3
+      correlation_weak: -0.15       # Score 0.3 if both < -0.15
 
-# Global confidence thresholds (same as scoring_config.yaml)
+      # BOS recency scoring
+      bos_fresh_threshold: 10       # Full bonus if BOS within 10 bars
+      bos_recent_threshold: 20      # Partial bonus if BOS within 20 bars
+
+      # Clarity scoring
+      clarity_excellent: 0.7        # Full bonus
+      clarity_good: 0.5             # Partial bonus
+      clarity_acceptable: 0.3       # Minimal bonus
+
+      # Wick-chop detection
+      wick_body_ratio_threshold: 3.0  # Reject if total_wick/body > 3.0
+
+# Global confidence thresholds
 confidence:
-  a_plus: 8.0
-  watch: 6.0
-  reject: 0.0
+  a_plus: 7.8      # Score >= 7.5 -> A+ (tradeable) - LOWERED FROM 8.0
+  watch: 6.0       # Score 6.0-7.4 -> Watch (monitor only)
+  reject: 0.0      # Score < 6.0 -> Reject (invalid)
+
+# VWAP_RECLAIM expansion gate configuration
+# Controls entry timing by requiring expansion signals before execution
+vwap_reclaim:
+  expansion_gate:
+    bos_recency_threshold: 10      # bars - BOS must be within this for full readiness
+    range_expansion_ratio: 1.5     # current range vs median - signals volatility expansion
+    atr_expansion_threshold: 0.7   # ATR ratio must exceed this - signals rising volatility
+    displacement_body_ratio: 2.0   # body vs average body - signals strong momentum
+
+# SOP validation requirements
+validation:
+  # DXY correlation threshold for Gold trades
+  dxy_corr_threshold: -0.6  # Must be < -0.6 for valid inverse correlation
+
+  # Multi-window DXY correlation weights
+  # Used for enhanced correlation analysis across multiple timeframes
+  # Weights must sum to 1.0
+  dxy_multiwindow_weights:
+    15min: 0.5   # Short-term correlation (recent relationship)
+    30min: 0.3   # Medium-term correlation
+    60min: 0.2   # Long-term correlation (macro trend)
+
+  # Session definitions (used for session validation)
+  sessions:
+    asia: { start: "00:00", end: "08:00" }
+    london: { start: "03:00", end: "12:00" }
+    ny: { start: "08:00", end: "17:00" }
+
+  # Tier-based risk management
+  tiers:
+    Conservative: { max_risk_per_trade: 0.01, max_daily_drawdown: 0.02 }
+    Moderate: { max_risk_per_trade: 0.015, max_daily_drawdown: 0.03 }
+    Aggressive: { max_risk_per_trade: 0.02, max_daily_drawdown: 0.04 }

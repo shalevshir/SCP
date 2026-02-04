@@ -110,18 +110,18 @@ def _detect_directional_progress(
 
 def detect_dxy_chop(
     dxy_df: pd.DataFrame,
-    wick_threshold: float = 1.0,
-    min_chop_candles: int = 3,
-    range_multiplier: float = 1.5,
+    wick_threshold: float = 0.8,
+    min_chop_candles: int = 2,
+    range_multiplier: float = 2.0,
     atr_length: int = 14,
 ) -> pd.Series:
     """Detect DXY chop (ranging) conditions - SOP compliant.
 
     Args:
         dxy_df: DataFrame with DXY OHLC data
-        wick_threshold: Minimum wick-to-body ratio to consider indecision (default 1.0)
-        min_chop_candles: Consecutive chop candles needed to trigger
-        range_multiplier: Range must be < ATR * multiplier to be range-bound (default 1.5)
+        wick_threshold: Minimum wick-to-body ratio to consider indecision (default 0.8, relaxed from 1.0)
+        min_chop_candles: Consecutive chop candles needed to trigger (default 2, relaxed from 3)
+        range_multiplier: Range must be < ATR * multiplier to be range-bound (default 2.0, relaxed from 1.5)
         atr_length: ATR calculation period (default 14)
 
     Returns:

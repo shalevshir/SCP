@@ -112,8 +112,8 @@ async def process_features(
     try:
         while not shutdown_event.is_set():
             # Read from both streams
-            features_list = await features_consumer.read(count=10, block_ms=1000)
-            bias_list = await bias_consumer.read(count=10, block_ms=1000)
+            features_list = await features_consumer.read(count=10, block_ms=50)
+            bias_list = await bias_consumer.read(count=10, block_ms=50)
 
             # Update bias cache
             for bias_msg in bias_list:
@@ -128,11 +128,16 @@ async def process_features(
                 # SBOP: Wait for upstream services to complete (Feature Engine + HTF Bias)
                 # In backtest/replay mode, this blocks until both services ack
                 # In live mode, this returns immediately
+                import time
+                t_wait_start = time.perf_counter()
                 try:
                     await sync_coordinator.wait_for_data_ready(features_msg.timestamp)
                 except TimeoutError as e:
                     logger.error(f"Sync timeout: {e}")
                     raise
+                t_wait_end = time.perf_counter()
+                wait_time_ms = (t_wait_end - t_wait_start) * 1000
+                logger.info(f"[SBOP WAIT] {features_msg.timestamp} | Wait: {wait_time_ms:.2f}ms")
 
                 warmup_bar_count = await process_feature_message(
                     features_msg,
@@ -152,6 +157,13 @@ async def process_features(
 
     except asyncio.CancelledError:
         logger.info("Feature processing cancelled")
+        # Log cache stats on shutdown
+        stats = active_trade_checker.get_cache_stats()
+        logger.info(
+            f"ActiveTradeChecker stats: {stats['cache_hits']} hits, "
+            f"{stats['cache_misses']} misses, "
+            f"{stats['hit_rate']:.1%} hit rate"
+        )
         raise
     except Exception as e:
         logger.error(f"Error in feature processing loop: {e}", exc_info=True)
@@ -198,6 +210,9 @@ async def process_feature_message(
     Returns:
         Updated warmup_bar_count
     """
+    import time
+    t_start = time.perf_counter()
+
     global _is_killed
 
     # Get metric labels
@@ -228,9 +243,12 @@ async def process_feature_message(
         is_session_tradeable,
     )
 
+    t1 = time.perf_counter()
     session_result = session_service.evaluate(features.timestamp)
     current_session = get_current_session(features.timestamp)
     tradeable = is_session_tradeable(current_session)
+    t2 = time.perf_counter()
+    time_session = (t2 - t1) * 1000  # ms
 
     # METRIC: Update session metrics for trader dashboard
     session_valid_value = 1.0 if session_result.session_ok else 0.0
@@ -263,7 +281,11 @@ async def process_feature_message(
     # Bot-core generates signals regardless of session, execution service decides whether to execute
 
     # 2. Check guardrails
+    t3 = time.perf_counter()
     guardrail_result = guardrails_service.evaluate(session_result.constraints)
+    t4 = time.perf_counter()
+    time_guardrails = (t4 - t3) * 1000  # ms
+
     if not guardrail_result.allowed:
         logger.debug(
             f"Guardrails blocked at {features.timestamp}: {guardrail_result.reasons}"
@@ -280,7 +302,11 @@ async def process_feature_message(
 
     # 2.6. CRITICAL: Check if active trade exists (matches backtest)
     # Backtest blocks signal generation when active trades >= max_concurrent
+    t5 = time.perf_counter()
     can_trade, active_count = await active_trade_checker.can_take_new_trade()
+    t6 = time.perf_counter()
+    time_active_trade_check = (t6 - t5) * 1000  # ms
+
     if not can_trade:
         logger.debug(
             f"Signal blocked at {features.timestamp}: "
@@ -291,7 +317,10 @@ async def process_feature_message(
     # 3. Get bias for this feature's timestamp (critical for replay mode)
     # Uses timestamp-aware lookup to ensure features are evaluated with
     # the correct historical bias, not a future bias that arrived earlier
+    t7 = time.perf_counter()
     bias = bias_cache.get_for_timestamp_or_default(features.timestamp)
+    t8 = time.perf_counter()
+    time_bias_lookup = (t8 - t7) * 1000  # ms
 
     # 4. Build context
     context = {
@@ -300,11 +329,15 @@ async def process_feature_message(
     }
 
     # 5. Generate signal (with timing)
+    t9 = time.perf_counter()
     timer = core_metrics.signal_generation_seconds.labels(mode=mode, service=service)
     with timer.time():
         result = signal_engine.generate(features, bias, context)
+    t10 = time.perf_counter()
+    time_signal_gen = (t10 - t9) * 1000  # ms
 
     # 6. Save ALL signals (approved and rejected) to signal_history
+    t11 = time.perf_counter()
     try:
         await signal_repository.save_signal(
             signal=result.raw_signal,
@@ -317,10 +350,15 @@ async def process_feature_message(
     except Exception as e:
         # Log error but don't block signal publication
         logger.error(f"Failed to save signal to history: {e}", exc_info=True)
+    t12 = time.perf_counter()
+    time_db_save = (t12 - t11) * 1000  # ms
 
     # 7. Publish A+ signals
+    t13 = time.perf_counter()
     if result.signal_msg is not None:
         await signal_publisher.publish(result.signal_msg)
+        t14 = time.perf_counter()
+        time_publish = (t14 - t13) * 1000  # ms
 
         # METRIC: Track signal generated
         core_metrics.signals_generated_total.labels(
@@ -339,6 +377,7 @@ async def process_feature_message(
         )
 
     else:
+        time_publish = 0.0
         # Signal was rejected - record the specific reason
         # rejection_reason: htf_validity, confidence_filter, neutral, tp_val
         if result.rejection_reason:
@@ -367,6 +406,21 @@ async def process_feature_message(
         htf_bias=bias,
         mode=mode,
         service=service,
+    )
+
+    # Log detailed timing breakdown
+    t_end = time.perf_counter()
+    time_total = (t_end - t_start) * 1000  # ms
+    logger.info(
+        f"[TIMING] {features.timestamp} | "
+        f"Total: {time_total:.2f}ms | "
+        f"Session: {time_session:.2f}ms | "
+        f"Guards: {time_guardrails:.2f}ms | "
+        f"ActiveCheck: {time_active_trade_check:.2f}ms | "
+        f"BiasLookup: {time_bias_lookup:.2f}ms | "
+        f"SignalGen: {time_signal_gen:.2f}ms | "
+        f"DBSave: {time_db_save:.2f}ms | "
+        f"Publish: {time_publish:.2f}ms"
     )
 
     return warmup_bar_count

@@ -40,9 +40,10 @@ class TestDXYChopSOPCompliance:
         sig = inspect.signature(detect_dxy_chop)
         default_threshold = sig.parameters["wick_threshold"].default
 
+        # Relaxed from 1.0 to 0.8 (2024-02 optimization) to catch more wick-chop conditions
         assert (
-            default_threshold == 1.0
-        ), f"Default wick_threshold should be 1.0 (SOP), got {default_threshold}"
+            default_threshold == 0.8
+        ), f"Default wick_threshold should be 0.8 (relaxed SOP), got {default_threshold}"
 
     def test_trending_with_pullback_wicks_not_chop(self) -> None:
         """Test that trending data with pullback wicks is NOT flagged as chop.

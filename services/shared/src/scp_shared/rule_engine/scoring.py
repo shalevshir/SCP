@@ -10,6 +10,7 @@ import pandas as pd
 
 from scp_shared.common.logger import get_logger
 from scp_shared.rule_engine.config_loader import load_scoring_config
+from scp_shared.rule_engine.setup_validator import load_setups_config
 from scp_shared.rule_engine.htf.types import ChopSeverity, HTFBias
 from scp_shared.rule_engine.htf.validation import (
     adjust_score_with_htf,
@@ -383,6 +384,81 @@ def calculate_late_reclaim_penalty(
         logger.info(f"Late reclaim penalty total: {total_penalty:.2f}")
 
     return total_penalty
+
+
+def calculate_bos_direction_penalty(
+    features: pd.Series,
+    htf_bias: HTFBias,
+    setup_type: str,
+) -> float:
+    """Calculate penalty for BOS direction conflict with trade direction.
+
+    Moved from hard constraint to scoring penalty (2024-02 optimization).
+    BOS = regime confirmation (score bonus), not entry timing (hard gate).
+
+    Penalty structure:
+    - BOS direction matches trade direction: No penalty
+    - No BOS detected or BOS age >= 20: No penalty (stale/irrelevant)
+    - Recent BOS conflicts with direction: -1.5 penalty
+    - Older BOS (15-20 bars) conflicts: -0.75 penalty
+    - CHoCH overrides conflicting BOS: No penalty (structure shift)
+
+    Args:
+        features: Feature data including bos_direction, bos_age, direction
+        htf_bias: HTFBias object
+        setup_type: Setup type string
+
+    Returns:
+        Negative penalty value or 0.0
+    """
+    # Only applies to VWAP_RECLAIM (DXY_CONTINUATION has different BOS handling)
+    if setup_type != "VWAP_RECLAIM":
+        return 0.0
+
+    direction = features.get("direction")
+    bos_direction = features.get("bos_direction")
+    bos_age = features.get("bos_age")
+    if bos_age is None or pd.isna(bos_age):
+        bos_age = htf_bias.bars_since_bos if htf_bias else None
+
+    # No BOS direction - no penalty
+    if bos_direction is None:
+        return 0.0
+
+    # Stale BOS (>= 20 bars) - irrelevant, no penalty
+    if bos_age is not None and bos_age >= 20:
+        return 0.0
+
+    # BOS direction matches trade direction - no penalty
+    if bos_direction == direction:
+        return 0.0
+
+    # Check for CHoCH override (structure shift can override BOS conflict)
+    choch_detected = features.get("choch_detected", False)
+    choch_direction = features.get("choch_direction")
+    if choch_detected and choch_direction == direction:
+        logger.debug(
+            f"BOS direction conflict ({bos_direction} vs {direction}) "
+            f"overridden by CHoCH in {direction} direction"
+        )
+        return 0.0
+
+    # BOS conflicts with direction - apply penalty based on age
+    if bos_age is not None and 15 <= bos_age < 20:
+        penalty = -0.75
+        logger.debug(
+            f"BOS direction penalty {penalty} (BOS={bos_direction} vs direction={direction}, "
+            f"age={bos_age} is aging)"
+        )
+    else:
+        # Recent BOS (< 15 bars) or no age info - full penalty
+        penalty = -1.5
+        logger.debug(
+            f"BOS direction penalty {penalty} (BOS={bos_direction} vs direction={direction}, "
+            f"age={bos_age} is recent)"
+        )
+
+    return penalty
 
 
 def calculate_location_multiplier(
@@ -783,6 +859,15 @@ def score_signal(features: pd.Series, htf_bias: HTFBias, context: dict) -> Signa
         base_score += late_reclaim_penalty
         logger.debug(f"Applied late reclaim penalty: {late_reclaim_penalty:.2f}")
 
+    # Apply BOS direction penalty (moved from hard constraint to scoring, 2024-02)
+    bos_direction_penalty = calculate_bos_direction_penalty(
+        features, htf_bias, setup_type
+    )
+    if bos_direction_penalty != 0.0:
+        factor_scores["bos_direction_penalty"] = bos_direction_penalty
+        base_score += bos_direction_penalty
+        logger.debug(f"Applied BOS direction penalty: {bos_direction_penalty:.2f}")
+
     # Apply structure quality penalty (quality issues that were previously hard rejections)
     # Extract quality_flags from context validation if VWAP_RECLAIM
     quality_flags = None
@@ -1089,6 +1174,7 @@ def build_setup_context(features: pd.Series, htf_bias: HTFBias) -> dict:
         "dxy_structure": htf_bias.dxy_structure,
         "dxy_corr_1m": htf_bias.dxy_corr_1m,
         "dxy_corr_5m": htf_bias.dxy_corr_5m,
+        "htf_direction": htf_bias.direction,  # HTF bias direction for DXY_CONTINUATION
         "vwap_deviation_normalized": features.get("vwap_deviation_normalized"),
         "vwap_deviation": features.get("vwap_deviation"),
         # VWAP acceptance tracking fields (SOP alignment)
@@ -1118,6 +1204,7 @@ def _extract_relevant_context(context: dict, failed_constraint: str | None) -> d
 
     # Map constraints to their relevant context keys for debugging
     relevant_fields_map = {
+        # VWAP_RECLAIM constraints
         "structure_1h_available": ["structure_1h"],
         "htf_structure_integrity": ["structure_1h", "direction"],
         "structure_label_available": ["structure_label"],
@@ -1143,6 +1230,21 @@ def _extract_relevant_context(context: dict, failed_constraint: str | None) -> d
         "reclaim_timing_gate": ["bars_since_last_vwap_touch"],
         "structure_label_direction_long": ["structure_label", "direction"],
         "structure_label_direction_short": ["structure_label", "direction"],
+        "vwap_reclaim_current_distance": ["vwap_deviation_normalized", "close", "vwap"],
+        # DXY_CONTINUATION constraints
+        "valid_direction": ["direction"],
+        "dual_correlation_required": ["dxy_corr_1m", "dxy_corr_5m"],
+        "dual_correlation_strength": ["dxy_corr_1m", "dxy_corr_5m", "direction"],
+        "dxy_structure_required": ["dxy_structure"],
+        "dxy_structure_supports_long": ["direction", "dxy_structure"],
+        "dxy_structure_supports_short": ["direction", "dxy_structure"],
+        "bos_confirmation_required": ["bars_since_bos", "htf_bos_detected"],
+        "bos_recency": ["bars_since_bos", "htf_bos_detected", "bos_age"],
+        "min_clarity": ["structure_clarity"],
+        "no_chop": ["is_chop"],
+        "gold_structure_required": ["last_structure_label"],
+        "gold_structure_long": ["direction", "last_structure_label"],
+        "gold_structure_short": ["direction", "last_structure_label"],
     }
 
     # Get relevant fields for this constraint, default to empty list
@@ -1231,7 +1333,26 @@ def determine_setup_type(
             logger.debug("Setup detected: DXY_CONTINUATION")
             return "DXY_CONTINUATION"
         else:
-            logger.debug(f"DXY_CONTINUATION rejected: {result.reject_reason}")
+            # ENHANCED: Log detailed rejection with constraint values
+            failed_constraint = result.failed_constraint
+            reject_reason = result.reject_reason
+
+            # Extract relevant context values for debugging
+            relevant_context = _extract_relevant_context(context, failed_constraint)
+
+            logger.info(
+                f"DXY_CONTINUATION constraint '{failed_constraint}' failed: "
+                f"{reject_reason} | Context: {relevant_context}"
+            )
+
+            # Save to diagnostics for database persistence
+            if diagnostics is not None:
+                diagnostics["dxy_continuation_validation"] = {
+                    "failed_constraint": failed_constraint,
+                    "reject_reason": reject_reason,
+                    "evaluated_constraints": result.evaluated_constraints,
+                    "context_snapshot": relevant_context,
+                }
 
     # No valid setup detected
     logger.debug("No valid setup detected - all setups rejected")
@@ -1283,10 +1404,42 @@ def calculate_factor_scores(
             features, htf_bias, weights["ema_stack"]
         )
 
-    # DXY correlation
+    # DXY correlation (legacy single-value or enhanced dual-correlation for DXY_CONTINUATION)
     if "dxy_corr" in weights:
-        scores["dxy_corr"] = calculate_dxy_correlation(
-            features, htf_bias, weights["dxy_corr"]
+        # Use enhanced scoring for DXY_CONTINUATION if config available
+        if setup_type == "DXY_CONTINUATION":
+            config = load_setups_config()
+            setup_config = config.get("setups", {}).get("DXY_CONTINUATION", {})
+            scores["dxy_corr"] = calculate_dxy_correlation_enhanced(
+                features, htf_bias, weights["dxy_corr"], setup_config
+            )
+        else:
+            scores["dxy_corr"] = calculate_dxy_correlation(
+                features, htf_bias, weights["dxy_corr"]
+            )
+
+    # BOS recency bonus (DXY_CONTINUATION specific)
+    if "bos_recency_bonus" in weights:
+        config = load_setups_config()
+        setup_config = config.get("setups", {}).get(setup_type, {})
+        scores["bos_recency_bonus"] = calculate_bos_recency_bonus(
+            features, htf_bias, weights["bos_recency_bonus"], setup_config
+        )
+
+    # Clarity bonus (soft constraint converted to scoring)
+    if "clarity_bonus" in weights:
+        config = load_setups_config()
+        setup_config = config.get("setups", {}).get(setup_type, {})
+        scores["clarity_bonus"] = calculate_clarity_bonus(
+            features, htf_bias, weights["clarity_bonus"], setup_config
+        )
+
+    # DXY structure bonus (soft constraint converted to scoring per Enforced Correction)
+    if "dxy_structure_bonus" in weights:
+        config = load_setups_config()
+        setup_config = config.get("setups", {}).get(setup_type, {})
+        scores["dxy_structure_bonus"] = calculate_dxy_structure_bonus(
+            features, htf_bias, weights["dxy_structure_bonus"], setup_config
         )
 
     # HTF bonus
@@ -1442,15 +1595,59 @@ def calculate_structure_alignment(
 
         return min(score, max_points)
 
-    # STRICT REQUIREMENTS for DXY_CONTINUATION and VWAP_FADE
+    # DXY_CONTINUATION: Relaxed requirements per Enforced Correction
+    # Per dxy_continuation_config_review_insights.md:
+    # - BOS recency, clarity, sweep are SCORING-ONLY factors, not hard rejections
+    # - This allows continuation setups in regimes where BOS is older (mean ~542 bars)
+    if setup_type == "DXY_CONTINUATION":
+        # Start with base score (40%) - allows scoring even without perfect conditions
+        score = max_points * 0.4
+
+        # Bonus for recent BOS (handled separately by bos_recency_bonus factor)
+        # Still give structure_alignment bonus for very fresh BOS
+        if htf_bias.bars_since_bos is not None:
+            if htf_bias.bars_since_bos <= 10:
+                score += max_points * 0.2
+                logger.debug("DXY_CONTINUATION structure: +20% for very recent BOS")
+            elif htf_bias.bars_since_bos <= 20:
+                score += max_points * 0.1
+                logger.debug("DXY_CONTINUATION structure: +10% for recent BOS")
+
+        # Bonus for high clarity (handled separately by clarity_bonus factor)
+        # Still give structure_alignment bonus for excellent clarity
+        if htf_bias.structure_clarity is not None:
+            if htf_bias.structure_clarity >= 0.7:
+                score += max_points * 0.2
+                logger.debug("DXY_CONTINUATION structure: +20% for excellent clarity")
+            elif htf_bias.structure_clarity >= 0.5:
+                score += max_points * 0.1
+                logger.debug("DXY_CONTINUATION structure: +10% for good clarity")
+
+        # Bonus for liquidity sweep (nice to have, not required)
+        if htf_bias.liquidity_sweep_detected:
+            score += max_points * 0.2
+            logger.debug("DXY_CONTINUATION structure: +20% for liquidity sweep")
+        else:
+            # Check 1M features for sweep indication
+            sweep_direction = (
+                features.get("sweep_direction") if features is not None else None
+            )
+            if sweep_direction is not None:
+                score += max_points * 0.1
+                logger.debug("DXY_CONTINUATION structure: +10% for 1M sweep direction")
+
+        logger.debug(
+            f"DXY_CONTINUATION structure (relaxed): clarity={htf_bias.structure_clarity}, "
+            f"bars_since_bos={htf_bias.bars_since_bos}, "
+            f"sweep={htf_bias.liquidity_sweep_detected}, score={score:.2f}/{max_points}"
+        )
+
+        return min(score, max_points)
+
+    # VWAP_FADE: Keep strict requirements
     # These setups need clean structure (no chop tolerance)
 
-    # Rejection 1: Choppy structure
-    # if htf_bias.chop_detected:
-    #    logger.debug(f"{setup_type} structure rejected: chop detected")
-    #    return 0.0
-
-    # Rejection 2: No recent BOS or BOS too stale
+    # Rejection 1: No recent BOS or BOS too stale
     if htf_bias.bars_since_bos is None or htf_bias.bars_since_bos > 15:
         logger.debug(
             f"{setup_type} structure rejected: BOS stale or missing "
@@ -1458,7 +1655,7 @@ def calculate_structure_alignment(
         )
         return 0.0
 
-    # Rejection 3: Low structure clarity
+    # Rejection 2: Low structure clarity
     if htf_bias.structure_clarity < 0.6:
         logger.debug(
             f"{setup_type} structure rejected: low clarity "
@@ -1466,12 +1663,12 @@ def calculate_structure_alignment(
         )
         return 0.0
 
-    # Rejection 4: No liquidity sweep
+    # Rejection 3: No liquidity sweep
     if not htf_bias.liquidity_sweep_detected:
         logger.debug(f"{setup_type} structure rejected: no liquidity sweep")
         return 0.0
 
-    # All hard rejections passed - calculate score
+    # All hard rejections passed - calculate score for VWAP_FADE
     score = 0.0
 
     # Factor 1: Clean swing structure (40% of max)
@@ -1902,6 +2099,238 @@ def calculate_volume_spike(
         return max_points
     elif volume_ratio >= 1.2:
         return max_points * 0.5
+
+    return 0.0
+
+
+def calculate_bos_recency_bonus(
+    features: pd.Series, htf_bias: HTFBias, max_points: float, setup_config: dict
+) -> float:
+    """Calculate bonus score for recent BOS confirmation.
+
+    Awards points based on BOS recency for DXY_CONTINUATION:
+    - BOS within fresh_threshold (10 bars): Full points
+    - BOS within recent_threshold (20 bars): Partial points (0.5x)
+    - HTF BOS detected: Full points (structural confirmation)
+    - No BOS or too old: No bonus
+
+    Args:
+        features: Feature data including bars_since_bos
+        htf_bias: HTFBias object with htf_bos_detected flag
+        max_points: Maximum points available for this factor
+        setup_config: Setup configuration with params
+
+    Returns:
+        Score between 0 and max_points
+    """
+    bars_since_bos = features.get("bars_since_bos")
+    htf_bos_detected = htf_bias.bos_detected if htf_bias else False
+
+    # Get thresholds from config
+    params = setup_config.get("params", {})
+    fresh_threshold = params.get("bos_fresh_threshold", 10)
+    recent_threshold = params.get("bos_recent_threshold", 20)
+
+    # HTF BOS is strongest confirmation
+    if htf_bos_detected:
+        return max_points
+
+    # No BOS data available
+    if bars_since_bos is None:
+        return 0.0
+
+    # Score based on recency
+    if bars_since_bos <= fresh_threshold:
+        return max_points  # Fresh BOS - full bonus
+    elif bars_since_bos <= recent_threshold:
+        return max_points * 0.5  # Recent BOS - partial bonus
+
+    return 0.0  # BOS too old
+
+
+def calculate_clarity_bonus(
+    features: pd.Series, htf_bias: HTFBias, max_points: float, setup_config: dict
+) -> float:
+    """Calculate bonus score for structure clarity.
+
+    Awards points based on structure clarity level:
+    - Excellent (≥0.7): Full points
+    - Good (≥0.5): 0.7x points
+    - Acceptable (≥0.3): 0.4x points
+    - Poor (<0.3): No bonus
+
+    Args:
+        features: Feature data including structure_clarity
+        htf_bias: HTFBias object (unused but kept for consistency)
+        max_points: Maximum points available for this factor
+        setup_config: Setup configuration with params
+
+    Returns:
+        Score between 0 and max_points
+    """
+    structure_clarity = features.get("structure_clarity")
+
+    if structure_clarity is None:
+        return 0.0
+
+    # Get thresholds from config
+    params = setup_config.get("params", {})
+    excellent = params.get("clarity_excellent", 0.7)
+    good = params.get("clarity_good", 0.5)
+    acceptable = params.get("clarity_acceptable", 0.3)
+
+    # Score based on clarity level
+    if structure_clarity >= excellent:
+        return max_points  # Excellent clarity
+    elif structure_clarity >= good:
+        return max_points * 0.7  # Good clarity
+    elif structure_clarity >= acceptable:
+        return max_points * 0.4  # Acceptable clarity
+
+    return 0.0  # Poor clarity
+
+
+def calculate_dxy_structure_bonus(
+    features: pd.Series, htf_bias: HTFBias, max_points: float, setup_config: dict
+) -> float:
+    """Calculate bonus score for aligned DXY structure.
+
+    Awards points based on DXY structure alignment with trade direction:
+    - Long + DXY bearish (LL/LH): Full points (inverse relationship)
+    - Short + DXY bullish (HH/HL): Full points (inverse relationship)
+    - DXY structure is None/neutral: Partial points (0.5x) - data missing
+    - DXY structure contradicts direction: No bonus
+
+    Per Enforced Correction (dxy_continuation_config_review_insights.md):
+    DXY structure label is SCORING-ONLY, not a hard constraint.
+    In continuation regimes, DXY often ranges/pauses while gold trends.
+
+    Args:
+        features: Feature data including dxy_structure
+        htf_bias: HTFBias object with dxy_structure and direction
+        max_points: Maximum points available for this factor
+        setup_config: Setup configuration with params (unused but kept for consistency)
+
+    Returns:
+        Score between 0 and max_points
+    """
+    # Get DXY structure from htf_bias (preferred) or features
+    dxy_structure = htf_bias.dxy_structure if htf_bias else None
+    if dxy_structure is None:
+        dxy_structure = features.get("dxy_structure") or features.get("dxy_structure_label")
+
+    # Get direction
+    direction = htf_bias.direction if htf_bias else features.get("direction")
+
+    # No DXY structure available - partial bonus (data missing, not contradicting)
+    if dxy_structure is None:
+        logger.debug(
+            f"DXY structure bonus: 0.5x (no DXY structure data available)"
+        )
+        return max_points * 0.5
+
+    # Check alignment based on inverse relationship
+    # Long gold = DXY weakness (LL, LH), Short gold = DXY strength (HH, HL)
+    dxy_bearish = dxy_structure in ("LL", "LH")
+    dxy_bullish = dxy_structure in ("HH", "HL")
+
+    if direction == "long" and dxy_bearish:
+        # Aligned: Long gold with DXY weakness
+        logger.debug(
+            f"DXY structure bonus: full (long + DXY bearish={dxy_structure})"
+        )
+        return max_points
+    elif direction == "short" and dxy_bullish:
+        # Aligned: Short gold with DXY strength
+        logger.debug(
+            f"DXY structure bonus: full (short + DXY bullish={dxy_structure})"
+        )
+        return max_points
+    elif direction == "long" and dxy_bullish:
+        # Contradicting: Long gold but DXY bullish
+        logger.debug(
+            f"DXY structure bonus: 0 (long contradicts DXY bullish={dxy_structure})"
+        )
+        return 0.0
+    elif direction == "short" and dxy_bearish:
+        # Contradicting: Short gold but DXY bearish
+        logger.debug(
+            f"DXY structure bonus: 0 (short contradicts DXY bearish={dxy_structure})"
+        )
+        return 0.0
+    else:
+        # Neutral or unknown DXY structure - partial bonus
+        logger.debug(
+            f"DXY structure bonus: 0.5x (neutral/unknown dxy_structure={dxy_structure})"
+        )
+        return max_points * 0.5
+
+
+def calculate_dxy_correlation_enhanced(
+    features: pd.Series, htf_bias: HTFBias, max_points: float, setup_config: dict
+) -> float:
+    """Enhanced DXY correlation scoring using dual timeframe correlation.
+
+    Awards points based on BOTH 1m and 5m correlation strength:
+    - Both strong (<-0.5): Full points
+    - Both moderate (<-0.3): 0.6x points
+    - Both weak (<-0.15): 0.3x points
+    - Mixed or missing: Proportional scoring
+    - Positive correlation: 0 points (contradictory)
+
+    This replaces the old single-value dxy_corr scoring for DXY_CONTINUATION.
+
+    Args:
+        features: Feature data including dxy_corr_1m, dxy_corr_5m
+        htf_bias: HTFBias object (unused but kept for consistency)
+        max_points: Maximum points available for this factor
+        setup_config: Setup configuration with params
+
+    Returns:
+        Score between 0 and max_points
+    """
+    dxy_corr_1m = features.get("dxy_corr_1m")
+    dxy_corr_5m = features.get("dxy_corr_5m")
+
+    # Get thresholds from config
+    params = setup_config.get("params", {})
+    strong = params.get("correlation_strong", -0.5)
+    moderate = params.get("correlation_moderate", -0.3)
+    weak = params.get("correlation_weak", -0.15)
+
+    # Handle missing data
+    if dxy_corr_1m is None and dxy_corr_5m is None:
+        return 0.0  # No correlation data
+
+    # Single correlation available - use it with penalty
+    if dxy_corr_1m is None:
+        return _score_single_correlation(dxy_corr_5m, strong, moderate, weak, max_points) * 0.7
+    if dxy_corr_5m is None:
+        return _score_single_correlation(dxy_corr_1m, strong, moderate, weak, max_points) * 0.7
+
+    # Both correlations available - score based on weakest
+    score_1m = _score_single_correlation(dxy_corr_1m, strong, moderate, weak, max_points)
+    score_5m = _score_single_correlation(dxy_corr_5m, strong, moderate, weak, max_points)
+
+    # Use minimum (weakest link determines strength)
+    return min(score_1m, score_5m)
+
+
+def _score_single_correlation(
+    corr: float | None, strong: float, moderate: float, weak: float, max_points: float
+) -> float:
+    """Helper to score a single correlation value."""
+    if corr is None:
+        return 0.0
+
+    if corr >= 0:
+        return 0.0  # Positive = contradictory
+    elif corr < strong:
+        return max_points  # Strong inverse correlation
+    elif corr < moderate:
+        return max_points * 0.6  # Moderate inverse correlation
+    elif corr < weak:
+        return max_points * 0.3  # Weak inverse correlation
 
     return 0.0
 

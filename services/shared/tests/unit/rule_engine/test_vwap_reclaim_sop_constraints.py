@@ -129,8 +129,13 @@ class TestNoLateReclaimConstraint:
         result = validator.validate_setup("VWAP_RECLAIM", context)
         assert result.is_valid
 
-    def test_rejects_late_reclaim_bos_age_15(self):
-        """Test that reclaims with recent BOS (age < 20) are rejected."""
+    def test_allows_late_reclaim_bos_age_15_with_scoring_penalty(self):
+        """Test that reclaims with recent BOS (age < 20) are allowed with scoring penalty.
+
+        Per 2024-02 optimization: BOS constraints moved to SCORING-ONLY:
+        - no_late_reclaim constraint removed from config
+        - Late reclaims are allowed but get a scoring penalty via calculate_late_reclaim_penalty()
+        """
         validator = SetupValidator()
 
         context = {
@@ -141,7 +146,7 @@ class TestNoLateReclaimConstraint:
             "vwap_deviation_normalized": 0.8,
             "bos_direction": "long",
             "bos_recent": True,
-            "bos_age": 15,  # Too recent (< 20)
+            "bos_age": 15,  # Recent BOS (< 20) - now handled via scoring penalty
             "conflict_detected": False,
             "choch_detected": False,
             "near_vwap_count_last_20": 5,
@@ -149,8 +154,8 @@ class TestNoLateReclaimConstraint:
         }
 
         result = validator.validate_setup("VWAP_RECLAIM", context)
-        assert not result.is_valid
-        assert "late" in result.reject_reason.lower() or "expanding" in result.reject_reason.lower()
+        # BOS timing is now a scoring penalty, not hard rejection
+        assert result.is_valid
 
     def test_accepts_when_bos_not_recent(self):
         """Test that reclaims pass when bos_recent is False."""
@@ -221,8 +226,13 @@ class TestBOSReclaimGateConstraint:
         result = validator.validate_setup("VWAP_RECLAIM", context)
         assert result.is_valid
 
-    def test_rejects_when_bos_direction_conflicts(self):
-        """Test that reclaims are rejected when BOS direction conflicts and age < 20."""
+    def test_allows_bos_direction_conflict_with_scoring_penalty(self):
+        """Test that BOS direction conflict is allowed with scoring penalty.
+
+        Per 2024-02 optimization: BOS constraints moved to SCORING-ONLY:
+        - bos_reclaim_gate constraint removed from config
+        - BOS direction conflicts are handled via calculate_bos_direction_penalty()
+        """
         validator = SetupValidator()
 
         context = {
@@ -231,7 +241,7 @@ class TestBOSReclaimGateConstraint:
             "direction": "long",
             "max_abs_deviation_last_20": 1.5,
             "vwap_deviation_normalized": 0.8,
-            "bos_direction": "short",  # Conflicts with long
+            "bos_direction": "short",  # Conflicts with long - now handled via scoring penalty
             "bos_recent": False,
             "bos_age": 18,  # Age < 20 and direction conflicts
             "conflict_detected": False,
@@ -241,8 +251,8 @@ class TestBOSReclaimGateConstraint:
         }
 
         result = validator.validate_setup("VWAP_RECLAIM", context)
-        assert not result.is_valid
-        assert "BOS direction" in result.reject_reason or "direction" in result.reject_reason.lower()
+        # BOS direction conflict is now a scoring penalty, not hard rejection
+        assert result.is_valid
 
     def test_accepts_old_bos_despite_direction_conflict(self):
         """Test that old BOS (age >= 20) is ignored even if direction conflicts."""
