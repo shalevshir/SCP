@@ -31,3 +31,8 @@ class TradeRecord:
     # State fields for service restart recovery
     entry_bar_idx: int | None = None  # Bar index when trade was entered
     reached_1r: bool = False  # Whether trade achieved +1R protection
+
+    # Trade management state (for DXY_CONTINUATION partial profit / de-risk)
+    partial_taken: bool = False  # 50% taken at +1R
+    breakeven_set: bool = False  # SL moved to entry price
+    current_sl_price: float | None = None  # Adjusted SL (None = use original sl_price)
