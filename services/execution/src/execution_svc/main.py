@@ -232,8 +232,6 @@ async def process_streams(
                     logger.info(
                         f"SBOP: Read {len(candles_list)} candles, {len(features_list)} features"
                     )
-                elif loop_iteration % 50 == 0:
-                    logger.info(f"SBOP: No messages read (iteration {loop_iteration})")
 
             # Process signals (buffer for next bar execution)
             # KILL SWITCH: Skip signal processing if killed
