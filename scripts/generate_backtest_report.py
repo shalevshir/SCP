@@ -17,6 +17,7 @@ from typing import Any
 import asyncpg
 from scp_shared.common import get_logger
 from scp_shared.database import DatabasePool
+from scp_shared.rule_engine import load_scoring_config
 
 logger = get_logger(__name__)
 
@@ -27,6 +28,13 @@ class BacktestReportGenerator:
     def __init__(self, db_pool: DatabasePool):
         self.db_pool = db_pool
         self.data: dict[str, Any] = {}
+        # Load scoring config for dynamic thresholds
+        self.scoring_config = load_scoring_config()
+        self.setup_thresholds = {
+            setup: config.get("min_score", 8.0)
+            for setup, config in self.scoring_config.setup_types.items()
+        }
+        self.global_a_plus_threshold = self.scoring_config.confidence.get("a_plus", 8.0)
 
     async def generate_report(
         self,
@@ -295,10 +303,20 @@ class BacktestReportGenerator:
             by_stage[stage].append(signal)
 
         # Near-miss analysis (score just below threshold)
-        near_misses = [
-            s for s in rejected
-            if s["score"] >= 7.0 and s["score"] < 8.0 and s["rejection_stage"] == "confidence_filter"
-        ]
+        # Use per-setup thresholds from config
+        near_misses = []
+        for s in rejected:
+            if s["rejection_stage"] != "confidence_filter":
+                continue
+            setup_type = s["setup_type"]
+            threshold = self.setup_thresholds.get(setup_type, self.global_a_plus_threshold)
+            # Near-miss: within 1.0 point of the setup's threshold
+            if s["score"] >= (threshold - 1.0) and s["score"] < threshold:
+                near_misses.append({
+                    **s,
+                    "threshold": threshold,
+                    "distance_to_threshold": round(threshold - s["score"], 2),
+                })
 
         rejection_analysis = {
             "total_rejected": len(rejected),
@@ -309,6 +327,7 @@ class BacktestReportGenerator:
                 }
                 for stage, sigs in by_stage.items()
             },
+            "setup_thresholds": self.setup_thresholds,  # Include thresholds in report
             "near_misses": {
                 "count": len(near_misses),
                 "avg_score": round(sum(s["score"] for s in near_misses) / len(near_misses), 2) if near_misses else 0,
@@ -317,7 +336,8 @@ class BacktestReportGenerator:
                         "timestamp": s["timestamp"],
                         "setup_type": s["setup_type"],
                         "score": s["score"],
-                        "distance_to_threshold": round(8.0 - s["score"], 2),
+                        "threshold": s["threshold"],
+                        "distance_to_threshold": s["distance_to_threshold"],
                     }
                     for s in near_misses[:20]  # Limit to 20 for brevity
                 ],
@@ -505,11 +525,15 @@ class BacktestReportGenerator:
         rejection_analysis = self.data.get("rejection_analysis", {})
         near_misses = rejection_analysis.get("near_misses", {}).get("count", 0)
         if near_misses > 10:
+            # Show actual thresholds from config
+            threshold_summary = ", ".join(
+                f"{setup}: {thresh}" for setup, thresh in self.setup_thresholds.items()
+            )
             recommendations.append({
                 "priority": "LOW",
                 "category": "Threshold Analysis",
-                "action": "Review A+ threshold",
-                "reason": f"{near_misses} signals scored 7.0-7.9 (just below 8.0 threshold) - investigate if these would have been profitable",
+                "action": "Review setup thresholds",
+                "reason": f"{near_misses} signals scored just below their thresholds ({threshold_summary}) - investigate if these would have been profitable",
             })
 
         # Check risk metrics
@@ -864,7 +888,7 @@ class BacktestReportGenerator:
                 </div>
                 <div class="metric-card">
                     <div class="metric-label">Approval Rate</div>
-                    <div class="metric-value">{(metadata.get('approved_signals', 0) / metadata.get('total_signals', 1) * 100):.1f}%</div>
+                    <div class="metric-value">{(metadata.get('approved_signals', 0) / max(metadata.get('total_signals', 0), 1) * 100):.1f}%</div>
                 </div>
             </div>
 
@@ -882,9 +906,12 @@ class BacktestReportGenerator:
                 </tbody>
             </table>
 
-            <h3>Near-Miss Analysis (Score 7.0-7.9)</h3>
+            <h3>Setup Thresholds (from config)</h3>
+            {self._generate_threshold_table_html(rejection_analysis.get('setup_thresholds', {}))}
+
+            <h3>Near-Miss Analysis (within 1.0 of threshold)</h3>
             <p style="margin: 1rem 0;">
-                <strong>{rejection_analysis.get('near_misses', {}).get('count', 0)}</strong> signals scored just below the A+ threshold (8.0).
+                <strong>{rejection_analysis.get('near_misses', {}).get('count', 0)}</strong> signals scored just below their setup's threshold.
                 Average score: <strong>{rejection_analysis.get('near_misses', {}).get('avg_score', 0):.2f}</strong>
             </p>
             {self._generate_near_miss_table_html(rejection_analysis.get('near_misses', {}))}
@@ -984,6 +1011,34 @@ class BacktestReportGenerator:
             """)
         return "\n".join(rows) if rows else '<tr><td colspan="3">No data</td></tr>'
 
+    def _generate_threshold_table_html(self, setup_thresholds: dict) -> str:
+        """Generate HTML table showing per-setup thresholds."""
+        if not setup_thresholds:
+            return '<p style="color: #a0aec0; margin: 1rem 0;">No threshold data available.</p>'
+
+        rows = []
+        for setup, threshold in sorted(setup_thresholds.items()):
+            rows.append(f"""
+            <tr>
+                <td><code>{setup}</code></td>
+                <td><strong>{threshold}</strong></td>
+            </tr>
+            """)
+
+        return f"""
+        <table style="margin-top: 1rem; max-width: 400px;">
+            <thead>
+                <tr>
+                    <th>Setup Type</th>
+                    <th>Min Score</th>
+                </tr>
+            </thead>
+            <tbody>
+                {"".join(rows)}
+            </tbody>
+        </table>
+        """
+
     def _generate_near_miss_table_html(self, near_misses: dict) -> str:
         """Generate HTML table for near-miss signals."""
         signals = near_misses.get('signals', [])
@@ -997,20 +1052,22 @@ class BacktestReportGenerator:
             score = signal['score']
             distance = signal['distance_to_threshold']
             setup = signal['setup_type']
+            threshold = signal.get('threshold', 8.0)
 
             # Color code based on how close to threshold
             if distance <= 0.1:
-                score_class = 'style="color: #f6ad55;"'  # Very close (7.9+)
+                score_class = 'style="color: #f6ad55;"'  # Very close
             elif distance <= 0.3:
-                score_class = 'style="color: #ed8936;"'  # Close (7.7-7.8)
+                score_class = 'style="color: #ed8936;"'  # Close
             else:
-                score_class = 'style="color: #a0aec0;"'  # Further (7.0-7.6)
+                score_class = 'style="color: #a0aec0;"'  # Further
 
             rows.append(f"""
             <tr>
                 <td>{timestamp}</td>
                 <td><code>{setup}</code></td>
                 <td {score_class}><strong>{score:.2f}</strong></td>
+                <td>{threshold}</td>
                 <td>-{distance:.2f}</td>
             </tr>
             """)
@@ -1022,7 +1079,8 @@ class BacktestReportGenerator:
                     <th>Timestamp</th>
                     <th>Setup Type</th>
                     <th>Score</th>
-                    <th>Distance to 8.0</th>
+                    <th>Threshold</th>
+                    <th>Distance</th>
                 </tr>
             </thead>
             <tbody>
