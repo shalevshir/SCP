@@ -1145,7 +1145,6 @@ class SignalEngine:
         ).set(signal.score)
 
         # HTF validity check (must reject if conflict or DXY chop detected)
-        # This matches the backtester's validate_signal_with_sop behavior
         htf_valid = (
             not htf_bias_obj.conflict_detected and not htf_bias_obj.dxy_chop_detected
         )
