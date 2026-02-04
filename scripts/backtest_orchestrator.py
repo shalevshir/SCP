@@ -171,12 +171,13 @@ class BacktestOrchestrator:
         start_time = asyncio.get_event_loop().time()
         last_log_time = start_time
 
-        # Print header
-        print("\n" + "=" * 100)
+        # Print header with better formatting
+        print("\n" + "=" * 110)
         print(f"  SYNCHRONOUS BACKTEST - {total:,} ticks")
-        print("=" * 100)
-        print(f"  {'Progress':<12} {'Rate':<15} {'Elapsed':<12} {'ETA':<12} {'Current Timestamp'}")
-        print("-" * 100)
+        print("=" * 110)
+        # Clear, aligned header with emojis for visual appeal
+        print(f"  📊 Progress                             ⚡ Rate         ⏱️  Elapsed      ⏳ ETA          📅 Timestamp")
+        print("-" * 110)
 
         for i, (gc_candle, dxy_candle) in enumerate(candle_pairs):
             tick_ts = gc_candle.timestamp
@@ -200,17 +201,20 @@ class BacktestOrchestrator:
                 else:
                     eta_str = f"{eta_seconds:.0f}s"
 
-                # Progress bar
+                # Progress bar with better formatting
                 pct = (i + 1) * 100 / total
                 bar_width = 20
                 filled = int(bar_width * (i + 1) / total)
                 bar = "█" * filled + "░" * (bar_width - filled)
 
+                # Format percentage and counts
+                progress_text = f"{pct:5.1f}% ({i+1:,}/{total:,})"
+
                 print(
-                    f"  {bar} {pct:5.1f}%  "
-                    f"{rate:5.1f} ticks/s   "
-                    f"{elapsed_str:>10}   "
-                    f"{eta_str:>10}   "
+                    f"  {bar} {progress_text:<18} "
+                    f"{rate:5.1f} t/s      "
+                    f"{elapsed_str:>10}     "
+                    f"{eta_str:>10}     "
                     f"{tick_ts}"
                 )
                 last_log_time = current_time
@@ -223,34 +227,58 @@ class BacktestOrchestrator:
 
         # Final progress bar (100%)
         bar = "█" * 20
-        print(f"  {bar} 100.0%")
-        print("=" * 100)
-        print(f"\n  ✓ BACKTEST COMPLETE\n")
-        print(f"  Ticks processed:     {self.stats['ticks_processed']:>10,}")
-        print(f"  Duration:            {duration / 60:>10.1f} minutes ({duration:.1f}s)")
+        progress_text = f"100.0% ({total:,}/{total:,})"
+        print(f"  {bar} {progress_text}")
+        print("=" * 110)
+        print(f"\n  ✅ BACKTEST COMPLETE\n")
+        print(f"  🎯 Ticks processed:     {self.stats['ticks_processed']:>10,}")
+        print(f"  ⏱️  Duration:            {duration / 60:>10.1f} min ({duration:.1f}s)")
         if duration > 0:
-            print(f"  Average rate:        {self.stats['ticks_processed'] / duration:>10.1f} ticks/sec")
-        print(f"  Worker acks:         {self.stats['worker_acks_received']:>10,}")
-        print(f"  Bot-Core acks:       {self.stats['bot_core_acks_received']:>10,}")
-        print(f"  Execution acks:      {self.stats['execution_acks_received']:>10,}")
-        print("=" * 100)
+            print(f"  ⚡ Average rate:        {self.stats['ticks_processed'] / duration:>10.1f} ticks/s")
+        print(f"  📦 Worker acks:         {self.stats['worker_acks_received']:>10,}")
+        print(f"  🤖 Bot-Core acks:       {self.stats['bot_core_acks_received']:>10,}")
+        print(f"  💹 Execution acks:      {self.stats['execution_acks_received']:>10,}")
+        print("=" * 110)
 
-        # Performance breakdown
-        print("\n  PERFORMANCE BREAKDOWN\n")
+        # Performance breakdown with better formatting
+        print("\n" + "=" * 110)
+        print("  ⚡ PERFORMANCE BREAKDOWN")
+        print("=" * 110)
         total_phase_time = sum(self.phase_timings.values())
-        print(f"  Phase                Time       % of Total    Avg per Tick")
-        print("-" * 100)
+
+        # Phase emojis for visual clarity
+        phase_icons = {
+            "publish": "📤",
+            "workers": "⚙️",
+            "bot_core": "🤖",
+            "execution": "💹"
+        }
+
+        print(f"  Phase                     Time         % of Total      Avg per Tick")
+        print("-" * 110)
         for phase, time_spent in self.phase_timings.items():
             pct = (time_spent / total_phase_time * 100) if total_phase_time > 0 else 0
             avg_per_tick = (time_spent / self.stats['ticks_processed'] * 1000) if self.stats['ticks_processed'] > 0 else 0
-            print(f"  {phase.title():<20} {time_spent:>8.2f}s    {pct:>6.1f}%     {avg_per_tick:>8.2f}ms")
+            icon = phase_icons.get(phase, "•")
+            phase_name = phase.replace("_", " ").title()
+            print(f"  {icon} {phase_name:<22} {time_spent:>8.2f}s      {pct:>6.1f}%         {avg_per_tick:>8.2f}ms")
 
-        print()
+        print("=" * 110)
 
-        # Service wait time analysis
-        print("  SERVICE WAIT TIMES (time spent waiting for each service to ack)\n")
-        print(f"  Service              Avg        P50        P95        P99        Max")
-        print("-" * 100)
+        # Service wait time analysis with better formatting
+        print("\n" + "=" * 110)
+        print("  ⏱️  SERVICE WAIT TIMES (orchestrator wait for service acks)")
+        print("=" * 110)
+
+        service_icons = {
+            "feature-engine": "⚙️",
+            "htf-bias": "📊",
+            "bot-core": "🤖",
+            "execution": "💹"
+        }
+
+        print(f"  Service                    Avg          P50          P95          P99          Max")
+        print("-" * 110)
 
         import statistics
         for service, times in sorted(self.service_wait_times.items()):
@@ -261,12 +289,19 @@ class BacktestOrchestrator:
                 p95 = sorted_times[int(len(sorted_times) * 0.95)] * 1000 if len(sorted_times) > 0 else 0
                 p99 = sorted_times[int(len(sorted_times) * 0.99)] * 1000 if len(sorted_times) > 0 else 0
                 max_time = max(times) * 1000
-                print(f"  {service:<20} {avg:>7.2f}ms   {p50:>7.2f}ms   {p95:>7.2f}ms   {p99:>7.2f}ms   {max_time:>7.2f}ms")
+                icon = service_icons.get(service, "•")
+                print(f"  {icon} {service:<22} {avg:>8.2f}ms    {p50:>8.2f}ms    {p95:>8.2f}ms    {p99:>8.2f}ms    {max_time:>8.2f}ms")
 
-        # Bottleneck identification
-        print("\n  BOTTLENECK ANALYSIS\n")
+        print("=" * 110)
+
+        # Bottleneck identification with better formatting
+        print("\n" + "=" * 110)
+        print("  🔍 BOTTLENECK ANALYSIS")
+        print("=" * 110)
         slowest_phase = max(self.phase_timings.items(), key=lambda x: x[1])
-        print(f"  Slowest phase: {slowest_phase[0].title()} ({slowest_phase[1]:.2f}s, {slowest_phase[1]/total_phase_time*100:.1f}% of total)")
+        phase_icon = phase_icons.get(slowest_phase[0], "•")
+        phase_name = slowest_phase[0].replace("_", " ").title()
+        print(f"  {phase_icon} Slowest phase:   {phase_name} ({slowest_phase[1]:.2f}s, {slowest_phase[1]/total_phase_time*100:.1f}% of total)")
 
         # Find slowest service
         avg_wait_times = {
@@ -275,20 +310,24 @@ class BacktestOrchestrator:
         }
         if avg_wait_times:
             slowest_service = max(avg_wait_times.items(), key=lambda x: x[1])
-            print(f"  Slowest service: {slowest_service[0]} (avg {slowest_service[1]:.2f}ms wait time)")
+            service_icon = service_icons.get(slowest_service[0], "•")
+            print(f"  {service_icon} Slowest service: {slowest_service[0]} (avg {slowest_service[1]:.2f}ms wait time)")
 
-        print("\n  RECOMMENDATIONS:")
+        print("\n  💡 OPTIMIZATION RECOMMENDATIONS:")
         if slowest_phase[0] == "workers":
-            print("  • Workers (Feature Engine + HTF Bias) are the bottleneck")
-            print("  • Consider optimizing indicator calculations or HTF processing")
+            print("     ⚙️  Workers (Feature Engine + HTF Bias) are the bottleneck")
+            print("     → Profile indicator calculations (VWAP, RSI, structure detection)")
+            print("     → Check if HTF aggregation is slow on 15m/1h boundaries")
         elif slowest_phase[0] == "bot_core":
-            print("  • Bot-Core signal generation is the bottleneck")
-            print("  • Consider optimizing rule engine or signal scoring logic")
+            print("     🤖 Bot-Core signal generation is the bottleneck")
+            print("     → Profile rule engine performance in signal_engine.generate()")
+            print("     → Check database save_signal() performance")
         elif slowest_phase[0] == "execution":
-            print("  • Execution trade management is the bottleneck")
-            print("  • Consider optimizing state machine processing or trade logic")
+            print("     💹 Execution trade management is the bottleneck")
+            print("     → Profile state machine transitions and invalidation checks")
+            print("     → Check database queries for trades")
         elif slowest_phase[0] == "publish":
-            print("  • Redis publishing is the bottleneck (unlikely)")
+            print("     📤 Redis publishing is the bottleneck (rare - check Redis latency)")
             print("  • Check Redis performance and network latency")
 
         print("=" * 100 + "\n")
@@ -384,7 +423,7 @@ class BacktestOrchestrator:
         # Read acks until all received or timeout
         while pending and asyncio.get_event_loop().time() < deadline:
             remaining = deadline - asyncio.get_event_loop().time()
-            block_ms = min(int(remaining * 1000), 500)
+            block_ms = min(int(remaining * 1000), 50)  # Reduced from 500ms to 50ms
 
             if self._ack_consumer is not None:
                 try:
