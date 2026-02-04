@@ -30,6 +30,7 @@ class TestDetermineSetupTypeRefactor:
             "last_structure_label": "HH",
             "structure_label": "HH",
             "direction": "long",  # Required by valid_direction constraints
+            "reclaim_candle_close": 2650.0,  # Required for VWAP_RECLAIM
         }
         defaults.update(overrides)
         return pd.Series(defaults)
@@ -52,6 +53,7 @@ class TestDetermineSetupTypeRefactor:
             "conflict_detected": False,
             "dxy_corr_1m": -0.6,
             "dxy_corr_5m": -0.5,
+            "vwap_trend_confirmed": True,  # Required for VWAP_RECLAIM
         }
         defaults.update(overrides)
         return HTFBias(**defaults)
@@ -113,11 +115,45 @@ class TestDetermineSetupTypeRefactor:
             dxy_structure="LL",  # DXY bearish for gold long
             bars_since_bos=10,
             structure_1h="",  # Empty - fails VWAP_RECLAIM but not DXY_CONTINUATION
+            chop_detected=False,  # MUST be False - chop blocks DXY_CONTINUATION
         )
 
         setup_type = determine_setup_type(features, htf_bias)
 
         assert setup_type == "DXY_CONTINUATION"
+
+    def test_dxy_continuation_blocked_by_chop(self):
+        """Test that DXY_CONTINUATION is HARD BLOCKED when chop_detected=True.
+
+        SOP Rule: DXY Continuation requires clean structure + no chop.
+        This is a NON-NEGOTIABLE constraint.
+        """
+        from scp_shared.rule_engine.scoring import determine_setup_type
+
+        # Same as valid DXY_CONTINUATION but with chop_detected=True
+        features = self._create_features(
+            dxy_corr=-0.7,
+            structure_clarity=0.6,
+            is_chop=False,
+            last_structure_label="HH",
+            structure_label="HH",
+        )
+        htf_bias = self._create_htf_bias(
+            dxy_corr_1m=-0.5,
+            dxy_corr_5m=-0.4,
+            dxy_structure="LL",
+            bars_since_bos=10,
+            structure_1h="",  # Empty - fails VWAP_RECLAIM
+            chop_detected=True,  # CHOP DETECTED - should block DXY_CONTINUATION
+        )
+
+        setup_type = determine_setup_type(features, htf_bias)
+
+        # Should NOT return DXY_CONTINUATION - must be REJECTED
+        assert setup_type == "REJECTED", (
+            f"DXY_CONTINUATION should be blocked when chop_detected=True, "
+            f"but got {setup_type}"
+        )
 
     def test_rejected_no_valid_setup(self):
         """Test that invalid conditions return REJECTED."""

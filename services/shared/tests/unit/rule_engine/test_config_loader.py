@@ -98,18 +98,18 @@ class TestScoringConfigStructure:
 
         assert config.setup_types["VWAP_RECLAIM"]["min_score"] == 8
 
-    def test_vwap_fade_min_score_is_8(self) -> None:
-        """Test VWAP_FADE min_score is 8 (aligned with other setup types)."""
+    def test_vwap_fade_min_score_is_9(self) -> None:
+        """Test VWAP_FADE min_score is 9.0 (raised for stricter validation)."""
         config = load_scoring_config()
 
-        assert config.setup_types["VWAP_FADE"]["min_score"] == 8
+        assert config.setup_types["VWAP_FADE"]["min_score"] == 9.0
 
-    def test_dxy_continuation_min_score_is_7_5(self) -> None:
-        """Test DXY_CONTINUATION min_score is 7.5 per Enforced Correction."""
+    def test_dxy_continuation_min_score_is_8_5(self) -> None:
+        """Test DXY_CONTINUATION min_score is 8.5 (raised for stricter validation)."""
         config = load_scoring_config()
 
-        # Lowered from 8.0 to 7.5 per dxy_continuation_config_review_insights.md
-        assert config.setup_types["DXY_CONTINUATION"]["min_score"] == 7.5
+        # Raised from 7.5 to 8.5 for stricter validation
+        assert config.setup_types["DXY_CONTINUATION"]["min_score"] == 8.5
 
 
 class TestConfidenceThresholds:

@@ -209,7 +209,7 @@ class TestSLTPGracePeriods:
         )
 
         # Check at bar 2 (within 3-bar invalidation grace)
-        is_invalid, reason = checker.check_all(
+        is_invalid, reason, action = checker.check_all(
             trade, candle, bars_elapsed=2, features=features
         )
 

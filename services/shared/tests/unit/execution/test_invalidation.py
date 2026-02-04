@@ -288,17 +288,24 @@ class TestDXYFlip:
                 "direction": "long",
             }
         )
-        # For long DXY_CONTINUATION: both correlations > -0.1 AND DXY structure turns bullish (HH/HL)
+        # For long DXY_CONTINUATION: both correlations > 0 (true contradiction) AND DXY structure turns bullish
+        # NOTE: Changed from > -0.1 to > 0 threshold, and requires 5-bar persistence
         features = {
-            "dxy_corr_1m": 0.1,  # Weakened (> -0.1)
-            "dxy_corr_5m": 0.1,  # Weakened (> -0.1)
+            "dxy_corr_1m": 0.15,  # Positive (true contradiction)
+            "dxy_corr_5m": 0.10,  # Positive (true contradiction)
             "dxy_structure": "HH",  # Structure flipped bullish
         }
 
+        # Need 5 consecutive bars for DXY_CONTINUATION (no longer immediate)
+        for _ in range(4):
+            is_invalid, _ = checker.check_dxy_flip(trade, base_candle, features)
+            assert is_invalid is False
+
+        # 5th bar triggers exit
         is_invalid, reason = checker.check_dxy_flip(trade, base_candle, features)
 
         assert is_invalid is True
-        assert "DXY continuation invalidated" in reason
+        assert "5-bar" in reason
 
     def test_dxy_flip_VWAP_FADE_threshold(self, checker, base_trade, base_candle):
         """VWAP_FADE should exit when DXY correlation crosses threshold."""
@@ -509,7 +516,7 @@ class TestDailyRiskBreach:
         checker._daily_state["last_session_date"] = base_candle.timestamp.date()
 
         # check_all uses internal state (doesn't pass daily_pnl_state)
-        is_invalid, reason = checker.check_all(
+        is_invalid, reason, action = checker.check_all(
             base_trade, base_candle, bars_elapsed=10, features={}
         )
 
@@ -551,7 +558,7 @@ class TestCheckAllIntegration:
         features = {"structure_label": "LL"}
 
         # Use bars_elapsed < time limit so micro structure is checked before timeout
-        is_invalid, reason = checker.check_all(
+        is_invalid, reason, action = checker.check_all(
             trade, base_candle, bars_elapsed=5, features=features
         )
 
@@ -566,7 +573,7 @@ class TestCheckAllIntegration:
         # Need 3 bars for VWAP_RECLAIM
         for _ in range(3):
             checker.update_state(base_trade, base_candle, features)
-            is_invalid, reason = checker.check_all(
+            is_invalid, reason, action = checker.check_all(
                 base_trade, base_candle, bars_elapsed=10, features=features
             )
 
@@ -594,7 +601,7 @@ class TestCheckAllIntegration:
         checker.update_state(trade, candle, features)
 
         # Use bars_elapsed < time limit so setup window is checked before timeout
-        is_invalid, reason = checker.check_all(
+        is_invalid, reason, action = checker.check_all(
             trade, candle, bars_elapsed=5, features=features
         )
 
@@ -610,7 +617,7 @@ class TestCheckAllIntegration:
             "last_session_date": base_candle.timestamp.date(),
         }
 
-        is_invalid, reason = checker.check_all(
+        is_invalid, reason, action = checker.check_all(
             base_trade, base_candle, bars_elapsed=10, features={}
         )
 
@@ -644,7 +651,7 @@ class TestSeptemberTimeStop:
         )
 
         # At 30 bars (half of 60), current loss is -5 points / 10 risk = -0.5R (< -0.2R)
-        is_invalid, reason = checker.check_no_1r_reached(
+        is_invalid, reason, action = checker.check_no_1r_reached(
             trade, bars_elapsed=30, candle=candle, month=9
         )
 
@@ -670,7 +677,7 @@ class TestSeptemberTimeStop:
         )
 
         # At 30 bars, current loss is -1 point / 10 risk = -0.1R (>= -0.2R)
-        is_invalid, reason = checker.check_no_1r_reached(
+        is_invalid, reason, action = checker.check_no_1r_reached(
             trade, bars_elapsed=30, candle=candle, month=9
         )
 
@@ -695,7 +702,7 @@ class TestSeptemberTimeStop:
         )
 
         # Should not exit in October
-        is_invalid, reason = checker.check_no_1r_reached(
+        is_invalid, reason, action = checker.check_no_1r_reached(
             trade, bars_elapsed=30, candle=candle, month=10
         )
 
@@ -721,7 +728,7 @@ class TestSeptemberTimeStop:
 
         # VWAP_FADE has 10 bar limit, half = 5 bars
         # Should not trigger time-stop (only applies to VWAP_RECLAIM)
-        is_invalid, reason = checker.check_no_1r_reached(
+        is_invalid, reason, action = checker.check_no_1r_reached(
             trade, bars_elapsed=5, candle=candle, month=9
         )
 
@@ -1017,3 +1024,707 @@ class TestDailyStateReset:
         assert checker._daily_state["pdll"] is None
         assert checker._daily_state["consecutive_losses"] == 0
         assert checker._daily_state["daily_pnl"] == 0.0
+
+
+# ============================================================================
+# DXY_CONTINUATION Exit Rules Redesign Tests
+# ============================================================================
+
+
+class TestDXYContinuationNoMicroExit:
+    """Tests for DXY_CONTINUATION micro structure bypass (uses HTF instead)."""
+
+    def test_dxy_continuation_ignores_micro_ll_break(self, checker, base_candle):
+        """DXY_CONTINUATION should NOT exit on 1m LL break (expects micro breaks during pullback)."""
+        trade = TradeRecord(
+            trade_id="test-dxy-1",
+            signal_id="signal-dxy-1",
+            symbol="GC",
+            direction="long",
+            setup_type="DXY_CONTINUATION",
+            entry_price=2650.0,
+            sl_price=2640.0,
+            tp_price=2680.0,
+            risk_amount=10.0,
+            reward_amount=30.0,
+            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+        )
+        # 1m structure break that would exit other setups
+        features = {"structure_label": "LL", "timeframe": "1m"}
+
+        is_invalid, reason = checker.check_micro_structure_invalidation(
+            trade, base_candle, features
+        )
+
+        # Should NOT invalidate - DXY_CONTINUATION uses HTF invalidation
+        assert is_invalid is False
+        assert reason is None
+
+    def test_dxy_continuation_ignores_micro_hh_break_short(self, checker, base_candle):
+        """Short DXY_CONTINUATION should NOT exit on 1m HH break."""
+        trade = TradeRecord(
+            trade_id="test-dxy-2",
+            signal_id="signal-dxy-2",
+            symbol="GC",
+            direction="short",
+            setup_type="DXY_CONTINUATION",
+            entry_price=2650.0,
+            sl_price=2660.0,
+            tp_price=2620.0,
+            risk_amount=10.0,
+            reward_amount=30.0,
+            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+        )
+        features = {"structure_label": "HH", "timeframe": "1m"}
+
+        is_invalid, reason = checker.check_micro_structure_invalidation(
+            trade, base_candle, features
+        )
+
+        assert is_invalid is False
+        assert reason is None
+
+
+class TestDXYContinuationHTFInvalidation:
+    """Tests for DXY_CONTINUATION HTF-based invalidation."""
+
+    def test_dxy_continuation_exits_on_15m_structure_break_long(
+        self, checker, base_candle
+    ):
+        """Long DXY_CONTINUATION should exit on 15m LL/LH structure break."""
+        trade = TradeRecord(
+            trade_id="test-dxy-htf-1",
+            signal_id="signal-dxy-htf-1",
+            symbol="GC",
+            direction="long",
+            setup_type="DXY_CONTINUATION",
+            entry_price=2650.0,
+            sl_price=2640.0,
+            tp_price=2680.0,
+            risk_amount=10.0,
+            reward_amount=30.0,
+            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+        )
+        # HTF structure break against long
+        features = {"htf_structure_label": "LL", "structure_label": "HH"}  # 1m is bullish but ignored
+
+        is_invalid, reason = checker.check_micro_structure_invalidation(
+            trade, base_candle, features
+        )
+
+        assert is_invalid is True
+        assert "HTF" in reason or "15m" in reason
+        assert "LL" in reason
+
+    def test_dxy_continuation_exits_on_15m_structure_break_short(
+        self, checker, base_candle
+    ):
+        """Short DXY_CONTINUATION should exit on 15m HH/HL structure break."""
+        trade = TradeRecord(
+            trade_id="test-dxy-htf-2",
+            signal_id="signal-dxy-htf-2",
+            symbol="GC",
+            direction="short",
+            setup_type="DXY_CONTINUATION",
+            entry_price=2650.0,
+            sl_price=2660.0,
+            tp_price=2620.0,
+            risk_amount=10.0,
+            reward_amount=30.0,
+            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+        )
+        features = {"htf_structure_label": "HH"}
+
+        is_invalid, reason = checker.check_micro_structure_invalidation(
+            trade, base_candle, features
+        )
+
+        assert is_invalid is True
+        assert "HTF" in reason or "15m" in reason
+        assert "HH" in reason
+
+    def test_dxy_continuation_holds_when_htf_intact_long(self, checker, base_candle):
+        """Long DXY_CONTINUATION should hold when HTF structure is HH/HL."""
+        trade = TradeRecord(
+            trade_id="test-dxy-htf-3",
+            signal_id="signal-dxy-htf-3",
+            symbol="GC",
+            direction="long",
+            setup_type="DXY_CONTINUATION",
+            entry_price=2650.0,
+            sl_price=2640.0,
+            tp_price=2680.0,
+            risk_amount=10.0,
+            reward_amount=30.0,
+            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+        )
+        # HTF structure supports long
+        features = {"htf_structure_label": "HH", "structure_label": "LL"}  # 1m break ignored
+
+        is_invalid, reason = checker.check_micro_structure_invalidation(
+            trade, base_candle, features
+        )
+
+        assert is_invalid is False
+        assert reason is None
+
+    def test_dxy_continuation_exits_on_vwap_trend_failure(self, checker):
+        """DXY_CONTINUATION should exit on VWAP loss + EMA stack flip."""
+        trade = TradeRecord(
+            trade_id="test-dxy-vwap-1",
+            signal_id="signal-dxy-vwap-1",
+            symbol="GC",
+            direction="long",
+            setup_type="DXY_CONTINUATION",
+            entry_price=2650.0,
+            sl_price=2640.0,
+            tp_price=2680.0,
+            risk_amount=10.0,
+            reward_amount=30.0,
+            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+        )
+        # Candle closes below VWAP
+        candle = Candle(
+            timestamp=utc_datetime(2024, 10, 15, 10, 30),
+            open=2648.0,
+            high=2649.0,
+            low=2644.0,
+            close=2645.0,  # Below VWAP
+            volume=1000.0,
+            symbol="GC",
+            timeframe="1m",
+            source="TEST",
+        )
+        # VWAP violated + EMA stack flipped (EMA9 < EMA20)
+        features = {
+            "vwap": 2648.0,
+            "ema_9": 2646.0,
+            "ema_20": 2649.0,  # EMA9 < EMA20 = bearish flip
+            "htf_structure_label": "HH",  # HTF still intact
+        }
+
+        is_invalid, reason = checker.check_micro_structure_invalidation(
+            trade, candle, features
+        )
+
+        assert is_invalid is True
+        assert "VWAP" in reason
+        assert "EMA" in reason
+
+
+class TestDXYContinuationFlipPersistence:
+    """Tests for DXY flip 5-bar persistence requirement."""
+
+    def test_dxy_flip_no_exit_before_5_bars(self, checker, base_candle):
+        """DXY_CONTINUATION should NOT exit on DXY flip until 5 bars of persistence."""
+        trade = TradeRecord(
+            trade_id="test-dxy-flip-1",
+            signal_id="signal-dxy-flip-1",
+            symbol="GC",
+            direction="long",
+            setup_type="DXY_CONTINUATION",
+            entry_price=2650.0,
+            sl_price=2640.0,
+            tp_price=2680.0,
+            risk_amount=10.0,
+            reward_amount=30.0,
+            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+        )
+        # Both correlations positive (true contradiction) + structure flipped
+        features = {
+            "dxy_corr_1m": 0.15,
+            "dxy_corr_5m": 0.10,
+            "dxy_structure": "HH",
+        }
+
+        # Bars 1-4: Should NOT exit
+        for i in range(4):
+            is_invalid, reason = checker.check_dxy_flip(trade, base_candle, features)
+            assert is_invalid is False, f"Should not exit at bar {i+1}"
+
+    def test_dxy_flip_exits_at_5_bars(self, checker, base_candle):
+        """DXY_CONTINUATION should exit after 5 consecutive bars of DXY flip."""
+        trade = TradeRecord(
+            trade_id="test-dxy-flip-2",
+            signal_id="signal-dxy-flip-2",
+            symbol="GC",
+            direction="long",
+            setup_type="DXY_CONTINUATION",
+            entry_price=2650.0,
+            sl_price=2640.0,
+            tp_price=2680.0,
+            risk_amount=10.0,
+            reward_amount=30.0,
+            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+        )
+        features = {
+            "dxy_corr_1m": 0.15,
+            "dxy_corr_5m": 0.10,
+            "dxy_structure": "HH",
+        }
+
+        # 4 bars - no exit
+        for _ in range(4):
+            is_invalid, _ = checker.check_dxy_flip(trade, base_candle, features)
+            assert is_invalid is False
+
+        # 5th bar - should exit
+        is_invalid, reason = checker.check_dxy_flip(trade, base_candle, features)
+        assert is_invalid is True
+        assert "5-bar" in reason
+
+    def test_dxy_flip_counter_resets_when_condition_breaks(self, checker, base_candle):
+        """DXY flip counter should reset when condition is no longer met."""
+        trade = TradeRecord(
+            trade_id="test-dxy-flip-3",
+            signal_id="signal-dxy-flip-3",
+            symbol="GC",
+            direction="long",
+            setup_type="DXY_CONTINUATION",
+            entry_price=2650.0,
+            sl_price=2640.0,
+            tp_price=2680.0,
+            risk_amount=10.0,
+            reward_amount=30.0,
+            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+        )
+
+        flip_features = {
+            "dxy_corr_1m": 0.15,
+            "dxy_corr_5m": 0.10,
+            "dxy_structure": "HH",
+        }
+        no_flip_features = {
+            "dxy_corr_1m": -0.3,  # Back to negative
+            "dxy_corr_5m": -0.25,
+            "dxy_structure": "HH",
+        }
+
+        # 3 bars of flip
+        for _ in range(3):
+            checker.check_dxy_flip(trade, base_candle, flip_features)
+
+        # Condition breaks - counter should reset
+        checker.check_dxy_flip(trade, base_candle, no_flip_features)
+
+        # Now need full 5 bars again
+        for i in range(4):
+            is_invalid, _ = checker.check_dxy_flip(trade, base_candle, flip_features)
+            assert is_invalid is False, f"Should need full 5 bars after reset, failed at bar {i+1}"
+
+        # 5th bar after reset - should exit
+        is_invalid, _ = checker.check_dxy_flip(trade, base_candle, flip_features)
+        assert is_invalid is True
+
+    def test_dxy_flip_requires_both_positive_correlations(self, checker, base_candle):
+        """DXY flip should only trigger when BOTH correlations are positive (true contradiction)."""
+        trade = TradeRecord(
+            trade_id="test-dxy-flip-4",
+            signal_id="signal-dxy-flip-4",
+            symbol="GC",
+            direction="long",
+            setup_type="DXY_CONTINUATION",
+            entry_price=2650.0,
+            sl_price=2640.0,
+            tp_price=2680.0,
+            risk_amount=10.0,
+            reward_amount=30.0,
+            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+        )
+        # Only 1m positive, 5m still negative - not a true contradiction
+        features = {
+            "dxy_corr_1m": 0.15,
+            "dxy_corr_5m": -0.05,  # Still slightly negative
+            "dxy_structure": "HH",
+        }
+
+        # Even after 10 bars, should not exit
+        for _ in range(10):
+            is_invalid, _ = checker.check_dxy_flip(trade, base_candle, features)
+            assert is_invalid is False
+
+
+class TestDXYContinuationTieredTimeStop:
+    """Tests for DXY_CONTINUATION tiered time stop (de-risk at 30, exit at 60)."""
+
+    def test_no_action_before_30_bars(self, checker):
+        """No de-risk or exit action before 30 bars."""
+        trade = TradeRecord(
+            trade_id="test-dxy-time-1",
+            signal_id="signal-dxy-time-1",
+            symbol="GC",
+            direction="long",
+            setup_type="DXY_CONTINUATION",
+            entry_price=2650.0,
+            sl_price=2640.0,
+            tp_price=2680.0,
+            risk_amount=10.0,
+            reward_amount=30.0,
+            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+        )
+        # Candle at 0R (flat)
+        candle = Candle(
+            timestamp=utc_datetime(2024, 10, 15, 10, 25),
+            open=2650.0,
+            high=2652.0,
+            low=2648.0,
+            close=2650.0,
+            volume=1000.0,
+            symbol="GC",
+            timeframe="1m",
+            source="TEST",
+        )
+
+        is_invalid, reason, action = checker.check_no_1r_reached(
+            trade, bars_elapsed=25, candle=candle
+        )
+
+        assert is_invalid is False
+        assert action is None
+
+    def test_derisk_at_30_bars_below_half_r(self, checker):
+        """De-risk action at 30 bars if below +0.5R."""
+        trade = TradeRecord(
+            trade_id="test-dxy-time-2",
+            signal_id="signal-dxy-time-2",
+            symbol="GC",
+            direction="long",
+            setup_type="DXY_CONTINUATION",
+            entry_price=2650.0,
+            sl_price=2640.0,
+            tp_price=2680.0,
+            risk_amount=10.0,
+            reward_amount=30.0,
+            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+        )
+        # Candle at +0.2R (below threshold)
+        candle = Candle(
+            timestamp=utc_datetime(2024, 10, 15, 10, 30),
+            open=2651.0,
+            high=2653.0,
+            low=2650.0,
+            close=2652.0,  # +2 points = +0.2R
+            volume=1000.0,
+            symbol="GC",
+            timeframe="1m",
+            source="TEST",
+        )
+
+        is_invalid, reason, action = checker.check_no_1r_reached(
+            trade, bars_elapsed=30, candle=candle
+        )
+
+        assert is_invalid is False  # Not exiting
+        assert action == "de_risk"
+        assert "de_risk" in reason
+
+    def test_no_derisk_at_30_bars_if_above_half_r(self, checker):
+        """No de-risk at 30 bars if already above +0.5R."""
+        trade = TradeRecord(
+            trade_id="test-dxy-time-3",
+            signal_id="signal-dxy-time-3",
+            symbol="GC",
+            direction="long",
+            setup_type="DXY_CONTINUATION",
+            entry_price=2650.0,
+            sl_price=2640.0,
+            tp_price=2680.0,
+            risk_amount=10.0,
+            reward_amount=30.0,
+            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+        )
+        # First candle reaches +0.6R
+        candle_1 = Candle(
+            timestamp=utc_datetime(2024, 10, 15, 10, 15),
+            open=2652.0,
+            high=2657.0,  # Touched +0.7R
+            low=2651.0,
+            close=2656.0,  # +0.6R
+            volume=1000.0,
+            symbol="GC",
+            timeframe="1m",
+            source="TEST",
+        )
+        # Update state to track +0.5R milestone
+        checker.check_no_1r_reached(trade, bars_elapsed=15, candle=candle_1)
+
+        # Now at 30 bars, slightly down but already reached milestone
+        candle_30 = Candle(
+            timestamp=utc_datetime(2024, 10, 15, 10, 30),
+            open=2653.0,
+            high=2654.0,
+            low=2651.0,
+            close=2652.0,  # +0.2R now
+            volume=1000.0,
+            symbol="GC",
+            timeframe="1m",
+            source="TEST",
+        )
+
+        is_invalid, reason, action = checker.check_no_1r_reached(
+            trade, bars_elapsed=30, candle=candle_30
+        )
+
+        # Should not de-risk because +0.5R milestone was already reached
+        assert action is None or action != "de_risk"
+
+    def test_exit_at_60_bars_if_structure_deteriorated(self, checker):
+        """Exit at 60 bars if +1R not reached AND HTF structure deteriorated."""
+        trade = TradeRecord(
+            trade_id="test-dxy-time-4",
+            signal_id="signal-dxy-time-4",
+            symbol="GC",
+            direction="long",
+            setup_type="DXY_CONTINUATION",
+            entry_price=2650.0,
+            sl_price=2640.0,
+            tp_price=2680.0,
+            risk_amount=10.0,
+            reward_amount=30.0,
+            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+        )
+        candle = Candle(
+            timestamp=utc_datetime(2024, 10, 15, 11, 0),
+            open=2651.0,
+            high=2653.0,
+            low=2649.0,
+            close=2652.0,
+            volume=1000.0,
+            symbol="GC",
+            timeframe="1m",
+            source="TEST",
+        )
+        # HTF structure deteriorated for long
+        features = {"htf_structure_label": "LL"}
+
+        is_invalid, reason, action = checker.check_no_1r_reached(
+            trade, bars_elapsed=60, candle=candle, features=features
+        )
+
+        assert is_invalid is True
+        assert action == "exit"
+        assert "structure deteriorated" in reason.lower() or "htf" in reason.lower()
+
+    def test_no_exit_at_60_bars_if_structure_intact(self, checker):
+        """Do NOT exit at 60 bars if HTF structure still intact."""
+        trade = TradeRecord(
+            trade_id="test-dxy-time-5",
+            signal_id="signal-dxy-time-5",
+            symbol="GC",
+            direction="long",
+            setup_type="DXY_CONTINUATION",
+            entry_price=2650.0,
+            sl_price=2640.0,
+            tp_price=2680.0,
+            risk_amount=10.0,
+            reward_amount=30.0,
+            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+        )
+        candle = Candle(
+            timestamp=utc_datetime(2024, 10, 15, 11, 0),
+            open=2651.0,
+            high=2653.0,
+            low=2649.0,
+            close=2652.0,
+            volume=1000.0,
+            symbol="GC",
+            timeframe="1m",
+            source="TEST",
+        )
+        # HTF structure still bullish for long
+        features = {"htf_structure_label": "HH"}
+
+        is_invalid, reason, action = checker.check_no_1r_reached(
+            trade, bars_elapsed=60, candle=candle, features=features
+        )
+
+        assert is_invalid is False
+        # Continue holding
+
+
+class TestDXYContinuationPartialProfit:
+    """Tests for partial profit taking at +1R."""
+
+    def test_partial_profit_action_at_1r(self, checker):
+        """DXY_CONTINUATION should trigger partial profit action at +1R."""
+        trade = TradeRecord(
+            trade_id="test-dxy-partial-1",
+            signal_id="signal-dxy-partial-1",
+            symbol="GC",
+            direction="long",
+            setup_type="DXY_CONTINUATION",
+            entry_price=2650.0,
+            sl_price=2640.0,
+            tp_price=2680.0,
+            risk_amount=10.0,
+            reward_amount=30.0,
+            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+        )
+        # Candle that reaches +1R
+        candle = Candle(
+            timestamp=utc_datetime(2024, 10, 15, 10, 15),
+            open=2655.0,
+            high=2662.0,  # Touches +1.2R
+            low=2654.0,
+            close=2660.0,  # +1R
+            volume=1000.0,
+            symbol="GC",
+            timeframe="1m",
+            source="TEST",
+        )
+
+        action = checker.update_state(trade, candle)
+
+        assert action is not None
+        assert action["action"] == "partial_profit"
+        assert action["close_pct"] == 50
+        assert action["move_sl_to_breakeven"] is True
+        assert action["new_sl_price"] == trade.entry_price
+
+    def test_partial_profit_only_triggers_once(self, checker):
+        """Partial profit should only trigger once per trade."""
+        trade = TradeRecord(
+            trade_id="test-dxy-partial-2",
+            signal_id="signal-dxy-partial-2",
+            symbol="GC",
+            direction="long",
+            setup_type="DXY_CONTINUATION",
+            entry_price=2650.0,
+            sl_price=2640.0,
+            tp_price=2680.0,
+            risk_amount=10.0,
+            reward_amount=30.0,
+            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+        )
+        candle = Candle(
+            timestamp=utc_datetime(2024, 10, 15, 10, 15),
+            open=2655.0,
+            high=2662.0,
+            low=2654.0,
+            close=2660.0,
+            volume=1000.0,
+            symbol="GC",
+            timeframe="1m",
+            source="TEST",
+        )
+
+        # First call triggers partial
+        action1 = checker.update_state(trade, candle)
+        assert action1 is not None
+        assert action1["action"] == "partial_profit"
+
+        # Second call should NOT trigger again
+        action2 = checker.update_state(trade, candle)
+        assert action2 is None
+
+    def test_no_partial_profit_for_vwap_reclaim(self, checker):
+        """VWAP_RECLAIM should NOT trigger partial profit action."""
+        trade = TradeRecord(
+            trade_id="test-vwap-partial-1",
+            signal_id="signal-vwap-partial-1",
+            symbol="GC",
+            direction="long",
+            setup_type="VWAP_RECLAIM",
+            entry_price=2650.0,
+            sl_price=2640.0,
+            tp_price=2680.0,
+            risk_amount=10.0,
+            reward_amount=30.0,
+            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+        )
+        candle = Candle(
+            timestamp=utc_datetime(2024, 10, 15, 10, 15),
+            open=2655.0,
+            high=2662.0,
+            low=2654.0,
+            close=2660.0,
+            volume=1000.0,
+            symbol="GC",
+            timeframe="1m",
+            source="TEST",
+        )
+
+        action = checker.update_state(trade, candle)
+
+        # VWAP_RECLAIM doesn't get partial profit
+        assert action is None
+
+
+class TestCheckAllWithActions:
+    """Tests for check_all returning action alongside exit status."""
+
+    def test_check_all_returns_action_tuple(self, checker, base_trade, base_candle):
+        """check_all should return (should_exit, reason, action) tuple."""
+        result = checker.check_all(base_trade, base_candle, bars_elapsed=5)
+
+        assert isinstance(result, tuple)
+        assert len(result) == 3
+        should_exit, reason, action = result
+
+    def test_check_all_derisk_action_not_exit(self, checker):
+        """De-risk action should not cause exit."""
+        trade = TradeRecord(
+            trade_id="test-all-derisk",
+            signal_id="signal-all-derisk",
+            symbol="GC",
+            direction="long",
+            setup_type="DXY_CONTINUATION",
+            entry_price=2650.0,
+            sl_price=2640.0,
+            tp_price=2680.0,
+            risk_amount=10.0,
+            reward_amount=30.0,
+            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+        )
+        candle = Candle(
+            timestamp=utc_datetime(2024, 10, 15, 10, 30),
+            open=2650.0,
+            high=2652.0,
+            low=2648.0,
+            close=2651.0,  # Only +0.1R
+            volume=1000.0,
+            symbol="GC",
+            timeframe="1m",
+            source="TEST",
+        )
+
+        should_exit, reason, action = checker.check_all(
+            trade, candle, bars_elapsed=30, features={}
+        )
+
+        assert should_exit is False
+        assert action == "de_risk"
+
+    def test_check_all_partial_profit_action(self, checker):
+        """check_all should return partial_profit action when +1R reached."""
+        trade = TradeRecord(
+            trade_id="test-all-partial",
+            signal_id="signal-all-partial",
+            symbol="GC",
+            direction="long",
+            setup_type="DXY_CONTINUATION",
+            entry_price=2650.0,
+            sl_price=2640.0,
+            tp_price=2680.0,
+            risk_amount=10.0,
+            reward_amount=30.0,
+            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+        )
+        candle = Candle(
+            timestamp=utc_datetime(2024, 10, 15, 10, 15),
+            open=2655.0,
+            high=2662.0,
+            low=2654.0,
+            close=2660.0,  # +1R
+            volume=1000.0,
+            symbol="GC",
+            timeframe="1m",
+            source="TEST",
+        )
+
+        should_exit, reason, action = checker.check_all(
+            trade, candle, bars_elapsed=15, features={}
+        )
+
+        assert should_exit is False  # Partial doesn't exit
+        assert action == "partial_profit"
