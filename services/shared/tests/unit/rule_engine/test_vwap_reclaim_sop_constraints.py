@@ -1,11 +1,11 @@
 """Tests for VWAP_RECLAIM SOP alignment constraints.
 
 Tests the new config constraints added for SOP alignment:
-- vwap_reclaim_distance: Requires prior excursion (0.5-8.0 ATR in last 20 bars)
-- vwap_reclaim_current_distance: Rejects chase reclaims (> 2.0 ATR from VWAP)
+- vwap_reclaim_distance: Requires prior excursion (0.5-12.0 ATR in last 20 bars)
+- vwap_reclaim_current_distance: Rejects chase reclaims (> 3.0 ATR from VWAP)
 - no_late_reclaim: Blocks entries immediately after BOS (age < 20)
 - min_vwap_acceptance: Requires >= 2 bars near VWAP in last 20 bars
-- reclaim_timing_gate: Requires reclaim within 30 bars of VWAP touch
+- reclaim_timing_gate: DISABLED (commented out in config)
 """
 
 import pandas as pd
@@ -14,8 +14,8 @@ from scp_shared.rule_engine.setup_validator import SetupValidator
 
 
 class TestVWAPReclaimDistanceConstraint:
-    """Test vwap_reclaim_distance constraint (prior excursion 0.5-8.0 ATR) and
-    vwap_reclaim_current_distance constraint (current distance <= 2.0 ATR)."""
+    """Test vwap_reclaim_distance constraint (prior excursion 0.5-12.0 ATR) and
+    vwap_reclaim_current_distance constraint (current distance <= 3.0 ATR)."""
 
     def test_accepts_reclaim_within_range(self):
         """Test that reclaims with valid prior excursion and current distance pass."""
@@ -40,7 +40,7 @@ class TestVWAPReclaimDistanceConstraint:
         assert result.is_valid
 
     def test_rejects_chase_reclaim_above_3_atr(self):
-        """Test that reclaims > 2.0 ATR current distance are rejected (chase entry)."""
+        """Test that reclaims > 3.0 ATR current distance are rejected (chase entry)."""
         validator = SetupValidator()
 
         context = {
@@ -48,7 +48,7 @@ class TestVWAPReclaimDistanceConstraint:
             "structure_label": "HL",
             "direction": "long",
             "max_abs_deviation_last_20": 1.5,  # Valid prior excursion
-            "vwap_deviation_normalized": 2.5,  # Too far from VWAP (> 2.0 ATR)
+            "vwap_deviation_normalized": 3.5,  # Too far from VWAP (> 3.0 ATR)
             "bos_recent": False,
             "bos_age": 25,
             "bos_direction": "long",
@@ -59,10 +59,10 @@ class TestVWAPReclaimDistanceConstraint:
 
         result = validator.validate_setup("VWAP_RECLAIM", context)
         assert not result.is_valid
-        assert "chasing" in result.reject_reason.lower() or "too far" in result.reject_reason.lower()
+        assert "too far" in result.reject_reason.lower()
 
     def test_accepts_at_upper_boundary(self):
-        """Test that exactly 2.0 ATR current distance passes."""
+        """Test that exactly 3.0 ATR current distance passes."""
         validator = SetupValidator()
 
         context = {
@@ -70,7 +70,7 @@ class TestVWAPReclaimDistanceConstraint:
             "structure_label": "HL",
             "direction": "long",
             "max_abs_deviation_last_20": 1.5,  # Valid prior excursion
-            "vwap_deviation_normalized": 2.0,  # At boundary
+            "vwap_deviation_normalized": 3.0,  # At boundary
             "bos_recent": False,
             "bos_age": 25,
             "bos_direction": "long",
@@ -403,7 +403,11 @@ class TestMinVWAPAcceptanceConstraint:
 
 
 class TestReclaimTimingGateConstraint:
-    """Test reclaim_timing_gate constraint (<= 30 bars since VWAP touch)."""
+    """Test reclaim_timing_gate constraint (<= 30 bars since VWAP touch).
+
+    NOTE: This constraint is currently DISABLED in config (commented out).
+    Tests are preserved for when/if the constraint is re-enabled.
+    """
 
     def test_accepts_timely_reclaim(self):
         """Test that reclaims within 30 bars of VWAP touch pass."""
@@ -426,8 +430,13 @@ class TestReclaimTimingGateConstraint:
         result = validator.validate_setup("VWAP_RECLAIM", context)
         assert result.is_valid
 
+    @pytest.mark.skip(reason="reclaim_timing_gate constraint disabled in config")
     def test_rejects_delayed_reclaim(self):
-        """Test that delayed reclaims (> 30 bars) are rejected."""
+        """Test that delayed reclaims (> 30 bars) are rejected.
+
+        SKIPPED: reclaim_timing_gate is currently commented out in setups.yaml
+        based on EDA showing median bars_since_last_vwap_touch of 130.
+        """
         validator = SetupValidator()
 
         context = {
@@ -448,8 +457,12 @@ class TestReclaimTimingGateConstraint:
         assert not result.is_valid
         assert "delayed" in result.reject_reason.lower()
 
+    @pytest.mark.skip(reason="reclaim_timing_gate constraint disabled in config")
     def test_accepts_at_boundary(self):
-        """Test that exactly 30 bars passes."""
+        """Test that exactly 30 bars passes.
+
+        SKIPPED: reclaim_timing_gate is currently commented out in setups.yaml.
+        """
         validator = SetupValidator()
 
         context = {
@@ -521,13 +534,13 @@ class TestCombinedConstraints:
         """Test that violating any constraint causes rejection."""
         validator = SetupValidator()
 
-        # Good on all except current VWAP distance (> 2.0 ATR)
+        # Good on all except current VWAP distance (> 3.0 ATR)
         context = {
             "structure_1h": "HH",
             "structure_label": "HL",
             "direction": "long",
             "max_abs_deviation_last_20": 1.5,  # Valid prior excursion
-            "vwap_deviation_normalized": 2.5,  # FAIL: too far (> 2.0 ATR)
+            "vwap_deviation_normalized": 3.5,  # FAIL: too far (> 3.0 ATR)
             "bos_recent": False,
             "bos_age": 30,
             "bos_direction": "long",

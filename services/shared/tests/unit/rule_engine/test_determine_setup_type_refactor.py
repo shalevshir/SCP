@@ -145,16 +145,21 @@ class TestDetermineSetupTypeRefactor:
         """
         from scp_shared.rule_engine.scoring import determine_setup_type
 
-        # DXY_CONTINUATION doesn't require structure_1h
+        # DXY_CONTINUATION requires: dxy_structure, dual correlation < -0.3,
+        # last_structure_label, bos_confirmation, structure_clarity >= 0.5
         features = self._create_features(
             dxy_corr=-0.7,
             is_chop=False,
             structure_clarity=0.6,
+            last_structure_label="HH",  # Required for gold_structure_required
         )
         htf_bias = self._create_htf_bias(
             structure_1h=None,  # Fails VWAP_RECLAIM
-            dxy_corr_1m=-0.5,
-            dxy_corr_5m=-0.4,
+            dxy_corr_1m=-0.5,  # < -0.3 required
+            dxy_corr_5m=-0.4,  # < -0.3 required
+            dxy_structure="LL",  # Required for dxy_structure_required
+            bos_detected=True,  # Required for bos_confirmation_required
+            bars_since_bos=10,  # Within 15 bars for bos_recency
         )
 
         setup_type = determine_setup_type(features, htf_bias)
