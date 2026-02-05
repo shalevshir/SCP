@@ -20,6 +20,21 @@ signals_generated_total = create_counter(
     labels=["setup_type", "timeframe"],
 )
 
+# DXY_CONTINUATION degraded mode tracking
+# Use direct Counter (no labels) for internal tracking in signal_engine
+# These don't need mode/service labels since they're purely internal metrics
+from prometheus_client import Counter as RawCounter
+
+dxy_continuation_total = RawCounter(
+    "scp_dxy_continuation_total",
+    "Total DXY_CONTINUATION trades attempted",
+)
+
+dxy_continuation_degraded_total = RawCounter(
+    "scp_dxy_continuation_degraded_total",
+    "DXY_CONTINUATION trades in degraded mode (missing micro swing)",
+)
+
 signals_rejected_total = create_counter(
     "signals_rejected",
     "Signals blocked by reason",
