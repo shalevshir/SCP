@@ -128,6 +128,84 @@ class TradeManager:
         # Format: list of (opened_at, closed_at) tuples
         self._closed_trade_ranges: list[tuple[datetime, datetime]] = []
 
+        # Track processed signal IDs to prevent duplicate trades
+        # Key: signal_id, Value: timestamp when processed
+        self._processed_signal_ids: set[str] = set()
+
+        # Track recent signal fingerprints to prevent duplicates with different IDs
+        # Key: (timestamp, direction, setup_type, entry_price, sl_price)
+        self._recent_signal_fingerprints: set[tuple] = set()
+
+    def _get_signal_fingerprint(self, signal: SignalMessage) -> tuple:
+        """Generate a fingerprint for duplicate detection.
+
+        Uses timestamp, direction, setup_type, and key prices to identify
+        signals that are effectively duplicates even if they have different IDs.
+        """
+        return (
+            signal.timestamp.isoformat(),
+            signal.direction,
+            signal.setup_type,
+            round(float(signal.entry_price), 2),
+            round(float(signal.sl_price), 2),
+        )
+
+    def _is_duplicate_signal(self, signal: SignalMessage) -> bool:
+        """Check if signal is a duplicate.
+
+        A signal is considered duplicate if:
+        1. Its signal_id was already processed, OR
+        2. Its fingerprint matches a recent signal (same timestamp/direction/setup/prices)
+
+        Returns:
+            True if signal is a duplicate and should be rejected
+        """
+        # Check by signal ID
+        if signal.id in self._processed_signal_ids:
+            logger.warning(
+                f"Duplicate signal rejected: signal_id {signal.id} already processed"
+            )
+            return True
+
+        # Check by fingerprint (catches duplicates with different UUIDs)
+        fingerprint = self._get_signal_fingerprint(signal)
+        if fingerprint in self._recent_signal_fingerprints:
+            logger.warning(
+                f"Duplicate signal rejected: fingerprint {fingerprint} already exists "
+                f"(signal_id={signal.id})"
+            )
+            return True
+
+        # Also check pending signals list
+        for pending in self._pending_signals:
+            if pending.id == signal.id:
+                logger.warning(
+                    f"Duplicate signal rejected: signal_id {signal.id} already pending"
+                )
+                return True
+            pending_fp = self._get_signal_fingerprint(pending)
+            if pending_fp == fingerprint:
+                logger.warning(
+                    f"Duplicate signal rejected: same fingerprint as pending signal "
+                    f"(new={signal.id}, pending={pending.id})"
+                )
+                return True
+
+        return False
+
+    def _mark_signal_processed(self, signal: SignalMessage) -> None:
+        """Mark a signal as processed to prevent duplicate execution."""
+        self._processed_signal_ids.add(signal.id)
+        self._recent_signal_fingerprints.add(self._get_signal_fingerprint(signal))
+
+        # Limit memory usage: keep only recent fingerprints
+        # (signals older than 1 hour are unlikely to be duplicated)
+        if len(self._processed_signal_ids) > 1000:
+            # Clear oldest entries (simple approach - full clear)
+            logger.debug("Clearing old signal deduplication cache")
+            self._processed_signal_ids.clear()
+            self._recent_signal_fingerprints.clear()
+
     async def on_signal(self, signal: SignalMessage) -> None:
         """Handle incoming signal from Bot Core.
 
@@ -141,6 +219,16 @@ class TradeManager:
         from scp_shared.validation import get_current_session, is_session_tradeable
 
         from execution_svc import metrics as exec_metrics
+
+        # CRITICAL: Check for duplicate signals FIRST
+        # This prevents multiple trades from the same signal or
+        # signals with identical parameters (same timestamp, direction, prices)
+        if self._is_duplicate_signal(signal):
+            logger.info(
+                f"Signal {signal.id} rejected: duplicate detected "
+                f"({signal.direction} {signal.setup_type} at {signal.timestamp})"
+            )
+            return
 
         # Check trading session - block signals outside tradeable sessions
         current_session = get_current_session(signal.timestamp)
@@ -385,9 +473,34 @@ class TradeManager:
         bars_elapsed = current_bar - entry_bar
 
         # Check all exit conditions (this updates internal state via update_state())
-        should_exit, reason = self._invalidation_checker.check_all(
+        # Returns (should_exit, reason, action) where action can be:
+        #   - "exit": trade should be closed
+        #   - "de_risk": DXY_CONTINUATION should tighten SL (not exit)
+        #   - "partial_profit": DXY_CONTINUATION should take 50% at +1R
+        #   - None: no action needed
+        should_exit, reason, action = self._invalidation_checker.check_all(
             trade, candle, bars_elapsed, features
         )
+
+        # Handle management actions (DXY_CONTINUATION specific)
+        if action == "partial_profit" and not trade.partial_taken:
+            # Log partial profit trigger - actual execution would happen in Phase 8+
+            logger.info(
+                f"Trade {trade.trade_id} DXY_CONTINUATION: partial profit triggered at +1R "
+                f"(50% close, SL -> breakeven). [Phase 7: logged only]"
+            )
+            trade.partial_taken = True
+            trade.breakeven_set = True
+            trade.current_sl_price = trade.entry_price
+            # TODO Phase 8+: Actually close 50% and update SL via broker
+
+        elif action == "de_risk" and trade.setup_type == "DXY_CONTINUATION":
+            # Log de-risk trigger - actual execution would happen in Phase 8+
+            logger.info(
+                f"Trade {trade.trade_id} DXY_CONTINUATION: de-risk triggered at bar {bars_elapsed}. "
+                f"[Phase 7: logged only, would tighten SL]"
+            )
+            # TODO Phase 8+: Actually tighten SL via broker
 
         # Check if trade just reached +1R (and persist to database)
         # MUST happen AFTER check_all() to ensure we persist the current candle's state
@@ -560,10 +673,13 @@ class TradeManager:
             await self._publisher.publish_opened(trade_msg)
 
             logger.info(
-                f"Trade executed: {signal.direction} {signal.setup_type} "
-                f"@ {actual_entry_price:.2f} (SL={signal.sl_price:.2f}, "
-                f"TP={signal.tp_price:.2f}, trade_id={trade_id})"
+                f"🟢 TRADE OPENED: {signal.direction.upper()} {signal.setup_type} "
+                f"@ {actual_entry_price:.2f} | SL={signal.sl_price:.2f} TP={signal.tp_price:.2f} "
+                f"| R:R={reward_amount/risk_amount:.1f} | id={trade_id}"
             )
+
+            # Mark signal as processed to prevent duplicate trades
+            self._mark_signal_processed(signal)
 
             return trade
 
@@ -693,10 +809,16 @@ class TradeManager:
 
             status_note = " (orphaned trade)" if not broker_position_closed else ""
 
+            # Calculate PnL in R
+            risk = abs(trade.entry_price - float(trade.sl_price))
+            pnl_r = pnl_points / risk if risk > 0 else 0
+
+            # Use emoji based on outcome
+            emoji = "🟢" if pnl_points > 0 else "🔴" if pnl_points < 0 else "⚪"
+
             logger.info(
-                f"Trade closed: {trade.direction} exit @ {exit_price:.2f} "
-                f"(pnl={pnl_points:.2f} points, reason={exit_reason}, "
-                f"trade_id={trade.trade_id}){status_note}"
+                f"{emoji} TRADE CLOSED: {trade.direction.upper()} @ {exit_price:.2f} | "
+                f"PnL={pnl_points:+.1f}pts ({pnl_r:+.2f}R) | {exit_reason} | id={trade.trade_id}{status_note}"
             )
 
         except ValueError as e:

@@ -87,6 +87,9 @@ class TestScoreSignal:
                 "bos_direction": "bullish",
                 "choch_detected": False,
                 "structure_conflict_flag": False,
+                # Required fields for VWAP_RECLAIM constraints
+                "reclaim_candle_close": 2650.0,  # Clear reclaim candle detected
+                "vwap_trend_confirmed": True,  # VWAP trend confirmed
             }
         )
 
@@ -125,6 +128,9 @@ class TestScoreSignal:
                 "bos_direction": "bearish",
                 "choch_detected": False,
                 "structure_conflict_flag": False,
+                # Required fields for VWAP_RECLAIM constraints
+                "reclaim_candle_close": 2640.0,
+                "vwap_trend_confirmed": True,
             }
         )
 
@@ -161,6 +167,9 @@ class TestScoreSignal:
                 "bos_direction": "bullish",
                 "choch_detected": False,
                 "structure_conflict_flag": False,
+                # Required fields for VWAP_RECLAIM constraints
+                "reclaim_candle_close": 2650.0,
+                "vwap_trend_confirmed": True,
             }
         )
 
@@ -230,6 +239,9 @@ class TestScoreSignal:
                 "bos_direction": "bullish",
                 "choch_detected": False,
                 "structure_conflict_flag": False,
+                # Required fields for VWAP_RECLAIM constraints
+                "reclaim_candle_close": 2650.0,
+                "vwap_trend_confirmed": True,
             }
         )
 
@@ -266,6 +278,9 @@ class TestScoreSignal:
                 "bos_direction": "bullish",
                 "choch_detected": False,
                 "structure_conflict_flag": False,
+                # Required fields for VWAP_RECLAIM constraints
+                "reclaim_candle_close": 2650.0,
+                "vwap_trend_confirmed": True,
             }
         )
 
@@ -306,6 +321,9 @@ class TestDetermineSetupType:
                 "bos_direction": "bullish",
                 "choch_detected": False,
                 "structure_conflict_flag": False,
+                # Required fields for VWAP_RECLAIM constraints
+                "reclaim_candle_close": 2650.0,
+                "vwap_trend_confirmed": True,
             }
         )
 
@@ -329,6 +347,9 @@ class TestDetermineSetupType:
                 "bos_direction": "bearish",
                 "choch_detected": False,
                 "structure_conflict_flag": False,
+                # Required fields for VWAP_RECLAIM constraints
+                "reclaim_candle_close": 2640.0,
+                "vwap_trend_confirmed": True,
             }
         )
 
@@ -427,17 +448,17 @@ class TestClassifyConfidence:
 
         assert confidence == "Reject"
 
-    def test_classify_fade_threshold_aligned_with_continuations(self) -> None:
-        """Test VWAP_FADE threshold aligned at 8 (same as continuations).
+    def test_classify_fade_threshold_raised_to_9(self) -> None:
+        """Test VWAP_FADE threshold raised to 9.0 for stricter validation.
 
-        Originally set at 9, but factors rejection_candle & volume_spike rarely
-        trigger on historical data, so threshold kept at 8 for practical trading.
+        Score of 9 is now required for A+ on VWAP_FADE setups.
+        Score of 8 is Watch (below the 9.0 threshold).
         """
-        # Score of 8 is A+ for fades (aligned with continuations)
+        # Score of 8 is Watch for fades (below 9.0 threshold)
         confidence_8 = classify_confidence(8.0, "VWAP_FADE")
-        assert confidence_8 == "A+"
+        assert confidence_8 == "Watch"
 
-        # Score of 9 is also A+ for fades
+        # Score of 9 is A+ for fades
         confidence_9 = classify_confidence(9.0, "VWAP_FADE")
         assert confidence_9 == "A+"
 
@@ -464,6 +485,9 @@ class TestScoringScenariosFromSpec:
                 "bos_direction": "bullish",
                 "choch_detected": False,
                 "structure_conflict_flag": False,
+                # Required fields for VWAP_RECLAIM constraints
+                "reclaim_candle_close": 2650.0,
+                "vwap_trend_confirmed": True,
             }
         )
 
@@ -502,6 +526,9 @@ class TestScoringScenariosFromSpec:
                 "bos_direction": "bullish",
                 "choch_detected": False,
                 "structure_conflict_flag": False,
+                # Required fields for VWAP_RECLAIM constraints
+                "reclaim_candle_close": 2650.0,
+                "vwap_trend_confirmed": True,
             }
         )
 
@@ -567,6 +594,9 @@ class TestScoringScenariosFromSpec:
             "bos_direction": "bullish",
             "choch_detected": False,
             "structure_conflict_flag": False,
+            # Required fields for VWAP_RECLAIM constraints
+            "reclaim_candle_close": 2650.0,
+            "vwap_trend_confirmed": True,
         }
 
         context = {
@@ -613,6 +643,9 @@ class TestScoringScenariosFromSpec:
                 "bos_direction": "bullish",
                 "choch_detected": False,
                 "structure_conflict_flag": False,
+                # Required fields for VWAP_RECLAIM constraints
+                "reclaim_candle_close": 2650.0,
+                "vwap_trend_confirmed": True,
             }
         )
 
@@ -1075,6 +1108,9 @@ class TestFullConfluenceScoring:
                 "bos_direction": "bullish",
                 "choch_detected": False,
                 "structure_conflict_flag": False,
+                # Required fields for VWAP_RECLAIM constraints
+                "reclaim_candle_close": 2650.0,
+                "vwap_trend_confirmed": True,
             }
         )
 
@@ -1085,6 +1121,7 @@ class TestFullConfluenceScoring:
             score=8.5,
             confidence="high",
             structure_1h="HH",  # Required for validation
+            structure_15m="HH",  # Required for DXY_CONTINUATION
             bos_detected=True,
             choch_detected=False,
             structure_clarity=0.9,
@@ -1094,6 +1131,7 @@ class TestFullConfluenceScoring:
             liquidity_sweep_detected=True,
             liquidity_sweep_type="bullish",
             dxy_alignment=True,
+            vwap_trend_confirmed=True,
         )
 
         context = {
@@ -1134,6 +1172,9 @@ class TestFullConfluenceScoring:
                 "bos_direction": "bullish",
                 "choch_detected": False,
                 "structure_conflict_flag": False,
+                # Required fields for VWAP_RECLAIM constraints
+                "reclaim_candle_close": 2650.0,
+                "vwap_trend_confirmed": True,
             }
         )
 
@@ -1144,6 +1185,7 @@ class TestFullConfluenceScoring:
             score=6.5,  # Medium HTF score (no bonus)
             confidence="medium",
             structure_1h="HH",  # Required for validation
+            structure_15m="HH",  # Required for DXY_CONTINUATION
             bos_detected=True,
             choch_detected=False,
             structure_clarity=0.6,
@@ -1152,6 +1194,7 @@ class TestFullConfluenceScoring:
             fvg_alignment_score=0.0,  # No FVG alignment
             liquidity_sweep_detected=True,
             dxy_alignment=True,
+            vwap_trend_confirmed=True,
         )
 
         context = {

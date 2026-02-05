@@ -303,7 +303,7 @@
         "SERVICE_MODE": "replay",
         "REDIS_URL": "redis://localhost:6379",
         "DATABASE_URL": "postgresql://scp:scp_dev_password@localhost:5432/scp",
-        "LOG_LEVEL": "DEBUG",
+        "LOG_LEVEL": "INFO",
         "BROKER_MODE": "paper",
         "PDLL_LIMIT": "1000.0",
         "MAX_ACTIVE_TRADES": "3",

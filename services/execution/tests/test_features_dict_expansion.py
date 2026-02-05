@@ -173,7 +173,7 @@ class TestFeaturesDictExpansion:
         def capture_features(trade, candle, bars_elapsed, features=None):
             nonlocal captured_features
             captured_features = features
-            return False, None  # Don't actually exit
+            return False, None, None  # Don't actually exit
 
         trade_manager._invalidation_checker.check_all = capture_features
 
@@ -206,7 +206,7 @@ class TestFeaturesDictExpansion:
         def capture_features(trade, candle, bars_elapsed, features=None):
             nonlocal captured_features
             captured_features = features
-            return False, None
+            return False, None, None
 
         trade_manager._invalidation_checker.check_all = capture_features
 
@@ -238,7 +238,7 @@ class TestFeaturesDictExpansion:
         def capture_features(trade, candle, bars_elapsed, features=None):
             nonlocal captured_features
             captured_features = features
-            return False, None
+            return False, None, None
 
         trade_manager._invalidation_checker.check_all = capture_features
 
@@ -276,7 +276,7 @@ class TestFeaturesDictExpansion:
         def capture_features(trade, candle, bars_elapsed, features=None):
             nonlocal captured_features
             captured_features = features
-            return False, None
+            return False, None, None
 
         trade_manager._invalidation_checker.check_all = capture_features
 
@@ -310,7 +310,7 @@ class TestFeaturesDictExpansion:
         def capture_features(trade, candle, bars_elapsed, features=None):
             nonlocal captured_features
             captured_features = features
-            return False, None
+            return False, None, None
 
         trade_manager._invalidation_checker.check_all = capture_features
 
@@ -343,7 +343,7 @@ class TestFeaturesDictExpansion:
         def capture_features(trade, candle, bars_elapsed, features=None):
             nonlocal captured_features
             captured_features = features
-            return False, None
+            return False, None, None
 
         trade_manager._invalidation_checker.check_all = capture_features
 

@@ -226,12 +226,7 @@ async def process_streams(
                 ),  # Larger batch for replay
             )
 
-            # SBOP: Debug logging in backtest mode
-            if sync_ack_publisher.enabled:
-                if candles_list or features_list:
-                    logger.info(
-                        f"SBOP: Read {len(candles_list)} candles, {len(features_list)} features"
-                    )
+            # Note: SBOP debug logging removed for cleaner output
 
             # Process signals (buffer for next bar execution)
             # KILL SWITCH: Skip signal processing if killed
@@ -330,8 +325,6 @@ async def _process_candle_with_features(
     """
     global _is_killed  # noqa: PLW0603 - intentional global for kill switch
     candle_msg, features_msg = pair
-
-    logger.info(f"Processing candle: {candle_msg.timestamp} (with matching features)")
 
     # Convert to internal Candle type for validation
     candle_obj = Candle(

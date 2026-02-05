@@ -30,6 +30,7 @@ class TestDetermineSetupTypeRefactor:
             "last_structure_label": "HH",
             "structure_label": "HH",
             "direction": "long",  # Required by valid_direction constraints
+            "reclaim_candle_close": 2650.0,  # Required for VWAP_RECLAIM
         }
         defaults.update(overrides)
         return pd.Series(defaults)
@@ -52,6 +53,7 @@ class TestDetermineSetupTypeRefactor:
             "conflict_detected": False,
             "dxy_corr_1m": -0.6,
             "dxy_corr_5m": -0.5,
+            "vwap_trend_confirmed": True,  # Required for VWAP_RECLAIM
         }
         defaults.update(overrides)
         return HTFBias(**defaults)
@@ -98,26 +100,70 @@ class TestDetermineSetupTypeRefactor:
         """Test that valid DXY_CONTINUATION is detected by refactored code."""
         from scp_shared.rule_engine.scoring import determine_setup_type
 
-        # DXY_CONTINUATION requires strong correlation
-        # Make it fail VWAP_RECLAIM by having empty structure_1h
+        # DXY_CONTINUATION requires strong correlation and HTF alignment
+        # Make it fail VWAP_RECLAIM by missing vwap_trend_confirmed
         features = self._create_features(
             dxy_corr=-0.7,
             structure_clarity=0.6,
             is_chop=False,
             last_structure_label="HH",  # Gold bullish for long
             structure_label="HH",
+            # Add OHLC for no_excessive_wicks constraint
+            open=2648.0,
+            high=2655.0,
+            low=2645.0,
+            close=2652.0,
+            body=4.0,
+            lower_wick=3.0,
+            upper_wick=3.0,
         )
         htf_bias = self._create_htf_bias(
             dxy_corr_1m=-0.5,
             dxy_corr_5m=-0.4,
             dxy_structure="LL",  # DXY bearish for gold long
             bars_since_bos=10,
-            structure_1h="",  # Empty - fails VWAP_RECLAIM but not DXY_CONTINUATION
+            structure_1h="HH",  # Must be present for DXY_CONTINUATION htf_structure_consistency
+            structure_15m="HH",
+            chop_detected=False,  # MUST be False - chop blocks DXY_CONTINUATION
+            vwap_trend_confirmed=False,  # Fails VWAP_RECLAIM but not DXY_CONTINUATION
         )
 
         setup_type = determine_setup_type(features, htf_bias)
 
         assert setup_type == "DXY_CONTINUATION"
+
+    def test_dxy_continuation_blocked_by_chop(self):
+        """Test that DXY_CONTINUATION is HARD BLOCKED when chop_detected=True.
+
+        SOP Rule: DXY Continuation requires clean structure + no chop.
+        This is a NON-NEGOTIABLE constraint.
+        """
+        from scp_shared.rule_engine.scoring import determine_setup_type
+
+        # Same as valid DXY_CONTINUATION but with chop_detected=True
+        features = self._create_features(
+            dxy_corr=-0.7,
+            structure_clarity=0.6,
+            is_chop=False,
+            last_structure_label="HH",
+            structure_label="HH",
+        )
+        htf_bias = self._create_htf_bias(
+            dxy_corr_1m=-0.5,
+            dxy_corr_5m=-0.4,
+            dxy_structure="LL",
+            bars_since_bos=10,
+            structure_1h="",  # Empty - fails VWAP_RECLAIM
+            chop_detected=True,  # CHOP DETECTED - should block DXY_CONTINUATION
+        )
+
+        setup_type = determine_setup_type(features, htf_bias)
+
+        # Should NOT return DXY_CONTINUATION - must be REJECTED
+        assert setup_type == "REJECTED", (
+            f"DXY_CONTINUATION should be blocked when chop_detected=True, "
+            f"but got {setup_type}"
+        )
 
     def test_rejected_no_valid_setup(self):
         """Test that invalid conditions return REJECTED."""
@@ -137,35 +183,34 @@ class TestDetermineSetupTypeRefactor:
 
         assert setup_type == "REJECTED"
 
-    def test_missing_structure_1h_fallback_to_dxy(self):
-        """Test that missing structure_1h falls back to DXY_CONTINUATION.
+    def test_missing_structure_1h_fallback_to_rejected(self):
+        """Test that missing structure_1h causes rejection for both setups.
 
-        With config-driven system, each setup has independent constraints.
-        Missing structure_1h only blocks VWAP_RECLAIM, not DXY_CONTINUATION.
+        With updated config, DXY_CONTINUATION also requires HTF structure consistency
+        (both 15m and 1h must be present and aligned). So missing structure_1h
+        blocks BOTH VWAP_RECLAIM and DXY_CONTINUATION.
         """
         from scp_shared.rule_engine.scoring import determine_setup_type
 
-        # DXY_CONTINUATION requires: dxy_structure, dual correlation < -0.3,
-        # last_structure_label, bos_confirmation, structure_clarity >= 0.5
         features = self._create_features(
             dxy_corr=-0.7,
             is_chop=False,
             structure_clarity=0.6,
-            last_structure_label="HH",  # Required for gold_structure_required
+            last_structure_label="HH",
         )
         htf_bias = self._create_htf_bias(
-            structure_1h=None,  # Fails VWAP_RECLAIM
-            dxy_corr_1m=-0.5,  # < -0.3 required
-            dxy_corr_5m=-0.4,  # < -0.3 required
-            dxy_structure="LL",  # Required for dxy_structure_required
-            bos_detected=True,  # Required for bos_confirmation_required
-            bars_since_bos=10,  # Within 15 bars for bos_recency
+            structure_1h=None,  # Fails VWAP_RECLAIM AND DXY_CONTINUATION
+            dxy_corr_1m=-0.5,
+            dxy_corr_5m=-0.4,
+            dxy_structure="LL",
+            bos_detected=True,
+            bars_since_bos=10,
         )
 
         setup_type = determine_setup_type(features, htf_bias)
 
-        # Should fallback to DXY_CONTINUATION since it doesn't need structure_1h
-        assert setup_type == "DXY_CONTINUATION"
+        # Both setups require structure_1h now, so should be REJECTED
+        assert setup_type == "REJECTED"
 
     def test_disabled_setup_skipped(self, tmp_path):
         """Test that disabled setups are skipped."""

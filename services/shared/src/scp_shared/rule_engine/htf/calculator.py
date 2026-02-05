@@ -711,18 +711,35 @@ def compute_htf_bias(
         vwap_slope_1h = features_1h.get("vwap_slope")
 
         # Determine VWAP trend confirmation
-        # IMPORTANT: Use original_bias to reflect underlying market structure
-        # even when bias is neutralized due to DXY chop or conflicts
+        # SOP ENFORCEMENT: Use FINAL bias (after conflict detection), NOT original_bias
+        # If bias is neutralized due to DXY chop/conflicts, trend is NOT confirmed
+        # This prevents continuation trades in conflicting market conditions
+        #
+        # Requirements for trend confirmation:
+        # 1. Final bias must be directional (bullish/bearish), not neutral
+        # 2. Price must be on correct side of VWAP (above for bullish, below for bearish)
+        # 3. VWAP slope must confirm direction (positive for bullish, negative for bearish)
+        #    - If slope unavailable, require stronger price distance threshold
+        slope_confirms = False
+        if vwap_slope_1h is not None and not pd.isna(vwap_slope_1h):
+            # Slope threshold: require meaningful trend (not flat)
+            slope_confirms = (
+                (bias == "bullish" and vwap_slope_1h > 0.001)
+                or (bias == "bearish" and vwap_slope_1h < -0.001)
+            )
+
         if (
-            original_bias == "bullish"
+            bias == "bullish"  # Use final bias, not original_bias
             and vwap_distance_1h is not None
             and vwap_distance_1h > 0
+            and (slope_confirms or vwap_distance_1h > 0.1)  # Require slope OR strong distance
         ):
             vwap_trend_confirmed = True
         elif (
-            original_bias == "bearish"
+            bias == "bearish"  # Use final bias, not original_bias
             and vwap_distance_1h is not None
             and vwap_distance_1h < 0
+            and (slope_confirms or vwap_distance_1h < -0.1)  # Require slope OR strong distance
         ):
             vwap_trend_confirmed = True
 

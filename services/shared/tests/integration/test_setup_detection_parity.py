@@ -39,6 +39,7 @@ class TestVWAPReclaimParity:
             "bars_since_bos": 5,
             "liquidity_sweep_detected": True,
             "conflict_detected": False,
+            "vwap_trend_confirmed": True,  # Required for new constraints
         }
         defaults.update(overrides)
         return HTFBias(**defaults)
@@ -55,6 +56,9 @@ class TestVWAPReclaimParity:
             "bos_direction": "long",
             "direction": "long",
             "conflict_detected": False,
+            # Required fields for new constraints
+            "reclaim_candle_close": 2655.0,
+            "vwap_trend_confirmed": True,
         }
         defaults.update(overrides)
         return pd.Series(defaults)
@@ -292,18 +296,31 @@ class TestDXYContinuationParity:
             "bars_since_bos": 10,
             "bos_detected": True,
             "dxy_chop_5m": False,
+            "vwap_trend_confirmed": True,
         }
         defaults.update(overrides)
         return HTFBias(**defaults)
 
     def _create_features(self, **overrides):
         """Create feature series with sensible defaults for continuation."""
+        # Strong displacement candle for old detector: body/atr >= 1.2
+        # With atr estimated as 0.65 * range, displacement = body / (0.65 * range)
+        # For displacement >= 1.2, need body >= 1.2 * 0.65 * range = 0.78 * range
+        # With range = 10, need body >= 7.8. With body = 9.5, displacement = 9.5 / 6.5 = 1.46
         defaults = {
             "direction": "long",
             "dxy_corr": -0.65,
             "structure_clarity": 0.6,
             "is_chop": False,
             "last_structure_label": "HH",  # Gold bullish
+            # Strong displacement candle (body >= 1.2x ATR)
+            "open": 2648.0,
+            "high": 2658.0,  # range = 10
+            "low": 2648.0,   # No lower wick for cleaner body
+            "close": 2657.5, # body = 9.5, displacement = 9.5 / (0.65 * 10) = 1.46 >= 1.2
+            "body": 9.5,     # close - open
+            "lower_wick": 0.0,  # open - low
+            "upper_wick": 0.5,  # high - close
         }
         defaults.update(overrides)
         return pd.Series(defaults)
@@ -368,7 +385,7 @@ class TestDXYContinuationParity:
 
         # Should REJECT - positive correlation contradicts inverse relationship
         assert new_result.is_valid is False
-        assert new_result.failed_constraint == "no_positive_dxy_correlation"
+        assert new_result.failed_constraint == "dxy_correlation_required"
 
     def test_chop_both_reject(self):
         """Test that chop condition rejects in both detectors."""
@@ -376,7 +393,8 @@ class TestDXYContinuationParity:
 
         validator = SetupValidator()
 
-        htf_bias = self._create_htf_bias()
+        # chop_detected in HTFBias triggers no_chop_allowed constraint
+        htf_bias = self._create_htf_bias(chop_detected=True)
         features = self._create_features(is_chop=True)
 
         # Old detection

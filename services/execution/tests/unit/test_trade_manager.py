@@ -167,6 +167,81 @@ class TestTradeManagerOnSignal:
         # Signal should not be buffered
         assert len(trade_manager._pending_signals) == 0
 
+    @pytest.mark.asyncio
+    async def test_on_signal_rejects_duplicate_signal_id(
+        self,
+        trade_manager: TradeManager,
+        sample_signal: SignalMessage,
+    ) -> None:
+        """Signal is rejected if signal_id was already processed."""
+        # First signal should be buffered
+        await trade_manager.on_signal(sample_signal)
+        assert len(trade_manager._pending_signals) == 1
+
+        # Same signal again should be rejected (already in pending)
+        await trade_manager.on_signal(sample_signal)
+        assert len(trade_manager._pending_signals) == 1  # Still just 1
+
+    @pytest.mark.asyncio
+    async def test_on_signal_rejects_duplicate_fingerprint(
+        self,
+        trade_manager: TradeManager,
+        sample_signal: SignalMessage,
+    ) -> None:
+        """Signal is rejected if same fingerprint (timestamp, direction, prices) exists."""
+        # First signal should be buffered
+        await trade_manager.on_signal(sample_signal)
+        assert len(trade_manager._pending_signals) == 1
+
+        # Create new signal with different ID but same fingerprint
+        duplicate_signal = SignalMessage(
+            id="different-uuid-123",  # Different ID
+            timestamp=sample_signal.timestamp,  # Same timestamp
+            direction=sample_signal.direction,  # Same direction
+            setup_type=sample_signal.setup_type,  # Same setup
+            score=8.5,
+            confidence="A+",
+            entry_price=sample_signal.entry_price,  # Same entry
+            sl_price=sample_signal.sl_price,  # Same SL
+            tp_price=sample_signal.tp_price,
+            factors={"structure_alignment": 2.0},
+        )
+
+        await trade_manager.on_signal(duplicate_signal)
+        # Should still be just 1 (duplicate rejected)
+        assert len(trade_manager._pending_signals) == 1
+
+    @pytest.mark.asyncio
+    async def test_deduplication_allows_different_signals(
+        self,
+        trade_manager: TradeManager,
+        sample_signal: SignalMessage,
+    ) -> None:
+        """Different signals (different timestamp/prices) should both be accepted."""
+        # First signal
+        await trade_manager.on_signal(sample_signal)
+        assert len(trade_manager._pending_signals) == 1
+
+        # Different signal (different timestamp)
+        different_signal = SignalMessage(
+            id="new-signal-456",
+            timestamp=sample_signal.timestamp + timedelta(minutes=5),  # Different time
+            direction="long",
+            setup_type="VWAP_RECLAIM",
+            score=8.5,
+            confidence="A+",
+            entry_price=2655.0,  # Different price
+            sl_price=2645.0,
+            tp_price=2675.0,
+            factors={"structure_alignment": 2.0},
+        )
+
+        # Need to set max_active_trades higher for this test
+        trade_manager._max_active_trades = 2
+        await trade_manager.on_signal(different_signal)
+        # Both signals should be buffered
+        assert len(trade_manager._pending_signals) == 2
+
 
 class TestTradeManagerExecutePendingSignals:
     """Test execute_pending_signals method."""

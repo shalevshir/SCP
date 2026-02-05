@@ -112,6 +112,9 @@ class TestVWAPReclaimValidation:
             "conflict_detected": False,
             "choch_detected": False,  # Required by direction_bos_alignment constraint
             "choch_direction": None,
+            # Required fields for new VWAP_RECLAIM constraints
+            "vwap_trend_confirmed": True,  # Required by vwap_trend_confirmed_required
+            "reclaim_candle_close": 2650.0,  # Required by clear_reclaim_candle
             # Additional fields needed for scoring (but not constraints)
             "rsi": 55.0,
             "ema_9": 2648.0,
@@ -354,6 +357,40 @@ class TestVWAPFadeValidation:
         assert "VWAP deviation" in result.reject_reason
 
 
+class TestDXYContinuationConstraints:
+    """Tests for specific DXY_CONTINUATION hard gates."""
+
+    def _create_base_context(self) -> dict[str, Any]:
+        """Create a base context that passes all DXY_CONTINUATION constraints."""
+        return {
+            "direction": "long",
+            "dxy_alignment": True,
+            "structure_15m": "HH",
+            "structure_1h": "HL",
+            "dxy_corr_1m": -0.25,
+            "htf_direction": "long",
+            "chop_detected": False,
+            "last_structure_label": "HH",
+            "body": 1.0,
+            "lower_wick": 0.4,
+            "upper_wick": 0.4,
+        }
+
+    def test_zero_correlation_rejects(self) -> None:
+        """Test that zero DXY correlation rejects DXY_CONTINUATION."""
+        from scp_shared.rule_engine.setup_validator import SetupValidator
+
+        validator = SetupValidator()
+        context = self._create_base_context()
+        context["dxy_corr_1m"] = 0.0
+
+        result = validator.validate_setup("DXY_CONTINUATION", context)
+
+        assert result.is_valid is False
+        assert result.failed_constraint == "dxy_correlation_required"
+        assert "non-negative" in result.reject_reason
+
+
 @pytest.mark.skip(reason="DXY_CONTINUATION setup is disabled in config")
 class TestDXYContinuationValidation:
     """Tests for DXY_CONTINUATION setup validation."""
@@ -501,6 +538,9 @@ class TestSetupValidatorParity:
                 "vwap": 2650.0,
                 "bos_direction": "long",
                 "direction": "long",
+                # Required fields for new VWAP_RECLAIM constraints
+                "vwap_trend_confirmed": True,
+                "reclaim_candle_close": 2655.0,
             }
         )
 
@@ -513,6 +553,7 @@ class TestSetupValidatorParity:
             confidence="high",
             structure_1h="HH",
             conflict_detected=False,
+            vwap_trend_confirmed=True,
         )
 
         # Use build_setup_context to get proper fallback logic

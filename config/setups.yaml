@@ -61,6 +61,18 @@ setups:
         expression: "near_vwap_count_last_20 is None or near_vwap_count_last_20 >= 2"
         reject_reason: "No meaningful VWAP acceptance in last 20 bars"
 
+      # VWAP trend must be confirmed (consecutive closes on same side of VWAP)
+      # STRICT: Must be True - None and False are both rejected
+      vwap_trend_confirmed_required:
+        expression: "vwap_trend_confirmed is True"
+        reject_reason: "VWAP trend not confirmed - requires sustained closes on same side of VWAP"
+
+      # Clear reclaim candle close required (must have recorded a reclaim candle)
+      # STRICT: Must have a value (not None) - meaning a reclaim cross was detected
+      clear_reclaim_candle:
+        expression: "reclaim_candle_close is not None"
+        reject_reason: "No clear reclaim candle close detected"
+
       #reclaim_timing_gate:
         # Relaxed from 10 to 30 bars based on EDA showing median bars_since_last_vwap_touch of 130
       #  expression: "bars_since_last_vwap_touch is None or bars_since_last_vwap_touch <= 30"
@@ -102,7 +114,7 @@ setups:
   # ============================================================================
   VWAP_FADE:
     enabled: true
-    min_score: 8.0
+    min_score: 9.0  # Raised from 8.0 for stricter validation
 
     constraints:
       has_liquidity_sweep:
@@ -164,18 +176,65 @@ setups:
   # ============================================================================
   DXY_CONTINUATION:
     enabled: true
-    min_score: 7.5  # Lowered from 8.0 to allow more setups with score-based filtering
+    min_score: 8.5  # HARD GATE - no exceptions
 
-    # HARD CONSTRAINTS (Non-negotiable - structural validity only)
+    # =========================================================================
+    # NON-NEGOTIABLE HARD CONSTRAINTS (SOP Requirements)
+    # These are binary gates - if ANY fails, NO TRADE regardless of score/VWAP
+    # =========================================================================
     constraints:
       valid_direction:
         expression: "direction in ('long', 'short')"
         reject_reason: "Invalid direction for continuation"
 
-      # HARD: Gold structure must be present and aligned with direction
-      gold_structure_required:
-        expression: "last_structure_label is not None"
-        reject_reason: "Gold structure missing - cannot validate direction alignment"
+      # -----------------------------------------------------------------------
+      # 1️⃣ DXY ALIGNMENT REQUIRED (NON-NEGOTIABLE)
+      # If dxy_alignment == false → NO DXY_CONTINUATION, regardless of VWAP
+      # VWAP must NEVER override DXY - this is the primary edge
+      # -----------------------------------------------------------------------
+      dxy_alignment_required:
+        expression: "dxy_alignment is True"
+        reject_reason: "DXY alignment FALSE - DXY_CONTINUATION blocked (VWAP cannot override DXY)"
+
+      # -----------------------------------------------------------------------
+      # 2️⃣ HTF STRUCTURE CONSISTENCY REQUIRED (NON-NEGOTIABLE)
+      # For continuation, BOTH 15m and 1h must be present AND agree
+      # Missing HTF = reject (no leak)
+      # -----------------------------------------------------------------------
+      htf_structure_consistency:
+        expression: "structure_15m is not None and structure_1h is not None and ((structure_15m in ('HH', 'HL') and structure_1h in ('HH', 'HL')) or (structure_15m in ('LH', 'LL') and structure_1h in ('LH', 'LL')))"
+        reject_reason: "HTF conflict or missing: 15m={structure_15m}, 1h={structure_1h} - continuation requires both present and aligned"
+
+      # -----------------------------------------------------------------------
+      # 3️⃣ DXY CORRELATION REQUIRED (NON-NEGOTIABLE)
+      # 1m correlation must be present AND negative (inverse relationship)
+      # Missing correlation = reject (no leak)
+      # -----------------------------------------------------------------------
+      dxy_correlation_required:
+        expression: "dxy_corr_1m is not None and dxy_corr_1m < 0"
+        reject_reason: "DXY correlation missing or non-negative (1m={dxy_corr_1m}) - inverse relationship required"
+
+      # -----------------------------------------------------------------------
+      # 4️⃣ HTF BIAS MUST MATCH DIRECTION (NON-NEGOTIABLE)
+      # Neutral HTF = no continuation (use fades for neutral)
+      # Missing HTF bias = reject (no leak)
+      # -----------------------------------------------------------------------
+      htf_bias_matches_direction:
+        expression: "htf_direction is not None and htf_direction == direction"
+        reject_reason: "HTF bias missing or not matching direction (htf={htf_direction}, direction={direction})"
+
+      # -----------------------------------------------------------------------
+      # Additional hard gates
+      # -----------------------------------------------------------------------
+      # HARD: Block DXY_CONTINUATION when market is in chop
+      no_chop_allowed:
+        expression: "not chop_detected"
+        reject_reason: "DXY continuation blocked - chop detected in market"
+
+      # HARD: Gold structure must be valid (one of HH/HL/LH/LL)
+      gold_structure_valid:
+        expression: "last_structure_label in ('HH', 'HL', 'LH', 'LL')"
+        reject_reason: "Gold structure invalid or missing (got {last_structure_label})"
 
       gold_structure_long:
         expression: "direction != 'long' or last_structure_label in ('HH', 'HL')"
@@ -185,27 +244,11 @@ setups:
         expression: "direction != 'short' or last_structure_label in ('LH', 'LL')"
         reject_reason: "Gold structure contradicts short direction (need LH/LL, got {last_structure_label})"
 
-      # HARD: Reject if DXY correlation is POSITIVE (contradictory to inverse relationship)
-      # Soft threshold handled in scoring, but hard reject positive correlation
-      no_positive_dxy_correlation:
-        expression: "(dxy_corr_1m is None or dxy_corr_1m < 0.1) and (dxy_corr_5m is None or dxy_corr_5m < 0.1)"
-        reject_reason: "DXY correlation is positive - contradicts inverse relationship (1m: {dxy_corr_1m}, 5m: {dxy_corr_5m})"
-
-      # NOTE: DXY structure alignment moved to SCORING-ONLY (dxy_structure_bonus)
-      # Per Enforced Correction: DXY structure label should not be a hard gate
-      # Rationale: In continuation, DXY often ranges/pauses while gold trends
-
-      # HARD: Wick-chop / fakeout chop (not general pause/consolidation)
-      # Redefined: reject if heavy wick chop (wicks dominate body, suggesting indecision)
-      no_wick_chop:
-        expression: "not is_chop or (body is not None and lower_wick is not None and upper_wick is not None and (lower_wick + upper_wick) / max(body, 0.1) < 3.0)"
-        reject_reason: "Wick-chop detected - excessive wicks indicate fakeout regime"
-
-      # HTF bias alignment (if available - allow None to pass, penalize in scoring)
-      # HARD reject only if HTF bias exists AND contradicts direction
-      no_contradicting_htf_bias:
-        expression: "htf_direction is None or htf_direction == direction or htf_direction == 'neutral'"
-        reject_reason: "HTF bias contradicts direction (htf: {htf_direction}, direction: {direction})"
+      # HARD: Wick-chop detection (independent of is_chop flag)
+      # Excessive wicks relative to body indicates indecision/fakeout
+      no_excessive_wicks:
+        expression: "body is not None and lower_wick is not None and upper_wick is not None and body > 0.1 and (lower_wick + upper_wick) / body < 3.0"
+        reject_reason: "Excessive wicks detected (wick/body ratio too high) - fakeout regime"
 
     # SOFT CONSTRAINTS (Score-based - handled in scoring factors, not hard rejection)
     # Per Enforced Correction from dxy_continuation_config_review_insights.md:
