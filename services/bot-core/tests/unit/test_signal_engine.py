@@ -321,7 +321,7 @@ class TestSignalToMessage:
         assert msg.tp_price == 2655.0
 
     def test_signal_to_message_dxy_continuation(self) -> None:
-        """Convert DXY_CONTINUATION signal to message."""
+        """Convert DXY_CONTINUATION signal to message with structural SL."""
         signal = Signal(
             timestamp=datetime(2025, 1, 15, 10, 0, tzinfo=timezone.utc),
             symbol="GC",
@@ -350,8 +350,8 @@ class TestSignalToMessage:
             dxy_correlation=-0.85,
             structure_label="HH",
             vwap_deviation=0.5,
-            # TP Structural Target fields (DXY_CONTINUATION needs target at 3R)
-            nearest_liquidity_long=2658.0,  # Will be >3R with 25-tick SL (2.5)
+            atr=3.0,  # ATR for SL calculation
+            swing_hl_low=2642.0,  # Micro swing for structural SL
         )
         htf_bias = HTFBiasMessage(
             timestamp=datetime(2025, 1, 15, 10, 0, tzinfo=timezone.utc),
@@ -360,16 +360,24 @@ class TestSignalToMessage:
             confidence="A+",
             dxy_aligned=False,
             chop_detected=False,
+            htf_range_high=2680.0,  # HTF target for TP2
         )
 
         msg = signal_to_message(signal, features, htf_bias)
 
         assert msg.direction == "long"
         assert msg.setup_type == "DXY_CONTINUATION"
-        # DXY_CONTINUATION uses 25-tick minimum SL
-        assert msg.sl_price == 2650.0 - 2.5  # entry - 25 ticks
-        # TP uses structural target
-        assert msg.tp_price == 2658.0
+        # DXY_CONTINUATION uses structural SL with ATR floor
+        # sl_struct = 2642.0 - 0.3 = 2641.7
+        # sl_atr = 2650.0 - (1.7 * 3.0) = 2644.9
+        # sl = min(2641.7, 2644.9) = 2641.7 (farther from entry)
+        assert msg.sl_price == pytest.approx(2641.7, abs=0.1)
+        # Two-stage TP: TP1 at 1R
+        # Risk = 2650 - 2641.7 = 8.3, TP1 = 2650 + 8.3 = 2658.3
+        assert msg.tp_price == pytest.approx(2658.3, abs=0.5)
+        # Continuation mode fields
+        assert msg.tp_mode == "continuation"
+        assert msg.be_after_tp1 is True
 
     def test_signal_to_message_september_2r(self) -> None:
         """September uses 2R target."""

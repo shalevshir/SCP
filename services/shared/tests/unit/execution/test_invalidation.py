@@ -1577,7 +1577,7 @@ class TestDXYContinuationPartialProfit:
 
         assert action is not None
         assert action["action"] == "partial_profit"
-        assert action["close_pct"] == 50
+        assert action["close_pct"] == 40  # Per DXY_CONTINUATION spec: 40% partial at TP1
         assert action["move_sl_to_breakeven"] is True
         assert action["new_sl_price"] == trade.entry_price
 
