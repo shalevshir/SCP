@@ -211,8 +211,8 @@ setups:
       # Missing correlation = reject (no leak)
       # -----------------------------------------------------------------------
       dxy_correlation_required:
-        expression: "dxy_corr_1m is not None and dxy_corr_1m <= 0"
-        reject_reason: "DXY correlation missing or positive (1m={dxy_corr_1m}) - inverse relationship required"
+        expression: "dxy_corr_1m is not None and dxy_corr_1m < 0"
+        reject_reason: "DXY correlation missing or non-negative (1m={dxy_corr_1m}) - inverse relationship required"
 
       # -----------------------------------------------------------------------
       # 4️⃣ HTF BIAS MUST MATCH DIRECTION (NON-NEGOTIABLE)
