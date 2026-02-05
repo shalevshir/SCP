@@ -204,13 +204,8 @@ async def process_streams(
     # SBOP: Track timestamps we've acked to avoid double-acking (must persist across iterations)
     acked_timestamps: set[datetime] = set()
 
-    loop_iteration = 0
-
     try:
         while not shutdown_event.is_set():
-            loop_iteration += 1
-            if loop_iteration == 1 or loop_iteration % 100 == 0:
-                logger.info(f"Execution loop iteration {loop_iteration}")
             # Read from all streams IN PARALLEL to avoid sequential blocking
             # Previously, each read blocked for up to 1000ms, causing ~3 second
             # delays when streams were empty. Now they run concurrently.
