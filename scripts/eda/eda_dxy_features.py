@@ -1073,6 +1073,11 @@ class DXYFeatureEDA:
             </thead>
             <tbody>
 """
+            def format_pct(value: Any) -> str:
+                if isinstance(value, (int, float, np.integer, np.floating)) and np.isfinite(value):
+                    return f"{value:.1f}%"
+                return "-"
+
             metrics = [
                 ("Strong (< -0.5)", "strong_pct", "both_strong_pct"),
                 ("Moderate (< -0.3)", "moderate_pct", "both_moderate_pct"),
@@ -1081,15 +1086,15 @@ class DXYFeatureEDA:
             ]
 
             for label, single_key, dual_key in metrics:
-                val_1m = corr_quality.get("1m_correlation", {}).get(single_key, "-")
-                val_5m = corr_quality.get("5m_correlation", {}).get(single_key, "-")
-                val_dual = corr_quality.get("dual_correlation", {}).get(dual_key, "-")
+                val_1m = corr_quality.get("1m_correlation", {}).get(single_key)
+                val_5m = corr_quality.get("5m_correlation", {}).get(single_key)
+                val_dual = corr_quality.get("dual_correlation", {}).get(dual_key)
                 html += f"""
                 <tr>
                     <td>{label}</td>
-                    <td>{val_1m:.1f}%</td>
-                    <td>{val_5m:.1f}%</td>
-                    <td>{val_dual:.1f}%</td>
+                    <td>{format_pct(val_1m)}</td>
+                    <td>{format_pct(val_5m)}</td>
+                    <td>{format_pct(val_dual)}</td>
                 </tr>
 """
 
