@@ -133,7 +133,8 @@ class FeatureProcessor:
             structure_label=features_series.get("structure_label"),
             htf_structure_label=features_series.get("htf_structure_label")
             or features_series.get("structure_15m"),
-            # BOS/CHoCH fields for VWAP_RECLAIM validation
+            # BOS/CHoCH fields for VWAP_RECLAIM validation and Phase-2 runner unlock
+            bos_detected=features_series.get("bos_detected"),  # BOS on THIS bar
             bos_direction=features_series.get("bos_direction"),
             bos_recent=features_series.get("bos_recent"),
             bos_age=self._safe_int(features_series.get("bos_age")),

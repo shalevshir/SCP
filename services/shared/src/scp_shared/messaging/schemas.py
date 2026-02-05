@@ -93,7 +93,10 @@ class FeaturesMessage(BaseModel):
         default=None, description="HTF structure label (15m/1h)"
     )
 
-    # BOS/CHoCH fields for VWAP_RECLAIM validation
+    # BOS/CHoCH fields for VWAP_RECLAIM validation and Phase-2 runner unlock
+    bos_detected: bool | None = Field(
+        default=None, description="Whether BOS was detected on THIS bar (for runner unlock)"
+    )
     bos_direction: str | None = Field(
         default=None, description="Break of structure direction"
     )

@@ -405,6 +405,7 @@ class StreamingFeatureProcessor:
         features["last_swing_low"] = gc_structure_ctx.last_swing_low
         features["last_swing_high_idx"] = gc_structure_ctx.last_swing_high_idx
         features["last_swing_low_idx"] = gc_structure_ctx.last_swing_low_idx
+        features["bos_detected"] = gc_structure_ctx.bos_detected
         features["bos_direction"] = gc_structure_ctx.bos_direction
         features["bos_recent"] = gc_structure_ctx.bos_recent
         features["bos_age"] = gc_structure_ctx.bos_age

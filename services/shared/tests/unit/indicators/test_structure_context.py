@@ -1715,3 +1715,280 @@ class TestBOSDetection:
             assert streaming_ctx.bos_direction == batch_row.get("bos_direction")
             assert streaming_ctx.bos_recent == batch_row.get("bos_recent")
             assert streaming_ctx.bos_age == batch_row.get("bos_age")
+
+
+class TestBOSDetectionPhase2Fixes:
+    """Test BOS detection fixes for Phase 2.0.1.
+
+    These tests verify the critical bug fixes in _detect_bos_event():
+    1. Store swing level (not close) in highest_broken_swing_high
+    2. Collect all candidates and choose max/min (not first match)
+    3. "Breaks both directions" converted to warning (dead code check)
+    """
+
+    def test_bos_stores_swing_level_not_close(self):
+        """BOS should store the broken swing level, not the close price.
+
+        BUG: Previously stored `close` in highest_broken_swing_high.
+        FIX: Store the swing level that was broken.
+
+        Example:
+        - Swing high at 100
+        - Close breaks at 101 (close > 100)
+        - OLD: highest_broken = 101 (wrong - stores close)
+        - NEW: highest_broken = 100 (correct - stores swing level)
+
+        This matters because a new swing at 100.5 should still qualify:
+        - With OLD code: 100.5 > 101 is False, so no BOS (wrong)
+        - With NEW code: 100.5 > 100 is True, so BOS triggers (correct)
+        """
+        tracker = StructureContextTracker(swing_window=2)
+
+        # Create first swing high at 100
+        tracker.update(high=98.0, low=96.0, close=97.0)  # Bar 0
+        tracker.update(high=99.0, low=97.0, close=98.0)  # Bar 1
+        tracker.update(high=100.0, low=98.0, close=99.0)  # Bar 2 - swing high at 100
+        tracker.update(high=99.0, low=97.0, close=98.0)  # Bar 3
+        tracker.update(high=98.0, low=96.0, close=97.0)  # Bar 4 - swing detected
+
+        # Verify swing high was detected
+        assert tracker.last_swing_high == 100.0
+
+        # Break the swing high at 100 with close at 101
+        ctx_bos1 = tracker.update(high=102.0, low=99.0, close=101.0)  # Bar 5
+
+        # Should detect bullish BOS
+        assert ctx_bos1.bos_direction == "bullish"
+        assert ctx_bos1.bos_age == 0
+
+        # CRITICAL: highest_broken should be 100 (swing level), NOT 101 (close)
+        assert tracker.highest_broken_swing_high == 100.0, (
+            f"highest_broken_swing_high should store swing level (100.0), "
+            f"not close (101.0). Got: {tracker.highest_broken_swing_high}"
+        )
+
+        # Now create a new swing high at 100.5 (between 100 and 101)
+        # Pull back first
+        tracker.update(high=100.0, low=98.0, close=99.0)  # Bar 6
+        tracker.update(high=99.0, low=97.0, close=98.0)  # Bar 7
+        tracker.update(
+            high=100.5, low=98.5, close=99.5
+        )  # Bar 8 - new swing high at 100.5
+        tracker.update(high=99.5, low=97.5, close=98.5)  # Bar 9
+        tracker.update(high=98.5, low=96.5, close=97.5)  # Bar 10 - swing detected
+
+        # Break the new swing high at 100.5 with close at 101.5
+        ctx_bos2 = tracker.update(high=103.0, low=100.0, close=101.5)  # Bar 11
+
+        # With the FIX: 100.5 > 100 is True, so BOS should trigger
+        # With the BUG: 100.5 > 101 is False, so BOS would NOT trigger
+        assert ctx_bos2.bos_direction == "bullish", (
+            "BOS should trigger for swing at 100.5 when highest_broken is 100.0 "
+            "(not 101.0). This verifies the fix stores swing level, not close."
+        )
+        assert ctx_bos2.bos_age == 0
+
+    def test_bos_chooses_highest_broken_swing(self):
+        """BOS should choose the HIGHEST broken swing, not the first match.
+
+        BUG: Previously broke on first qualifying swing in the loop.
+        FIX: Collect all candidates and choose max (for bullish) or min (for bearish).
+
+        Example with two swing highs at 98 and 100:
+        - Close at 105 breaks BOTH
+        - OLD: First match (98) stored as highest_broken (wrong order-dependent)
+        - NEW: Max candidate (100) stored as highest_broken (correct)
+        """
+        tracker = StructureContextTracker(swing_window=2)
+
+        # Create first swing high at 98
+        tracker.update(high=96.0, low=94.0, close=95.0)  # Bar 0
+        tracker.update(high=97.0, low=95.0, close=96.0)  # Bar 1
+        tracker.update(high=98.0, low=96.0, close=97.0)  # Bar 2 - swing high at 98
+        tracker.update(high=97.0, low=95.0, close=96.0)  # Bar 3
+        tracker.update(high=96.0, low=94.0, close=95.0)  # Bar 4 - first swing detected
+
+        # Create second swing high at 100 (higher)
+        tracker.update(high=97.0, low=95.0, close=96.0)  # Bar 5
+        tracker.update(high=99.0, low=97.0, close=98.0)  # Bar 6
+        tracker.update(high=100.0, low=98.0, close=99.0)  # Bar 7 - swing high at 100
+        tracker.update(high=99.0, low=97.0, close=98.0)  # Bar 8
+        tracker.update(high=98.0, low=96.0, close=97.0)  # Bar 9 - second swing detected
+
+        # Pull back below both swings
+        tracker.update(high=97.0, low=95.0, close=96.0)  # Bar 10
+        tracker.update(high=96.0, low=94.0, close=95.0)  # Bar 11
+
+        # Now break BOTH swing highs with a single bar (close > 100 > 98)
+        ctx_bos = tracker.update(high=106.0, low=103.0, close=105.0)  # Bar 12
+
+        # Should detect bullish BOS
+        assert ctx_bos.bos_direction == "bullish"
+        assert ctx_bos.bos_age == 0
+
+        # CRITICAL: highest_broken should be 100 (the max candidate), NOT 98
+        assert tracker.highest_broken_swing_high == 100.0, (
+            f"highest_broken_swing_high should be 100.0 (max candidate), "
+            f"not 98.0 (first match). Got: {tracker.highest_broken_swing_high}"
+        )
+
+    def test_bos_chooses_lowest_broken_swing(self):
+        """BOS should choose the LOWEST broken swing for bearish breaks.
+
+        Similar to above, but for bearish BOS: choose min, not first match.
+        """
+        tracker = StructureContextTracker(swing_window=2)
+
+        # Create first swing low at 102
+        tracker.update(high=104.0, low=102.0, close=103.0)  # Bar 0
+        tracker.update(high=105.0, low=103.0, close=104.0)  # Bar 1
+        tracker.update(high=104.0, low=102.0, close=103.0)  # Bar 2 - swing low at 102
+        tracker.update(high=105.0, low=103.0, close=104.0)  # Bar 3
+        tracker.update(high=106.0, low=104.0, close=105.0)  # Bar 4 - first swing detected
+
+        # Create second swing low at 100 (lower)
+        tracker.update(high=105.0, low=103.0, close=104.0)  # Bar 5
+        tracker.update(high=103.0, low=101.0, close=102.0)  # Bar 6
+        tracker.update(high=102.0, low=100.0, close=101.0)  # Bar 7 - swing low at 100
+        tracker.update(high=103.0, low=101.0, close=102.0)  # Bar 8
+        tracker.update(high=104.0, low=102.0, close=103.0)  # Bar 9 - second swing detected
+
+        # Rally above both swings
+        tracker.update(high=105.0, low=103.0, close=104.0)  # Bar 10
+        tracker.update(high=106.0, low=104.0, close=105.0)  # Bar 11
+
+        # Now break BOTH swing lows with a single bar (close < 100 < 102)
+        ctx_bos = tracker.update(high=99.0, low=96.0, close=98.0)  # Bar 12
+
+        # Should detect bearish BOS
+        assert ctx_bos.bos_direction == "bearish"
+        assert ctx_bos.bos_age == 0
+
+        # CRITICAL: lowest_broken should be 100 (the min candidate), NOT 102
+        assert tracker.lowest_broken_swing_low == 100.0, (
+            f"lowest_broken_swing_low should be 100.0 (min candidate), "
+            f"not 102.0 (first match). Got: {tracker.lowest_broken_swing_low}"
+        )
+
+    def test_bos_does_not_retrigger_on_same_level(self):
+        """BOS should not re-trigger when staying above the same broken level.
+
+        After breaking a swing at 100 and storing highest_broken=100,
+        subsequent bars with close > 100 should NOT trigger new BOS events.
+        """
+        tracker = StructureContextTracker(swing_window=2)
+
+        # Create swing high at 100
+        tracker.update(high=98.0, low=96.0, close=97.0)  # Bar 0
+        tracker.update(high=99.0, low=97.0, close=98.0)  # Bar 1
+        tracker.update(high=100.0, low=98.0, close=99.0)  # Bar 2 - swing high at 100
+        tracker.update(high=99.0, low=97.0, close=98.0)  # Bar 3
+        tracker.update(high=98.0, low=96.0, close=97.0)  # Bar 4 - swing detected
+
+        # Break the swing high
+        ctx_bos = tracker.update(high=102.0, low=99.0, close=101.0)  # Bar 5
+
+        assert ctx_bos.bos_direction == "bullish"
+        assert ctx_bos.bos_age == 0
+
+        # Continue staying above 100 - should NOT trigger new BOS
+        for i in range(5):
+            ctx = tracker.update(high=103.0, low=100.5, close=102.0)
+            # BOS age should increment (not reset to 0)
+            assert ctx.bos_age == i + 1, (
+                f"BOS should not re-trigger. Expected bos_age={i + 1}, "
+                f"got {ctx.bos_age}"
+            )
+
+    def test_bos_detected_field_indicates_current_bar_event(self):
+        """bos_detected should be True only on the bar where BOS occurs.
+
+        The bos_detected field in StructureContext indicates whether a BOS
+        event happened on the CURRENT bar (needed for Phase-2 runner unlock).
+        """
+        tracker = StructureContextTracker(swing_window=2)
+
+        # Create swing high at 100
+        tracker.update(high=98.0, low=96.0, close=97.0)  # Bar 0
+        tracker.update(high=99.0, low=97.0, close=98.0)  # Bar 1
+        tracker.update(high=100.0, low=98.0, close=99.0)  # Bar 2 - swing high at 100
+        tracker.update(high=99.0, low=97.0, close=98.0)  # Bar 3
+        tracker.update(high=98.0, low=96.0, close=97.0)  # Bar 4 - swing detected
+
+        # Break the swing high - bos_detected should be True
+        ctx_bos = tracker.update(high=102.0, low=99.0, close=101.0)  # Bar 5
+
+        assert ctx_bos.bos_detected is True, "bos_detected should be True on BOS bar"
+        assert ctx_bos.bos_direction == "bullish"
+        assert ctx_bos.bos_age == 0
+
+        # Next bar - bos_detected should be False (not a new BOS event)
+        ctx_next = tracker.update(high=103.0, low=100.5, close=102.0)  # Bar 6
+
+        assert (
+            ctx_next.bos_detected is False
+        ), "bos_detected should be False on non-BOS bar"
+        assert ctx_next.bos_direction == "bullish"  # Direction persists
+        assert ctx_next.bos_age == 1  # Age increments
+
+    def test_bos_both_directions_impossible_with_close_based(self):
+        """With close-based logic, breaking both directions is impossible.
+
+        A single close cannot be both > swing_high AND < swing_low simultaneously.
+        This test verifies that the code correctly handles each direction separately
+        and that the "both directions" branch is essentially dead code (but we
+        converted it to a warning log for data integrity).
+        """
+        tracker = StructureContextTracker(swing_window=2)
+
+        # Create proper swing high at 105 (needs swing_window=2 confirmation)
+        tracker.update(high=100.0, low=98.0, close=99.0)  # Bar 0
+        tracker.update(high=102.0, low=100.0, close=101.0)  # Bar 1
+        tracker.update(high=105.0, low=102.0, close=104.0)  # Bar 2 - swing high at 105
+        tracker.update(high=103.0, low=100.0, close=101.0)  # Bar 3
+        tracker.update(high=102.0, low=99.0, close=100.0)  # Bar 4 - swing high detected
+
+        # Verify swing high was detected
+        assert tracker.last_swing_high == 105.0, (
+            f"Expected swing high at 105, got {tracker.last_swing_high}"
+        )
+
+        # Create swing low at 95
+        tracker.update(high=101.0, low=97.0, close=98.0)  # Bar 5
+        tracker.update(high=100.0, low=95.0, close=96.0)  # Bar 6 - swing low at 95
+        tracker.update(high=99.0, low=96.0, close=97.0)  # Bar 7
+        tracker.update(high=100.0, low=97.0, close=98.0)  # Bar 8 - swing low detected
+
+        # Verify swing low was detected
+        assert tracker.last_swing_low == 95.0, (
+            f"Expected swing low at 95, got {tracker.last_swing_low}"
+        )
+
+        # A close at 106 breaks the swing high (106 > 105), not the low (106 > 95)
+        ctx_bullish = tracker.update(high=110.0, low=104.0, close=106.0)  # Bar 9
+        assert ctx_bullish.bos_direction == "bullish", (
+            f"Close at 106 should break swing high at 105. "
+            f"Got direction: {ctx_bullish.bos_direction}"
+        )
+
+        # Reset and test bearish
+        tracker2 = StructureContextTracker(swing_window=2)
+
+        # Create swing high and low
+        tracker2.update(high=100.0, low=98.0, close=99.0)  # Bar 0
+        tracker2.update(high=102.0, low=100.0, close=101.0)  # Bar 1
+        tracker2.update(high=105.0, low=102.0, close=104.0)  # Bar 2 - swing high at 105
+        tracker2.update(high=103.0, low=100.0, close=101.0)  # Bar 3
+        tracker2.update(high=102.0, low=99.0, close=100.0)  # Bar 4 - swing high detected
+
+        tracker2.update(high=101.0, low=97.0, close=98.0)  # Bar 5
+        tracker2.update(high=100.0, low=95.0, close=96.0)  # Bar 6 - swing low at 95
+        tracker2.update(high=99.0, low=96.0, close=97.0)  # Bar 7
+        tracker2.update(high=100.0, low=97.0, close=98.0)  # Bar 8 - swing low detected
+
+        # A close at 94 breaks the swing low (94 < 95), not the high (94 < 105)
+        ctx_bearish = tracker2.update(high=98.0, low=93.0, close=94.0)  # Bar 9
+        assert ctx_bearish.bos_direction == "bearish", (
+            f"Close at 94 should break swing low at 95. "
+            f"Got direction: {ctx_bearish.bos_direction}"
+        )

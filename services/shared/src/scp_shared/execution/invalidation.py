@@ -41,6 +41,12 @@ DXY_CONTINUATION_TIME_TIERS = {
 # Correlation is noisy (~50% any_positive); require persistence before exit
 DXY_CONTINUATION_FLIP_BARS = 5  # Require 5 consecutive bars of flip condition
 
+# Phase 2: Runner unlock configuration
+DXY_CONTINUATION_RUNNER_CONFIG = {
+    "unlock_window_bars": 15,  # ONLY bars, no minutes (backtest determinism)
+    "be_buffer_r": 0.10,  # 0.1R buffer in R terms
+}
+
 
 def _sanitize_float(value: object | None) -> float | None:
     """Convert value to a finite float if possible; otherwise return None."""
@@ -121,9 +127,17 @@ class InvalidationChecker:
                 "vwap_reclaimed": False,
                 # DXY_CONTINUATION-specific state
                 "reached_half_r": False,  # +0.5R milestone for tiered time stop
-                "partial_taken": False,  # 50% taken at +1R
-                "breakeven_set": False,  # SL moved to entry
+                "partial_taken": False,  # 40% taken at +1R
+                "breakeven_set": False,  # SL moved to entry (legacy)
                 "de_risked": False,  # Position de-risked at 30 bars
+                # Phase 2.0: Explicit BE tracking (separate from partial)
+                "be_set": False,  # BE explicitly set
+                "be_price": None,  # BE price with buffer
+                "be_set_bar_idx": None,  # Bar when BE was set
+                "tp1_hit_bar_idx": None,  # Bar when +1R was hit
+                # Phase 2: Runner unlock state
+                "runner_unlocked": False,
+                "runner_unlock_bar_idx": None,
             }
         return self._trade_states[trade_id]
 
@@ -172,23 +186,46 @@ class InvalidationChecker:
                     )
 
         # DXY_CONTINUATION: Return partial profit action when +1R reached
-        # Take 40% at +1R (per spec), move SL to breakeven, let runner target TP2
+        # Take 40% at +1R (per spec), move SL to BE+buffer, let runner target TP2
         if (
             trade.setup_type == "DXY_CONTINUATION"
             and state["reached_1r"]
             and not state.get("partial_taken")
         ):
             state["partial_taken"] = True
-            state["breakeven_set"] = True
+            state["breakeven_set"] = True  # Legacy field
+
+            # Phase 2.0: Calculate BE price with 0.1R buffer
+            # CRITICAL: Use risk_points (price units), NOT risk_amount (money)
+            be_buffer_r = 0.10  # 0.1R buffer
+            risk_points = trade.risk_points
+            if risk_points is None:
+                # Fallback: compute from entry/sl if risk_points not set
+                risk_points = abs(float(trade.entry_price) - float(trade.sl_price))
+
+            be_buffer_points = be_buffer_r * risk_points
+            if trade.direction == "long":
+                be_price = float(trade.entry_price) + be_buffer_points
+            else:
+                be_price = float(trade.entry_price) - be_buffer_points
+
+            # Update explicit BE state
+            state["be_set"] = True
+            state["be_price"] = be_price
+            # Note: be_set_bar_idx and tp1_hit_bar_idx set by caller with current_bar_idx
+
             logger.info(
                 f"Trade {trade.trade_id} DXY_CONTINUATION: +1R reached, "
-                f"triggering partial profit (40%) + breakeven"
+                f"triggering partial profit (40%) + BE at {be_price:.2f} "
+                f"(entry {trade.entry_price} + {be_buffer_points:.2f} buffer)"
             )
             return {
                 "action": "partial_profit",
                 "close_pct": 40,  # Per spec: partial_pct = 0.40
                 "move_sl_to_breakeven": True,
-                "new_sl_price": trade.entry_price,
+                "new_sl_price": be_price,  # BE with buffer, not exact entry
+                "be_price": be_price,  # Explicit BE price
+                "be_buffer_r": be_buffer_r,  # Buffer in R terms
             }
 
         # Track VWAP reclaim for fade setups
@@ -211,6 +248,98 @@ class InvalidationChecker:
                             )
 
         return None
+
+    def check_runner_unlock(
+        self,
+        trade: TradeRecord,
+        candle: Candle,
+        current_bar_idx: int,
+        features: dict[str, Any] | None,
+    ) -> tuple[str | None, str | None]:
+        """Check if runner should be unlocked or closed at market.
+
+        Phase-2 runner unlock logic for DXY_CONTINUATION trades:
+        - After TP1 (+1R) hit and partial taken, remaining 60% is a "runner candidate"
+        - Runner must be unlocked via post-TP1 BOS before targeting TP2
+        - If BOS in trade direction detected within 15-bar window → unlock
+        - If window expires without unlock → close at market (NOT at synthetic BE)
+
+        Args:
+            trade: Open trade to check (must be DXY_CONTINUATION with partial taken)
+            candle: Current candle
+            current_bar_idx: Current bar index
+            features: Feature dict with BOS detection fields
+
+        Returns:
+            Tuple of (action, reason) where action is:
+            - "unlock_runner": Post-TP1 BOS detected, unlock for TP2
+            - "close_at_market": Window expired without unlock
+            - None: Still waiting for unlock (no action needed)
+        """
+        state = self._get_trade_state(trade.trade_id)
+
+        # Pre-conditions: only applies to DXY_CONTINUATION after partial taken
+        if trade.setup_type != "DXY_CONTINUATION":
+            return None, None
+
+        if not state.get("partial_taken"):
+            return None, None
+
+        # Already unlocked or already exited at market
+        if state.get("runner_unlocked"):
+            return None, None
+
+        # Get TP1 hit bar from trade record or internal state
+        tp1_hit_bar = trade.tp1_hit_bar_idx
+        if tp1_hit_bar is None:
+            tp1_hit_bar = state.get("tp1_hit_bar_idx")
+        if tp1_hit_bar is None:
+            # TP1 not recorded yet - can't proceed
+            logger.debug(
+                f"Trade {trade.trade_id}: tp1_hit_bar_idx not set, cannot check runner unlock"
+            )
+            return None, None
+
+        # Get config
+        unlock_window = DXY_CONTINUATION_RUNNER_CONFIG["unlock_window_bars"]
+        bars_since_tp1 = current_bar_idx - tp1_hit_bar
+
+        # Check for BOS in trade direction (must be POST-TP1)
+        if features is not None:
+            bos_detected = features.get("bos_detected", False)
+            bos_direction = features.get("bos_direction")
+
+            # BOS must be detected on THIS bar (bos_detected=True means current bar)
+            # The BOS is inherently post-TP1 because we're checking AFTER TP1 was hit
+            if bos_detected and bos_direction is not None:
+                expected_bos = "bullish" if trade.direction == "long" else "bearish"
+                if bos_direction == expected_bos:
+                    # Unlock the runner!
+                    state["runner_unlocked"] = True
+                    state["runner_unlock_bar_idx"] = current_bar_idx
+                    reason = (
+                        f"Post-TP1 {bos_direction} BOS at bar {current_bar_idx} "
+                        f"({bars_since_tp1} bars after TP1)"
+                    )
+                    logger.info(f"Trade {trade.trade_id} RUNNER UNLOCKED: {reason}")
+                    return "unlock_runner", reason
+
+        # Check for window expiry
+        if bars_since_tp1 >= unlock_window:
+            # Window expired - close at market (NOT at synthetic BE fill)
+            reason = (
+                f"Runner unlock window expired: {bars_since_tp1} bars since TP1 "
+                f"(max {unlock_window}), no post-TP1 BOS detected"
+            )
+            logger.info(f"Trade {trade.trade_id} RUNNER CLOSE AT MARKET: {reason}")
+            return "close_at_market", reason
+
+        # Still within window, waiting for BOS
+        logger.debug(
+            f"Trade {trade.trade_id}: Runner candidate, bar {bars_since_tp1}/{unlock_window} "
+            f"since TP1, waiting for BOS"
+        )
+        return None, None
 
     def check_sl_tp(
         self, trade: TradeRecord, candle: Candle, bars_elapsed: int = 0

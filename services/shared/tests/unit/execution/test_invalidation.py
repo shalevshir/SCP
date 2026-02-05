@@ -1546,7 +1546,7 @@ class TestDXYContinuationPartialProfit:
     """Tests for partial profit taking at +1R."""
 
     def test_partial_profit_action_at_1r(self, checker):
-        """DXY_CONTINUATION should trigger partial profit action at +1R."""
+        """DXY_CONTINUATION should trigger partial profit action at +1R with BE buffer."""
         trade = TradeRecord(
             trade_id="test-dxy-partial-1",
             signal_id="signal-dxy-partial-1",
@@ -1554,7 +1554,7 @@ class TestDXYContinuationPartialProfit:
             direction="long",
             setup_type="DXY_CONTINUATION",
             entry_price=2650.0,
-            sl_price=2640.0,
+            sl_price=2640.0,  # 10 points risk
             tp_price=2680.0,
             risk_amount=10.0,
             reward_amount=30.0,
@@ -1579,7 +1579,12 @@ class TestDXYContinuationPartialProfit:
         assert action["action"] == "partial_profit"
         assert action["close_pct"] == 40  # Per DXY_CONTINUATION spec: 40% partial at TP1
         assert action["move_sl_to_breakeven"] is True
-        assert action["new_sl_price"] == trade.entry_price
+        # Phase 2.0: BE with 0.1R buffer, NOT exact entry
+        # risk_points = 2650 - 2640 = 10, buffer = 0.1 * 10 = 1.0
+        # BE price = 2650 + 1.0 = 2651.0
+        assert action["new_sl_price"] == 2651.0  # entry + 0.1R buffer
+        assert action["be_price"] == 2651.0
+        assert action["be_buffer_r"] == 0.10
 
     def test_partial_profit_only_triggers_once(self, checker):
         """Partial profit should only trigger once per trade."""
@@ -1728,3 +1733,378 @@ class TestCheckAllWithActions:
 
         assert should_exit is False  # Partial doesn't exit
         assert action == "partial_profit"
+
+
+class TestRunnerUnlockModeA:
+    """Tests for Phase-2 runner unlock (Mode A: Post-TP1 Micro-BOS)."""
+
+    def test_unlock_on_bullish_bos_for_long_trade(self, checker):
+        """Runner unlocks when bullish BOS detected for long trade."""
+        trade = TradeRecord(
+            trade_id="test-runner-long",
+            signal_id="signal-runner",
+            symbol="GC",
+            direction="long",
+            setup_type="DXY_CONTINUATION",
+            entry_price=2650.0,
+            sl_price=2645.0,
+            tp_price=2660.0,
+            risk_amount=500.0,
+            reward_amount=1000.0,
+            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+            risk_points=5.0,
+            tp1_hit_bar_idx=25,  # TP1 hit at bar 25
+        )
+        candle = Candle(
+            timestamp=utc_datetime(2024, 10, 15, 10, 30),
+            open=2658.0,
+            high=2662.0,
+            low=2657.0,
+            close=2661.0,
+            volume=1000.0,
+            symbol="GC",
+            timeframe="1m",
+            source="TEST",
+        )
+
+        # Simulate partial taken (TP1 hit)
+        state = checker._get_trade_state(trade.trade_id)
+        state["partial_taken"] = True
+        state["tp1_hit_bar_idx"] = 25
+
+        features = {
+            "bos_detected": True,
+            "bos_direction": "bullish",
+        }
+
+        action, reason = checker.check_runner_unlock(
+            trade, candle, current_bar_idx=30, features=features
+        )
+
+        assert action == "unlock_runner"
+        assert "bullish BOS" in reason
+        assert state["runner_unlocked"] is True
+        assert state["runner_unlock_bar_idx"] == 30
+
+    def test_unlock_on_bearish_bos_for_short_trade(self, checker):
+        """Runner unlocks when bearish BOS detected for short trade."""
+        trade = TradeRecord(
+            trade_id="test-runner-short",
+            signal_id="signal-runner",
+            symbol="GC",
+            direction="short",
+            setup_type="DXY_CONTINUATION",
+            entry_price=2650.0,
+            sl_price=2655.0,
+            tp_price=2640.0,
+            risk_amount=500.0,
+            reward_amount=1000.0,
+            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+            risk_points=5.0,
+            tp1_hit_bar_idx=25,
+        )
+        candle = Candle(
+            timestamp=utc_datetime(2024, 10, 15, 10, 30),
+            open=2642.0,
+            high=2644.0,
+            low=2638.0,
+            close=2639.0,
+            volume=1000.0,
+            symbol="GC",
+            timeframe="1m",
+            source="TEST",
+        )
+
+        # Simulate partial taken
+        state = checker._get_trade_state(trade.trade_id)
+        state["partial_taken"] = True
+        state["tp1_hit_bar_idx"] = 25
+
+        features = {
+            "bos_detected": True,
+            "bos_direction": "bearish",
+        }
+
+        action, reason = checker.check_runner_unlock(
+            trade, candle, current_bar_idx=30, features=features
+        )
+
+        assert action == "unlock_runner"
+        assert "bearish BOS" in reason
+        assert state["runner_unlocked"] is True
+
+    def test_no_unlock_on_opposite_direction_bos(self, checker):
+        """Runner does NOT unlock when BOS is opposite direction."""
+        trade = TradeRecord(
+            trade_id="test-runner-opposite",
+            signal_id="signal-runner",
+            symbol="GC",
+            direction="long",
+            setup_type="DXY_CONTINUATION",
+            entry_price=2650.0,
+            sl_price=2645.0,
+            tp_price=2660.0,
+            risk_amount=500.0,
+            reward_amount=1000.0,
+            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+            risk_points=5.0,
+            tp1_hit_bar_idx=25,
+        )
+        candle = Candle(
+            timestamp=utc_datetime(2024, 10, 15, 10, 30),
+            open=2658.0,
+            high=2662.0,
+            low=2657.0,
+            close=2661.0,
+            volume=1000.0,
+            symbol="GC",
+            timeframe="1m",
+            source="TEST",
+        )
+
+        state = checker._get_trade_state(trade.trade_id)
+        state["partial_taken"] = True
+        state["tp1_hit_bar_idx"] = 25
+
+        # BOS in wrong direction (bearish for long trade)
+        features = {
+            "bos_detected": True,
+            "bos_direction": "bearish",  # Wrong direction for long
+        }
+
+        action, reason = checker.check_runner_unlock(
+            trade, candle, current_bar_idx=30, features=features
+        )
+
+        assert action is None
+        assert reason is None
+        assert state["runner_unlocked"] is False
+
+    def test_close_at_market_when_window_expires(self, checker):
+        """Runner closes at market when unlock window expires without BOS."""
+        trade = TradeRecord(
+            trade_id="test-runner-expire",
+            signal_id="signal-runner",
+            symbol="GC",
+            direction="long",
+            setup_type="DXY_CONTINUATION",
+            entry_price=2650.0,
+            sl_price=2645.0,
+            tp_price=2660.0,
+            risk_amount=500.0,
+            reward_amount=1000.0,
+            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+            risk_points=5.0,
+            tp1_hit_bar_idx=25,
+        )
+        candle = Candle(
+            timestamp=utc_datetime(2024, 10, 15, 10, 45),
+            open=2656.0,
+            high=2658.0,
+            low=2654.0,
+            close=2657.0,
+            volume=1000.0,
+            symbol="GC",
+            timeframe="1m",
+            source="TEST",
+        )
+
+        state = checker._get_trade_state(trade.trade_id)
+        state["partial_taken"] = True
+        state["tp1_hit_bar_idx"] = 25
+
+        # No BOS detected, window = 15 bars, bar 25+15=40 would expire
+        features = {
+            "bos_detected": False,
+            "bos_direction": None,
+        }
+
+        # At bar 40, window expires (15 bars after TP1 at bar 25)
+        action, reason = checker.check_runner_unlock(
+            trade, candle, current_bar_idx=40, features=features
+        )
+
+        assert action == "close_at_market"
+        assert "window expired" in reason
+        assert "15 bars since TP1" in reason
+
+    def test_window_measured_from_tp1_bar_not_entry(self, checker):
+        """Unlock window is measured from TP1 bar, not entry bar."""
+        trade = TradeRecord(
+            trade_id="test-runner-window",
+            signal_id="signal-runner",
+            symbol="GC",
+            direction="long",
+            setup_type="DXY_CONTINUATION",
+            entry_price=2650.0,
+            sl_price=2645.0,
+            tp_price=2660.0,
+            risk_amount=500.0,
+            reward_amount=1000.0,
+            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+            risk_points=5.0,
+            entry_bar_idx=0,  # Entry at bar 0
+            tp1_hit_bar_idx=100,  # TP1 hit at bar 100
+        )
+        candle = Candle(
+            timestamp=utc_datetime(2024, 10, 15, 12, 0),
+            open=2656.0,
+            high=2658.0,
+            low=2654.0,
+            close=2657.0,
+            volume=1000.0,
+            symbol="GC",
+            timeframe="1m",
+            source="TEST",
+        )
+
+        state = checker._get_trade_state(trade.trade_id)
+        state["partial_taken"] = True
+        state["tp1_hit_bar_idx"] = 100
+
+        features = {"bos_detected": False}
+
+        # Bar 110 = only 10 bars after TP1, should still be waiting
+        action, reason = checker.check_runner_unlock(
+            trade, candle, current_bar_idx=110, features=features
+        )
+        assert action is None  # Still waiting, not expired
+
+        # Bar 115 = exactly 15 bars after TP1, window expires
+        action, reason = checker.check_runner_unlock(
+            trade, candle, current_bar_idx=115, features=features
+        )
+        assert action == "close_at_market"
+
+    def test_no_action_before_partial_taken(self, checker):
+        """No runner action before partial profit is taken."""
+        trade = TradeRecord(
+            trade_id="test-runner-no-partial",
+            signal_id="signal-runner",
+            symbol="GC",
+            direction="long",
+            setup_type="DXY_CONTINUATION",
+            entry_price=2650.0,
+            sl_price=2645.0,
+            tp_price=2660.0,
+            risk_amount=500.0,
+            reward_amount=1000.0,
+            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+            risk_points=5.0,
+        )
+        candle = Candle(
+            timestamp=utc_datetime(2024, 10, 15, 10, 30),
+            open=2658.0,
+            high=2662.0,
+            low=2657.0,
+            close=2661.0,
+            volume=1000.0,
+            symbol="GC",
+            timeframe="1m",
+            source="TEST",
+        )
+
+        # partial_taken is False by default
+        features = {
+            "bos_detected": True,
+            "bos_direction": "bullish",
+        }
+
+        action, reason = checker.check_runner_unlock(
+            trade, candle, current_bar_idx=30, features=features
+        )
+
+        assert action is None
+        assert reason is None
+
+    def test_no_action_for_non_dxy_continuation(self, checker):
+        """No runner action for non-DXY_CONTINUATION trades."""
+        trade = TradeRecord(
+            trade_id="test-runner-vwap",
+            signal_id="signal-runner",
+            symbol="GC",
+            direction="long",
+            setup_type="VWAP_RECLAIM",  # Not DXY_CONTINUATION
+            entry_price=2650.0,
+            sl_price=2645.0,
+            tp_price=2660.0,
+            risk_amount=500.0,
+            reward_amount=1000.0,
+            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+            risk_points=5.0,
+        )
+        candle = Candle(
+            timestamp=utc_datetime(2024, 10, 15, 10, 30),
+            open=2658.0,
+            high=2662.0,
+            low=2657.0,
+            close=2661.0,
+            volume=1000.0,
+            symbol="GC",
+            timeframe="1m",
+            source="TEST",
+        )
+
+        # Even with partial taken, VWAP_RECLAIM should not trigger runner logic
+        state = checker._get_trade_state(trade.trade_id)
+        state["partial_taken"] = True
+        state["tp1_hit_bar_idx"] = 25
+
+        features = {
+            "bos_detected": True,
+            "bos_direction": "bullish",
+        }
+
+        action, reason = checker.check_runner_unlock(
+            trade, candle, current_bar_idx=30, features=features
+        )
+
+        assert action is None
+        assert reason is None
+
+    def test_no_action_after_already_unlocked(self, checker):
+        """No action if runner is already unlocked."""
+        trade = TradeRecord(
+            trade_id="test-runner-already",
+            signal_id="signal-runner",
+            symbol="GC",
+            direction="long",
+            setup_type="DXY_CONTINUATION",
+            entry_price=2650.0,
+            sl_price=2645.0,
+            tp_price=2660.0,
+            risk_amount=500.0,
+            reward_amount=1000.0,
+            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+            risk_points=5.0,
+            tp1_hit_bar_idx=25,
+        )
+        candle = Candle(
+            timestamp=utc_datetime(2024, 10, 15, 10, 35),
+            open=2658.0,
+            high=2662.0,
+            low=2657.0,
+            close=2661.0,
+            volume=1000.0,
+            symbol="GC",
+            timeframe="1m",
+            source="TEST",
+        )
+
+        state = checker._get_trade_state(trade.trade_id)
+        state["partial_taken"] = True
+        state["tp1_hit_bar_idx"] = 25
+        state["runner_unlocked"] = True  # Already unlocked!
+        state["runner_unlock_bar_idx"] = 30
+
+        features = {
+            "bos_detected": True,
+            "bos_direction": "bullish",
+        }
+
+        action, reason = checker.check_runner_unlock(
+            trade, candle, current_bar_idx=35, features=features
+        )
+
+        assert action is None
+        assert reason is None

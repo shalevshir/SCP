@@ -369,6 +369,9 @@ class TradeManager:
                 "dxy_structure": features.dxy_structure,
                 # HTF structure for VWAP_RECLAIM micro break confirmation
                 "htf_structure_label": features.htf_structure_label,
+                # Phase 2: BOS detection for runner unlock
+                "bos_detected": features.bos_detected,
+                "bos_direction": features.bos_direction,
             }
 
         # Check active trades for SL/TP and invalidation
@@ -484,15 +487,72 @@ class TradeManager:
 
         # Handle management actions (DXY_CONTINUATION specific)
         if action == "partial_profit" and not trade.partial_taken:
+            # Extract BE price from action (includes 0.1R buffer)
+            be_price = action.get("be_price") if isinstance(action, dict) else None
+            if be_price is None:
+                # Fallback: compute from risk_points
+                be_buffer_r = 0.10
+                risk_points = trade.risk_points or abs(float(trade.entry_price) - float(trade.sl_price))
+                be_buffer_points = be_buffer_r * risk_points
+                if trade.direction == "long":
+                    be_price = float(trade.entry_price) + be_buffer_points
+                else:
+                    be_price = float(trade.entry_price) - be_buffer_points
+
             # Log partial profit trigger - actual execution would happen in Phase 8+
             logger.info(
                 f"Trade {trade.trade_id} DXY_CONTINUATION: partial profit triggered at +1R "
-                f"(50% close, SL -> breakeven). [Phase 7: logged only]"
+                f"(40% close, SL -> BE at {be_price:.2f}). [Phase 7: logged only]"
             )
+
+            # Update trade state
             trade.partial_taken = True
-            trade.breakeven_set = True
-            trade.current_sl_price = trade.entry_price
-            # TODO Phase 8+: Actually close 50% and update SL via broker
+            trade.breakeven_set = True  # Legacy field
+            trade.current_sl_price = be_price  # BE with buffer, NOT exact entry
+
+            # Phase 2.0: Explicit BE tracking
+            trade.be_set = True
+            trade.be_price = be_price
+            trade.be_set_bar_idx = self._sm_manager._bar_counter
+            trade.tp1_hit_bar_idx = self._sm_manager._bar_counter
+
+            # TODO Phase 8+: Actually close 40% and update SL via broker
+
+        # Phase 2: Runner unlock check (after partial taken, before de_risk)
+        if (
+            trade.setup_type == "DXY_CONTINUATION"
+            and trade.partial_taken
+            and trade.tp1_hit_bar_idx is not None
+            and not trade.runner_unlocked
+            and not trade.runner_exited_at_market
+        ):
+            runner_action, runner_reason = self._invalidation_checker.check_runner_unlock(
+                trade, candle, current_bar, features
+            )
+
+            if runner_action == "unlock_runner":
+                logger.info(
+                    f"Trade {trade.trade_id} RUNNER UNLOCKED: {runner_reason}. "
+                    f"Runner now targeting TP2={trade.tp2_price}. [Phase 7: logged only]"
+                )
+                trade.runner_unlocked = True
+                trade.runner_unlock_mode = "micro_bos"
+                trade.runner_unlock_bar_idx = current_bar
+                # TP effectively becomes TP2 (already set at signal time in trade.tp2_price)
+
+            elif runner_action == "close_at_market":
+                # CRITICAL: Close at market price (candle.close), NOT synthetic BE fill
+                logger.info(
+                    f"Trade {trade.trade_id} RUNNER CLOSE AT MARKET: {runner_reason}. "
+                    f"Closing remaining 60% at {candle.close:.2f}. [Phase 7: logged only]"
+                )
+                trade.runner_exited_at_market = True
+                # TODO Phase 8+: Actually close remaining 60% via broker
+                # For now, exit the entire trade (simplified for Phase 7)
+                await self._close_trade(
+                    trade, candle.close, "RUNNER_UNLOCK_FAILED", candle.timestamp
+                )
+                return  # Exit early, trade is closed
 
         elif action == "de_risk" and trade.setup_type == "DXY_CONTINUATION":
             # Log de-risk trigger - actual execution would happen in Phase 8+
@@ -628,6 +688,9 @@ class TradeManager:
                 reward_amount = actual_entry_price - tp_price
 
             # Create TradeRecord
+            # CRITICAL: Set risk_points for correct BE buffer calculation
+            risk_points = abs(actual_entry_price - sl_price)  # In price units, NOT money
+
             trade = TradeRecord(
                 trade_id=trade_id,
                 signal_id=signal.id,
@@ -642,6 +705,8 @@ class TradeManager:
                 entry_timestamp=opened_at,
                 entry_bar_idx=entry_bar_idx,
                 reached_1r=False,
+                risk_points=risk_points,  # Phase 2.0: For correct BE buffer calc
+                tp2_price=getattr(signal, "tp2_price", None),  # Phase 2: TP2 for runner
             )
 
             # Store in active trades
