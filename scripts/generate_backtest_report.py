@@ -102,6 +102,8 @@ class BacktestReportGenerator:
                     t.entry_price,
                     t.sl_price as stop_loss,
                     t.tp_price as take_profit_1,
+                    -- TODO Phase 2: Query tp2_price from trades table once schema is updated
+                    -- t.tp2_price as take_profit_2,
                     NULL as take_profit_2,
                     t.state as status,
                     t.exit_price,

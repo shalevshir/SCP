@@ -1,0 +1,31 @@
+-- TODO Phase 2: Add runner unlock fields to trades table
+-- This migration adds fields needed for Phase 2 runner management
+--
+-- Fields to add:
+--   tp2_price DECIMAL(10,2) - Secondary take profit for runners (capped at 4R)
+--   runner_unlocked BOOLEAN DEFAULT FALSE - Whether runner is unlocked for TP2
+--   runner_unlock_mode VARCHAR(20) - "micro_bos" or "hold_impulse"
+--   runner_unlock_bar_idx INTEGER - Bar when runner was unlocked
+--   runner_exited_at_market BOOLEAN DEFAULT FALSE - True if closed at market (unlock failed)
+--   runner_invalidation_reason VARCHAR(50) - "chop", "htf_conflict", "dxy_misaligned"
+--   bars_to_unlock INTEGER - Bars from TP1 to unlock (for metrics)
+--   tp1_hit_bar_idx INTEGER - Bar when +1R was hit
+--   be_set BOOLEAN DEFAULT FALSE - Whether BE was explicitly set
+--   be_price DECIMAL(10,2) - BE level with buffer
+--   be_set_bar_idx INTEGER - Bar when BE was set
+--   partial_taken BOOLEAN DEFAULT FALSE - 40% taken at +1R
+--
+-- Example implementation:
+--
+-- DO $$
+-- BEGIN
+--     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'trades' AND column_name = 'tp2_price') THEN
+--         ALTER TABLE trades ADD COLUMN tp2_price DECIMAL(10,2);
+--     END IF;
+-- END $$;
+--
+-- ... repeat for each field ...
+--
+-- COMMENT ON COLUMN trades.tp2_price IS 'Secondary TP for runners (capped at 4R)';
+-- COMMENT ON COLUMN trades.runner_unlocked IS 'Whether runner portion is unlocked for TP2';
+-- COMMENT ON COLUMN trades.runner_unlock_mode IS 'How runner was unlocked: micro_bos or hold_impulse';

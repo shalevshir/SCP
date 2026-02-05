@@ -49,7 +49,11 @@ class TradeRecord:
 
     # Phase-2: Runner unlock state (conditional runner after TP1)
     runner_unlocked: bool = False  # Whether runner is unlocked for TP2
-    runner_unlock_mode: str | None = None  # "micro_bos" (Mode A)
+    runner_unlock_mode: str | None = None  # "micro_bos" (Mode A), "hold_impulse" (Fallback A)
     runner_unlock_bar_idx: int | None = None  # Bar when runner was unlocked
     runner_exited_at_market: bool = False  # True if closed at market (unlock failed)
     tp2_price: float | None = None  # TP2 target (from signal, capped at 4R)
+
+    # Phase-2: Enhanced runner logging (Section 9 of spec)
+    runner_invalidation_reason: str | None = None  # "chop", "htf_conflict", "dxy_misaligned"
+    bars_to_unlock: int | None = None  # Bars from TP1 to unlock (for metrics)

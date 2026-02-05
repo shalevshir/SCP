@@ -519,6 +519,12 @@ class TradeManager:
             # TODO Phase 8+: Actually close 40% and update SL via broker
 
         # Phase 2: Runner unlock check (after partial taken, before de_risk)
+        # TODO Phase 2: Integrate HTF bias stream to enable hard invalidation checks:
+        #   1. Subscribe to htf.bias Redis stream in main.py
+        #   2. Add _latest_htf_bias: dict | None field to TradeManager
+        #   3. Update on_htf_bias() method to track latest HTF bias
+        #   4. Pass htf_bias to check_runner_unlock() below instead of None
+        # Without HTF bias, hard invalidation (chop, htf_conflict, dxy_aligned) is skipped
         if (
             trade.setup_type == "DXY_CONTINUATION"
             and trade.partial_taken
@@ -526,22 +532,47 @@ class TradeManager:
             and not trade.runner_unlocked
             and not trade.runner_exited_at_market
         ):
+            # TODO Phase 2: Replace htf_bias=None with self._latest_htf_bias
             runner_action, runner_reason = self._invalidation_checker.check_runner_unlock(
-                trade, candle, current_bar, features
+                trade, candle, current_bar, features, htf_bias=None
             )
 
             if runner_action == "unlock_runner":
+                # Get unlock mode from invalidation checker state
+                checker_state = self._invalidation_checker._get_trade_state(trade.trade_id)
+                unlock_mode = checker_state.get("runner_unlock_reason", "micro_bos")
+                bars_to_unlock = current_bar - trade.tp1_hit_bar_idx
+
                 logger.info(
-                    f"Trade {trade.trade_id} RUNNER UNLOCKED: {runner_reason}. "
-                    f"Runner now targeting TP2={trade.tp2_price}. [Phase 7: logged only]"
+                    f"Trade {trade.trade_id} RUNNER UNLOCKED ({unlock_mode}): {runner_reason}. "
+                    f"Runner now targeting TP2={trade.tp2_price}. "
+                    f"Unlocked in {bars_to_unlock} bars. [Phase 7: logged only]"
                 )
                 trade.runner_unlocked = True
-                trade.runner_unlock_mode = "micro_bos"
+                trade.runner_unlock_mode = unlock_mode
                 trade.runner_unlock_bar_idx = current_bar
+                trade.bars_to_unlock = bars_to_unlock
                 # TP effectively becomes TP2 (already set at signal time in trade.tp2_price)
+                # TODO Phase 2: Calculate TP2 dynamically from HTF targets:
+                #   tp2 = min(htf_target_price, entry ± 4R) or fallback to entry ± 3R
+                #   Requires: htf_range_high/low or untouched_liquidity_high/low from HTF bias
+
+            elif runner_action == "exit_runner":
+                # HARD INVALIDATION - exit remainder immediately
+                logger.info(
+                    f"Trade {trade.trade_id} RUNNER HARD INVALIDATED: {runner_reason}. "
+                    f"Closing remaining 60% at {candle.close:.2f}. [Phase 7: logged only]"
+                )
+                trade.runner_invalidation_reason = runner_reason
+                trade.runner_exited_at_market = True
+                # TODO Phase 8+: Actually close remaining 60% via broker
+                await self._close_trade(
+                    trade, candle.close, "RUNNER_INVALIDATED", candle.timestamp
+                )
+                return  # Exit early, trade is closed
 
             elif runner_action == "close_at_market":
-                # CRITICAL: Close at market price (candle.close), NOT synthetic BE fill
+                # WINDOW EXPIRED - close at market price (candle.close), NOT synthetic BE fill
                 logger.info(
                     f"Trade {trade.trade_id} RUNNER CLOSE AT MARKET: {runner_reason}. "
                     f"Closing remaining 60% at {candle.close:.2f}. [Phase 7: logged only]"

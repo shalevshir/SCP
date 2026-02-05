@@ -163,6 +163,16 @@ async def process_streams(
         message_type=FeaturesMessage,
     )
 
+    # TODO Phase 2: Add HTF bias consumer for runner hard invalidation:
+    #   htf_bias_consumer = RedisStreamConsumer(
+    #       redis_client,
+    #       stream="htf.bias",
+    #       group="execution",
+    #       consumer_name="instance-1",
+    #       message_type=HTFBiasMessage,
+    #   )
+    # Then read from htf_bias_consumer in the main loop and pass to trade_manager
+
     logger.info("Execution Service ready - consuming signals and candles")
 
     # SBOP: Sync ack publisher for backtest orchestration
