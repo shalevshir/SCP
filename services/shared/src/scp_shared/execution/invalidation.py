@@ -142,7 +142,7 @@ class InvalidationChecker:
 
         Returns:
             Management action dict if action needed, None otherwise.
-            Action dict format: {"action": "partial_profit", "close_pct": 50, "move_sl_to_breakeven": True}
+            Action dict format: {"action": "partial_profit", "close_pct": 40, "move_sl_to_breakeven": True}
         """
         state = self._get_trade_state(trade.trade_id)
 
@@ -172,7 +172,7 @@ class InvalidationChecker:
                     )
 
         # DXY_CONTINUATION: Return partial profit action when +1R reached
-        # Take 50% at +1R, move SL to breakeven, let runner target 2R+
+        # Take 40% at +1R (per spec), move SL to breakeven, let runner target TP2
         if (
             trade.setup_type == "DXY_CONTINUATION"
             and state["reached_1r"]
@@ -182,11 +182,11 @@ class InvalidationChecker:
             state["breakeven_set"] = True
             logger.info(
                 f"Trade {trade.trade_id} DXY_CONTINUATION: +1R reached, "
-                f"triggering partial profit (50%) + breakeven"
+                f"triggering partial profit (40%) + breakeven"
             )
             return {
                 "action": "partial_profit",
-                "close_pct": 50,
+                "close_pct": 40,  # Per spec: partial_pct = 0.40
                 "move_sl_to_breakeven": True,
                 "new_sl_price": trade.entry_price,
             }
