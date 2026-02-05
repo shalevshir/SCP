@@ -34,6 +34,9 @@ class TestVWAPReclaimDistanceConstraint:
             "conflict_detected": False,
             "near_vwap_count_last_20": 5,
             "bars_since_last_vwap_touch": 2,
+            # Required fields for new constraints
+            "vwap_trend_confirmed": True,
+            "reclaim_candle_close": 2650.0,
         }
 
         result = validator.validate_setup("VWAP_RECLAIM", context)
@@ -55,6 +58,9 @@ class TestVWAPReclaimDistanceConstraint:
             "conflict_detected": False,
             "near_vwap_count_last_20": 5,
             "bars_since_last_vwap_touch": 2,
+            # Required fields for new constraints
+            "vwap_trend_confirmed": True,
+            "reclaim_candle_close": 2650.0,
         }
 
         result = validator.validate_setup("VWAP_RECLAIM", context)
@@ -77,6 +83,9 @@ class TestVWAPReclaimDistanceConstraint:
             "conflict_detected": False,
             "near_vwap_count_last_20": 5,
             "bars_since_last_vwap_touch": 2,
+            # Required fields for new constraints
+            "vwap_trend_confirmed": True,
+            "reclaim_candle_close": 2650.0,
         }
 
         result = validator.validate_setup("VWAP_RECLAIM", context)
@@ -98,6 +107,9 @@ class TestVWAPReclaimDistanceConstraint:
             "conflict_detected": False,
             "near_vwap_count_last_20": 5,
             "bars_since_last_vwap_touch": 2,
+            # Required fields for new constraints
+            "vwap_trend_confirmed": True,
+            "reclaim_candle_close": 2650.0,
         }
 
         result = validator.validate_setup("VWAP_RECLAIM", context)
@@ -124,6 +136,9 @@ class TestNoLateReclaimConstraint:
             "choch_detected": False,  # Required for direction_bos_alignment
             "near_vwap_count_last_20": 5,
             "bars_since_last_vwap_touch": 2,
+            # Required fields for new constraints
+            "vwap_trend_confirmed": True,
+            "reclaim_candle_close": 2650.0,
         }
 
         result = validator.validate_setup("VWAP_RECLAIM", context)
@@ -151,6 +166,9 @@ class TestNoLateReclaimConstraint:
             "choch_detected": False,
             "near_vwap_count_last_20": 5,
             "bars_since_last_vwap_touch": 2,
+            # Required fields for new constraints
+            "vwap_trend_confirmed": True,
+            "reclaim_candle_close": 2650.0,
         }
 
         result = validator.validate_setup("VWAP_RECLAIM", context)
@@ -173,6 +191,9 @@ class TestNoLateReclaimConstraint:
             "conflict_detected": False,
             "near_vwap_count_last_20": 5,
             "bars_since_last_vwap_touch": 2,
+            # Required fields for new constraints
+            "vwap_trend_confirmed": True,
+            "reclaim_candle_close": 2650.0,
         }
 
         result = validator.validate_setup("VWAP_RECLAIM", context)
@@ -195,6 +216,9 @@ class TestNoLateReclaimConstraint:
             "choch_detected": False,
             "near_vwap_count_last_20": 5,
             "bars_since_last_vwap_touch": 2,
+            # Required fields for new constraints
+            "vwap_trend_confirmed": True,
+            "reclaim_candle_close": 2650.0,
         }
 
         result = validator.validate_setup("VWAP_RECLAIM", context)
@@ -221,6 +245,9 @@ class TestBOSReclaimGateConstraint:
             "choch_detected": False,
             "near_vwap_count_last_20": 5,
             "bars_since_last_vwap_touch": 2,
+            # Required fields for new constraints
+            "vwap_trend_confirmed": True,
+            "reclaim_candle_close": 2650.0,
         }
 
         result = validator.validate_setup("VWAP_RECLAIM", context)
@@ -248,6 +275,9 @@ class TestBOSReclaimGateConstraint:
             "choch_detected": False,
             "near_vwap_count_last_20": 5,
             "bars_since_last_vwap_touch": 2,
+            # Required fields for new constraints
+            "vwap_trend_confirmed": True,
+            "reclaim_candle_close": 2650.0,
         }
 
         result = validator.validate_setup("VWAP_RECLAIM", context)
@@ -271,6 +301,9 @@ class TestBOSReclaimGateConstraint:
             "choch_detected": False,
             "near_vwap_count_last_20": 5,
             "bars_since_last_vwap_touch": 2,
+            # Required fields for new constraints
+            "vwap_trend_confirmed": True,
+            "reclaim_candle_close": 2650.0,
         }
 
         result = validator.validate_setup("VWAP_RECLAIM", context)
@@ -293,6 +326,9 @@ class TestBOSReclaimGateConstraint:
             "choch_detected": False,
             "near_vwap_count_last_20": 5,
             "bars_since_last_vwap_touch": 2,
+            # Required fields for new constraints
+            "vwap_trend_confirmed": True,
+            "reclaim_candle_close": 2650.0,
         }
 
         result = validator.validate_setup("VWAP_RECLAIM", context)
@@ -318,6 +354,9 @@ class TestMinVWAPAcceptanceConstraint:
             "conflict_detected": False,
             "near_vwap_count_last_20": 5,  # Good acceptance
             "bars_since_last_vwap_touch": 2,
+            # Required fields for new constraints
+            "vwap_trend_confirmed": True,
+            "reclaim_candle_close": 2650.0,
         }
 
         result = validator.validate_setup("VWAP_RECLAIM", context)
@@ -339,6 +378,9 @@ class TestMinVWAPAcceptanceConstraint:
             "conflict_detected": False,
             "near_vwap_count_last_20": 1,  # Drive-by (< 2)
             "bars_since_last_vwap_touch": 2,
+            # Required fields for new constraints
+            "vwap_trend_confirmed": True,
+            "reclaim_candle_close": 2650.0,
         }
 
         result = validator.validate_setup("VWAP_RECLAIM", context)
@@ -361,6 +403,9 @@ class TestMinVWAPAcceptanceConstraint:
             "conflict_detected": False,
             "near_vwap_count_last_20": 2,  # Boundary (>= 2)
             "bars_since_last_vwap_touch": 2,
+            # Required fields for new constraints
+            "vwap_trend_confirmed": True,
+            "reclaim_candle_close": 2650.0,
         }
 
         result = validator.validate_setup("VWAP_RECLAIM", context)
@@ -383,6 +428,9 @@ class TestMinVWAPAcceptanceConstraint:
             "choch_detected": False,
             "near_vwap_count_last_20": None,  # ATR unavailable
             "bars_since_last_vwap_touch": 2,
+            # Required fields for new constraints
+            "vwap_trend_confirmed": True,
+            "reclaim_candle_close": 2650.0,
         }
 
         result = validator.validate_setup("VWAP_RECLAIM", context)
@@ -405,6 +453,9 @@ class TestMinVWAPAcceptanceConstraint:
             "choch_detected": False,
             "near_vwap_count_last_20": 0,  # No acceptance (< 2)
             "bars_since_last_vwap_touch": 2,
+            # Required fields for new constraints
+            "vwap_trend_confirmed": True,
+            "reclaim_candle_close": 2650.0,
         }
 
         result = validator.validate_setup("VWAP_RECLAIM", context)
@@ -435,6 +486,9 @@ class TestReclaimTimingGateConstraint:
             "conflict_detected": False,
             "near_vwap_count_last_20": 5,
             "bars_since_last_vwap_touch": 5,  # Timely
+            # Required fields for new constraints
+            "vwap_trend_confirmed": True,
+            "reclaim_candle_close": 2650.0,
         }
 
         result = validator.validate_setup("VWAP_RECLAIM", context)
@@ -508,6 +562,9 @@ class TestReclaimTimingGateConstraint:
             "conflict_detected": False,
             "near_vwap_count_last_20": 5,
             "bars_since_last_vwap_touch": None,
+            # Required fields for new constraints
+            "vwap_trend_confirmed": True,
+            "reclaim_candle_close": 2650.0,
         }
 
         result = validator.validate_setup("VWAP_RECLAIM", context)
@@ -533,6 +590,9 @@ class TestCombinedConstraints:
             "conflict_detected": False,
             "near_vwap_count_last_20": 4,  # Good acceptance (>= 2)
             "bars_since_last_vwap_touch": 3,  # Timely (<= 30)
+            # Required fields for new constraints
+            "vwap_trend_confirmed": True,
+            "reclaim_candle_close": 2650.0,
         }
 
         result = validator.validate_setup("VWAP_RECLAIM", context)

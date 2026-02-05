@@ -30,6 +30,9 @@ class TestVWAPReclaimEnhancedValidation:
                 "bos_direction": "bearish",  # Wrong direction for long setup
                 "choch_detected": False,
                 "structure_conflict_flag": False,
+                # Required fields for VWAP_RECLAIM constraints
+                "reclaim_candle_close": 2650.0,
+                "vwap_trend_confirmed": True,
             }
         )
 
@@ -43,6 +46,7 @@ class TestVWAPReclaimEnhancedValidation:
             bars_since_bos=5,
             liquidity_sweep_detected=True,
             chop_detected=False,
+            vwap_trend_confirmed=True,
         )
 
         setup_type = determine_setup_type(features, htf_bias)
@@ -63,6 +67,9 @@ class TestVWAPReclaimEnhancedValidation:
                 "bos_direction": "bullish",  # Correct direction for long setup
                 "choch_detected": False,
                 "structure_conflict_flag": False,
+                # Required fields for VWAP_RECLAIM constraints
+                "reclaim_candle_close": 2650.0,
+                "vwap_trend_confirmed": True,
             }
         )
 
@@ -77,6 +84,7 @@ class TestVWAPReclaimEnhancedValidation:
             bars_since_bos=5,
             liquidity_sweep_detected=True,
             chop_detected=False,
+            vwap_trend_confirmed=True,
         )
 
         setup_type = determine_setup_type(features, htf_bias)
@@ -98,6 +106,9 @@ class TestVWAPReclaimEnhancedValidation:
                 "choch_detected": True,
                 "choch_direction": "bullish",  # CHoCH matches trade direction
                 "structure_conflict_flag": False,
+                # Required fields for VWAP_RECLAIM constraints
+                "reclaim_candle_close": 2650.0,
+                "vwap_trend_confirmed": True,
             }
         )
 
@@ -112,6 +123,7 @@ class TestVWAPReclaimEnhancedValidation:
             bars_since_bos=5,
             liquidity_sweep_detected=True,
             chop_detected=False,
+            vwap_trend_confirmed=True,
         )
 
         setup_type = determine_setup_type(features, htf_bias)
@@ -144,6 +156,7 @@ class TestVWAPReclaimEnhancedValidation:
             bars_since_bos=5,
             liquidity_sweep_detected=True,
             chop_detected=False,
+            vwap_trend_confirmed=True,
         )
 
         setup_type = determine_setup_type(features, htf_bias)
@@ -163,6 +176,9 @@ class TestVWAPReclaimEnhancedValidation:
                 "bos_direction": "bullish",  # Wrong direction for short setup
                 "choch_detected": False,
                 "structure_conflict_flag": False,
+                # Required fields for VWAP_RECLAIM constraints
+                "reclaim_candle_close": 2640.0,
+                "vwap_trend_confirmed": True,
             }
         )
 
@@ -176,6 +192,7 @@ class TestVWAPReclaimEnhancedValidation:
             bars_since_bos=5,
             liquidity_sweep_detected=True,
             chop_detected=False,
+            vwap_trend_confirmed=True,
         )
 
         setup_type = determine_setup_type(features, htf_bias)
@@ -196,6 +213,9 @@ class TestVWAPReclaimEnhancedValidation:
                 "bos_direction": "bearish",  # Correct direction for short setup
                 "choch_detected": False,
                 "structure_conflict_flag": False,
+                # Required fields for VWAP_RECLAIM constraints
+                "reclaim_candle_close": 2640.0,
+                "vwap_trend_confirmed": True,
             }
         )
 
@@ -210,6 +230,7 @@ class TestVWAPReclaimEnhancedValidation:
             bars_since_bos=5,
             liquidity_sweep_detected=True,
             chop_detected=False,
+            vwap_trend_confirmed=True,
         )
 
         setup_type = determine_setup_type(features, htf_bias)
@@ -239,6 +260,9 @@ class TestVWAPReclaimEnhancedValidation:
                 "choch_direction": "bullish",  # Correct direction - should override BOS
                 "structure_conflict_flag": False,
                 "conflict_detected": False,  # Required for constraints
+                # Required fields for VWAP_RECLAIM constraints
+                "reclaim_candle_close": 2650.0,
+                "vwap_trend_confirmed": True,
             }
         )
 
@@ -253,6 +277,7 @@ class TestVWAPReclaimEnhancedValidation:
             bars_since_bos=5,
             liquidity_sweep_detected=True,
             chop_detected=False,
+            vwap_trend_confirmed=True,
         )
 
         setup_type = determine_setup_type(features, htf_bias)
@@ -286,6 +311,9 @@ class TestVWAPReclaimEnhancedValidation:
                 "choch_detected": False,
                 "structure_conflict_flag": False,
                 "conflict_detected": False,  # Required for constraints
+                # Required fields for VWAP_RECLAIM constraints
+                "reclaim_candle_close": 2650.0,
+                "vwap_trend_confirmed": True,
             }
         )
 
@@ -300,6 +328,7 @@ class TestVWAPReclaimEnhancedValidation:
             bars_since_bos=18,  # Stale BOS
             liquidity_sweep_detected=True,
             chop_detected=False,
+            vwap_trend_confirmed=True,
         )
 
         setup_type = determine_setup_type(features, htf_bias)
@@ -330,6 +359,9 @@ class TestVWAPReclaimEnhancedValidation:
                 "choch_detected": False,
                 "structure_conflict_flag": False,
                 "conflict_detected": False,  # Required for constraints
+                # Required fields for VWAP_RECLAIM constraints
+                "reclaim_candle_close": 2640.0,
+                "vwap_trend_confirmed": True,
             }
         )
 
@@ -344,6 +376,7 @@ class TestVWAPReclaimEnhancedValidation:
             bars_since_bos=16,  # Stale BOS
             liquidity_sweep_detected=True,
             chop_detected=False,
+            vwap_trend_confirmed=True,
         )
 
         setup_type = determine_setup_type(features, htf_bias)
@@ -368,6 +401,9 @@ class TestVWAPReclaimEnhancedValidation:
                 "bos_age": 5,  # Recent BOS (<=15)
                 "choch_detected": False,
                 "structure_conflict_flag": False,
+                # Required fields for VWAP_RECLAIM constraints
+                "reclaim_candle_close": 2650.0,
+                "vwap_trend_confirmed": True,
             }
         )
 
@@ -381,6 +417,7 @@ class TestVWAPReclaimEnhancedValidation:
             bars_since_bos=5,  # Recent BOS
             liquidity_sweep_detected=True,
             chop_detected=False,
+            vwap_trend_confirmed=True,
         )
 
         setup_type = determine_setup_type(features, htf_bias)

@@ -1170,17 +1170,18 @@ class InvalidationChecker:
         # First update state with current candle
         mgmt_action = self.update_state(trade, candle, features)
 
-        # Check for partial profit action from update_state
+        # Priority 1: SL/TP (with grace period protection)
+        # Must check BEFORE partial profit - on volatile candles both can trigger
+        should_exit, reason = self.check_sl_tp(trade, candle, bars_elapsed)
+        if should_exit:
+            return should_exit, reason, "exit"
+
+        # Check for partial profit action from update_state (after SL/TP check)
         if mgmt_action is not None:
             action_type = mgmt_action.get("action")
             if action_type == "partial_profit":
                 # Return partial profit action - does not exit the trade
-                return False, f"partial_profit at +1R", "partial_profit"
-
-        # Priority 1: SL/TP (with grace period protection)
-        should_exit, reason = self.check_sl_tp(trade, candle, bars_elapsed)
-        if should_exit:
-            return should_exit, reason, "exit"
+                return False, "partial_profit at +1R", "partial_profit"
 
         # Check invalidation grace period
         invalidation_grace = GRACE_PERIODS.get(trade.setup_type, {}).get(
@@ -1279,6 +1280,8 @@ class InvalidationChecker:
             del self._fade_invalidation_count[trade_id]
         if trade_id in self._dxy_flip_count:
             del self._dxy_flip_count[trade_id]
+        if trade_id in self._dxy_continuation_flip_count:
+            del self._dxy_continuation_flip_count[trade_id]
         if trade_id in self._vwap_reclaim_invalidation_count:
             del self._vwap_reclaim_invalidation_count[trade_id]
 
@@ -1287,6 +1290,7 @@ class InvalidationChecker:
         self._trade_states.clear()
         self._fade_invalidation_count.clear()
         self._dxy_flip_count.clear()
+        self._dxy_continuation_flip_count.clear()
         self._vwap_reclaim_invalidation_count.clear()
 
     def reset_daily_state(self) -> None:

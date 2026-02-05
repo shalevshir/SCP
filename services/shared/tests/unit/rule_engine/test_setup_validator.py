@@ -112,6 +112,9 @@ class TestVWAPReclaimValidation:
             "conflict_detected": False,
             "choch_detected": False,  # Required by direction_bos_alignment constraint
             "choch_direction": None,
+            # Required fields for new VWAP_RECLAIM constraints
+            "vwap_trend_confirmed": True,  # Required by vwap_trend_confirmed_required
+            "reclaim_candle_close": 2650.0,  # Required by clear_reclaim_candle
             # Additional fields needed for scoring (but not constraints)
             "rsi": 55.0,
             "ema_9": 2648.0,
@@ -501,6 +504,9 @@ class TestSetupValidatorParity:
                 "vwap": 2650.0,
                 "bos_direction": "long",
                 "direction": "long",
+                # Required fields for new VWAP_RECLAIM constraints
+                "vwap_trend_confirmed": True,
+                "reclaim_candle_close": 2655.0,
             }
         )
 
@@ -513,6 +519,7 @@ class TestSetupValidatorParity:
             confidence="high",
             structure_1h="HH",
             conflict_detected=False,
+            vwap_trend_confirmed=True,
         )
 
         # Use build_setup_context to get proper fallback logic

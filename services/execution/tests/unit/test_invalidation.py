@@ -149,7 +149,7 @@ class TestInvalidationChecker:
             checker.update_state(trade, candle)
 
         # Check at bar 10
-        is_invalid, reason = checker.check_no_1r_reached(trade, bars_elapsed=10)
+        is_invalid, reason, _ = checker.check_no_1r_reached(trade, bars_elapsed=10)
 
         assert is_invalid is True
         assert "+1R not reached" in reason

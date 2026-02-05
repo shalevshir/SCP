@@ -207,7 +207,7 @@ setups:
 
       # -----------------------------------------------------------------------
       # 3️⃣ DXY CORRELATION REQUIRED (NON-NEGOTIABLE)
-      # Both correlations must be present AND negative (inverse relationship)
+      # 1m correlation must be present AND negative (inverse relationship)
       # Missing correlation = reject (no leak)
       # -----------------------------------------------------------------------
       dxy_correlation_required:

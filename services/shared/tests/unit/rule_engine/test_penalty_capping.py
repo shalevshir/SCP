@@ -235,6 +235,7 @@ class TestPenaltyCapping:
                 "ema_50": 2640,
                 "dxy_corr": -0.75,
                 "structure_label": "HH",  # Required for validation
+                "direction": "long",  # Required for valid_direction
                 # Strong structure
                 "is_structural_chop": False,
                 "atr_compression_ratio": 1.0,
@@ -248,6 +249,7 @@ class TestPenaltyCapping:
                 "liquidity_sweep": True,
                 "expansion_detected": True,
                 "near_vwap_count_last_20": 5,  # Required for min_vwap_acceptance
+                "reclaim_candle_close": 2650,  # Required for VWAP_RECLAIM
             }
         )
 
@@ -261,6 +263,7 @@ class TestPenaltyCapping:
             bars_since_bos=25,
             liquidity_sweep_detected=True,
             bos_detected=True,
+            vwap_trend_confirmed=True,  # Required for VWAP_RECLAIM
         )
 
         context = {"session_ok": True, "enforcer_tier": "EarlyMild"}

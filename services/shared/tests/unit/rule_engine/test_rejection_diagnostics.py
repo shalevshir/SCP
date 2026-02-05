@@ -32,6 +32,7 @@ class TestRejectionDiagnostics:
                 "ema_50": 2640,
                 "dxy_corr": -0.75,
                 "structure_label": "HH",  # Required for validation
+                "direction": "long",  # Required for valid_direction
                 # Heavy structure penalty
                 "is_structural_chop": True,
                 "atr_compression_ratio": 0.3,
@@ -43,6 +44,7 @@ class TestRejectionDiagnostics:
                 "structure_conflict_flag": False,
                 "liquidity_sweep": False,
                 "expansion_detected": True,
+                "reclaim_candle_close": 2650,  # Required for VWAP_RECLAIM
             }
         )
 
@@ -56,6 +58,7 @@ class TestRejectionDiagnostics:
             bars_since_bos=30,
             liquidity_sweep_detected=False,
             bos_detected=False,
+            vwap_trend_confirmed=True,  # Required for VWAP_RECLAIM
         )
 
         context = {"session_ok": True, "enforcer_tier": "EarlyMild"}
@@ -93,6 +96,7 @@ class TestRejectionDiagnostics:
                 "ema_50": 2640,
                 "dxy_corr": -0.75,
                 "structure_label": "HH",  # Required for validation
+                "direction": "long",  # Required for valid_direction
                 # Multiple penalties
                 "is_structural_chop": True,
                 "atr_compression_ratio": 0.3,
@@ -105,6 +109,7 @@ class TestRejectionDiagnostics:
                 "structure_conflict_flag": False,
                 "liquidity_sweep": False,
                 "expansion_detected": False,
+                "reclaim_candle_close": 2660,  # Required for VWAP_RECLAIM
             }
         )
 
@@ -118,6 +123,7 @@ class TestRejectionDiagnostics:
             bars_since_bos=25,
             liquidity_sweep_detected=False,
             bos_detected=False,
+            vwap_trend_confirmed=True,  # Required for VWAP_RECLAIM
         )
 
         context = {"session_ok": True, "enforcer_tier": "Conservative"}
@@ -146,6 +152,7 @@ class TestRejectionDiagnostics:
                 "ema_50": 2640,
                 "dxy_corr": -0.75,
                 "structure_label": "HH",  # Required for validation
+                "direction": "long",  # Required for valid_direction
                 # Single large penalty
                 "is_structural_chop": False,
                 "atr_compression_ratio": 1.0,
@@ -157,6 +164,7 @@ class TestRejectionDiagnostics:
                 "structure_conflict_flag": False,
                 "liquidity_sweep": False,
                 "expansion_detected": True,
+                "reclaim_candle_close": 2650,  # Required for VWAP_RECLAIM
             }
         )
 
@@ -170,6 +178,7 @@ class TestRejectionDiagnostics:
             bars_since_bos=30,
             liquidity_sweep_detected=False,
             bos_detected=False,
+            vwap_trend_confirmed=True,  # Required for VWAP_RECLAIM
         )
 
         context = {"session_ok": True, "enforcer_tier": "EarlyMild"}
@@ -198,6 +207,7 @@ class TestRejectionDiagnostics:
                 "ema_50": 2640,
                 "dxy_corr": -0.75,
                 "structure_label": "HH",  # Required for validation
+                "direction": "long",  # Required for valid_direction
                 # Strong structure
                 "is_structural_chop": False,
                 "atr_compression_ratio": 1.0,
@@ -211,6 +221,7 @@ class TestRejectionDiagnostics:
                 "liquidity_sweep": True,
                 "expansion_detected": True,
                 "near_vwap_count_last_20": 5,  # Required for min_vwap_acceptance
+                "reclaim_candle_close": 2650,  # Required for VWAP_RECLAIM
             }
         )
 
@@ -224,6 +235,7 @@ class TestRejectionDiagnostics:
             bars_since_bos=25,
             liquidity_sweep_detected=True,
             bos_detected=True,
+            vwap_trend_confirmed=True,  # Required for VWAP_RECLAIM
         )
 
         context = {"session_ok": True, "enforcer_tier": "EarlyMild"}
@@ -252,6 +264,7 @@ class TestRejectionDiagnostics:
                 "ema_50": 2640,
                 "dxy_corr": -0.75,
                 "structure_label": "HH",  # Required for validation
+                "direction": "long",  # Required for valid_direction
                 "is_structural_chop": True,  # Penalty
                 "atr_compression_ratio": 0.3,  # Penalty
                 "structure_clarity": 0.4,  # Borderline
@@ -262,6 +275,7 @@ class TestRejectionDiagnostics:
                 "structure_conflict_flag": False,
                 "liquidity_sweep": False,
                 "expansion_detected": True,
+                "reclaim_candle_close": 2650,  # Required for VWAP_RECLAIM
             }
         )
 
@@ -275,6 +289,7 @@ class TestRejectionDiagnostics:
             bars_since_bos=20,
             liquidity_sweep_detected=False,
             bos_detected=True,
+            vwap_trend_confirmed=True,  # Required for VWAP_RECLAIM
         )
 
         context = {"session_ok": True, "enforcer_tier": "EarlyMild"}

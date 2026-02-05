@@ -143,9 +143,9 @@ async def test_concurrent_trade_limit_with_buffered_signals(trade_manager):
         setup_type="VWAP_RECLAIM",
         score=9.0,
         confidence="A+",
-        entry_price=2000.0,
-        sl_price=1990.0,
-        tp_price=2020.0,
+        entry_price=2010.0,  # Different entry price to avoid duplicate fingerprint
+        sl_price=2000.0,
+        tp_price=2030.0,
         factors={},
     )
 

@@ -51,6 +51,9 @@ class TestVWAPReclaimExpansionIntegration:
                 # Expansion signals
                 "expansion_detected": True,
                 "expansion_reasons": ["recent_bos", "range_expansion"],
+                # Required fields for new constraints
+                "reclaim_candle_close": 2650.0,
+                "vwap_trend_confirmed": True,
             }
         )
 
@@ -64,6 +67,7 @@ class TestVWAPReclaimExpansionIntegration:
             structure_clarity=0.6,
             bos_detected=True,
             bars_since_bos=5,
+            vwap_trend_confirmed=True,
         )
 
         context = {
@@ -131,6 +135,9 @@ class TestVWAPReclaimExpansionIntegration:
                 # No expansion signals
                 "expansion_detected": False,
                 "expansion_reasons": [],
+                # Required fields for new constraints
+                "reclaim_candle_close": 2650.0,
+                "vwap_trend_confirmed": True,
             }
         )
 
@@ -144,6 +151,7 @@ class TestVWAPReclaimExpansionIntegration:
             structure_clarity=0.6,
             bos_detected=True,
             bars_since_bos=18,
+            vwap_trend_confirmed=True,
         )
 
         context = {
@@ -293,6 +301,9 @@ class TestVWAPReclaimExpansionIntegration:
                 # Has expansion (so entry is ready)
                 "expansion_detected": True,
                 "expansion_reasons": ["range_expansion", "atr_expansion"],
+                # Required fields for new constraints
+                "reclaim_candle_close": 2650.0,
+                "vwap_trend_confirmed": True,
             }
         )
 
@@ -306,6 +317,7 @@ class TestVWAPReclaimExpansionIntegration:
             structure_clarity=0.6,
             bos_detected=True,
             bars_since_bos=12,
+            vwap_trend_confirmed=True,
         )
 
         context = {
@@ -373,6 +385,9 @@ class TestVWAPReclaimExpansionIntegration:
                 # Has expansion (so not blocked entirely)
                 "expansion_detected": True,
                 "expansion_reasons": ["displacement_candle"],
+                # Required fields for new constraints
+                "reclaim_candle_close": 2650.0,
+                "vwap_trend_confirmed": True,
             }
         )
 
@@ -386,6 +401,7 @@ class TestVWAPReclaimExpansionIntegration:
             structure_clarity=0.35,  # Match features - LOW to invalidate BOS
             bos_detected=True,
             bars_since_bos=18,
+            vwap_trend_confirmed=True,
         )
 
         context = {
