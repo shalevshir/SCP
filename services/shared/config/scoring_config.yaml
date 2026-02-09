@@ -23,23 +23,27 @@ setup_types:
 
   # VWAP Fade: Counter-trend setup at extreme deviation
   VWAP_FADE:
-    min_score: 8              # Aligned with other setups (factors implemented but rarely trigger on historical data)
+    min_score: 9              # Playbook requirement: 9/10 minimum for VWAP Fade
     weights:
-      vwap_deviation: 3       # Significant deviation from VWAP
-      rsi_extreme: 3          # RSI at overbought/oversold
-      rejection_candle: 2     # Strong rejection candle pattern
-      volume_spike: 2         # Volume confirmation
+      vwap_deviation: 3.0     # Significant deviation from VWAP
+      rsi_extreme: 3.0        # RSI at overbought/oversold
+      rejection_candle: 2.0   # Strong rejection candle pattern
+      volume_spike: 2.0       # Volume confirmation
 
   # DXY Continuation: Gold trade aligned with DXY inverse correlation
   DXY_CONTINUATION:
     min_score: 8
     weights:
-      structure_alignment: 2.5  # Price action matches HTF bias (enhanced with BOS/CHoCH)
-      dxy_corr: 3               # Strong inverse correlation (primary factor)
-      rsi_mid_reset: 1.5        # RSI in continuation zone
-      vwap_relation: 1.5        # VWAP support/resistance
-      ema_stack: 1              # EMA alignment bonus
-      fvg_alignment: 0.5        # FVG support for trend direction
+      structure_alignment: 2.5   # Gold structure quality + HTF alignment
+      dxy_corr: 3.5              # Increased - primary edge for this setup
+      dxy_structure_bonus: 1.0   # NEW - bonus for aligned DXY structure (was hard constraint)
+      bos_recency_bonus: 1.0     # Bonus for fresh BOS (scoring-only)
+      clarity_bonus: 1.0         # Bonus for high clarity (scoring-only)
+      rsi_mid_reset: 1.0         # RSI returning to midline (50)
+      vwap_relation: 1.0         # Position relative to VWAP
+      volume_pattern: 1.0        # Volume contraction on pullback, expansion on resumption
+      ema_stack: 0.5             # EMA alignment
+      fvg_alignment: 0.5         # FVG present and aligned
 
 # Confidence thresholds (global)
 confidence:
