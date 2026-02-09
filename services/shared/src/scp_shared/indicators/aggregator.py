@@ -210,6 +210,12 @@ def aggregate_features(
         result["close_vwap_diff"] = gc_df["close"] - result["vwap"]
         result["close_vwap_pct"] = (result["close_vwap_diff"] / result["vwap"]) * 100
 
+    # Calculate ATR-normalized VWAP deviation (required for VWAP_RECLAIM constraints)
+    # Provides volatility-adjusted distance from VWAP for constraint evaluation
+    # setups.yaml:36-42 requires this field for vwap_reclaim_distance checks
+    if "vwap" in result.columns and "atr" in result.columns:
+        result["vwap_deviation_normalized"] = (gc_df["close"] - result["vwap"]) / result["atr"]
+
     # Calculate DXY correlation if requested
     dxy_corr_config = indicators.get("dxy_correlation", True)
     if dxy_corr_config is not False and dxy_corr_config is not None:
