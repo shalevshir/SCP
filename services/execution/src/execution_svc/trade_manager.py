@@ -336,11 +336,14 @@ class TradeManager:
                 "structure_1h": htf_bias_msg.structure_1h,
                 "dxy_aligned": htf_bias_msg.dxy_aligned,
                 "chop_detected": htf_bias_msg.chop_detected,
+                # CRITICAL: Include conflict fields for hard invalidation checks
+                "conflict_detected": htf_bias_msg.conflict_detected,
+                "conflict_reason": htf_bias_msg.conflict_reason,
             }
             logger.debug(
                 f"HTF bias updated: {htf_bias_msg.bias} (score={htf_bias_msg.score:.1f}, "
                 f"confidence={htf_bias_msg.confidence}, dxy_aligned={htf_bias_msg.dxy_aligned}, "
-                f"chop={htf_bias_msg.chop_detected})"
+                f"chop={htf_bias_msg.chop_detected}, conflict={htf_bias_msg.conflict_detected})"
             )
         else:
             logger.warning(f"Invalid HTF bias message type: {type(htf_bias_msg)}")
