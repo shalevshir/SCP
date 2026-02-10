@@ -585,7 +585,9 @@ class TradeManager:
                 )
                 return  # Exit early, trade is closed
 
-        elif action == "de_risk" and trade.setup_type == "DXY_CONTINUATION":
+        # Keep de_risk handling independent from runner-candidate checks.
+        # This prevents accidental control-flow coupling if runner conditions change.
+        if action == "de_risk" and trade.setup_type == "DXY_CONTINUATION":
             # Log de-risk trigger - actual execution would happen in Phase 8+
             logger.info(
                 f"Trade {trade.trade_id} DXY_CONTINUATION: de-risk triggered at bar {bars_elapsed}. "
