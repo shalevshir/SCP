@@ -64,22 +64,25 @@ class TradeRepository:
         query = """
             INSERT INTO trades (
                 signal_id, direction, setup_type, entry_price,
-                sl_price, tp_price, quantity, opened_at, entry_bar_idx, state
+                sl_price, original_sl_price, tp_price, quantity, opened_at, entry_bar_idx, state
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'OPEN')
+            VALUES ($1, $2, $3, $4, $5, $5, $6, $7, $8, $9, 'OPEN')
             RETURNING id
         """
 
         # Convert signal_id string to UUID
         signal_uuid = UUID(signal_id)
 
+        # NOTE: Both sl_price and original_sl_price are set to the same value initially.
+        # The original_sl_price will never change (used for R-multiple calculation).
+        # The sl_price may be updated to breakeven later (used for trade management).
         row = await self._db_pool.fetchrow(
             query,
             signal_uuid,
             direction,
             setup_type,
             entry_price,
-            sl_price,
+            sl_price,  # Used for both sl_price and original_sl_price
             tp_price,
             quantity,
             opened_at,
@@ -146,8 +149,10 @@ class TradeRepository:
             closed_at: Trade close timestamp
         """
         # Get trade data including quantity for P&L calculation
+        # CRITICAL: Use original_sl_price for R-multiple (never changes)
+        # sl_price may have been updated to breakeven, which corrupts R calculation
         query = """
-            SELECT direction, entry_price, sl_price, quantity
+            SELECT direction, entry_price, sl_price, original_sl_price, quantity
             FROM trades
             WHERE id = $1
         """
@@ -171,12 +176,13 @@ class TradeRepository:
         # For GC futures: point_value = $100 per point
         pnl_dollars = pnl_points * self._point_value * quantity
 
-        # Calculate R-multiple from risk amount (entry - SL distance)
-        sl_price_float = float(row["sl_price"])
+        # CRITICAL: Calculate R-multiple using original_sl_price (not current sl_price)
+        # After breakeven is set, sl_price changes but original_sl_price remains constant
+        original_sl_float = float(row["original_sl_price"])
         if direction == "long":
-            risk_amount = entry_price_float - sl_price_float
+            risk_amount = entry_price_float - original_sl_float
         else:  # short
-            risk_amount = sl_price_float - entry_price_float
+            risk_amount = original_sl_float - entry_price_float
         r_multiple = pnl_points / risk_amount if risk_amount > 0 else 0.0
 
         # Determine state
@@ -259,6 +265,7 @@ class TradeRepository:
             entry_price=row["entry_price"],
             sl_price=row["sl_price"],
             tp_price=row["tp_price"],
+            quantity=row["quantity"],
             risk_amount=risk_amount,
             reward_amount=reward_amount,
             entry_timestamp=row["opened_at"],
@@ -305,6 +312,7 @@ class TradeRepository:
                 entry_price=row["entry_price"],
                 sl_price=row["sl_price"],
                 tp_price=row["tp_price"],
+                quantity=row["quantity"],
                 risk_amount=risk_amount,
                 reward_amount=reward_amount,
                 entry_timestamp=row["opened_at"],
@@ -331,6 +339,57 @@ class TradeRepository:
         await self._db_pool.execute(query, reached_1r, UUID(trade_id))
 
         logger.debug(f"Updated trade {trade_id} reached_1r={reached_1r}")
+
+    async def update_breakeven(self, trade_id: str, be_price: float) -> None:
+        """Update current SL price to breakeven.
+
+        NOTE: This updates sl_price (current stop), NOT original_sl_price.
+        The original_sl_price is preserved for R-multiple calculation.
+
+        Args:
+            trade_id: Trade ID
+            be_price: Breakeven stop loss price (entry ± 0.1R buffer)
+        """
+        query = """
+            UPDATE trades
+            SET sl_price = $1
+            WHERE id = $2
+        """
+
+        await self._db_pool.execute(query, be_price, UUID(trade_id))
+
+        logger.info(f"Updated trade {trade_id} SL to BE: {be_price:.2f}")
+
+    async def update_quantity(self, trade_id: str, new_quantity: int) -> None:
+        """Update trade quantity after partial close.
+
+        This is called after successfully reducing a position via the broker.
+        The quantity must be updated to ensure correct P&L calculations when
+        the remaining position is closed.
+
+        Args:
+            trade_id: Trade ID
+            new_quantity: New quantity after reduction (must be > 0)
+
+        Raises:
+            ValueError: If new_quantity is <= 0
+        """
+        if new_quantity <= 0:
+            raise ValueError(
+                f"Invalid quantity {new_quantity}: must be greater than 0"
+            )
+
+        query = """
+            UPDATE trades
+            SET quantity = $1
+            WHERE id = $2
+        """
+
+        await self._db_pool.execute(query, new_quantity, UUID(trade_id))
+
+        logger.info(
+            f"Updated trade {trade_id} quantity to {new_quantity} contracts"
+        )
 
     async def reconcile_positions(self) -> list[TradeRecord]:
         """Reconcile open trades on startup (for recovery).
@@ -385,6 +444,7 @@ class TradeRepository:
                 entry_price=row["entry_price"],
                 sl_price=row["sl_price"],
                 tp_price=row["tp_price"],
+                quantity=row["quantity"],
                 risk_amount=risk_amount,
                 reward_amount=reward_amount,
                 entry_timestamp=row["opened_at"],

@@ -45,6 +45,7 @@ def base_trade():
         tp_price=2670.0,
         risk_amount=10.0,
         reward_amount=20.0,
+        quantity=1,
         entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
         entry_bar_idx=100,
     )
@@ -96,7 +97,7 @@ class TestMicroStructureInvalidation:
         """Short trade should exit on HH structure break (non-VWAP_RECLAIM)."""
         trade = TradeRecord(
             **{**base_trade.__dict__, "direction": "short", "setup_type": "VWAP_FADE"}
-        )
+    )
         features = {"structure_label": "HH", "timeframe": "1m"}
 
         is_invalid, reason = checker.check_micro_structure_invalidation(
@@ -287,7 +288,7 @@ class TestDXYFlip:
                 "setup_type": "DXY_CONTINUATION",
                 "direction": "long",
             }
-        )
+    )
         # For long DXY_CONTINUATION: both correlations > 0 (true contradiction) AND DXY structure turns bullish
         # NOTE: Changed from > -0.1 to > 0 threshold, and requires 5-bar persistence
         features = {
@@ -842,7 +843,7 @@ class TestVWAPSlopeConfirmation:
         """Short FADE: close < VWAP + negative slope = invalidation."""
         trade = TradeRecord(
             **{**base_trade.__dict__, "direction": "short", "setup_type": "VWAP_FADE"}
-        )
+    )
         features = {
             "vwap": 2650.0,
             "vwap_slope": -0.5,  # Negative slope
@@ -967,7 +968,8 @@ class TestDailyStateReset:
             tp_price=2670.0,
             risk_amount=10.0,
             reward_amount=20.0,
-            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+            quantity=1,
+        entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
             entry_bar_idx=100,
         )
 
@@ -1047,7 +1049,8 @@ class TestDXYContinuationNoMicroExit:
             tp_price=2680.0,
             risk_amount=10.0,
             reward_amount=30.0,
-            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+            quantity=1,
+        entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
         )
         # 1m structure break that would exit other setups
         features = {"structure_label": "LL", "timeframe": "1m"}
@@ -1073,7 +1076,8 @@ class TestDXYContinuationNoMicroExit:
             tp_price=2620.0,
             risk_amount=10.0,
             reward_amount=30.0,
-            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+            quantity=1,
+        entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
         )
         features = {"structure_label": "HH", "timeframe": "1m"}
 
@@ -1103,7 +1107,8 @@ class TestDXYContinuationHTFInvalidation:
             tp_price=2680.0,
             risk_amount=10.0,
             reward_amount=30.0,
-            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+            quantity=1,
+        entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
         )
         # HTF structure break against long
         features = {"htf_structure_label": "LL", "structure_label": "HH"}  # 1m is bullish but ignored
@@ -1131,7 +1136,8 @@ class TestDXYContinuationHTFInvalidation:
             tp_price=2620.0,
             risk_amount=10.0,
             reward_amount=30.0,
-            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+            quantity=1,
+        entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
         )
         features = {"htf_structure_label": "HH"}
 
@@ -1156,7 +1162,8 @@ class TestDXYContinuationHTFInvalidation:
             tp_price=2680.0,
             risk_amount=10.0,
             reward_amount=30.0,
-            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+            quantity=1,
+        entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
         )
         # HTF structure supports long
         features = {"htf_structure_label": "HH", "structure_label": "LL"}  # 1m break ignored
@@ -1181,7 +1188,8 @@ class TestDXYContinuationHTFInvalidation:
             tp_price=2680.0,
             risk_amount=10.0,
             reward_amount=30.0,
-            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+            quantity=1,
+        entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
         )
         # Candle closes below VWAP
         candle = Candle(
@@ -1228,7 +1236,8 @@ class TestDXYContinuationFlipPersistence:
             tp_price=2680.0,
             risk_amount=10.0,
             reward_amount=30.0,
-            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+            quantity=1,
+        entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
         )
         # Both correlations positive (true contradiction) + structure flipped
         features = {
@@ -1255,7 +1264,8 @@ class TestDXYContinuationFlipPersistence:
             tp_price=2680.0,
             risk_amount=10.0,
             reward_amount=30.0,
-            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+            quantity=1,
+        entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
         )
         features = {
             "dxy_corr_1m": 0.15,
@@ -1286,7 +1296,8 @@ class TestDXYContinuationFlipPersistence:
             tp_price=2680.0,
             risk_amount=10.0,
             reward_amount=30.0,
-            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+            quantity=1,
+        entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
         )
 
         flip_features = {
@@ -1329,7 +1340,8 @@ class TestDXYContinuationFlipPersistence:
             tp_price=2680.0,
             risk_amount=10.0,
             reward_amount=30.0,
-            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+            quantity=1,
+        entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
         )
         # Only 1m positive, 5m still negative - not a true contradiction
         features = {
@@ -1360,7 +1372,8 @@ class TestDXYContinuationTieredTimeStop:
             tp_price=2680.0,
             risk_amount=10.0,
             reward_amount=30.0,
-            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+            quantity=1,
+        entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
         )
         # Candle at 0R (flat)
         candle = Candle(
@@ -1395,7 +1408,8 @@ class TestDXYContinuationTieredTimeStop:
             tp_price=2680.0,
             risk_amount=10.0,
             reward_amount=30.0,
-            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+            quantity=1,
+        entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
         )
         # Candle at +0.2R (below threshold)
         candle = Candle(
@@ -1431,7 +1445,8 @@ class TestDXYContinuationTieredTimeStop:
             tp_price=2680.0,
             risk_amount=10.0,
             reward_amount=30.0,
-            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+            quantity=1,
+        entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
         )
         # First candle reaches +0.6R
         candle_1 = Candle(
@@ -1481,7 +1496,8 @@ class TestDXYContinuationTieredTimeStop:
             tp_price=2680.0,
             risk_amount=10.0,
             reward_amount=30.0,
-            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+            quantity=1,
+        entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
         )
         candle = Candle(
             timestamp=utc_datetime(2024, 10, 15, 11, 0),
@@ -1518,7 +1534,8 @@ class TestDXYContinuationTieredTimeStop:
             tp_price=2680.0,
             risk_amount=10.0,
             reward_amount=30.0,
-            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+            quantity=1,
+        entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
         )
         candle = Candle(
             timestamp=utc_datetime(2024, 10, 15, 11, 0),
@@ -1558,7 +1575,8 @@ class TestDXYContinuationPartialProfit:
             tp_price=2680.0,
             risk_amount=10.0,
             reward_amount=30.0,
-            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+            quantity=1,
+        entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
         )
         # Candle that reaches +1R
         candle = Candle(
@@ -1599,7 +1617,8 @@ class TestDXYContinuationPartialProfit:
             tp_price=2680.0,
             risk_amount=10.0,
             reward_amount=30.0,
-            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+            quantity=1,
+        entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
         )
         candle = Candle(
             timestamp=utc_datetime(2024, 10, 15, 10, 15),
@@ -1635,7 +1654,8 @@ class TestDXYContinuationPartialProfit:
             tp_price=2680.0,
             risk_amount=10.0,
             reward_amount=30.0,
-            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+            quantity=1,
+        entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
         )
         candle = Candle(
             timestamp=utc_datetime(2024, 10, 15, 10, 15),
@@ -1679,7 +1699,8 @@ class TestCheckAllWithActions:
             tp_price=2680.0,
             risk_amount=10.0,
             reward_amount=30.0,
-            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+            quantity=1,
+        entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
         )
         candle = Candle(
             timestamp=utc_datetime(2024, 10, 15, 10, 30),
@@ -1713,7 +1734,8 @@ class TestCheckAllWithActions:
             tp_price=2680.0,
             risk_amount=10.0,
             reward_amount=30.0,
-            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+            quantity=1,
+        entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
         )
         candle = Candle(
             timestamp=utc_datetime(2024, 10, 15, 10, 15),
@@ -1751,7 +1773,8 @@ class TestRunnerUnlockModeA:
             tp_price=2660.0,
             risk_amount=500.0,
             reward_amount=1000.0,
-            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+            quantity=1,
+        entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
             risk_points=5.0,
             tp1_hit_bar_idx=25,  # TP1 hit at bar 25
         )
@@ -1799,7 +1822,8 @@ class TestRunnerUnlockModeA:
             tp_price=2640.0,
             risk_amount=500.0,
             reward_amount=1000.0,
-            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+            quantity=1,
+        entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
             risk_points=5.0,
             tp1_hit_bar_idx=25,
         )
@@ -1850,7 +1874,8 @@ class TestRunnerUnlockModeA:
             tp_price=2660.0,
             risk_amount=500.0,
             reward_amount=1000.0,
-            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+            quantity=1,
+        entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
             risk_points=5.0,
             tp1_hit_bar_idx=25,
         )
@@ -1900,7 +1925,8 @@ class TestRunnerUnlockModeA:
             tp_price=2660.0,
             risk_amount=500.0,
             reward_amount=1000.0,
-            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+            quantity=1,
+        entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
             risk_points=5.0,
             tp1_hit_bar_idx=25,
         )
@@ -1948,7 +1974,8 @@ class TestRunnerUnlockModeA:
             tp_price=2660.0,
             risk_amount=500.0,
             reward_amount=1000.0,
-            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+            quantity=1,
+        entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
             risk_points=5.0,
             entry_bar_idx=0,  # Entry at bar 0
             tp1_hit_bar_idx=100,  # TP1 hit at bar 100
@@ -1996,7 +2023,8 @@ class TestRunnerUnlockModeA:
             tp_price=2660.0,
             risk_amount=500.0,
             reward_amount=1000.0,
-            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+            quantity=1,
+        entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
             risk_points=5.0,
         )
         candle = Candle(
@@ -2037,7 +2065,8 @@ class TestRunnerUnlockModeA:
             tp_price=2660.0,
             risk_amount=500.0,
             reward_amount=1000.0,
-            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+            quantity=1,
+        entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
             risk_points=5.0,
         )
         candle = Candle(
@@ -2082,7 +2111,8 @@ class TestRunnerUnlockModeA:
             tp_price=2660.0,
             risk_amount=500.0,
             reward_amount=1000.0,
-            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+            quantity=1,
+        entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
             risk_points=5.0,
             tp1_hit_bar_idx=25,
         )
@@ -2142,7 +2172,8 @@ class TestRunnerHardInvalidation:
             tp_price=2660.0,
             risk_amount=500.0,
             reward_amount=1000.0,
-            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+            quantity=1,
+        entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
             risk_points=5.0,
             tp1_hit_bar_idx=25,
         )
@@ -2188,7 +2219,8 @@ class TestRunnerHardInvalidation:
             tp_price=2660.0,
             risk_amount=500.0,
             reward_amount=1000.0,
-            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+            quantity=1,
+        entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
             risk_points=5.0,
             tp1_hit_bar_idx=25,
         )
@@ -2235,7 +2267,8 @@ class TestRunnerHardInvalidation:
             tp_price=2660.0,
             risk_amount=500.0,
             reward_amount=1000.0,
-            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+            quantity=1,
+        entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
             risk_points=5.0,
             tp1_hit_bar_idx=25,
         )
@@ -2288,7 +2321,8 @@ class TestRunnerHardInvalidation:
             tp_price=2660.0,
             risk_amount=500.0,
             reward_amount=1000.0,
-            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+            quantity=1,
+        entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
             risk_points=5.0,
             tp1_hit_bar_idx=25,
         )
@@ -2354,7 +2388,8 @@ class TestRunnerHardInvalidation:
             tp_price=2660.0,
             risk_amount=500.0,
             reward_amount=1000.0,
-            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+            quantity=1,
+        entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
             risk_points=5.0,
             tp1_hit_bar_idx=25,
         )
@@ -2395,7 +2430,8 @@ class TestRunnerHardInvalidation:
             tp_price=2660.0,
             risk_amount=500.0,
             reward_amount=1000.0,
-            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+            quantity=1,
+        entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
             risk_points=5.0,
             tp1_hit_bar_idx=25,
         )
@@ -2462,7 +2498,8 @@ class TestFallbackAHoldImpulse:
             tp_price=2660.0,
             risk_amount=1000.0,
             reward_amount=1000.0,
-            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+            quantity=1,
+        entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
             risk_points=10.0,  # R = 10 points
             tp1_hit_bar_idx=25,
         )
@@ -2506,7 +2543,8 @@ class TestFallbackAHoldImpulse:
             tp_price=2660.0,
             risk_amount=1000.0,
             reward_amount=1000.0,
-            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+            quantity=1,
+        entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
             risk_points=10.0,
             tp1_hit_bar_idx=25,
         )
@@ -2563,7 +2601,8 @@ class TestFallbackAHoldImpulse:
             tp_price=2660.0,
             risk_amount=1000.0,
             reward_amount=1000.0,
-            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+            quantity=1,
+        entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
             risk_points=10.0,
             tp1_hit_bar_idx=25,
         )
@@ -2620,7 +2659,8 @@ class TestFallbackAHoldImpulse:
             tp_price=2660.0,
             risk_amount=1000.0,
             reward_amount=1000.0,
-            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+            quantity=1,
+        entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
             risk_points=10.0,
             tp1_hit_bar_idx=25,
         )
@@ -2664,7 +2704,8 @@ class TestFallbackAHoldImpulse:
             tp_price=2660.0,
             risk_amount=1000.0,
             reward_amount=1000.0,
-            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+            quantity=1,
+        entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
             risk_points=10.0,
             tp1_hit_bar_idx=25,
         )
@@ -2706,7 +2747,8 @@ class TestFallbackAHoldImpulse:
             tp_price=2660.0,
             risk_amount=1000.0,
             reward_amount=1000.0,
-            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+            quantity=1,
+        entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
             risk_points=10.0,
             tp1_hit_bar_idx=25,
         )
@@ -2789,7 +2831,8 @@ class TestFallbackAHoldImpulse:
             tp_price=2660.0,
             risk_amount=1000.0,
             reward_amount=1000.0,
-            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+            quantity=1,
+        entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
             risk_points=10.0,
             tp1_hit_bar_idx=25,
         )
@@ -2839,7 +2882,8 @@ class TestFallbackAHoldImpulse:
             tp_price=2640.0,
             risk_amount=1000.0,
             reward_amount=1000.0,
-            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+            quantity=1,
+        entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
             risk_points=10.0,
             tp1_hit_bar_idx=25,
         )

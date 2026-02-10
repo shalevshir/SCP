@@ -97,6 +97,7 @@ class TestBarsElapsedPersistence:
             entry_price=2650.0,
             sl_price=2645.0,
             tp_price=2662.0,
+            quantity=1,
             risk_amount=5.0,
             reward_amount=12.0,
             entry_timestamp=datetime(2025, 1, 15, 10, 0, tzinfo=timezone.utc),
@@ -152,6 +153,7 @@ class TestReached1RPersistence:
             entry_price=2650.0,
             sl_price=2645.0,  # Risk: 5 points
             tp_price=2662.0,  # Reward: 12 points
+            quantity=1,
             risk_amount=5.0,
             reward_amount=12.0,
             entry_timestamp=datetime(2025, 1, 15, 10, 0, tzinfo=timezone.utc),
@@ -212,6 +214,7 @@ class TestFullRecoveryScenario:
             entry_price=2650.0,
             sl_price=2645.0,
             tp_price=2662.0,
+            quantity=1,
             risk_amount=5.0,
             reward_amount=12.0,
             entry_timestamp=datetime(2025, 1, 15, 10, 0, tzinfo=timezone.utc),

@@ -14,7 +14,7 @@ default_session:
   window_end: "23:59"    # ILT - Execution service handles session blocking
   allowed_tiers:
     - "Conservative"
-    - "EarlyMild"
+    - "Early Mild"
     - "Mild"
     - "Offensive"
   allowed_setups:
@@ -34,7 +34,7 @@ seasons:
     window_end: "23:59"
     allowed_tiers:
       - "Conservative"
-      - "EarlyMild"
+      - "Early Mild"
     allowed_setups:
       - "VWAP_RECLAIM"
       - "DXY_CONTINUATION"
@@ -49,7 +49,7 @@ seasons:
     window_end: "23:59"
     allowed_tiers:
       - "Conservative"
-      - "EarlyMild"
+      - "Early Mild"
       - "Mild"
     allowed_setups:
       - "VWAP_RECLAIM"
@@ -66,7 +66,7 @@ seasons:
     window_end: "23:59"    # ILT (Israel Local Time)
     allowed_tiers:
       - "Conservative"
-      - "EarlyMild"
+      - "Early Mild"
       - "Mild"
       - "Offensive"
     allowed_setups:

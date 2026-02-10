@@ -14,6 +14,28 @@ from bot_core_svc import metrics
 
 logger = get_logger(__name__)
 
+# Contract configurations for SL/TP scaling
+# MGC (Micro Gold) has 1/10th the point value, so same dollar risk = 10x wider SL distance
+CONTRACT_CONFIG: dict[str, dict[str, float]] = {
+    "GC": {
+        "scale": 1.0,
+        "point_value": 100.0,
+    },
+    "MGC": {
+        "scale": 10.0,  # 10x wider SL/TP distances for same dollar risk
+        "point_value": 10.0,
+    },
+}
+
+# Base SL/TP parameters (GC values, will be scaled for other contracts)
+BASE_TICK_SIZE = 0.1  # Gold futures tick size (same for GC and MGC)
+BASE_VWAP_SL_BUFFER_TICKS = 30
+BASE_MIN_SL_TICKS_VWAP_RECLAIM = 20
+BASE_MIN_SL_TICKS_VWAP_FADE = 15
+BASE_SL_BUFFER_POINTS_DXY = 0.3
+BASE_MIN_SL_POINTS_DXY = 2.5
+BASE_K_ATR = 1.7
+
 
 @dataclass
 class TPPlan:
@@ -1164,7 +1186,10 @@ def calculate_sl_price_dxy_continuation(
 
 
 def signal_to_message(
-    signal: Signal, features: FeaturesMessage, htf_bias: HTFBiasMessage
+    signal: Signal,
+    features: FeaturesMessage,
+    htf_bias: HTFBiasMessage,
+    scale: float = 1.0,
 ) -> SignalMessage:
     """Convert Signal to SignalMessage.
 
@@ -1172,6 +1197,7 @@ def signal_to_message(
         signal: Signal object from score_signal
         features: Features message containing price data for entry/SL/TP calculation
         htf_bias: HTF bias message containing alignment data
+        scale: Contract scale factor for SL/TP distances (1.0 for GC, 10.0 for MGC)
 
     Returns:
         SignalMessage for publishing
@@ -1187,12 +1213,14 @@ def signal_to_message(
     # Execution service will use next bar open for actual entry
     entry_price = features.close
 
-    # Constants from backtester/trade.py
-    TICK_SIZE_GC = 0.1  # Gold futures tick size
-    VWAP_SL_BUFFER_TICKS = 30
-    MIN_SL_TICKS_VWAP_RECLAIM = 20
-    MIN_SL_TICKS_VWAP_FADE = 15
-    # Note: DXY_CONTINUATION now uses structural SL with ATR floor (not fixed ticks)
+    # Scale SL/TP parameters based on contract type
+    # MGC (scale=10) gives 10x wider SL/TP for same dollar risk
+    sl_buffer_ticks = int(BASE_VWAP_SL_BUFFER_TICKS * scale)
+    min_sl_ticks_reclaim = int(BASE_MIN_SL_TICKS_VWAP_RECLAIM * scale)
+    min_sl_ticks_fade = int(BASE_MIN_SL_TICKS_VWAP_FADE * scale)
+    sl_buffer_points_dxy = BASE_SL_BUFFER_POINTS_DXY * scale
+    min_sl_points_dxy = BASE_MIN_SL_POINTS_DXY * scale
+    k_atr_scaled = BASE_K_ATR * scale
 
     # Calculate stop loss based on setup type and SOP rules
     setup_type = signal.setup_type
@@ -1204,29 +1232,29 @@ def signal_to_message(
             direction=direction,
             entry_price=entry_price,
             features=features,
-            sl_buffer_ticks=VWAP_SL_BUFFER_TICKS,
-            min_sl_ticks=MIN_SL_TICKS_VWAP_RECLAIM,
+            sl_buffer_ticks=sl_buffer_ticks,
+            min_sl_ticks=min_sl_ticks_reclaim,
         )
 
     elif setup_type == "VWAP_FADE":
-        # Fade: minimum 15-tick buffer
+        # Fade: minimum tick buffer (scaled for contract type)
         if direction == "long":
-            sl_price = entry_price - (MIN_SL_TICKS_VWAP_FADE * TICK_SIZE_GC)
+            sl_price = entry_price - (min_sl_ticks_fade * BASE_TICK_SIZE)
         else:  # short
-            sl_price = entry_price + (MIN_SL_TICKS_VWAP_FADE * TICK_SIZE_GC)
+            sl_price = entry_price + (min_sl_ticks_fade * BASE_TICK_SIZE)
 
     elif setup_type == "DXY_CONTINUATION":
         # Track all DXY_CONTINUATION attempts
         metrics.dxy_continuation_total.inc()
 
-        # Structural SL with ATR floor (per DXY_CONTINUATION spec)
+        # Structural SL with ATR floor (per DXY_CONTINUATION spec, scaled)
         sl_price, sl_diagnostics = calculate_sl_price_dxy_continuation(
             direction=direction,
             entry_price=entry_price,
             features=features,
-            k_atr=1.7,
-            sl_buffer_points=0.3,
-            min_sl_points=2.5,
+            k_atr=k_atr_scaled,
+            sl_buffer_points=sl_buffer_points_dxy,
+            min_sl_points=min_sl_points_dxy,
         )
 
         # Degraded mode check: require score >= 9.0 when micro swing missing
@@ -1238,11 +1266,11 @@ def signal_to_message(
             )
 
     else:
-        # Default fallback: 20-tick buffer
+        # Default fallback: scaled tick buffer
         if direction == "long":
-            sl_price = entry_price - (MIN_SL_TICKS_VWAP_RECLAIM * TICK_SIZE_GC)
+            sl_price = entry_price - (min_sl_ticks_reclaim * BASE_TICK_SIZE)
         else:  # short
-            sl_price = entry_price + (MIN_SL_TICKS_VWAP_RECLAIM * TICK_SIZE_GC)
+            sl_price = entry_price + (min_sl_ticks_reclaim * BASE_TICK_SIZE)
 
     # Calculate risk distance
     if direction == "long":
@@ -1361,16 +1389,22 @@ class SignalEngine:
     """
 
     def __init__(
-        self, service_mode: str = "dev", service_name: str = "bot-core"
+        self,
+        service_mode: str = "dev",
+        service_name: str = "bot-core",
+        contract_type: str = "GC",
     ) -> None:
         """Initialize signal engine.
 
         Args:
             service_mode: Service mode for metrics (dev/test/replay/paper/live)
             service_name: Service name for metrics (default: bot-core)
+            contract_type: Contract type for SL/TP scaling ('GC' or 'MGC')
         """
         self._service_mode = service_mode
         self._service_name = service_name
+        self._contract_type = contract_type
+        self._scale = CONTRACT_CONFIG.get(contract_type, CONTRACT_CONFIG["GC"])["scale"]
 
     def generate(
         self,
@@ -1450,7 +1484,7 @@ class SignalEngine:
 
         # Convert to message (may raise ValueError if TP validation fails)
         try:
-            signal_msg = signal_to_message(signal, features, htf_bias)
+            signal_msg = signal_to_message(signal, features, htf_bias, scale=self._scale)
         except ValueError as e:
             # TP validation failed - signal rejected
             logger.info(

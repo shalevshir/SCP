@@ -143,6 +143,81 @@ class PaperBroker(BaseBroker):
         """
         return self._positions.get(symbol)
 
+    async def reduce_position(
+        self,
+        symbol: str,
+        quantity: int,
+        price: float,
+    ) -> OrderResult:
+        """Reduce an existing position by a specified quantity.
+
+        Args:
+            symbol: Asset symbol
+            quantity: Number of contracts to reduce
+            price: Execution price
+
+        Returns:
+            OrderResult with execution details
+
+        Raises:
+            ValueError: If no position exists, quantity exceeds position, or invalid params
+        """
+        # Check position exists
+        position = self._positions.get(symbol)
+        if position is None:
+            raise ValueError(f"No position exists for {symbol}")
+
+        if quantity <= 0:
+            raise ValueError(f"Reduce quantity must be positive, got {quantity}")
+
+        if quantity > position.quantity:
+            raise ValueError(
+                f"Cannot reduce by {quantity} contracts, position only has {position.quantity}"
+            )
+
+        if price <= 0:
+            raise ValueError(f"Price must be positive, got {price}")
+
+        # Create reducing order (opposite side)
+        closing_side: Literal["long", "short"] = (
+            "short" if position.side == "long" else "long"
+        )
+
+        order_id = str(uuid4())
+        result = OrderResult(
+            order_id=order_id,
+            symbol=symbol,
+            side=closing_side,
+            quantity=quantity,
+            filled_price=price,
+            filled_at=datetime.utcnow(),
+            status="filled",
+        )
+
+        # Store order
+        self._orders[order_id] = result
+
+        # Calculate partial P&L
+        entry_price_float = float(position.entry_price)
+        price_float = float(price)
+        if position.side == "long":
+            pnl = price_float - entry_price_float
+        else:  # short
+            pnl = entry_price_float - price_float
+
+        pnl_total = pnl * quantity
+
+        # Update position quantity
+        position.quantity -= quantity
+
+        logger.info(
+            f"Paper position reduced: {position.side} {quantity} {symbol} "
+            f"@ {price_float:.2f} (entry={entry_price_float:.2f}, pnl={pnl_total:.2f} points, "
+            f"remaining={position.quantity}, order_id={order_id})"
+        )
+
+        return result
+
     async def close_position(
         self,
         symbol: str,

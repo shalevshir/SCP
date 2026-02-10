@@ -44,7 +44,8 @@ class TestSLTPGracePeriods:
             tp_price=2670.0,
             risk_amount=10.0,
             reward_amount=20.0,
-            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+            quantity=1,
+        entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
             entry_bar_idx=100,
         )
 
@@ -80,7 +81,8 @@ class TestSLTPGracePeriods:
             tp_price=2670.0,
             risk_amount=10.0,
             reward_amount=20.0,
-            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+            quantity=1,
+        entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
             entry_bar_idx=100,
         )
 
@@ -116,7 +118,8 @@ class TestSLTPGracePeriods:
             tp_price=2670.0,
             risk_amount=10.0,
             reward_amount=20.0,
-            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+            quantity=1,
+        entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
             entry_bar_idx=100,
         )
 
@@ -152,7 +155,8 @@ class TestSLTPGracePeriods:
             tp_price=2670.0,
             risk_amount=10.0,
             reward_amount=20.0,
-            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+            quantity=1,
+        entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
             entry_bar_idx=100,
         )
 
@@ -188,7 +192,8 @@ class TestSLTPGracePeriods:
             tp_price=2670.0,
             risk_amount=10.0,
             reward_amount=20.0,
-            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+            quantity=1,
+        entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
             entry_bar_idx=100,
         )
 
@@ -229,7 +234,8 @@ class TestSLTPGracePeriods:
             tp_price=2670.0,
             risk_amount=10.0,
             reward_amount=20.0,
-            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+            quantity=1,
+        entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
             entry_bar_idx=100,
         )
 

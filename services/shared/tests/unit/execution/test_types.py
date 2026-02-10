@@ -23,7 +23,8 @@ class TestTradeRecord:
             tp_price=2660.0,
             risk_amount=5.0,
             reward_amount=10.0,
-            entry_timestamp=now,
+            quantity=1,
+        entry_timestamp=now,
         )
 
         assert trade.trade_id == "trade-123"
@@ -52,7 +53,8 @@ class TestTradeRecord:
             tp_price=2660.0,
             risk_amount=5.0,
             reward_amount=10.0,
-            entry_timestamp=now,
+            quantity=1,
+        entry_timestamp=now,
         )
 
         assert trade.exit_timestamp is None
@@ -78,7 +80,8 @@ class TestTradeRecord:
             tp_price=2640.0,
             risk_amount=5.0,
             reward_amount=10.0,
-            entry_timestamp=entry_time,
+            quantity=1,
+        entry_timestamp=entry_time,
             exit_timestamp=exit_time,
             exit_price=2640.0,
             exit_reason="TP_HIT",
@@ -109,7 +112,8 @@ class TestTradeRecord:
             tp_price=2660.0,
             risk_amount=5.0,
             reward_amount=10.0,
-            entry_timestamp=now,
+            quantity=1,
+        entry_timestamp=now,
         )
 
         assert trade.setup_type == "DXY_CONTINUATION"
@@ -129,7 +133,8 @@ class TestTradeRecord:
             tp_price=2660.0,
             risk_amount=500.0,  # money
             reward_amount=1000.0,
-            entry_timestamp=now,
+            quantity=1,
+        entry_timestamp=now,
         )
 
         assert trade.risk_points is None
@@ -149,7 +154,8 @@ class TestTradeRecord:
             tp_price=2660.0,
             risk_amount=500.0,
             reward_amount=1000.0,
-            entry_timestamp=now,
+            quantity=1,
+        entry_timestamp=now,
             risk_points=5.0,  # CRITICAL: in price units, not money
         )
 
@@ -170,7 +176,8 @@ class TestTradeRecord:
             tp_price=2660.0,
             risk_amount=500.0,
             reward_amount=1000.0,
-            entry_timestamp=now,
+            quantity=1,
+        entry_timestamp=now,
         )
 
         # BE tracking defaults
@@ -200,7 +207,8 @@ class TestTradeRecord:
             tp_price=2660.0,
             risk_amount=500.0,  # money - NOT used for BE calculation
             reward_amount=1000.0,
-            entry_timestamp=now,
+            quantity=1,
+        entry_timestamp=now,
             risk_points=5.0,  # price points - USED for BE calculation
         )
 
@@ -233,7 +241,8 @@ class TestTradeRecord:
             tp_price=2660.0,
             risk_amount=500.0,
             reward_amount=1000.0,
-            entry_timestamp=now,
+            quantity=1,
+        entry_timestamp=now,
         )
 
         # Phase-2 runner fields defaults
@@ -258,7 +267,8 @@ class TestTradeRecord:
             tp_price=2655.0,  # TP1 at 1R
             risk_amount=500.0,
             reward_amount=500.0,
-            entry_timestamp=now,
+            quantity=1,
+        entry_timestamp=now,
             risk_points=5.0,
             tp2_price=2665.0,  # TP2 at 3R (set at signal time)
         )

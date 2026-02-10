@@ -20,6 +20,7 @@ class TradeRecord:
     entry_price: float
     sl_price: float
     tp_price: float
+    quantity: int  # Number of contracts
     risk_amount: float
     reward_amount: float
     entry_timestamp: datetime

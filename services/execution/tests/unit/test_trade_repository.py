@@ -304,6 +304,7 @@ class TestTradeRepositoryCloseTrade:
             "setup_type": "VWAP_RECLAIM",
             "entry_price": 2650.0,
             "sl_price": 2645.0,
+            "original_sl_price": 2645.0,  # Added for R-multiple calculation
             "tp_price": 2662.0,
             "quantity": 1,
             "opened_at": datetime(2025, 1, 15, 10, 0, tzinfo=timezone.utc),
@@ -340,6 +341,7 @@ class TestTradeRepositoryCloseTrade:
             "setup_type": "VWAP_FADE",
             "entry_price": 2650.0,
             "sl_price": 2655.0,
+            "original_sl_price": 2655.0,  # Added for R-multiple calculation
             "tp_price": 2638.0,
             "quantity": 1,
             "opened_at": datetime(2025, 1, 15, 10, 0, tzinfo=timezone.utc),

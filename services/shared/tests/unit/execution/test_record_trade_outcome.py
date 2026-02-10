@@ -21,6 +21,7 @@ def base_trade() -> TradeRecord:
         tp_price=2020.0,
         risk_amount=10.0,
         reward_amount=20.0,
+        quantity=1,
         entry_timestamp=datetime(2024, 3, 15, 10, 0, tzinfo=timezone.utc),
         entry_bar_idx=100,
         reached_1r=False,
@@ -104,7 +105,8 @@ class TestRecordTradeOutcome:
             tp_price=2020.0,
             risk_amount=10.0,
             reward_amount=20.0,
-            entry_timestamp=datetime(
+            quantity=1,
+        entry_timestamp=datetime(
                 2024, 3, 16, 10, 0, tzinfo=timezone.utc
             ),  # Next day
             entry_bar_idx=200,
@@ -133,7 +135,8 @@ class TestRecordTradeOutcome:
             tp_price=2020.0,
             risk_amount=10.0,
             reward_amount=20.0,
-            entry_timestamp=datetime(
+            quantity=1,
+        entry_timestamp=datetime(
                 2024, 3, 16, 10, 0, tzinfo=timezone.utc
             ),  # Next day
             entry_bar_idx=200,
@@ -213,7 +216,8 @@ class TestRecordTradeOutcome:
             tp_price=2020.0,
             risk_amount=10.0,
             reward_amount=20.0,
-            entry_timestamp=datetime(
+            quantity=1,
+        entry_timestamp=datetime(
                 2024, 3, 15, 22, 0, tzinfo=timezone.utc
             ),  # Day 1, late evening
             entry_bar_idx=100,
@@ -249,7 +253,8 @@ class TestRecordTradeOutcome:
             tp_price=2020.0,
             risk_amount=10.0,
             reward_amount=20.0,
-            entry_timestamp=datetime(
+            quantity=1,
+        entry_timestamp=datetime(
                 2024, 3, 15, 20, 0, tzinfo=timezone.utc
             ),  # Also opened Day 1
             entry_bar_idx=200,
@@ -294,7 +299,8 @@ class TestRecordTradeOutcome:
             tp_price=2020.0,
             risk_amount=10.0,
             reward_amount=20.0,
-            entry_timestamp=datetime(2024, 3, 15, 22, 0, tzinfo=timezone.utc),  # Day 1
+            quantity=1,
+        entry_timestamp=datetime(2024, 3, 15, 22, 0, tzinfo=timezone.utc),  # Day 1
             entry_bar_idx=100,
             reached_1r=False,
             exit_timestamp=datetime(2024, 3, 16, 10, 0, tzinfo=timezone.utc),  # Day 2
@@ -312,7 +318,8 @@ class TestRecordTradeOutcome:
             tp_price=2020.0,
             risk_amount=10.0,
             reward_amount=20.0,
-            entry_timestamp=datetime(2024, 3, 16, 8, 0, tzinfo=timezone.utc),  # Day 2
+            quantity=1,
+        entry_timestamp=datetime(2024, 3, 16, 8, 0, tzinfo=timezone.utc),  # Day 2
             entry_bar_idx=200,
             reached_1r=False,
             exit_timestamp=datetime(2024, 3, 16, 12, 0, tzinfo=timezone.utc),  # Day 2

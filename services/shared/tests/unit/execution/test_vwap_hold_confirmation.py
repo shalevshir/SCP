@@ -21,6 +21,7 @@ def base_trade():
         tp_price=2670.0,
         risk_amount=10.0,
         reward_amount=20.0,
+        quantity=1,
         entry_timestamp=datetime(2025, 1, 15, 10, 0, tzinfo=timezone.utc),
         entry_bar_idx=0,
         reached_1r=False,

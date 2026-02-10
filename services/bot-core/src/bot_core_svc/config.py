@@ -47,3 +47,9 @@ class BotCoreConfig(BaseServiceConfig):
         default=60,
         description="Number of bars to skip before generating signals (warmup period)",
     )
+
+    # Contract type for SL/TP scaling
+    contract_type: str = Field(
+        default="GC",
+        description="Contract type: 'GC' (standard, $100/pt) or 'MGC' (micro, $10/pt, 10x wider SL/TP)",
+    )

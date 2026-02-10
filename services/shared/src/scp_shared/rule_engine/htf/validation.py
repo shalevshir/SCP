@@ -173,11 +173,11 @@ def adjust_score_with_htf(
         # Tier-aware penalty for neutral HTF
         enforcer_tier = context.get("enforcer_tier", "Conservative")
 
-        if htf_bias.bias == "neutral" and enforcer_tier == "EarlyMild":
-            # Softer penalty for EarlyMild tier
+        if htf_bias.bias == "neutral" and enforcer_tier == "Early Mild":
+            # Softer penalty for Early Mild tier
             penalty = -0.25
             logger.debug(
-                f"Applied soft neutral HTF penalty for EarlyMild: {penalty:.2f}"
+                f"Applied soft neutral HTF penalty for Early Mild: {penalty:.2f}"
             )
         else:
             # Standard penalty for other tiers
