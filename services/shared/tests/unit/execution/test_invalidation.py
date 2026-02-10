@@ -1546,7 +1546,7 @@ class TestDXYContinuationPartialProfit:
     """Tests for partial profit taking at +1R."""
 
     def test_partial_profit_action_at_1r(self, checker):
-        """DXY_CONTINUATION should trigger partial profit action at +1R."""
+        """DXY_CONTINUATION should trigger partial profit action at +1R with BE buffer."""
         trade = TradeRecord(
             trade_id="test-dxy-partial-1",
             signal_id="signal-dxy-partial-1",
@@ -1554,7 +1554,7 @@ class TestDXYContinuationPartialProfit:
             direction="long",
             setup_type="DXY_CONTINUATION",
             entry_price=2650.0,
-            sl_price=2640.0,
+            sl_price=2640.0,  # 10 points risk
             tp_price=2680.0,
             risk_amount=10.0,
             reward_amount=30.0,
@@ -1577,9 +1577,14 @@ class TestDXYContinuationPartialProfit:
 
         assert action is not None
         assert action["action"] == "partial_profit"
-        assert action["close_pct"] == 50
+        assert action["close_pct"] == 40  # Per DXY_CONTINUATION spec: 40% partial at TP1
         assert action["move_sl_to_breakeven"] is True
-        assert action["new_sl_price"] == trade.entry_price
+        # Phase 2.0: BE with 0.1R buffer, NOT exact entry
+        # risk_points = 2650 - 2640 = 10, buffer = 0.1 * 10 = 1.0
+        # BE price = 2650 + 1.0 = 2651.0
+        assert action["new_sl_price"] == 2651.0  # entry + 0.1R buffer
+        assert action["be_price"] == 2651.0
+        assert action["be_buffer_r"] == 0.10
 
     def test_partial_profit_only_triggers_once(self, checker):
         """Partial profit should only trigger once per trade."""
@@ -1728,3 +1733,1154 @@ class TestCheckAllWithActions:
 
         assert should_exit is False  # Partial doesn't exit
         assert action == "partial_profit"
+
+
+class TestRunnerUnlockModeA:
+    """Tests for Phase-2 runner unlock (Mode A: Post-TP1 Micro-BOS)."""
+
+    def test_unlock_on_bullish_bos_for_long_trade(self, checker):
+        """Runner unlocks when bullish BOS detected for long trade."""
+        trade = TradeRecord(
+            trade_id="test-runner-long",
+            signal_id="signal-runner",
+            symbol="GC",
+            direction="long",
+            setup_type="DXY_CONTINUATION",
+            entry_price=2650.0,
+            sl_price=2645.0,
+            tp_price=2660.0,
+            risk_amount=500.0,
+            reward_amount=1000.0,
+            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+            risk_points=5.0,
+            tp1_hit_bar_idx=25,  # TP1 hit at bar 25
+        )
+        candle = Candle(
+            timestamp=utc_datetime(2024, 10, 15, 10, 30),
+            open=2658.0,
+            high=2662.0,
+            low=2657.0,
+            close=2661.0,
+            volume=1000.0,
+            symbol="GC",
+            timeframe="1m",
+            source="TEST",
+        )
+
+        # Simulate partial taken (TP1 hit)
+        state = checker._get_trade_state(trade.trade_id)
+        state["partial_taken"] = True
+        state["tp1_hit_bar_idx"] = 25
+
+        features = {
+            "bos_detected": True,
+            "bos_direction": "bullish",
+        }
+
+        action, reason = checker.check_runner_unlock(
+            trade, candle, current_bar_idx=30, features=features
+        )
+
+        assert action == "unlock_runner"
+        assert "bullish BOS" in reason
+        assert state["runner_unlocked"] is True
+        assert state["runner_unlock_bar_idx"] == 30
+
+    def test_unlock_on_bearish_bos_for_short_trade(self, checker):
+        """Runner unlocks when bearish BOS detected for short trade."""
+        trade = TradeRecord(
+            trade_id="test-runner-short",
+            signal_id="signal-runner",
+            symbol="GC",
+            direction="short",
+            setup_type="DXY_CONTINUATION",
+            entry_price=2650.0,
+            sl_price=2655.0,
+            tp_price=2640.0,
+            risk_amount=500.0,
+            reward_amount=1000.0,
+            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+            risk_points=5.0,
+            tp1_hit_bar_idx=25,
+        )
+        candle = Candle(
+            timestamp=utc_datetime(2024, 10, 15, 10, 30),
+            open=2642.0,
+            high=2644.0,
+            low=2638.0,
+            close=2639.0,
+            volume=1000.0,
+            symbol="GC",
+            timeframe="1m",
+            source="TEST",
+        )
+
+        # Simulate partial taken
+        state = checker._get_trade_state(trade.trade_id)
+        state["partial_taken"] = True
+        state["tp1_hit_bar_idx"] = 25
+
+        features = {
+            "bos_detected": True,
+            "bos_direction": "bearish",
+        }
+
+        action, reason = checker.check_runner_unlock(
+            trade, candle, current_bar_idx=30, features=features
+        )
+
+        assert action == "unlock_runner"
+        assert "bearish BOS" in reason
+        assert state["runner_unlocked"] is True
+
+    def test_no_bos_unlock_on_opposite_direction_bos(self, checker):
+        """Runner does NOT unlock via BOS when BOS is opposite direction.
+
+        Note: With Phase 2 fallback enabled, the runner may still unlock via
+        fallback conditions. This test ensures BOS direction is checked correctly.
+        """
+        trade = TradeRecord(
+            trade_id="test-runner-opposite",
+            signal_id="signal-runner",
+            symbol="GC",
+            direction="long",
+            setup_type="DXY_CONTINUATION",
+            entry_price=2650.0,
+            sl_price=2645.0,
+            tp_price=2660.0,
+            risk_amount=500.0,
+            reward_amount=1000.0,
+            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+            risk_points=5.0,
+            tp1_hit_bar_idx=25,
+        )
+        # TP1 = 2655 (entry + 1R), hold floor = 2655 - 0.25*5 = 2653.75
+        # Use a candle that violates hold to prevent fallback unlock
+        candle = Candle(
+            timestamp=utc_datetime(2024, 10, 15, 10, 30),
+            open=2654.0,
+            high=2656.0,
+            low=2650.0,  # Below hold floor (2653.75) - hold violated
+            close=2655.0,
+            volume=1000.0,
+            symbol="GC",
+            timeframe="1m",
+            source="TEST",
+        )
+
+        state = checker._get_trade_state(trade.trade_id)
+        state["partial_taken"] = True
+        state["tp1_hit_bar_idx"] = 25
+
+        # BOS in wrong direction (bearish for long trade)
+        features = {
+            "bos_detected": True,
+            "bos_direction": "bearish",  # Wrong direction for long
+        }
+
+        action, reason = checker.check_runner_unlock(
+            trade, candle, current_bar_idx=30, features=features
+        )
+
+        # No unlock because: BOS wrong direction AND fallback hold violated
+        assert action is None
+        assert reason is None
+        assert state["runner_unlocked"] is False
+
+    def test_close_at_market_when_window_expires(self, checker):
+        """Runner closes at market when unlock window expires without BOS."""
+        trade = TradeRecord(
+            trade_id="test-runner-expire",
+            signal_id="signal-runner",
+            symbol="GC",
+            direction="long",
+            setup_type="DXY_CONTINUATION",
+            entry_price=2650.0,
+            sl_price=2645.0,
+            tp_price=2660.0,
+            risk_amount=500.0,
+            reward_amount=1000.0,
+            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+            risk_points=5.0,
+            tp1_hit_bar_idx=25,
+        )
+        candle = Candle(
+            timestamp=utc_datetime(2024, 10, 15, 10, 45),
+            open=2656.0,
+            high=2658.0,
+            low=2654.0,
+            close=2657.0,
+            volume=1000.0,
+            symbol="GC",
+            timeframe="1m",
+            source="TEST",
+        )
+
+        state = checker._get_trade_state(trade.trade_id)
+        state["partial_taken"] = True
+        state["tp1_hit_bar_idx"] = 25
+
+        # No BOS detected, window = 15 bars, bar 25+15=40 would expire
+        features = {
+            "bos_detected": False,
+            "bos_direction": None,
+        }
+
+        # At bar 40, window expires (15 bars after TP1 at bar 25)
+        action, reason = checker.check_runner_unlock(
+            trade, candle, current_bar_idx=40, features=features
+        )
+
+        assert action == "close_at_market"
+        assert "window expired" in reason
+        assert "15 bars since TP1" in reason
+
+    def test_window_measured_from_tp1_bar_not_entry(self, checker):
+        """Unlock window is measured from TP1 bar, not entry bar."""
+        trade = TradeRecord(
+            trade_id="test-runner-window",
+            signal_id="signal-runner",
+            symbol="GC",
+            direction="long",
+            setup_type="DXY_CONTINUATION",
+            entry_price=2650.0,
+            sl_price=2645.0,
+            tp_price=2660.0,
+            risk_amount=500.0,
+            reward_amount=1000.0,
+            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+            risk_points=5.0,
+            entry_bar_idx=0,  # Entry at bar 0
+            tp1_hit_bar_idx=100,  # TP1 hit at bar 100
+        )
+        candle = Candle(
+            timestamp=utc_datetime(2024, 10, 15, 12, 0),
+            open=2656.0,
+            high=2658.0,
+            low=2654.0,
+            close=2657.0,
+            volume=1000.0,
+            symbol="GC",
+            timeframe="1m",
+            source="TEST",
+        )
+
+        state = checker._get_trade_state(trade.trade_id)
+        state["partial_taken"] = True
+        state["tp1_hit_bar_idx"] = 100
+
+        features = {"bos_detected": False}
+
+        # Bar 110 = only 10 bars after TP1, should still be waiting
+        action, reason = checker.check_runner_unlock(
+            trade, candle, current_bar_idx=110, features=features
+        )
+        assert action is None  # Still waiting, not expired
+
+        # Bar 115 = exactly 15 bars after TP1, window expires
+        action, reason = checker.check_runner_unlock(
+            trade, candle, current_bar_idx=115, features=features
+        )
+        assert action == "close_at_market"
+
+    def test_no_action_before_partial_taken(self, checker):
+        """No runner action before partial profit is taken."""
+        trade = TradeRecord(
+            trade_id="test-runner-no-partial",
+            signal_id="signal-runner",
+            symbol="GC",
+            direction="long",
+            setup_type="DXY_CONTINUATION",
+            entry_price=2650.0,
+            sl_price=2645.0,
+            tp_price=2660.0,
+            risk_amount=500.0,
+            reward_amount=1000.0,
+            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+            risk_points=5.0,
+        )
+        candle = Candle(
+            timestamp=utc_datetime(2024, 10, 15, 10, 30),
+            open=2658.0,
+            high=2662.0,
+            low=2657.0,
+            close=2661.0,
+            volume=1000.0,
+            symbol="GC",
+            timeframe="1m",
+            source="TEST",
+        )
+
+        # partial_taken is False by default
+        features = {
+            "bos_detected": True,
+            "bos_direction": "bullish",
+        }
+
+        action, reason = checker.check_runner_unlock(
+            trade, candle, current_bar_idx=30, features=features
+        )
+
+        assert action is None
+        assert reason is None
+
+    def test_no_action_for_non_dxy_continuation(self, checker):
+        """No runner action for non-DXY_CONTINUATION trades."""
+        trade = TradeRecord(
+            trade_id="test-runner-vwap",
+            signal_id="signal-runner",
+            symbol="GC",
+            direction="long",
+            setup_type="VWAP_RECLAIM",  # Not DXY_CONTINUATION
+            entry_price=2650.0,
+            sl_price=2645.0,
+            tp_price=2660.0,
+            risk_amount=500.0,
+            reward_amount=1000.0,
+            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+            risk_points=5.0,
+        )
+        candle = Candle(
+            timestamp=utc_datetime(2024, 10, 15, 10, 30),
+            open=2658.0,
+            high=2662.0,
+            low=2657.0,
+            close=2661.0,
+            volume=1000.0,
+            symbol="GC",
+            timeframe="1m",
+            source="TEST",
+        )
+
+        # Even with partial taken, VWAP_RECLAIM should not trigger runner logic
+        state = checker._get_trade_state(trade.trade_id)
+        state["partial_taken"] = True
+        state["tp1_hit_bar_idx"] = 25
+
+        features = {
+            "bos_detected": True,
+            "bos_direction": "bullish",
+        }
+
+        action, reason = checker.check_runner_unlock(
+            trade, candle, current_bar_idx=30, features=features
+        )
+
+        assert action is None
+        assert reason is None
+
+    def test_no_action_after_already_unlocked(self, checker):
+        """No action if runner is already unlocked."""
+        trade = TradeRecord(
+            trade_id="test-runner-already",
+            signal_id="signal-runner",
+            symbol="GC",
+            direction="long",
+            setup_type="DXY_CONTINUATION",
+            entry_price=2650.0,
+            sl_price=2645.0,
+            tp_price=2660.0,
+            risk_amount=500.0,
+            reward_amount=1000.0,
+            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+            risk_points=5.0,
+            tp1_hit_bar_idx=25,
+        )
+        candle = Candle(
+            timestamp=utc_datetime(2024, 10, 15, 10, 35),
+            open=2658.0,
+            high=2662.0,
+            low=2657.0,
+            close=2661.0,
+            volume=1000.0,
+            symbol="GC",
+            timeframe="1m",
+            source="TEST",
+        )
+
+        state = checker._get_trade_state(trade.trade_id)
+        state["partial_taken"] = True
+        state["tp1_hit_bar_idx"] = 25
+        state["runner_unlocked"] = True  # Already unlocked!
+        state["runner_unlock_bar_idx"] = 30
+
+        features = {
+            "bos_detected": True,
+            "bos_direction": "bullish",
+        }
+
+        action, reason = checker.check_runner_unlock(
+            trade, candle, current_bar_idx=35, features=features
+        )
+
+        assert action is None
+        assert reason is None
+
+
+# ============================================================================
+# Phase 2: Runner Hard Invalidation Tests (Section 4 of spec)
+# ============================================================================
+
+
+class TestRunnerHardInvalidation:
+    """Tests for Phase-2 hard invalidation (Section 4 of spec).
+
+    Hard invalidation conditions exit the runner IMMEDIATELY when the
+    continuation thesis is broken. These are checked BEFORE any unlock attempt.
+    """
+
+    def test_chop_detected_exits_immediately(self, checker):
+        """Runner should exit immediately when chop_detected=True."""
+        trade = TradeRecord(
+            trade_id="test-hard-chop",
+            signal_id="signal-hard",
+            symbol="GC",
+            direction="long",
+            setup_type="DXY_CONTINUATION",
+            entry_price=2650.0,
+            sl_price=2645.0,
+            tp_price=2660.0,
+            risk_amount=500.0,
+            reward_amount=1000.0,
+            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+            risk_points=5.0,
+            tp1_hit_bar_idx=25,
+        )
+        candle = Candle(
+            timestamp=utc_datetime(2024, 10, 15, 10, 30),
+            open=2658.0,
+            high=2662.0,
+            low=2657.0,
+            close=2661.0,
+            volume=1000.0,
+            symbol="GC",
+            timeframe="1m",
+            source="TEST",
+        )
+
+        state = checker._get_trade_state(trade.trade_id)
+        state["partial_taken"] = True
+        state["tp1_hit_bar_idx"] = 25
+
+        htf_bias = {
+            "chop_detected": True,
+            "dxy_aligned": True,
+            "conflict_detected": False,
+        }
+
+        action, reason = checker.check_runner_hard_invalidation(
+            trade, candle, 30, {}, htf_bias
+        )
+
+        assert action == "exit_runner"
+        assert "chop_detected" in reason
+
+    def test_htf_conflict_exits_immediately(self, checker):
+        """Runner should exit immediately when conflict_detected=True."""
+        trade = TradeRecord(
+            trade_id="test-hard-conflict",
+            signal_id="signal-hard",
+            symbol="GC",
+            direction="long",
+            setup_type="DXY_CONTINUATION",
+            entry_price=2650.0,
+            sl_price=2645.0,
+            tp_price=2660.0,
+            risk_amount=500.0,
+            reward_amount=1000.0,
+            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+            risk_points=5.0,
+            tp1_hit_bar_idx=25,
+        )
+        candle = Candle(
+            timestamp=utc_datetime(2024, 10, 15, 10, 30),
+            open=2658.0,
+            high=2662.0,
+            low=2657.0,
+            close=2661.0,
+            volume=1000.0,
+            symbol="GC",
+            timeframe="1m",
+            source="TEST",
+        )
+
+        state = checker._get_trade_state(trade.trade_id)
+        state["partial_taken"] = True
+        state["tp1_hit_bar_idx"] = 25
+
+        htf_bias = {
+            "chop_detected": False,
+            "dxy_aligned": True,
+            "conflict_detected": True,
+            "conflict_reason": "1H vs 15M structure opposition",
+        }
+
+        action, reason = checker.check_runner_hard_invalidation(
+            trade, candle, 30, {}, htf_bias
+        )
+
+        assert action == "exit_runner"
+        assert "htf_conflict_detected" in reason
+
+    def test_dxy_misaligned_5_bars_exits(self, checker):
+        """Runner exits after 5 consecutive bars of dxy_aligned=False."""
+        trade = TradeRecord(
+            trade_id="test-hard-dxy",
+            signal_id="signal-hard",
+            symbol="GC",
+            direction="long",
+            setup_type="DXY_CONTINUATION",
+            entry_price=2650.0,
+            sl_price=2645.0,
+            tp_price=2660.0,
+            risk_amount=500.0,
+            reward_amount=1000.0,
+            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+            risk_points=5.0,
+            tp1_hit_bar_idx=25,
+        )
+        candle = Candle(
+            timestamp=utc_datetime(2024, 10, 15, 10, 30),
+            open=2658.0,
+            high=2662.0,
+            low=2657.0,
+            close=2661.0,
+            volume=1000.0,
+            symbol="GC",
+            timeframe="1m",
+            source="TEST",
+        )
+
+        state = checker._get_trade_state(trade.trade_id)
+        state["partial_taken"] = True
+        state["tp1_hit_bar_idx"] = 25
+
+        htf_bias = {
+            "chop_detected": False,
+            "dxy_aligned": False,  # Misaligned
+            "conflict_detected": False,
+        }
+
+        # Simulate 4 bars of misalignment - should NOT exit yet
+        for bar in range(30, 34):
+            action, reason = checker.check_runner_hard_invalidation(
+                trade, candle, bar, {}, htf_bias
+            )
+            assert action is None, f"Should not exit at bar {bar}"
+
+        # 5th bar - should exit
+        action, reason = checker.check_runner_hard_invalidation(
+            trade, candle, 34, {}, htf_bias
+        )
+        assert action == "exit_runner"
+        assert "dxy_misaligned_5_bars" in reason
+
+    def test_dxy_misaligned_counter_resets_on_realign(self, checker):
+        """Counter resets when dxy_aligned becomes True."""
+        trade = TradeRecord(
+            trade_id="test-hard-reset",
+            signal_id="signal-hard",
+            symbol="GC",
+            direction="long",
+            setup_type="DXY_CONTINUATION",
+            entry_price=2650.0,
+            sl_price=2645.0,
+            tp_price=2660.0,
+            risk_amount=500.0,
+            reward_amount=1000.0,
+            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+            risk_points=5.0,
+            tp1_hit_bar_idx=25,
+        )
+        candle = Candle(
+            timestamp=utc_datetime(2024, 10, 15, 10, 30),
+            open=2658.0,
+            high=2662.0,
+            low=2657.0,
+            close=2661.0,
+            volume=1000.0,
+            symbol="GC",
+            timeframe="1m",
+            source="TEST",
+        )
+
+        state = checker._get_trade_state(trade.trade_id)
+        state["partial_taken"] = True
+        state["tp1_hit_bar_idx"] = 25
+
+        # 3 bars misaligned
+        htf_bias_misaligned = {
+            "chop_detected": False,
+            "dxy_aligned": False,
+            "conflict_detected": False,
+        }
+        for bar in range(30, 33):
+            checker.check_runner_hard_invalidation(
+                trade, candle, bar, {}, htf_bias_misaligned
+            )
+
+        assert state["dxy_misaligned_bars"] == 3
+
+        # Realign
+        htf_bias_aligned = {
+            "chop_detected": False,
+            "dxy_aligned": True,
+            "conflict_detected": False,
+        }
+        checker.check_runner_hard_invalidation(
+            trade, candle, 33, {}, htf_bias_aligned
+        )
+
+        # Counter should be reset
+        assert state["dxy_misaligned_bars"] == 0
+
+        # Now 4 more misaligned bars - still shouldn't exit (total < 5)
+        for bar in range(34, 38):
+            action, reason = checker.check_runner_hard_invalidation(
+                trade, candle, bar, {}, htf_bias_misaligned
+            )
+            assert action is None
+
+    def test_hard_invalidation_skipped_without_htf_bias(self, checker):
+        """Hard invalidation is skipped when htf_bias is None."""
+        trade = TradeRecord(
+            trade_id="test-hard-no-htf",
+            signal_id="signal-hard",
+            symbol="GC",
+            direction="long",
+            setup_type="DXY_CONTINUATION",
+            entry_price=2650.0,
+            sl_price=2645.0,
+            tp_price=2660.0,
+            risk_amount=500.0,
+            reward_amount=1000.0,
+            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+            risk_points=5.0,
+            tp1_hit_bar_idx=25,
+        )
+        candle = Candle(
+            timestamp=utc_datetime(2024, 10, 15, 10, 30),
+            open=2658.0,
+            high=2662.0,
+            low=2657.0,
+            close=2661.0,
+            volume=1000.0,
+            symbol="GC",
+            timeframe="1m",
+            source="TEST",
+        )
+
+        state = checker._get_trade_state(trade.trade_id)
+        state["partial_taken"] = True
+        state["tp1_hit_bar_idx"] = 25
+
+        # No HTF bias available
+        action, reason = checker.check_runner_hard_invalidation(
+            trade, candle, 30, {}, None
+        )
+
+        assert action is None
+        assert reason is None
+
+    def test_hard_invalidation_checked_before_bos_in_full_flow(self, checker):
+        """Hard invalidation is checked BEFORE BOS unlock in full flow."""
+        trade = TradeRecord(
+            trade_id="test-hard-before-bos",
+            signal_id="signal-hard",
+            symbol="GC",
+            direction="long",
+            setup_type="DXY_CONTINUATION",
+            entry_price=2650.0,
+            sl_price=2645.0,
+            tp_price=2660.0,
+            risk_amount=500.0,
+            reward_amount=1000.0,
+            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+            risk_points=5.0,
+            tp1_hit_bar_idx=25,
+        )
+        candle = Candle(
+            timestamp=utc_datetime(2024, 10, 15, 10, 30),
+            open=2658.0,
+            high=2662.0,
+            low=2657.0,
+            close=2661.0,
+            volume=1000.0,
+            symbol="GC",
+            timeframe="1m",
+            source="TEST",
+        )
+
+        state = checker._get_trade_state(trade.trade_id)
+        state["partial_taken"] = True
+        state["tp1_hit_bar_idx"] = 25
+
+        # Even though BOS is detected, chop should cause exit first
+        features = {
+            "bos_detected": True,
+            "bos_direction": "bullish",
+        }
+        htf_bias = {
+            "chop_detected": True,  # Hard invalidation
+            "dxy_aligned": True,
+            "conflict_detected": False,
+        }
+
+        action, reason = checker.check_runner_unlock(
+            trade, candle, current_bar_idx=30, features=features, htf_bias=htf_bias
+        )
+
+        # Should exit due to hard invalidation, NOT unlock
+        assert action == "exit_runner"
+        assert "chop_detected" in reason
+        assert state["runner_unlocked"] is False
+
+
+# ============================================================================
+# Phase 2: Fallback A Tests (Hold + Impulse, Section 6 of spec)
+# ============================================================================
+
+
+class TestFallbackAHoldImpulse:
+    """Tests for Fallback A: Hold + Impulse Continuation (Section 6 of spec).
+
+    Fallback A unlocks when:
+    - Hold condition: price stays within 0.25R of TP1
+    - Impulse condition: close > prior_high OR body_ratio >= 0.6
+    """
+
+    def test_hold_condition_long_within_buffer(self, checker):
+        """Long: hold is met when min_low >= tp1_price - 0.25R."""
+        trade = TradeRecord(
+            trade_id="test-fallback-hold-long",
+            signal_id="signal-fallback",
+            symbol="GC",
+            direction="long",
+            setup_type="DXY_CONTINUATION",
+            entry_price=2650.0,
+            sl_price=2640.0,  # 10 point risk
+            tp_price=2660.0,
+            risk_amount=1000.0,
+            reward_amount=1000.0,
+            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+            risk_points=10.0,  # R = 10 points
+            tp1_hit_bar_idx=25,
+        )
+        # TP1 = entry + 1R = 2660.0
+        # Hold floor = 2660.0 - 0.25 * 10 = 2657.5
+
+        state = checker._get_trade_state(trade.trade_id)
+        state["partial_taken"] = True
+        state["tp1_hit_bar_idx"] = 25
+
+        # Candle with low above hold floor (hold met)
+        candle = Candle(
+            timestamp=utc_datetime(2024, 10, 15, 10, 30),
+            open=2661.0,
+            high=2665.0,
+            low=2658.0,  # Above 2657.5 hold floor
+            close=2664.0,
+            volume=1000.0,
+            symbol="GC",
+            timeframe="1m",
+            source="TEST",
+        )
+
+        action, reason = checker.check_runner_fallback_unlock(
+            trade, candle, 30, {}
+        )
+
+        # Hold is met but no impulse yet
+        assert action is None
+
+    def test_hold_condition_long_violated_rejects(self, checker):
+        """Long: hold is violated when price drops > 0.25R below TP1."""
+        trade = TradeRecord(
+            trade_id="test-fallback-hold-violated",
+            signal_id="signal-fallback",
+            symbol="GC",
+            direction="long",
+            setup_type="DXY_CONTINUATION",
+            entry_price=2650.0,
+            sl_price=2640.0,  # 10 point risk
+            tp_price=2660.0,
+            risk_amount=1000.0,
+            reward_amount=1000.0,
+            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+            risk_points=10.0,
+            tp1_hit_bar_idx=25,
+        )
+        # Hold floor = 2660.0 - 0.25 * 10 = 2657.5
+
+        state = checker._get_trade_state(trade.trade_id)
+        state["partial_taken"] = True
+        state["tp1_hit_bar_idx"] = 25
+
+        # First candle with impulse
+        candle1 = Candle(
+            timestamp=utc_datetime(2024, 10, 15, 10, 30),
+            open=2661.0,
+            high=2665.0,
+            low=2660.0,
+            close=2664.0,
+            volume=1000.0,
+            symbol="GC",
+            timeframe="1m",
+            source="TEST",
+        )
+        checker.check_runner_fallback_unlock(trade, candle1, 30, {})
+
+        # Second candle breaks hold floor
+        candle2 = Candle(
+            timestamp=utc_datetime(2024, 10, 15, 10, 31),
+            open=2660.0,
+            high=2666.0,  # Close above prior high = impulse
+            low=2655.0,  # Below 2657.5 = hold violated
+            close=2666.0,
+            volume=1000.0,
+            symbol="GC",
+            timeframe="1m",
+            source="TEST",
+        )
+
+        action, reason = checker.check_runner_fallback_unlock(
+            trade, candle2, 31, {}
+        )
+
+        # Even with impulse, hold is violated so no unlock
+        assert action is None
+
+    def test_impulse_close_above_prior_high(self, checker):
+        """Impulse detected when close > prior_high."""
+        trade = TradeRecord(
+            trade_id="test-fallback-impulse-close",
+            signal_id="signal-fallback",
+            symbol="GC",
+            direction="long",
+            setup_type="DXY_CONTINUATION",
+            entry_price=2650.0,
+            sl_price=2640.0,
+            tp_price=2660.0,
+            risk_amount=1000.0,
+            reward_amount=1000.0,
+            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+            risk_points=10.0,
+            tp1_hit_bar_idx=25,
+        )
+
+        state = checker._get_trade_state(trade.trade_id)
+        state["partial_taken"] = True
+        state["tp1_hit_bar_idx"] = 25
+
+        # First candle - establishes prior high
+        candle1 = Candle(
+            timestamp=utc_datetime(2024, 10, 15, 10, 30),
+            open=2661.0,
+            high=2663.0,  # Prior high
+            low=2660.0,
+            close=2662.0,
+            volume=1000.0,
+            symbol="GC",
+            timeframe="1m",
+            source="TEST",
+        )
+        checker.check_runner_fallback_unlock(trade, candle1, 30, {})
+
+        # Second candle - close > prior_high (2663), hold maintained
+        candle2 = Candle(
+            timestamp=utc_datetime(2024, 10, 15, 10, 31),
+            open=2662.0,
+            high=2666.0,
+            low=2661.0,  # Above hold floor (2657.5)
+            close=2665.0,  # > 2663 = impulse!
+            volume=1000.0,
+            symbol="GC",
+            timeframe="1m",
+            source="TEST",
+        )
+
+        action, reason = checker.check_runner_fallback_unlock(
+            trade, candle2, 31, {}
+        )
+
+        assert action == "unlock_runner"
+        assert "hold_impulse" in reason
+        assert "close" in reason and "prior_high" in reason
+
+    def test_impulse_body_ratio_0_6(self, checker):
+        """Impulse detected when body_ratio >= 0.6."""
+        trade = TradeRecord(
+            trade_id="test-fallback-impulse-body",
+            signal_id="signal-fallback",
+            symbol="GC",
+            direction="long",
+            setup_type="DXY_CONTINUATION",
+            entry_price=2650.0,
+            sl_price=2640.0,
+            tp_price=2660.0,
+            risk_amount=1000.0,
+            reward_amount=1000.0,
+            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+            risk_points=10.0,
+            tp1_hit_bar_idx=25,
+        )
+
+        state = checker._get_trade_state(trade.trade_id)
+        state["partial_taken"] = True
+        state["tp1_hit_bar_idx"] = 25
+
+        # Candle with high body ratio (>= 0.6)
+        # Range = 5, body = 4, ratio = 0.8
+        candle = Candle(
+            timestamp=utc_datetime(2024, 10, 15, 10, 30),
+            open=2660.0,
+            high=2665.0,
+            low=2660.0,  # Range = 5
+            close=2664.0,  # Body = 4, ratio = 0.8
+            volume=1000.0,
+            symbol="GC",
+            timeframe="1m",
+            source="TEST",
+        )
+
+        action, reason = checker.check_runner_fallback_unlock(
+            trade, candle, 30, {}
+        )
+
+        assert action == "unlock_runner"
+        assert "hold_impulse" in reason
+        assert "body_ratio" in reason
+
+    def test_unlock_requires_both_hold_and_impulse(self, checker):
+        """Fallback unlock requires BOTH hold AND impulse."""
+        trade = TradeRecord(
+            trade_id="test-fallback-both",
+            signal_id="signal-fallback",
+            symbol="GC",
+            direction="long",
+            setup_type="DXY_CONTINUATION",
+            entry_price=2650.0,
+            sl_price=2640.0,
+            tp_price=2660.0,
+            risk_amount=1000.0,
+            reward_amount=1000.0,
+            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+            risk_points=10.0,
+            tp1_hit_bar_idx=25,
+        )
+
+        state = checker._get_trade_state(trade.trade_id)
+        state["partial_taken"] = True
+        state["tp1_hit_bar_idx"] = 25
+
+        # Candle with impulse (high body ratio) but hold violated
+        candle = Candle(
+            timestamp=utc_datetime(2024, 10, 15, 10, 30),
+            open=2656.0,
+            high=2661.0,
+            low=2655.0,  # Below hold floor (2657.5) - hold violated
+            close=2660.0,  # Body ratio = 4/6 = 0.67 - impulse met
+            volume=1000.0,
+            symbol="GC",
+            timeframe="1m",
+            source="TEST",
+        )
+
+        action, reason = checker.check_runner_fallback_unlock(
+            trade, candle, 30, {}
+        )
+
+        # Impulse met but hold violated - no unlock
+        assert action is None
+
+    def test_impulse_persists_once_detected(self, checker):
+        """Once impulse detected in window, it persists."""
+        trade = TradeRecord(
+            trade_id="test-fallback-persist",
+            signal_id="signal-fallback",
+            symbol="GC",
+            direction="long",
+            setup_type="DXY_CONTINUATION",
+            entry_price=2650.0,
+            sl_price=2640.0,
+            tp_price=2660.0,
+            risk_amount=1000.0,
+            reward_amount=1000.0,
+            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+            risk_points=10.0,
+            tp1_hit_bar_idx=25,
+        )
+
+        state = checker._get_trade_state(trade.trade_id)
+        state["partial_taken"] = True
+        state["tp1_hit_bar_idx"] = 25
+
+        # First candle - impulse detected (high body ratio) but hold violated
+        # Body = 4, Range = 5, ratio = 0.8
+        # Low 2655 < hold floor 2657.5, so hold violated
+        candle1 = Candle(
+            timestamp=utc_datetime(2024, 10, 15, 10, 30),
+            open=2660.0,
+            high=2664.0,
+            low=2655.0,  # Below hold floor = hold violated
+            close=2664.0,  # Body = 4, Range = 9, ratio = 4/9 = 0.44, not enough
+            volume=1000.0,
+            symbol="GC",
+            timeframe="1m",
+            source="TEST",
+        )
+
+        # Actually we need a stronger impulse - let's use close > prior_high approach
+        # First, establish a prior bar
+        candle0 = Candle(
+            timestamp=utc_datetime(2024, 10, 15, 10, 29),
+            open=2659.0,
+            high=2660.0,  # This becomes prior_high
+            low=2658.0,
+            close=2659.5,
+            volume=1000.0,
+            symbol="GC",
+            timeframe="1m",
+            source="TEST",
+        )
+        checker.check_runner_fallback_unlock(trade, candle0, 29, {})
+
+        # Second call: candle1 with close (2664) > prior_high (2660) = impulse!
+        # But low 2655 < hold floor 2657.5 = hold violated
+        checker.check_runner_fallback_unlock(trade, candle1, 30, {})
+
+        # Impulse should be persisted
+        assert state["impulse_detected"] is True
+
+        # Reset min_low to simulate hold being met again
+        state["min_low_since_tp1"] = 2658.0  # Above hold floor
+
+        # Second candle - no impulse on this bar, but hold is now met
+        candle2 = Candle(
+            timestamp=utc_datetime(2024, 10, 15, 10, 31),
+            open=2664.0,
+            high=2665.0,
+            low=2662.0,  # Above hold floor
+            close=2663.0,  # No new impulse on this bar
+            volume=1000.0,
+            symbol="GC",
+            timeframe="1m",
+            source="TEST",
+        )
+
+        action, reason = checker.check_runner_fallback_unlock(
+            trade, candle2, 31, {}
+        )
+
+        # Should unlock because impulse was persisted from bar 1
+        assert action == "unlock_runner"
+        assert "hold_impulse" in reason
+
+    def test_fallback_only_if_no_bos_in_full_flow(self, checker):
+        """Fallback is only evaluated if primary BOS hasn't triggered."""
+        trade = TradeRecord(
+            trade_id="test-fallback-after-bos",
+            signal_id="signal-fallback",
+            symbol="GC",
+            direction="long",
+            setup_type="DXY_CONTINUATION",
+            entry_price=2650.0,
+            sl_price=2640.0,
+            tp_price=2660.0,
+            risk_amount=1000.0,
+            reward_amount=1000.0,
+            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+            risk_points=10.0,
+            tp1_hit_bar_idx=25,
+        )
+
+        state = checker._get_trade_state(trade.trade_id)
+        state["partial_taken"] = True
+        state["tp1_hit_bar_idx"] = 25
+
+        # Candle that would trigger fallback (impulse + hold)
+        candle = Candle(
+            timestamp=utc_datetime(2024, 10, 15, 10, 30),
+            open=2660.0,
+            high=2665.0,
+            low=2660.0,
+            close=2664.0,  # Body ratio = 0.8
+            volume=1000.0,
+            symbol="GC",
+            timeframe="1m",
+            source="TEST",
+        )
+
+        # BOS detected in trade direction - should unlock via BOS, not fallback
+        features = {
+            "bos_detected": True,
+            "bos_direction": "bullish",
+        }
+
+        action, reason = checker.check_runner_unlock(
+            trade, candle, current_bar_idx=30, features=features, htf_bias=None
+        )
+
+        # Should unlock via BOS (primary), not fallback
+        assert action == "unlock_runner"
+        assert "micro_bos" in reason
+        assert state["runner_unlock_reason"] == "micro_bos"
+
+    def test_fallback_short_direction(self, checker):
+        """Fallback works correctly for short trades."""
+        trade = TradeRecord(
+            trade_id="test-fallback-short",
+            signal_id="signal-fallback",
+            symbol="GC",
+            direction="short",
+            setup_type="DXY_CONTINUATION",
+            entry_price=2650.0,
+            sl_price=2660.0,  # 10 point risk
+            tp_price=2640.0,
+            risk_amount=1000.0,
+            reward_amount=1000.0,
+            entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
+            risk_points=10.0,
+            tp1_hit_bar_idx=25,
+        )
+        # TP1 = entry - 1R = 2640.0
+        # Hold ceiling = 2640.0 + 0.25 * 10 = 2642.5
+
+        state = checker._get_trade_state(trade.trade_id)
+        state["partial_taken"] = True
+        state["tp1_hit_bar_idx"] = 25
+
+        # First candle - establishes prior low
+        candle1 = Candle(
+            timestamp=utc_datetime(2024, 10, 15, 10, 30),
+            open=2639.0,
+            high=2641.0,  # Below hold ceiling (2642.5)
+            low=2637.0,  # Prior low
+            close=2638.0,
+            volume=1000.0,
+            symbol="GC",
+            timeframe="1m",
+            source="TEST",
+        )
+        checker.check_runner_fallback_unlock(trade, candle1, 30, {})
+
+        # Second candle - close < prior_low (2637), hold maintained
+        candle2 = Candle(
+            timestamp=utc_datetime(2024, 10, 15, 10, 31),
+            open=2638.0,
+            high=2640.0,  # Below hold ceiling
+            low=2634.0,
+            close=2635.0,  # < 2637 = impulse!
+            volume=1000.0,
+            symbol="GC",
+            timeframe="1m",
+            source="TEST",
+        )
+
+        action, reason = checker.check_runner_fallback_unlock(
+            trade, candle2, 31, {}
+        )
+
+        assert action == "unlock_runner"
+        assert "hold_impulse" in reason
+        assert "close" in reason and "prior_low" in reason

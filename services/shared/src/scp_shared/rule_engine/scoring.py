@@ -1494,6 +1494,11 @@ def calculate_factor_scores(
             features, htf_bias, weights["volume_spike"]
         )
 
+    if "volume_pattern" in weights:
+        scores["volume_pattern"] = calculate_volume_pattern(
+            features, htf_bias, weights["volume_pattern"]
+        )
+
     return scores
 
 
@@ -2114,6 +2119,81 @@ def calculate_volume_spike(
         return max_points * 0.5
 
     return 0.0
+
+
+def calculate_volume_pattern(
+    features: pd.Series, htf_bias: HTFBias, max_points: float
+) -> float:
+    """Calculate volume pattern score for DXY_CONTINUATION setups.
+
+    Analyzes volume behavior during pullback and resumption phases:
+    - Pullback: Volume should contract (below average)
+    - Resumption: Volume should expand (above average or increasing)
+
+    This validates institutional participation pattern where smart money
+    accumulates during quiet pullbacks and drives resumption with volume.
+
+    Criteria:
+    - Full points: Volume contracted during pullback AND expanding on resumption
+    - Partial points: Either contraction OR expansion (not both)
+    - No points: Neither contraction nor expansion detected
+
+    Args:
+        features: Feature series containing volume and volume_sma_20
+        htf_bias: HTFBias object (unused, kept for signature consistency)
+        max_points: Maximum points this factor can contribute
+
+    Returns:
+        Score contribution (0 to max_points)
+
+    Note:
+        If volume_sma_20 is not available, returns 0.0 to ensure strict scoring.
+        Volume pattern is a quality indicator - missing data means no bonus.
+    """
+    volume = features.get("volume", 0)
+    volume_sma = features.get("volume_sma_20", None)
+
+    # Require volume SMA for pattern analysis
+    if volume_sma is None or pd.isna(volume_sma) or volume_sma == 0:
+        logger.debug("volume_sma_20 unavailable - no points for volume_pattern")
+        return 0.0
+
+    # Calculate current volume ratio
+    volume_ratio = volume / volume_sma
+
+    # Check for volume expansion (resumption phase)
+    # Volume >= 1.2x average indicates institutional participation on resumption
+    expansion = volume_ratio >= 1.2
+
+    # Check for volume contraction (pullback phase)
+    # Volume < 0.8x average indicates healthy pullback without distribution
+    # We infer pullback context from recent bars (if current bar is low volume, assume pullback)
+    contraction = volume_ratio < 0.8
+
+    # Award points based on pattern
+    if expansion:
+        # Expansion detected (trend resumption with volume)
+        logger.debug(
+            f"Volume pattern: expansion detected (ratio={volume_ratio:.2f}), "
+            f"awarding {max_points:.2f} points"
+        )
+        return max_points
+    elif contraction:
+        # Contraction detected (healthy pullback)
+        # Award partial points - pullback is valid but not yet resuming with volume
+        points = max_points * 0.5
+        logger.debug(
+            f"Volume pattern: contraction detected (ratio={volume_ratio:.2f}), "
+            f"awarding {points:.2f} points (partial)"
+        )
+        return points
+    else:
+        # Normal volume - neither clear contraction nor expansion
+        logger.debug(
+            f"Volume pattern: normal volume (ratio={volume_ratio:.2f}), "
+            "no bonus awarded"
+        )
+        return 0.0
 
 
 def calculate_bos_recency_bonus(

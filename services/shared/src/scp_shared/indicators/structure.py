@@ -91,6 +91,7 @@ class StructureContext:
     structure_conflict_flag: bool = False
 
     # BOS tracking (Structure Engine v2.0 Part 2)
+    bos_detected: bool = False  # True if BOS detected on THIS bar (for runner unlock)
     bos_direction: str | None = None  # "bullish" or "bearish"
     bos_recent: bool = False  # True if BOS within threshold bars
     bos_age: int | None = None  # Bars since last BOS event
@@ -496,6 +497,7 @@ class StructureContextTracker:
             is_structural_chop=is_structural_chop,
             atr_compression_ratio=atr_compression_ratio,
             structure_conflict_flag=structure_conflict_flag,
+            bos_detected=bos_detected,
             bos_direction=self.last_bos_direction,
             bos_recent=bos_recent,
             bos_age=bos_age,
@@ -1622,6 +1624,11 @@ class StructureContextTracker:
         Only triggers once per swing level - subsequent bars staying beyond the same
         level do not re-trigger BOS.
 
+        CRITICAL FIXES (Phase 2.0.1):
+        - Store the swing level that was broken, NOT the close price
+        - Collect ALL qualifying candidates and choose max/min (not first match)
+        - "Breaks both directions" is a warning, not expected with close-based logic
+
         Args:
             close: Current bar's close price
 
@@ -1636,87 +1643,75 @@ class StructureContextTracker:
             )
             return False
 
-        # Check if breaks any PRIOR swing high (strict >)
-        # Only trigger if breaking beyond the highest swing we've already broken
-        breaks_high = False
+        # Initialize tracking thresholds
         highest_broken = (
             self.highest_broken_swing_high
             if self.highest_broken_swing_high is not None
             else float("-inf")
         )
-
-        if self.swing_high_indices:
-            # Only consider swings that occurred before current bar
-            prior_swing_high_indices = [
-                idx for idx in self.swing_high_indices if idx < self.bar_count
-            ]
-            if prior_swing_high_indices:
-                # Check if close breaks ANY prior swing high not already broken
-                for idx in prior_swing_high_indices:
-                    swing_high_value = self.swing_high_values[idx]
-                    if close > swing_high_value and swing_high_value > highest_broken:
-                        breaks_high = True
-                        break
-
-        # Check if breaks any PRIOR swing low (strict <)
-        # Only trigger if breaking beyond the lowest swing we've already broken
-        breaks_low = False
         lowest_broken = (
             self.lowest_broken_swing_low
             if self.lowest_broken_swing_low is not None
             else float("inf")
         )
 
-        if self.swing_low_indices:
-            # Only consider swings that occurred before current bar
-            prior_swing_low_indices = [
-                idx for idx in self.swing_low_indices if idx < self.bar_count
-            ]
-            if prior_swing_low_indices:
-                # Check if close breaks ANY prior swing low not already broken
-                for idx in prior_swing_low_indices:
-                    swing_low_value = self.swing_low_values[idx]
-                    if close < swing_low_value and swing_low_value < lowest_broken:
-                        breaks_low = True
-                        break
+        # Collect ALL bullish candidates: prior swing highs whose LEVEL is above highest_broken
+        # and close breaks above them
+        bullish_candidates: list[float] = []
+        if self.swing_high_indices:
+            for idx in self.swing_high_indices:
+                if idx >= self.bar_count:
+                    continue  # Only consider swings before current bar
+                swing_level = self.swing_high_values[idx]
+                if swing_level > highest_broken and close > swing_level:
+                    bullish_candidates.append(swing_level)
 
-        # Apply labeling rules (same as rule_engine/htf/structure/bos.py)
-        if breaks_high and breaks_low:
-            # Ambiguous: breaks both directions → volatility/liquidity sweep
-            # Don't update BOS (return False)
-            logger.debug(
-                f"[BOS] bar={self.bar_count} | AMBIGUOUS (both dirs) | "
-                f"close={close}, highest_broken={highest_broken}, lowest_broken={lowest_broken}"
+        # Collect ALL bearish candidates: prior swing lows whose LEVEL is below lowest_broken
+        # and close breaks below them
+        bearish_candidates: list[float] = []
+        if self.swing_low_indices:
+            for idx in self.swing_low_indices:
+                if idx >= self.bar_count:
+                    continue  # Only consider swings before current bar
+                swing_level = self.swing_low_values[idx]
+                if swing_level < lowest_broken and close < swing_level:
+                    bearish_candidates.append(swing_level)
+
+        # With close-based logic, breaking both directions simultaneously should not happen
+        # (a single close can't be both > swing_high AND < swing_low unless data is corrupted)
+        if bullish_candidates and bearish_candidates:
+            logger.warning(
+                f"[BOS] bar={self.bar_count} | BOTH DIRS (unexpected with close-based logic) | "
+                f"close={close}, bullish_candidates={bullish_candidates}, "
+                f"bearish_candidates={bearish_candidates}"
             )
             return False
-        elif breaks_high:
-            # Bullish BOS detected - update tracking
+
+        if bullish_candidates:
+            # Choose the HIGHEST broken swing level (not just first match)
+            broken_level = max(bullish_candidates)
             self.last_bos_idx = self.bar_count
             self.last_bos_direction = "bullish"
-            # Update highest broken level to prevent re-triggering
-            if self.highest_broken_swing_high is None:
-                self.highest_broken_swing_high = close
-            else:
-                self.highest_broken_swing_high = max(
-                    self.highest_broken_swing_high, close
-                )
+            # CRITICAL FIX: Store the swing level, NOT the close price
+            self.highest_broken_swing_high = broken_level
             logger.info(
                 f"[BOS] bar={self.bar_count} | BULLISH BOS DETECTED | "
-                f"close={close} broke swing high, new highest_broken={self.highest_broken_swing_high}"
+                f"close={close} broke swing high at {broken_level}, "
+                f"candidates={bullish_candidates}"
             )
             return True
-        elif breaks_low:
-            # Bearish BOS detected - update tracking
+
+        if bearish_candidates:
+            # Choose the LOWEST broken swing level (not just first match)
+            broken_level = min(bearish_candidates)
             self.last_bos_idx = self.bar_count
             self.last_bos_direction = "bearish"
-            # Update lowest broken level to prevent re-triggering
-            if self.lowest_broken_swing_low is None:
-                self.lowest_broken_swing_low = close
-            else:
-                self.lowest_broken_swing_low = min(self.lowest_broken_swing_low, close)
+            # CRITICAL FIX: Store the swing level, NOT the close price
+            self.lowest_broken_swing_low = broken_level
             logger.info(
                 f"[BOS] bar={self.bar_count} | BEARISH BOS DETECTED | "
-                f"close={close} broke swing low, new lowest_broken={self.lowest_broken_swing_low}"
+                f"close={close} broke swing low at {broken_level}, "
+                f"candidates={bearish_candidates}"
             )
             return True
 

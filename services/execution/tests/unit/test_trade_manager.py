@@ -356,6 +356,64 @@ class TestTradeManagerOnCandle:
         assert "trade-123" in trade_manager._active_trades
 
 
+class TestTradeManagerCheckTradeExit:
+    """Test _check_trade_exit management action handling."""
+
+    @pytest.mark.asyncio
+    async def test_check_trade_exit_handles_de_risk_for_runner_candidate(
+        self, trade_manager: TradeManager
+    ) -> None:
+        """de_risk action still executes when runner-candidate guard is true."""
+        trade = TradeRecord(
+            trade_id="trade-derisk-1",
+            signal_id="signal-derisk-1",
+            symbol="GC",
+            direction="long",
+            setup_type="DXY_CONTINUATION",
+            entry_price=2650.0,
+            sl_price=2645.0,
+            tp_price=2662.0,
+            risk_amount=5.0,
+            reward_amount=12.0,
+            entry_timestamp=datetime(2025, 1, 15, 10, 0, tzinfo=timezone.utc),
+            partial_taken=True,
+            tp1_hit_bar_idx=90,
+            runner_unlocked=False,
+            runner_exited_at_market=False,
+        )
+        candle = Candle(
+            timestamp=datetime(2025, 1, 15, 11, 0, tzinfo=timezone.utc),
+            open=2651.0,
+            high=2652.0,
+            low=2649.0,
+            close=2650.5,
+            volume=1000.0,
+            symbol="GC",
+            timeframe="1m",
+            source="TEST",
+        )
+
+        trade_manager._trade_entry_bars[trade.trade_id] = 10
+        trade_manager._sm_manager._bar_counter = 100
+        trade_manager._invalidation_checker.check_all = MagicMock(
+            return_value=(False, "de_risk threshold reached", "de_risk")
+        )
+        trade_manager._invalidation_checker.check_runner_unlock = MagicMock(
+            return_value=(None, None)
+        )
+        trade_manager._invalidation_checker._get_trade_state = MagicMock(return_value={})
+
+        with patch("execution_svc.trade_manager.logger") as mock_logger:
+            await trade_manager._check_trade_exit(trade, candle, features={})
+
+        trade_manager._invalidation_checker.check_runner_unlock.assert_called_once()
+        assert any(
+            "de-risk triggered" in call.args[0]
+            for call in mock_logger.info.call_args_list
+            if call.args
+        )
+
+
 class TestTradeManagerCheckSessionReset:
     """Test check_session_reset method."""
 

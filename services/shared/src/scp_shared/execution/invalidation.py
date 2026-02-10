@@ -41,6 +41,28 @@ DXY_CONTINUATION_TIME_TIERS = {
 # Correlation is noisy (~50% any_positive); require persistence before exit
 DXY_CONTINUATION_FLIP_BARS = 5  # Require 5 consecutive bars of flip condition
 
+# Phase 2: Runner unlock configuration
+DXY_CONTINUATION_RUNNER_CONFIG = {
+    "unlock_window_bars": 15,  # ONLY bars, no minutes (backtest determinism)
+    "be_buffer_r": 0.10,  # 0.1R buffer in R terms
+}
+
+# Phase 2: Runner unlock fallback configuration (Section 4-6 of spec)
+# TODO Phase 2: Implement Fallback B (HTF Room Gate) - unlock if room_R >= 1.5 to HTF target
+# TODO Phase 2: Implement Fallback C (VWAP Separation Hold) - unlock if >=8/10 bars above VWAP + slope
+DXY_CONTINUATION_RUNNER_FALLBACK_CONFIG = {
+    # Hard invalidation (Section 4)
+    "dxy_misaligned_exit_bars": 5,  # Exit if dxy_aligned==False for this many bars
+    # Fallback A: Hold + Impulse (Section 6)
+    "hold_buffer_r": 0.25,  # Hold within 0.25R of TP1
+    "impulse_body_ratio_threshold": 0.6,  # Body ratio for impulse candle
+    # Post-unlock management (Section 8)
+    "tp2_max_r": 4.0,  # Cap TP2 at 4R
+    "tp2_default_r": 3.0,  # Fallback TP2 if no HTF target
+    # TODO Phase 2: Add Fallback B config: "min_runner_room_r": 1.5
+    # TODO Phase 2: Add Fallback C config: "vwap_hold_bars": 8, "vwap_lookback": 10
+}
+
 
 def _sanitize_float(value: object | None) -> float | None:
     """Convert value to a finite float if possible; otherwise return None."""
@@ -121,9 +143,26 @@ class InvalidationChecker:
                 "vwap_reclaimed": False,
                 # DXY_CONTINUATION-specific state
                 "reached_half_r": False,  # +0.5R milestone for tiered time stop
-                "partial_taken": False,  # 50% taken at +1R
-                "breakeven_set": False,  # SL moved to entry
+                "partial_taken": False,  # 40% taken at +1R
+                "breakeven_set": False,  # SL moved to entry (legacy)
                 "de_risked": False,  # Position de-risked at 30 bars
+                # Phase 2.0: Explicit BE tracking (separate from partial)
+                "be_set": False,  # BE explicitly set
+                "be_price": None,  # BE price with buffer
+                "be_set_bar_idx": None,  # Bar when BE was set
+                "tp1_hit_bar_idx": None,  # Bar when +1R was hit
+                # Phase 2: Runner unlock state
+                "runner_unlocked": False,
+                "runner_unlock_bar_idx": None,
+                "runner_unlock_reason": None,  # "micro_bos", "hold_impulse"
+                # Phase 2: Hard invalidation tracking
+                "dxy_misaligned_bars": 0,  # Counter for consecutive dxy_aligned==False
+                # Phase 2: Fallback A tracking (Hold + Impulse)
+                "min_low_since_tp1": None,  # For long: track lowest low since TP1
+                "max_high_since_tp1": None,  # For short: track highest high since TP1
+                "impulse_detected": False,  # Track if impulse seen in window
+                "prior_bar_high": None,  # For impulse check: prior bar's high
+                "prior_bar_low": None,  # For impulse check: prior bar's low
             }
         return self._trade_states[trade_id]
 
@@ -142,7 +181,7 @@ class InvalidationChecker:
 
         Returns:
             Management action dict if action needed, None otherwise.
-            Action dict format: {"action": "partial_profit", "close_pct": 50, "move_sl_to_breakeven": True}
+            Action dict format: {"action": "partial_profit", "close_pct": 40, "move_sl_to_breakeven": True}
         """
         state = self._get_trade_state(trade.trade_id)
 
@@ -172,23 +211,46 @@ class InvalidationChecker:
                     )
 
         # DXY_CONTINUATION: Return partial profit action when +1R reached
-        # Take 50% at +1R, move SL to breakeven, let runner target 2R+
+        # Take 40% at +1R (per spec), move SL to BE+buffer, let runner target TP2
         if (
             trade.setup_type == "DXY_CONTINUATION"
             and state["reached_1r"]
             and not state.get("partial_taken")
         ):
             state["partial_taken"] = True
-            state["breakeven_set"] = True
+            state["breakeven_set"] = True  # Legacy field
+
+            # Phase 2.0: Calculate BE price with 0.1R buffer
+            # CRITICAL: Use risk_points (price units), NOT risk_amount (money)
+            be_buffer_r = 0.10  # 0.1R buffer
+            risk_points = trade.risk_points
+            if risk_points is None:
+                # Fallback: compute from entry/sl if risk_points not set
+                risk_points = abs(float(trade.entry_price) - float(trade.sl_price))
+
+            be_buffer_points = be_buffer_r * risk_points
+            if trade.direction == "long":
+                be_price = float(trade.entry_price) + be_buffer_points
+            else:
+                be_price = float(trade.entry_price) - be_buffer_points
+
+            # Update explicit BE state
+            state["be_set"] = True
+            state["be_price"] = be_price
+            # Note: be_set_bar_idx and tp1_hit_bar_idx set by caller with current_bar_idx
+
             logger.info(
                 f"Trade {trade.trade_id} DXY_CONTINUATION: +1R reached, "
-                f"triggering partial profit (50%) + breakeven"
+                f"triggering partial profit (40%) + BE at {be_price:.2f} "
+                f"(entry {trade.entry_price} + {be_buffer_points:.2f} buffer)"
             )
             return {
                 "action": "partial_profit",
-                "close_pct": 50,
+                "close_pct": 40,  # Per spec: partial_pct = 0.40
                 "move_sl_to_breakeven": True,
-                "new_sl_price": trade.entry_price,
+                "new_sl_price": be_price,  # BE with buffer, not exact entry
+                "be_price": be_price,  # Explicit BE price
+                "be_buffer_r": be_buffer_r,  # Buffer in R terms
             }
 
         # Track VWAP reclaim for fade setups
@@ -211,6 +273,336 @@ class InvalidationChecker:
                             )
 
         return None
+
+    def check_runner_unlock(
+        self,
+        trade: TradeRecord,
+        candle: Candle,
+        current_bar_idx: int,
+        features: dict[str, Any] | None,
+        htf_bias: dict[str, Any] | None = None,
+    ) -> tuple[str | None, str | None]:
+        """Check if runner should be unlocked, invalidated, or closed at market.
+
+        Phase-2 runner unlock logic for DXY_CONTINUATION trades (per spec):
+        1. HARD INVALIDATION (checked first) - exit if thesis broken
+        2. PRIMARY UNLOCK (Mode A) - post-TP1 BOS in trade direction
+        3. FALLBACK UNLOCK (Fallback A) - hold + impulse continuation
+        4. WINDOW EXPIRY - close at market if no unlock within 15 bars
+
+        Args:
+            trade: Open trade to check (must be DXY_CONTINUATION with partial taken)
+            candle: Current candle
+            current_bar_idx: Current bar index
+            features: Feature dict with BOS detection fields
+            htf_bias: HTF bias dict with dxy_aligned, chop_detected, conflict_detected
+
+        Returns:
+            Tuple of (action, reason) where action is:
+            - "exit_runner": Hard invalidation, exit remainder immediately
+            - "unlock_runner": Runner unlocked (BOS or fallback), target TP2
+            - "close_at_market": Window expired without unlock
+            - None: Still waiting for unlock (no action needed)
+        """
+        state = self._get_trade_state(trade.trade_id)
+
+        # Pre-conditions: only applies to DXY_CONTINUATION after partial taken
+        if trade.setup_type != "DXY_CONTINUATION":
+            return None, None
+
+        if not state.get("partial_taken"):
+            return None, None
+
+        # Already unlocked or already exited at market
+        if state.get("runner_unlocked"):
+            return None, None
+
+        # Get TP1 hit bar from trade record or internal state
+        tp1_hit_bar = trade.tp1_hit_bar_idx
+        if tp1_hit_bar is None:
+            tp1_hit_bar = state.get("tp1_hit_bar_idx")
+        if tp1_hit_bar is None:
+            # TP1 not recorded yet - can't proceed
+            logger.debug(
+                f"Trade {trade.trade_id}: tp1_hit_bar_idx not set, cannot check runner unlock"
+            )
+            return None, None
+
+        # Get config
+        unlock_window = DXY_CONTINUATION_RUNNER_CONFIG["unlock_window_bars"]
+        bars_since_tp1 = current_bar_idx - tp1_hit_bar
+
+        # === STEP 1: HARD INVALIDATION (checked FIRST per spec Section 4) ===
+        action, reason = self.check_runner_hard_invalidation(
+            trade, candle, current_bar_idx, features, htf_bias
+        )
+        if action is not None:
+            return action, reason
+
+        # === STEP 2: PRIMARY UNLOCK (Mode A - Post-TP1 BOS) ===
+        if features is not None:
+            bos_detected = features.get("bos_detected", False)
+            bos_direction = features.get("bos_direction")
+
+            # BOS must be detected on THIS bar (bos_detected=True means current bar)
+            # The BOS is inherently post-TP1 because we're checking AFTER TP1 was hit
+            if bos_detected and bos_direction is not None:
+                expected_bos = "bullish" if trade.direction == "long" else "bearish"
+                if bos_direction == expected_bos:
+                    # Unlock the runner!
+                    state["runner_unlocked"] = True
+                    state["runner_unlock_bar_idx"] = current_bar_idx
+                    state["runner_unlock_reason"] = "micro_bos"
+                    reason = (
+                        f"micro_bos: Post-TP1 {bos_direction} BOS at bar {current_bar_idx} "
+                        f"({bars_since_tp1} bars after TP1)"
+                    )
+                    logger.info(f"Trade {trade.trade_id} RUNNER UNLOCKED: {reason}")
+                    return "unlock_runner", reason
+
+        # === STEP 3: FALLBACK UNLOCK (Fallback A - Hold + Impulse) ===
+        # Only check if primary BOS hasn't triggered
+        action, reason = self.check_runner_fallback_unlock(
+            trade, candle, current_bar_idx, features
+        )
+        if action is not None:
+            state["runner_unlocked"] = True
+            state["runner_unlock_bar_idx"] = current_bar_idx
+            state["runner_unlock_reason"] = "hold_impulse"
+            return action, reason
+
+        # === STEP 4: WINDOW EXPIRY ===
+        if bars_since_tp1 >= unlock_window:
+            # Window expired - close at market (NOT at synthetic BE fill)
+            reason = (
+                f"Runner unlock window expired: {bars_since_tp1} bars since TP1 "
+                f"(max {unlock_window}), no unlock achieved"
+            )
+            logger.info(f"Trade {trade.trade_id} RUNNER CLOSE AT MARKET: {reason}")
+            return "close_at_market", reason
+
+        # Still within window, waiting for unlock
+        logger.debug(
+            f"Trade {trade.trade_id}: Runner candidate, bar {bars_since_tp1}/{unlock_window} "
+            f"since TP1, waiting for BOS or fallback"
+        )
+        return None, None
+
+    def check_runner_hard_invalidation(
+        self,
+        trade: TradeRecord,
+        candle: Candle,
+        _current_bar_idx: int,
+        _features: dict[str, Any] | None,
+        htf_bias: dict[str, Any] | None,
+    ) -> tuple[str | None, str | None]:
+        """Check hard invalidation conditions for runner candidate.
+
+        These conditions indicate the continuation thesis is BROKEN and
+        remaining position should be exited immediately.
+
+        Checked BEFORE any unlock attempt per spec Section 4.
+
+        Hard invalidation conditions (in order):
+        1. chop_detected == True -> exit immediately
+        2. htf_conflict_detected == True -> exit immediately
+        3. dxy_aligned == False for >= 5 bars -> exit (requires counter)
+
+        Args:
+            trade: Open trade (must be DXY_CONTINUATION with partial taken)
+            candle: Current candle
+            current_bar_idx: Current bar index
+            features: FeaturesMessage as dict
+            htf_bias: HTFBiasMessage as dict (contains dxy_aligned, chop_detected, conflict_detected)
+
+        Returns:
+            Tuple of (action, reason):
+            - ("exit_runner", "chop_detected") if chop detected
+            - ("exit_runner", "htf_conflict_detected") if HTF conflict
+            - ("exit_runner", "dxy_misaligned_5_bars") if DXY misaligned >= 5 bars
+            - (None, None) if no invalidation
+        """
+        # Pre-conditions
+        if trade.setup_type != "DXY_CONTINUATION":
+            return None, None
+
+        state = self._get_trade_state(trade.trade_id)
+        if not state.get("partial_taken"):
+            return None, None
+
+        if htf_bias is None:
+            # Cannot check hard invalidation without HTF data
+            logger.debug(
+                f"Trade {trade.trade_id}: No HTF bias, skipping hard invalidation check"
+            )
+            return None, None
+
+        config = DXY_CONTINUATION_RUNNER_FALLBACK_CONFIG
+
+        # Check 1: chop_detected == True => immediate exit
+        if htf_bias.get("chop_detected", False):
+            reason = "chop_detected: continuation thesis invalidated"
+            logger.info(f"Trade {trade.trade_id} RUNNER HARD INVALIDATION: {reason}")
+            return "exit_runner", reason
+
+        # Check 2: htf_conflict_detected == True => immediate exit
+        if htf_bias.get("conflict_detected", False):
+            conflict_reason = htf_bias.get("conflict_reason", "unknown")
+            reason = f"htf_conflict_detected: {conflict_reason}"
+            logger.info(f"Trade {trade.trade_id} RUNNER HARD INVALIDATION: {reason}")
+            return "exit_runner", reason
+
+        # Check 3: dxy_aligned == False for >= 5 consecutive bars
+        dxy_aligned = htf_bias.get("dxy_aligned", True)  # Default to aligned
+
+        if not dxy_aligned:
+            state["dxy_misaligned_bars"] = state.get("dxy_misaligned_bars", 0) + 1
+            if state["dxy_misaligned_bars"] >= config["dxy_misaligned_exit_bars"]:
+                reason = (
+                    f"dxy_misaligned_{config['dxy_misaligned_exit_bars']}_bars: "
+                    f"correlation broken for {state['dxy_misaligned_bars']} bars"
+                )
+                logger.info(f"Trade {trade.trade_id} RUNNER HARD INVALIDATION: {reason}")
+                return "exit_runner", reason
+            else:
+                logger.debug(
+                    f"Trade {trade.trade_id}: dxy_misaligned bar "
+                    f"{state['dxy_misaligned_bars']}/{config['dxy_misaligned_exit_bars']}"
+                )
+        else:
+            # Reset counter when DXY realigns
+            if state.get("dxy_misaligned_bars", 0) > 0:
+                logger.debug(f"Trade {trade.trade_id}: DXY realigned, resetting counter")
+            state["dxy_misaligned_bars"] = 0
+
+        return None, None
+
+    def check_runner_fallback_unlock(
+        self,
+        trade: TradeRecord,
+        candle: Candle,
+        current_bar_idx: int,
+        _features: dict[str, Any] | None,
+    ) -> tuple[str | None, str | None]:
+        """Check fallback unlock conditions (Fallback A: Hold + Impulse).
+
+        Only called if primary BOS unlock hasn't triggered.
+
+        Fallback A (RECOMMENDED per spec Section 6):
+        - Hold: price stays within 0.25R of TP1 since TP1 hit
+        - Impulse: close > prior_high OR body_ratio >= 0.6
+
+        Both conditions must be met to unlock.
+
+        Args:
+            trade: Open trade
+            candle: Current candle
+            current_bar_idx: Current bar index
+            features: FeaturesMessage as dict (needs OHLC)
+
+        Returns:
+            Tuple of (action, reason):
+            - ("unlock_runner", "hold_impulse: ...details...") if fallback unlocks
+            - (None, None) if conditions not met
+        """
+        state = self._get_trade_state(trade.trade_id)
+        config = DXY_CONTINUATION_RUNNER_FALLBACK_CONFIG
+
+        # Get TP1 price and R
+        entry_price = float(trade.entry_price)
+        risk_points = trade.risk_points
+        if risk_points is None:
+            risk_points = abs(entry_price - float(trade.sl_price))
+
+        if trade.direction == "long":
+            tp1_price = entry_price + risk_points  # +1R
+        else:
+            tp1_price = entry_price - risk_points  # -1R for short
+
+        # === HOLD CONDITION ===
+        hold_buffer = config["hold_buffer_r"] * risk_points  # 0.25R
+
+        # Track extremes since TP1
+        if trade.direction == "long":
+            # Track min low since TP1
+            if state.get("min_low_since_tp1") is None:
+                state["min_low_since_tp1"] = candle.low
+            else:
+                state["min_low_since_tp1"] = min(state["min_low_since_tp1"], candle.low)
+
+            hold_floor = tp1_price - hold_buffer
+            hold_met = state["min_low_since_tp1"] >= hold_floor
+        else:  # short
+            # Track max high since TP1
+            if state.get("max_high_since_tp1") is None:
+                state["max_high_since_tp1"] = candle.high
+            else:
+                state["max_high_since_tp1"] = max(state["max_high_since_tp1"], candle.high)
+
+            hold_ceiling = tp1_price + hold_buffer
+            hold_met = state["max_high_since_tp1"] <= hold_ceiling
+
+        # === IMPULSE CONDITION ===
+        # Check on THIS bar if:
+        # 1. close > prior_high (long) / close < prior_low (short)
+        # 2. OR body_ratio >= 0.6
+
+        prior_high = state.get("prior_bar_high")
+        prior_low = state.get("prior_bar_low")
+
+        # Calculate body ratio for this candle
+        candle_range = candle.high - candle.low
+        body_size = abs(candle.close - candle.open)
+        body_ratio = body_size / max(candle_range, 0.001)
+
+        impulse_met_this_bar = False
+        impulse_reason = ""
+
+        if trade.direction == "long":
+            if prior_high is not None and candle.close > prior_high:
+                impulse_met_this_bar = True
+                impulse_reason = f"close {candle.close:.2f} > prior_high {prior_high:.2f}"
+            elif body_ratio >= config["impulse_body_ratio_threshold"]:
+                impulse_met_this_bar = True
+                impulse_reason = f"body_ratio {body_ratio:.2f} >= {config['impulse_body_ratio_threshold']}"
+        else:  # short
+            if prior_low is not None and candle.close < prior_low:
+                impulse_met_this_bar = True
+                impulse_reason = f"close {candle.close:.2f} < prior_low {prior_low:.2f}"
+            elif body_ratio >= config["impulse_body_ratio_threshold"]:
+                impulse_met_this_bar = True
+                impulse_reason = f"body_ratio {body_ratio:.2f} >= {config['impulse_body_ratio_threshold']}"
+
+        # Track impulse if detected (persists once seen in window)
+        if impulse_met_this_bar:
+            state["impulse_detected"] = True
+            state["impulse_detected_bar"] = current_bar_idx
+            state["impulse_reason"] = impulse_reason
+
+        # Update prior bar for next iteration
+        state["prior_bar_high"] = candle.high
+        state["prior_bar_low"] = candle.low
+
+        # === UNLOCK CHECK ===
+        # Both hold AND impulse (at any point in window) must be met
+        impulse_ever_detected = state.get("impulse_detected", False)
+
+        if hold_met and impulse_ever_detected:
+            saved_impulse_reason = state.get("impulse_reason", impulse_reason)
+            reason = (
+                f"hold_impulse: hold within {config['hold_buffer_r']}R "
+                f"(floor/ceiling maintained), {saved_impulse_reason}"
+            )
+            logger.info(f"Trade {trade.trade_id} RUNNER FALLBACK UNLOCK: {reason}")
+            return "unlock_runner", reason
+
+        # Log status for debugging
+        logger.debug(
+            f"Trade {trade.trade_id}: Fallback A status - hold_met={hold_met}, "
+            f"impulse_detected={impulse_ever_detected}"
+        )
+
+        return None, None
 
     def check_sl_tp(
         self, trade: TradeRecord, candle: Candle, bars_elapsed: int = 0

@@ -146,7 +146,7 @@ setups:
         reject_reason: "Short fade requires HL (higher low) structure"
 
       rsi_extreme:
-        expression: "rsi < 40 or rsi > 60"
+        expression: "rsi < 30 or rsi > 70"
         reject_reason: "RSI not at extreme levels"
 
       vwap_deviation:
@@ -165,8 +165,8 @@ setups:
 
     params:
       wick_body_ratio: 1.3
-      rsi_oversold: 40
-      rsi_overbought: 60
+      rsi_oversold: 30
+      rsi_overbought: 70
       vwap_deviation_threshold: 0.25
       clarity_threshold: 0.4
       trend_conf_threshold: 0.65
@@ -176,7 +176,7 @@ setups:
   # ============================================================================
   DXY_CONTINUATION:
     enabled: true
-    min_score: 8.5  # HARD GATE - no exceptions
+    min_score: 8.2  # HARD GATE - Intentionally stricter than playbook 8.0 (2.5% higher bar for correlation-based trades)
 
     # =========================================================================
     # NON-NEGOTIABLE HARD CONSTRAINTS (SOP Requirements)
@@ -265,6 +265,7 @@ setups:
       clarity_bonus: 1.0         # Bonus for high clarity (scoring-only)
       rsi_mid_reset: 1.0         # RSI returning to midline (50)
       vwap_relation: 1.0         # Position relative to VWAP
+      volume_pattern: 1.0        # Volume contraction on pullback, expansion on resumption
       ema_stack: 0.5             # EMA alignment
       fvg_alignment: 0.5         # FVG present and aligned
 
@@ -288,7 +289,7 @@ setups:
 
 # Global confidence thresholds
 confidence:
-  a_plus: 7.8      # Score >= 7.5 -> A+ (tradeable) - LOWERED FROM 8.0
+  a_plus: 8.0
   watch: 6.0       # Score 6.0-7.4 -> Watch (monitor only)
   reject: 0.0      # Score < 6.0 -> Reject (invalid)
 

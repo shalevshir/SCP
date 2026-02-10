@@ -163,6 +163,16 @@ async def process_streams(
         message_type=FeaturesMessage,
     )
 
+    # TODO Phase 2: Add HTF bias consumer for runner hard invalidation:
+    #   htf_bias_consumer = RedisStreamConsumer(
+    #       redis_client,
+    #       stream="htf.bias",
+    #       group="execution",
+    #       consumer_name="instance-1",
+    #       message_type=HTFBiasMessage,
+    #   )
+    # Then read from htf_bias_consumer in the main loop and pass to trade_manager
+
     logger.info("Execution Service ready - consuming signals and candles")
 
     # SBOP: Sync ack publisher for backtest orchestration
@@ -204,13 +214,8 @@ async def process_streams(
     # SBOP: Track timestamps we've acked to avoid double-acking (must persist across iterations)
     acked_timestamps: set[datetime] = set()
 
-    loop_iteration = 0
-
     try:
         while not shutdown_event.is_set():
-            loop_iteration += 1
-            if loop_iteration == 1 or loop_iteration % 100 == 0:
-                logger.info(f"Execution loop iteration {loop_iteration}")
             # Read from all streams IN PARALLEL to avoid sequential blocking
             # Previously, each read blocked for up to 1000ms, causing ~3 second
             # delays when streams were empty. Now they run concurrently.

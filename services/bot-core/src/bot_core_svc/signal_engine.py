@@ -486,6 +486,145 @@ def validate_continuation_tp(
     return tp_plan, None
 
 
+def validate_dxy_continuation_tp(
+    direction: str,
+    entry_price: float,
+    sl_price: float,
+    features: FeaturesMessage,
+    htf_bias: HTFBiasMessage,
+) -> tuple[TPPlan | None, str | None]:
+    """Validate TP for DXY_CONTINUATION mode (Option A: Two-Stage).
+
+    TP Model (from spec dxy_continuation_implementation_spec_sop_aligned.md):
+    - TP1 = entry + 1.0R (take 40% partial)
+    - TP2 = min(HTF_target, entry + 4.0R) or default 3.0R
+
+    Rejection Gates (all must pass or reject trade):
+    - TP2 >= entry + 2.0R (continuation must be worth it)
+    - TP2 > TP1 + 0.5R (runner must have meaningful space)
+
+    Args:
+        direction: Trade direction ("long" or "short")
+        entry_price: Entry price
+        sl_price: Stop loss price
+        features: FeaturesMessage
+        htf_bias: HTFBiasMessage with HTF targets
+
+    Returns:
+        (TPPlan, None) if valid
+        (None, rejection_reason) if invalid
+    """
+    # ========================================================================
+    # SL Validation
+    # ========================================================================
+    if direction == "long" and sl_price >= entry_price:
+        return None, "Invalid SL: long trade SL must be below entry"
+    if direction == "short" and sl_price <= entry_price:
+        return None, "Invalid SL: short trade SL must be above entry"
+
+    risk_distance = abs(entry_price - sl_price)
+
+    # ========================================================================
+    # TP1: Always at 1.0R
+    # ========================================================================
+    if direction == "long":
+        tp1_price = entry_price + risk_distance
+    else:
+        tp1_price = entry_price - risk_distance
+
+    # ========================================================================
+    # TP2: Find HTF target or use default
+    # ========================================================================
+    tp2_price = None
+    tp2_source = "default_3r"
+
+    if direction == "long":
+        # Collect HTF targets that are BEYOND TP1
+        htf_targets = [
+            ("htf_range_high", htf_bias.htf_range_high),
+            ("untouched_liquidity_high", htf_bias.untouched_liquidity_high),
+        ]
+        valid_htf = [
+            (name, price)
+            for name, price in htf_targets
+            if price is not None and price > tp1_price
+        ]
+
+        if valid_htf:
+            # Use nearest valid HTF target
+            tp2_source, tp2_raw = min(valid_htf, key=lambda x: x[1])
+            # Cap at 4R
+            max_tp2 = entry_price + (4.0 * risk_distance)
+            tp2_price = min(tp2_raw, max_tp2)
+        else:
+            # Default 3R when no valid HTF target
+            tp2_price = entry_price + (3.0 * risk_distance)
+            tp2_source = "default_3r"
+
+    else:  # short
+        htf_targets = [
+            ("htf_range_low", htf_bias.htf_range_low),
+            ("untouched_liquidity_low", htf_bias.untouched_liquidity_low),
+        ]
+        valid_htf = [
+            (name, price)
+            for name, price in htf_targets
+            if price is not None and price < tp1_price
+        ]
+
+        if valid_htf:
+            # Use nearest valid HTF target (highest for shorts)
+            tp2_source, tp2_raw = max(valid_htf, key=lambda x: x[1])
+            # Cap at 4R
+            min_tp2 = entry_price - (4.0 * risk_distance)
+            tp2_price = max(tp2_raw, min_tp2)
+        else:
+            # Default 3R when no valid HTF target
+            tp2_price = entry_price - (3.0 * risk_distance)
+            tp2_source = "default_3r"
+
+    # ========================================================================
+    # REJECTION GATES (all must pass)
+    # ========================================================================
+    tp2_rr = abs(tp2_price - entry_price) / risk_distance if risk_distance > 0 else 0
+
+    # Gate 1: TP2 must be >= 2.0R (continuation must be worth it)
+    if tp2_rr < 2.0:
+        return (
+            None,
+            f"DXY_CONTINUATION_TP2_BELOW_MIN: TP2 at {tp2_rr:.1f}R < 2.0R minimum (continuation not worth it)",
+        )
+
+    # Gate 2: TP2 must be > TP1 + 0.5R (runner must have meaningful space)
+    tp2_delta = tp2_rr - 1.0  # Delta over TP1 (which is always 1R)
+    if tp2_delta < 0.5:
+        return (
+            None,
+            f"DXY_CONTINUATION_TP2_NO_SPACE: TP2 adds only {tp2_delta:.2f}R over TP1 (runner needs >= 0.5R space)",
+        )
+
+    # ========================================================================
+    # Build TPPlan
+    # ========================================================================
+    tp_plan = TPPlan(
+        tp_mode="continuation",
+        tp1=tp1_price,
+        tp2=tp2_price,
+        rr_tp1=1.0,
+        rr_potential=tp2_rr,
+        be_after_tp1=True,  # M1: Move to BE at +1R
+        expansion_path_valid=True,
+        target_source=tp2_source,
+    )
+
+    logger.info(
+        f"✓ DXY_CONTINUATION TP validated: TP1={tp1_price:.2f} (1.0R, 40% partial), "
+        f"TP2={tp2_price:.2f} ({tp2_rr:.1f}R from {tp2_source}), BE after TP1"
+    )
+
+    return tp_plan, None
+
+
 def _check_tp_safety(
     tp_price: float,
     direction: str,
@@ -801,7 +940,13 @@ def validate_tp_target(
         (TPPlan, None) if valid
         (None, rejection_reason) if invalid
     """
-    # Route to continuation mode if eligible
+    # Route DXY_CONTINUATION to dedicated TP validation (two-stage model)
+    if setup_type == "DXY_CONTINUATION":
+        return validate_dxy_continuation_tp(
+            direction, entry_price, sl_price, features, htf_bias
+        )
+
+    # Route to continuation mode if eligible (VWAP_RECLAIM A+)
     if is_continuation_eligible(setup_type, htf_bias):
         tp_plan, rejection = validate_continuation_tp(
             direction, entry_price, sl_price, features, htf_bias
@@ -916,6 +1061,108 @@ def calculate_sl_price_vwap_reclaim(
     return sl_price
 
 
+def calculate_sl_price_dxy_continuation(
+    direction: str,
+    entry_price: float,
+    features: FeaturesMessage,
+    k_atr: float = 1.7,
+    sl_buffer_points: float = 0.3,
+    min_sl_points: float = 2.5,
+) -> tuple[float, dict[str, Any]]:
+    """Calculate SL for DXY_CONTINUATION using structural + ATR floor.
+
+    SL Model (from spec dxy_continuation_implementation_spec_sop_aligned.md):
+    - Long: sl = min(sl_struct, sl_atr) - choose farther stop (more room)
+    - Short: sl = max(sl_struct, sl_atr) - choose farther stop (more room)
+    - sl_struct = swing_hl_low - buffer (longs) / swing_lh_high + buffer (shorts)
+    - sl_atr = entry ± (k_atr * atr)
+
+    Degraded mode if micro swing missing: ATR-only, flag for tracking.
+
+    Args:
+        direction: Trade direction ("long" or "short")
+        entry_price: Entry price
+        features: FeaturesMessage with swing_hl_low, swing_lh_high, atr
+        k_atr: ATR multiplier (default 1.7, range 1.5-2.0)
+        sl_buffer_points: Buffer from structural level (default 0.3)
+        min_sl_points: Minimum SL distance floor (default 2.5)
+
+    Returns:
+        Tuple of (sl_price, diagnostics_dict)
+        diagnostics_dict contains: sl_struct, sl_atr, sl_method, degraded_mode
+    """
+    atr = features.atr
+    diagnostics: dict[str, Any] = {
+        "sl_method": None,
+        "sl_struct": None,
+        "sl_atr": None,
+        "degraded_mode": False,
+    }
+
+    # ATR-based SL (always computed as floor)
+    if atr is not None and atr > 0:
+        if direction == "long":
+            sl_atr = entry_price - (k_atr * atr)
+        else:
+            sl_atr = entry_price + (k_atr * atr)
+        diagnostics["sl_atr"] = sl_atr
+    else:
+        # Fallback to minimum SL if ATR unavailable
+        if direction == "long":
+            sl_atr = entry_price - min_sl_points
+        else:
+            sl_atr = entry_price + min_sl_points
+        diagnostics["sl_atr"] = sl_atr
+        diagnostics["degraded_mode"] = True
+
+    # Structural SL (from micro swing points)
+    sl_struct = None
+    if direction == "long":
+        if features.swing_hl_low is not None:
+            sl_struct = features.swing_hl_low - sl_buffer_points
+            diagnostics["sl_struct"] = sl_struct
+    else:  # short
+        if features.swing_lh_high is not None:
+            sl_struct = features.swing_lh_high + sl_buffer_points
+            diagnostics["sl_struct"] = sl_struct
+
+    # Select final SL: choose farther stop (more room to breathe)
+    if sl_struct is not None:
+        if direction == "long":
+            # For longs, lower SL = farther from entry
+            sl_price = min(sl_struct, sl_atr)
+        else:
+            # For shorts, higher SL = farther from entry
+            sl_price = max(sl_struct, sl_atr)
+        diagnostics["sl_method"] = "structural_with_atr_floor"
+    else:
+        # Degraded mode: ATR-only (micro swing missing)
+        sl_price = sl_atr
+        diagnostics["sl_method"] = "atr_only"
+        diagnostics["degraded_mode"] = True
+        # Log WARNING for degraded mode - this should be rare
+        logger.warning(
+            "DXY_CONTINUATION DEGRADED MODE: micro swing missing for %s "
+            "(swing_hl_low=%s, swing_lh_high=%s). Using ATR-only SL. "
+            "Investigate if frequent.",
+            direction,
+            features.swing_hl_low,
+            features.swing_lh_high,
+        )
+        metrics.dxy_continuation_degraded_total.inc()
+
+    # Apply minimum SL floor if calculated SL is too tight
+    risk_points = abs(entry_price - sl_price)
+    if risk_points < min_sl_points:
+        if direction == "long":
+            sl_price = entry_price - min_sl_points
+        else:
+            sl_price = entry_price + min_sl_points
+        diagnostics["sl_method"] += "_min_floor_applied"
+
+    return sl_price, diagnostics
+
+
 def signal_to_message(
     signal: Signal, features: FeaturesMessage, htf_bias: HTFBiasMessage
 ) -> SignalMessage:
@@ -945,7 +1192,7 @@ def signal_to_message(
     VWAP_SL_BUFFER_TICKS = 30
     MIN_SL_TICKS_VWAP_RECLAIM = 20
     MIN_SL_TICKS_VWAP_FADE = 15
-    MIN_SL_TICKS_DXY_CONTINUATION = 25
+    # Note: DXY_CONTINUATION now uses structural SL with ATR floor (not fixed ticks)
 
     # Calculate stop loss based on setup type and SOP rules
     setup_type = signal.setup_type
@@ -969,11 +1216,26 @@ def signal_to_message(
             sl_price = entry_price + (MIN_SL_TICKS_VWAP_FADE * TICK_SIZE_GC)
 
     elif setup_type == "DXY_CONTINUATION":
-        # Continuation: minimum 25-tick buffer
-        if direction == "long":
-            sl_price = entry_price - (MIN_SL_TICKS_DXY_CONTINUATION * TICK_SIZE_GC)
-        else:  # short
-            sl_price = entry_price + (MIN_SL_TICKS_DXY_CONTINUATION * TICK_SIZE_GC)
+        # Track all DXY_CONTINUATION attempts
+        metrics.dxy_continuation_total.inc()
+
+        # Structural SL with ATR floor (per DXY_CONTINUATION spec)
+        sl_price, sl_diagnostics = calculate_sl_price_dxy_continuation(
+            direction=direction,
+            entry_price=entry_price,
+            features=features,
+            k_atr=1.7,
+            sl_buffer_points=0.3,
+            min_sl_points=2.5,
+        )
+
+        # Degraded mode check: require score >= 9.0 when micro swing missing
+        if sl_diagnostics["degraded_mode"] and signal.score < 9.0:
+            raise ValueError(
+                f"DXY_CONTINUATION degraded mode requires score >= 9.0 "
+                f"(got {signal.score:.1f}, swing_hl_low={features.swing_hl_low}, "
+                f"swing_lh_high={features.swing_lh_high})"
+            )
 
     else:
         # Default fallback: 20-tick buffer
