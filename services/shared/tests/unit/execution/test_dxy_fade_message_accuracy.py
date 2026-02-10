@@ -55,6 +55,7 @@ def base_trade_long():
         tp_price=2662.0,
         risk_amount=5.0,
         reward_amount=12.0,
+        quantity=1,
         entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
     )
 
@@ -73,6 +74,7 @@ def base_trade_short():
         tp_price=2638.0,
         risk_amount=5.0,
         reward_amount=12.0,
+        quantity=1,
         entry_timestamp=utc_datetime(2024, 10, 15, 10, 0),
     )
 
