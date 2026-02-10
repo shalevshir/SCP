@@ -542,6 +542,7 @@ class TradeManager:
             # Calculate 40% of position
             # NOTE: Partial profit requires quantity >= 2 (minimum to close 40%)
             partial_qty = int(trade.quantity * 0.4)  # 40% of position
+            broker_success = False  # Track broker operation success
 
             try:
                 if partial_qty >= 1:
@@ -553,36 +554,56 @@ class TradeManager:
                     await self._broker.reduce_position(
                         trade.symbol, partial_qty, candle.close
                     )
+                    broker_success = True  # Mark success after broker call succeeds
                     logger.info(
                         f"Trade {trade.trade_id}: Partial profit executed successfully "
                         f"({trade.quantity - partial_qty} contracts remaining)"
                     )
                 else:
                     # Single contract position: cannot execute partial close
+                    # BUT we can still move SL to breakeven (no broker call needed)
+                    broker_success = True  # No broker call needed for single contract
                     logger.warning(
                         f"Trade {trade.trade_id}: Partial profit NOT executed - "
                         f"quantity={trade.quantity} (need >= 2 for 40% partial close). "
+                        f"Moving SL to breakeven. "
                         f"Partial profit will activate when account reaches multi-contract sizing."
                     )
             except Exception as e:
+                broker_success = False  # Mark failure on exception
                 logger.error(
-                    f"Failed to execute partial profit for trade {trade.trade_id}: {e}",
+                    f"Failed to execute partial profit for trade {trade.trade_id}: {e}. "
+                    f"Trade state will NOT be updated (can retry on next bar).",
                     exc_info=True,
                 )
+                # Do NOT update state - return early to allow retry
+                # The partial_profit action will be triggered again on the next candle
+                # until either: (1) broker succeeds, (2) trade exits, or (3) +1R is lost
+                return
 
-            # Update trade state
-            trade.partial_taken = True
-            trade.breakeven_set = True  # Legacy field
-            trade.current_sl_price = be_price  # BE with buffer, NOT exact entry
+            # CRITICAL: Only update state if broker operation succeeded
+            # This ensures atomicity - either ALL state changes happen or NONE
+            if broker_success:
+                # Update in-memory trade state
+                trade.partial_taken = True
+                trade.breakeven_set = True  # Legacy field
+                trade.current_sl_price = be_price  # BE with buffer, NOT exact entry
 
-            # Phase 2.0: Explicit BE tracking
-            trade.be_set = True
-            trade.be_price = be_price
-            trade.be_set_bar_idx = self._sm_manager._bar_counter
-            trade.tp1_hit_bar_idx = self._sm_manager._bar_counter
+                # Phase 2.0: Explicit BE tracking
+                trade.be_set = True
+                trade.be_price = be_price
+                trade.be_set_bar_idx = self._sm_manager._bar_counter
+                trade.tp1_hit_bar_idx = self._sm_manager._bar_counter
 
-            # Persist BE state to database
-            await self._repo.update_breakeven(trade.trade_id, be_price)
+                # CRITICAL: Update quantity if partial was actually executed
+                # This ensures correct P&L calculation when the remainder closes
+                if partial_qty >= 1:
+                    new_quantity = trade.quantity - partial_qty
+                    trade.quantity = new_quantity  # Update in-memory
+                    await self._repo.update_quantity(trade.trade_id, new_quantity)  # Persist to DB
+
+                # Persist BE state to database
+                await self._repo.update_breakeven(trade.trade_id, be_price)
 
             # Submit BE SL to broker (for live trading)
             # Note: Paper broker doesn't support SL orders - SL is checked on each candle
