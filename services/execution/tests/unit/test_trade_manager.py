@@ -374,6 +374,7 @@ class TestTradeManagerCheckTradeExit:
             entry_price=2650.0,
             sl_price=2645.0,
             tp_price=2662.0,
+            quantity=1,  # Required field
             risk_amount=5.0,
             reward_amount=12.0,
             entry_timestamp=datetime(2025, 1, 15, 10, 0, tzinfo=timezone.utc),
