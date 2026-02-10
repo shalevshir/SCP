@@ -16,7 +16,7 @@ from scp_shared.common.types import Candle
 from scp_shared.database import DatabasePool
 from scp_shared.health import create_health_router
 from scp_shared.messaging import RedisStreamConsumer, CandleFeatureSynchronizer, SyncAckPublisher
-from scp_shared.messaging.schemas import CandleMessage, FeaturesMessage, SignalMessage
+from scp_shared.messaging.schemas import CandleMessage, FeaturesMessage, SignalMessage, HTFBiasMessage
 from scp_shared.metrics import create_metrics_router, infrastructure
 
 from execution_svc.broker import BaseBroker, create_broker
@@ -163,15 +163,14 @@ async def process_streams(
         message_type=FeaturesMessage,
     )
 
-    # TODO Phase 2: Add HTF bias consumer for runner hard invalidation:
-    #   htf_bias_consumer = RedisStreamConsumer(
-    #       redis_client,
-    #       stream="htf.bias",
-    #       group="execution",
-    #       consumer_name="instance-1",
-    #       message_type=HTFBiasMessage,
-    #   )
-    # Then read from htf_bias_consumer in the main loop and pass to trade_manager
+    # Phase 2: HTF bias consumer for runner unlock
+    htf_bias_consumer = RedisStreamConsumer(
+        redis_client,
+        stream="htf.bias",
+        group="execution",
+        consumer_name="instance-1",
+        message_type=HTFBiasMessage,
+    )
 
     logger.info("Execution Service ready - consuming signals and candles")
 
@@ -219,7 +218,7 @@ async def process_streams(
             # Read from all streams IN PARALLEL to avoid sequential blocking
             # Previously, each read blocked for up to 1000ms, causing ~3 second
             # delays when streams were empty. Now they run concurrently.
-            signals_list, candles_list, features_list = await asyncio.gather(
+            signals_list, candles_list, features_list, htf_bias_list = await asyncio.gather(
                 signals_consumer.read(
                     count=10, block_ms=100
                 ),  # Short timeout for signals
@@ -229,6 +228,9 @@ async def process_streams(
                 features_consumer.read(
                     count=100, block_ms=100
                 ),  # Larger batch for replay
+                htf_bias_consumer.read(
+                    count=10, block_ms=100
+                ),  # HTF bias for runner unlock
             )
 
             # Note: SBOP debug logging removed for cleaner output
@@ -243,6 +245,10 @@ async def process_streams(
             else:
                 for signal_msg in signals_list:
                     await trade_manager.on_signal(signal_msg)
+
+            # Process HTF bias messages (for runner unlock logic)
+            for htf_bias_msg in htf_bias_list:
+                trade_manager.on_htf_bias(htf_bias_msg)
 
             # CRITICAL FIX: Interleave candle and feature processing to prevent
             # cleanup from dropping unpaired messages during high-speed replay.

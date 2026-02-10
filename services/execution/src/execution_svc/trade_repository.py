@@ -259,6 +259,7 @@ class TradeRepository:
             entry_price=row["entry_price"],
             sl_price=row["sl_price"],
             tp_price=row["tp_price"],
+            quantity=row["quantity"],
             risk_amount=risk_amount,
             reward_amount=reward_amount,
             entry_timestamp=row["opened_at"],
@@ -305,6 +306,7 @@ class TradeRepository:
                 entry_price=row["entry_price"],
                 sl_price=row["sl_price"],
                 tp_price=row["tp_price"],
+                quantity=row["quantity"],
                 risk_amount=risk_amount,
                 reward_amount=reward_amount,
                 entry_timestamp=row["opened_at"],
@@ -331,6 +333,23 @@ class TradeRepository:
         await self._db_pool.execute(query, reached_1r, UUID(trade_id))
 
         logger.debug(f"Updated trade {trade_id} reached_1r={reached_1r}")
+
+    async def update_breakeven(self, trade_id: str, be_price: float) -> None:
+        """Update breakeven SL price for a trade.
+
+        Args:
+            trade_id: Trade ID
+            be_price: Breakeven stop loss price
+        """
+        query = """
+            UPDATE trades
+            SET sl_price = $1
+            WHERE id = $2
+        """
+
+        await self._db_pool.execute(query, be_price, UUID(trade_id))
+
+        logger.info(f"Updated trade {trade_id} SL to BE: {be_price:.2f}")
 
     async def reconcile_positions(self) -> list[TradeRecord]:
         """Reconcile open trades on startup (for recovery).
@@ -385,6 +404,7 @@ class TradeRepository:
                 entry_price=row["entry_price"],
                 sl_price=row["sl_price"],
                 tp_price=row["tp_price"],
+                quantity=row["quantity"],
                 risk_amount=risk_amount,
                 reward_amount=reward_amount,
                 entry_timestamp=row["opened_at"],

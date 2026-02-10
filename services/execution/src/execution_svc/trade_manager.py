@@ -136,6 +136,9 @@ class TradeManager:
         # Key: (timestamp, direction, setup_type, entry_price, sl_price)
         self._recent_signal_fingerprints: set[tuple] = set()
 
+        # Track latest HTF bias for runner unlock logic (Phase 2)
+        self._latest_htf_bias: dict[str, Any] | None = None
+
     def _get_signal_fingerprint(self, signal: SignalMessage) -> tuple:
         """Generate a fingerprint for duplicate detection.
 
@@ -313,6 +316,34 @@ class TradeManager:
             current_timestamp: Current timestamp to extract date from
         """
         self._daily_tracker.check_session_reset(current_timestamp.date())
+
+    def on_htf_bias(self, htf_bias_msg: Any) -> None:
+        """Update latest HTF bias for runner unlock logic.
+
+        Args:
+            htf_bias_msg: HTFBiasMessage from htf.bias stream
+        """
+        from scp_shared.messaging.schemas import HTFBiasMessage
+
+        # Convert to dict for InvalidationChecker compatibility
+        if isinstance(htf_bias_msg, HTFBiasMessage):
+            self._latest_htf_bias = {
+                "timestamp": htf_bias_msg.timestamp,
+                "bias": htf_bias_msg.bias,
+                "score": htf_bias_msg.score,
+                "confidence": htf_bias_msg.confidence,
+                "structure_15m": htf_bias_msg.structure_15m,
+                "structure_1h": htf_bias_msg.structure_1h,
+                "dxy_aligned": htf_bias_msg.dxy_aligned,
+                "chop_detected": htf_bias_msg.chop_detected,
+            }
+            logger.debug(
+                f"HTF bias updated: {htf_bias_msg.bias} (score={htf_bias_msg.score:.1f}, "
+                f"confidence={htf_bias_msg.confidence}, dxy_aligned={htf_bias_msg.dxy_aligned}, "
+                f"chop={htf_bias_msg.chop_detected})"
+            )
+        else:
+            logger.warning(f"Invalid HTF bias message type: {type(htf_bias_msg)}")
 
     async def on_candle(
         self,
@@ -499,11 +530,42 @@ class TradeManager:
                 else:
                     be_price = float(trade.entry_price) - be_buffer_points
 
-            # Log partial profit trigger - actual execution would happen in Phase 8+
+            # Execute partial profit: close 40% of position at TP1
             logger.info(
                 f"Trade {trade.trade_id} DXY_CONTINUATION: partial profit triggered at +1R "
-                f"(40% close, SL -> BE at {be_price:.2f}). [Phase 7: logged only]"
+                f"(40% close, SL -> BE at {be_price:.2f})"
             )
+
+            # Calculate 40% of position
+            # NOTE: Partial profit requires quantity >= 2 (minimum to close 40%)
+            partial_qty = int(trade.quantity * 0.4)  # 40% of position
+
+            try:
+                if partial_qty >= 1:
+                    # Multi-contract position: execute partial profit
+                    logger.info(
+                        f"Trade {trade.trade_id}: Executing partial profit "
+                        f"(closing {partial_qty} of {trade.quantity} contracts at {candle.close:.2f})"
+                    )
+                    await self._broker.reduce_position(
+                        trade.symbol, partial_qty, candle.close
+                    )
+                    logger.info(
+                        f"Trade {trade.trade_id}: Partial profit executed successfully "
+                        f"({trade.quantity - partial_qty} contracts remaining)"
+                    )
+                else:
+                    # Single contract position: cannot execute partial close
+                    logger.warning(
+                        f"Trade {trade.trade_id}: Partial profit NOT executed - "
+                        f"quantity={trade.quantity} (need >= 2 for 40% partial close). "
+                        f"Partial profit will activate when account reaches multi-contract sizing."
+                    )
+            except Exception as e:
+                logger.error(
+                    f"Failed to execute partial profit for trade {trade.trade_id}: {e}",
+                    exc_info=True,
+                )
 
             # Update trade state
             trade.partial_taken = True
@@ -516,15 +578,33 @@ class TradeManager:
             trade.be_set_bar_idx = self._sm_manager._bar_counter
             trade.tp1_hit_bar_idx = self._sm_manager._bar_counter
 
-            # TODO Phase 8+: Actually close 40% and update SL via broker
+            # Persist BE state to database
+            await self._repo.update_breakeven(trade.trade_id, be_price)
+
+            # Submit BE SL to broker (for live trading)
+            # Note: Paper broker doesn't support SL orders - SL is checked on each candle
+            # For live broker (IB/etc), this would submit a modify order to adjust the SL
+            try:
+                # For paper trading, we just track the SL internally
+                # The SL will be checked on each candle in _check_trade_exit
+                logger.info(
+                    f"Trade {trade.trade_id}: BE SL updated to {be_price:.2f} "
+                    f"(broker submission skipped for paper trading)"
+                )
+                # TODO: For live broker, implement:
+                # await self._broker.modify_stop_loss(trade.symbol, be_price)
+            except Exception as e:
+                logger.error(
+                    f"Failed to submit BE SL to broker for trade {trade.trade_id}: {e}",
+                    exc_info=True,
+                )
 
         # Phase 2: Runner unlock check (after partial taken, before de_risk)
-        # TODO Phase 2: Integrate HTF bias stream to enable hard invalidation checks:
-        #   1. Subscribe to htf.bias Redis stream in main.py
-        #   2. Add _latest_htf_bias: dict | None field to TradeManager
-        #   3. Update on_htf_bias() method to track latest HTF bias
-        #   4. Pass htf_bias to check_runner_unlock() below instead of None
-        # Without HTF bias, hard invalidation (chop, htf_conflict, dxy_aligned) is skipped
+        # HTF bias integration complete:
+        #   1. htf.bias Redis stream consumer added to main.py
+        #   2. _latest_htf_bias field tracks current bias
+        #   3. on_htf_bias() method updates bias from stream
+        #   4. HTF bias passed to check_runner_unlock() for hard invalidation
         if (
             trade.setup_type == "DXY_CONTINUATION"
             and trade.partial_taken
@@ -532,9 +612,9 @@ class TradeManager:
             and not trade.runner_unlocked
             and not trade.runner_exited_at_market
         ):
-            # TODO Phase 2: Replace htf_bias=None with self._latest_htf_bias
+            # Phase 2: Pass HTF bias for hard invalidation checks
             runner_action, runner_reason = self._invalidation_checker.check_runner_unlock(
-                trade, candle, current_bar, features, htf_bias=None
+                trade, candle, current_bar, features, htf_bias=self._latest_htf_bias
             )
 
             if runner_action == "unlock_runner":
@@ -733,6 +813,7 @@ class TradeManager:
                 entry_price=actual_entry_price,
                 sl_price=signal.sl_price,
                 tp_price=signal.tp_price,
+                quantity=1,  # Hardcoded for Phase 6 (single-contract sizing)
                 risk_amount=risk_amount,
                 reward_amount=reward_amount,
                 entry_timestamp=opened_at,

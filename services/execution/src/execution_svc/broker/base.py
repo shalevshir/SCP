@@ -130,6 +130,28 @@ class BaseBroker(ABC):
         """
         pass
 
+    @abstractmethod
+    async def reduce_position(
+        self,
+        symbol: str,
+        quantity: int,
+        price: float,
+    ) -> OrderResult:
+        """Reduce an existing position by a specified quantity.
+
+        Args:
+            symbol: Asset symbol
+            quantity: Number of contracts to reduce
+            price: Execution price
+
+        Returns:
+            OrderResult with execution details
+
+        Raises:
+            ValueError: If no position exists or quantity exceeds position size
+        """
+        pass
+
     async def reconcile_positions(
         self,
         trades: list[tuple[str, str, float, int]],

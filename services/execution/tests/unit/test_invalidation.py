@@ -33,6 +33,7 @@ def make_trade(
         entry_price=entry_price,
         sl_price=sl_price,
         tp_price=tp_price,
+        quantity=1,
         risk_amount=risk_amount,
         reward_amount=reward_amount,
         entry_timestamp=datetime.now(timezone.utc),

@@ -76,7 +76,7 @@ class TestDetermineSetupTypeRefactor:
         # VWAP_FADE requires specific conditions
         # Make it fail VWAP_RECLAIM by having empty structure_1h
         features = self._create_features(
-            rsi=35.0,  # < 40
+            rsi=25.0,  # < 30 (extreme oversold)
             close=2640.0,
             vwap=2650.0,  # > 0.25% deviation
             last_structure_label="LH",  # For long fade

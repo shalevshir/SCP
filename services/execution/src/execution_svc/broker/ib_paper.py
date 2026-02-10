@@ -271,6 +271,85 @@ class IBPaperBroker(BaseBroker):
 
         return order_result
 
+    async def reduce_position(
+        self,
+        symbol: str,
+        quantity: int,
+        price: float,
+    ) -> OrderResult:
+        """Reduce an existing position by a specified quantity through IB.
+
+        Args:
+            symbol: Asset symbol
+            quantity: Number of contracts to reduce
+            price: Execution price
+
+        Returns:
+            OrderResult with execution details
+
+        Raises:
+            ValueError: If no position exists or quantity exceeds position size
+        """
+        # Check position exists
+        position = self._positions.get(symbol)
+        if position is None:
+            raise ValueError(f"No position exists for {symbol}")
+
+        # Validate quantity
+        if quantity <= 0:
+            raise ValueError(f"Quantity must be positive, got {quantity}")
+
+        if quantity > position.quantity:
+            raise ValueError(
+                f"Cannot reduce position by {quantity} contracts: "
+                f"only {position.quantity} contracts in position"
+            )
+
+        if price <= 0:
+            raise ValueError(f"Price must be positive, got {price}")
+
+        # Create reducing order (opposite side)
+        reducing_side: Literal["long", "short"] = (
+            "short" if position.side == "long" else "long"
+        )
+
+        # Place reducing order through IB
+        order_result = await self._client.place_order_async(
+            symbol, reducing_side, quantity, None  # Market order for partial close
+        )
+
+        # If order filled, update position and calculate partial P&L
+        if order_result.status == "filled" and order_result.filled_price:
+            entry_price = float(position.entry_price)
+            exit_price = float(order_result.filled_price)
+
+            if position.side == "long":
+                pnl = exit_price - entry_price
+            else:  # short
+                pnl = entry_price - exit_price
+
+            pnl_total = pnl * quantity
+
+            # Update position quantity
+            position.quantity -= quantity
+
+            # If position fully closed, remove it
+            if position.quantity == 0:
+                del self._positions[symbol]
+                logger.info(
+                    f"IB position fully closed via reduce_position: {position.side} {symbol} "
+                    f"@ {exit_price:.2f} (entry={entry_price:.2f}, "
+                    f"pnl={pnl_total:.2f} points, orderId={order_result.order_id})"
+                )
+            else:
+                logger.info(
+                    f"IB position reduced: {position.side} {quantity} {symbol} "
+                    f"@ {exit_price:.2f} (entry={entry_price:.2f}, pnl={pnl_total:.2f} points, "
+                    f"remaining={position.quantity}, orderId={order_result.order_id})"
+                )
+
+        return order_result
+
     def get_all_positions(self) -> list[Position]:
         """Get all current positions.
 

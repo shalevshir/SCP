@@ -96,6 +96,7 @@ def active_trade() -> TradeRecord:
         entry_price=2000.0,
         sl_price=1990.0,
         tp_price=2020.0,
+        quantity=1,
         risk_amount=10.0,
         reward_amount=20.0,
         entry_timestamp=datetime(2024, 3, 15, 10, 0, tzinfo=timezone.utc),

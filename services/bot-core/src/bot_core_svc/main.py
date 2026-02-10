@@ -61,6 +61,7 @@ async def process_features(
     signal_engine = SignalEngine(
         service_mode=config.service_mode,
         service_name=config.service_name,
+        contract_type=config.contract_type,
     )
     signal_publisher = SignalPublisher(redis_client)
     signal_repository = SignalRepository(db_pool)
