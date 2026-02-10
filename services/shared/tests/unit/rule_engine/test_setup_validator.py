@@ -243,7 +243,7 @@ class TestVWAPFadeValidation:
             "choch_detected": True,
             "trend_confidence": 0.7,
             "last_structure_label": "LH",  # Required for long fade
-            "rsi": 35.0,  # Below 40 (oversold)
+            "rsi": 25.0,  # < 30 (extreme oversold)
             "close": 2640.0,
             "vwap": 2650.0,  # 0.38% deviation
             "vwap_deviation": 0.5,  # > 0.25 threshold
@@ -277,7 +277,7 @@ class TestVWAPFadeValidation:
             "choch_detected": True,
             "trend_confidence": 0.7,
             "last_structure_label": "HL",  # Required for short fade
-            "rsi": 65.0,  # Above 60 (overbought)
+            "rsi": 75.0,  # > 70 (extreme overbought)
             "close": 2660.0,
             "vwap": 2650.0,  # 0.38% deviation
             "vwap_deviation": 0.5,  # > 0.25 threshold
@@ -604,7 +604,7 @@ class TestSetupValidatorParity:
             "choch_detected": True,
             "trend_confidence": 0.7,
             "last_structure_label": "LH",
-            "rsi": 35.0,
+            "rsi": 25.0,  # < 30 (extreme oversold)
             "close": 2640.0,
             "vwap": 2650.0,
             "vwap_deviation": 0.5,  # > 0.25 threshold
